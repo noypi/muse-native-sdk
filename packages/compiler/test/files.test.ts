@@ -139,4 +139,18 @@ describe('TC-TSX-002 — single component per file (AC-TSX-002)', () => {
     const src = 'export const Card: React.FC = () => null;\n';
     assert.equal(validateSingleComponent(src, 'Card.tsx'), null);
   });
+
+  it('rejects a named export plus an anonymous default export with the anonymous wording (BUG-TSX-004)', () => {
+    const src = 'export function Card() {}\nexport default function () {}\n';
+    const err = validateSingleComponent(src, 'Card.tsx');
+    assert.equal(
+      err,
+      'Card.tsx: 1 component per .tsx, move the anonymous default export to its own file',
+    );
+    assert.ok(!err.includes('default.tsx'), `error must not fabricate default.tsx, got: ${err}`);
+  });
+
+  it('accepts a single anonymous default export alone (returns null; count guard for BUG-TSX-004)', () => {
+    assert.equal(validateSingleComponent('export default function () {}\n', 'Card.tsx'), null);
+  });
 });
