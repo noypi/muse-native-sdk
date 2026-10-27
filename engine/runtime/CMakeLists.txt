@@ -9,6 +9,10 @@ add_library(runtime
   src/tree.cpp
   src/frame.cpp
   src/layout.cpp
+  src/js_runtime.cpp
+  src/js_engine.cpp
+  src/vulkan_baseline.cpp
+  src/renderer.cpp
 )
 target_include_directories(runtime PUBLIC include)
 target_compile_options(runtime PRIVATE -Wall -Wextra -Wpedantic)
@@ -40,3 +44,43 @@ add_executable(relayout_scope_test tests/relayout_scope_test.cpp)
 target_link_libraries(relayout_scope_test PRIVATE runtime)
 target_compile_options(relayout_scope_test PRIVATE -Wall -Wextra -Wpedantic)
 add_test(NAME relayout_scope_test COMMAND relayout_scope_test)
+
+add_executable(js_abi_isolation_test tests/js_abi_isolation_test.cpp)
+target_link_libraries(js_abi_isolation_test PRIVATE runtime)
+target_compile_options(js_abi_isolation_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME js_abi_isolation_test COMMAND js_abi_isolation_test)
+
+add_executable(js_execution_test tests/js_execution_test.cpp)
+target_link_libraries(js_execution_test PRIVATE runtime)
+target_compile_options(js_execution_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME js_execution_test COMMAND js_execution_test)
+
+add_executable(vulkan_baseline_test tests/vulkan_baseline_test.cpp)
+target_link_libraries(vulkan_baseline_test PRIVATE runtime)
+target_compile_options(vulkan_baseline_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME vulkan_baseline_test COMMAND vulkan_baseline_test)
+
+add_executable(request_frame_test tests/request_frame_test.cpp)
+target_link_libraries(request_frame_test PRIVATE runtime)
+target_compile_options(request_frame_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME request_frame_test COMMAND request_frame_test)
+
+add_executable(continuous_mode_test tests/continuous_mode_test.cpp)
+target_link_libraries(continuous_mode_test PRIVATE runtime)
+target_compile_options(continuous_mode_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME continuous_mode_test COMMAND continuous_mode_test)
+
+add_executable(js_lifecycle_test tests/js_lifecycle_test.cpp)
+target_link_libraries(js_lifecycle_test PRIVATE runtime)
+target_compile_options(js_lifecycle_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME js_lifecycle_test COMMAND js_lifecycle_test)
+
+add_executable(frame_budget_telemetry_test tests/frame_budget_telemetry_test.cpp)
+target_link_libraries(frame_budget_telemetry_test PRIVATE runtime)
+target_compile_options(frame_budget_telemetry_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME frame_budget_telemetry_test COMMAND frame_budget_telemetry_test)
+
+add_executable(render_smoke_test tests/render_smoke_test.cpp)
+target_link_libraries(render_smoke_test PRIVATE runtime)
+target_compile_options(render_smoke_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME render_smoke_test COMMAND render_smoke_test)
