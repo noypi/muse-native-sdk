@@ -2,7 +2,7 @@
   "name": "@muse/compiler",
   "version": "0.0.0",
   "scripts": {
-    "test": "node --test test/ 2>/dev/null || test ! -d test",
+    "test": "node --test test/*.test.ts",
     "test:files": "node --test test/files.test.ts"
   }
 }
