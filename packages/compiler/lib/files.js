@@ -18,7 +18,7 @@ function validateSingleComponent(sourceText, filePath) {
   const text = String(sourceText ?? "");
   const found = [];
   const declRe =
-    /^(?:export\s+(?:default\s+)?)?function\s+([A-Za-z_$][\w$]*)|^(?:export\s+)?const\s+([A-Za-z_$][\w$]*)\s*=/gm;
+    /^(?:export\s+(?:default\s+)?)?function\s+([A-Za-z_$][\w$]*)|^(?:export\s+)?const\s+([A-Za-z_$][\w$]*)\s*(?::[^\n=]+?)?\s*=/gm;
   let m;
   while ((m = declRe.exec(text)) !== null) {
     const name = m[1] ?? m[2];

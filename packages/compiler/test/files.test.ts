@@ -98,4 +98,45 @@ describe('TC-TSX-002 — single component per file (AC-TSX-002)', () => {
   it('accepts a zero-component file (returns null; missing export is T2 domain)', () => {
     assert.equal(validateSingleComponent('const x = 1;\n', 'Card.tsx'), null);
   });
+
+  it('rejects two type-annotated const components naming the second component', () => {
+    const src = [
+      'export const Card: React.FC = () => null;',
+      'export const CardFooter: React.FC = () => null;',
+      '',
+    ].join('\n');
+    assert.equal(
+      validateSingleComponent(src, 'Card.tsx'),
+      'Card.tsx: 1 component per .tsx, move CardFooter to CardFooter.tsx',
+    );
+  });
+
+  it('rejects a mixed typed + untyped const pair naming the second component', () => {
+    const src = [
+      'export const Card: React.FC = () => null;',
+      'export const CardFooter = () => null;',
+      '',
+    ].join('\n');
+    assert.equal(
+      validateSingleComponent(src, 'Card.tsx'),
+      'Card.tsx: 1 component per .tsx, move CardFooter to CardFooter.tsx',
+    );
+  });
+
+  it('rejects two generic-annotated const components naming the second component', () => {
+    const src = [
+      'export const Card: React.FC<Props> = () => null;',
+      'export const CardFooter: React.FC<Props> = () => null;',
+      '',
+    ].join('\n');
+    assert.equal(
+      validateSingleComponent(src, 'Card.tsx'),
+      'Card.tsx: 1 component per .tsx, move CardFooter to CardFooter.tsx',
+    );
+  });
+
+  it('accepts a single type-annotated const component (returns null; over-counting guard)', () => {
+    const src = 'export const Card: React.FC = () => null;\n';
+    assert.equal(validateSingleComponent(src, 'Card.tsx'), null);
+  });
 });
