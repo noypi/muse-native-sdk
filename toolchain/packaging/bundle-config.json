@@ -1,0 +1,14 @@
+{
+  "artifact": "aab",
+  "languageSplits": {
+    "enabled": true,
+    "locales": ["en", "de", "fr", "pt-BR", "ar", "he", "hi", "th", "ja"]
+  },
+  "densitySplits": true,
+  "abiSplits": ["arm64-v8a", "armeabi-v7a", "x86_64"],
+  "universalApk": {
+    "enabled": true,
+    "mode": "bundletool",
+    "equivalentSplits": true
+  }
+}
