@@ -1,14 +1,267 @@
 {
   "name": "@muse/native",
+  "aliases": {
+    "packages": {
+      "@capo/native": "@muse/native",
+      "@muse/native": "@muse/native"
+    },
+    "files": {
+      "capo.manifest.json": "muse.manifest.json",
+      "muse.manifest.json": "muse.manifest.json"
+    },
+    "note": "RULE-M3-005: deprecated capo/muse spellings resolve at the loader layer to canonical @muse/native / muse.manifest.json; canonical component names are unchanged."
+  },
   "components": [
-    { "name": "View", "props": {} },
-    { "name": "Text", "props": {} },
-    { "name": "Image", "props": {} },
-    { "name": "ScrollView", "props": {} },
-    { "name": "TextInput", "props": {} },
-    { "name": "Button", "props": {} },
-    { "name": "FlatList", "props": {} },
-    { "name": "TouchableOpacity", "props": {} },
-    { "name": "Modal", "props": {} }
+    {
+      "name": "Surface",
+      "tier": 1,
+      "native": "MuseSurface",
+      "props": {
+        "tone": { "type": "token" },
+        "elevation": { "type": "number" }
+      }
+    },
+    {
+      "name": "Text",
+      "tier": 1,
+      "native": "MuseText",
+      "props": {
+        "variant": { "type": "string" },
+        "color": { "type": "token" }
+      }
+    },
+    {
+      "name": "Icon",
+      "tier": 1,
+      "native": "MuseIcon",
+      "props": {
+        "name": { "type": "string", "required": true },
+        "size": { "type": "number" },
+        "color": { "type": "token" }
+      }
+    },
+    {
+      "name": "Image",
+      "tier": 1,
+      "native": "MuseImage",
+      "props": {
+        "source": { "type": "string", "required": true },
+        "contentFit": { "type": "string", "values": ["cover", "contain", "fill", "none"] }
+      }
+    },
+    {
+      "name": "Ripple",
+      "tier": 1,
+      "native": "MuseRipple",
+      "props": {
+        "color": { "type": "token" },
+        "bounded": { "type": "boolean" }
+      }
+    },
+    {
+      "name": "Divider",
+      "tier": 1,
+      "native": "MuseDivider",
+      "props": {
+        "orientation": { "type": "string", "values": ["horizontal", "vertical"] },
+        "color": { "type": "token" }
+      }
+    },
+    {
+      "name": "Scroll",
+      "tier": 1,
+      "native": "MuseScroll",
+      "props": {
+        "orientation": { "type": "string", "values": ["vertical", "horizontal", "both"] },
+        "content": { "type": "slot" }
+      }
+    },
+    {
+      "name": "Stack",
+      "tier": 1,
+      "native": "MuseStack",
+      "props": {
+        "direction": { "type": "string", "values": ["row", "column"] },
+        "spacing": { "type": "number" },
+        "children": { "type": "slot" }
+      }
+    },
+    {
+      "name": "TextFieldEditCore",
+      "tier": 1,
+      "native": "MuseTextFieldEditCore",
+      "props": {
+        "value": { "type": "string" },
+        "placeholder": { "type": "string" },
+        "enabled": { "type": "boolean" }
+      }
+    },
+    {
+      "name": "OverlayHost",
+      "tier": 1,
+      "native": "MuseOverlayHost",
+      "props": {
+        "content": { "type": "slot" }
+      }
+    },
+    {
+      "name": "Button",
+      "tier": 2,
+      "native": "MuseButton",
+      "props": {
+        "variant": { "type": "string", "values": ["filled", "tonal", "outlined", "text", "elevated"] },
+        "label": { "type": "string", "required": true },
+        "enabled": { "type": "boolean" },
+        "icon": { "type": "string" }
+      }
+    },
+    {
+      "name": "IconButton",
+      "tier": 2,
+      "native": "MuseIconButton",
+      "props": {
+        "variant": { "type": "string", "values": ["standard", "filled", "tonal", "outlined"] },
+        "icon": { "type": "string", "required": true },
+        "enabled": { "type": "boolean" },
+        "selected": { "type": "boolean" }
+      }
+    },
+    {
+      "name": "Fab",
+      "tier": 2,
+      "native": "MuseFab",
+      "props": {
+        "size": { "type": "string", "values": ["small", "medium", "large"] },
+        "icon": { "type": "string", "required": true },
+        "enabled": { "type": "boolean" }
+      }
+    },
+    {
+      "name": "ExtendedFab",
+      "tier": 2,
+      "native": "MuseExtendedFab",
+      "props": {
+        "label": { "type": "string", "required": true },
+        "icon": { "type": "string" },
+        "enabled": { "type": "boolean" }
+      }
+    },
+    {
+      "name": "Card",
+      "tier": 2,
+      "native": "MuseCard",
+      "props": {
+        "variant": { "type": "string", "values": ["elevated", "filled", "outlined"] },
+        "content": { "type": "slot" },
+        "enabled": { "type": "boolean" }
+      }
+    },
+    {
+      "name": "Chip",
+      "tier": 2,
+      "native": "MuseChip",
+      "props": {
+        "variant": { "type": "string", "values": ["assist", "filter", "input", "suggestion"] },
+        "label": { "type": "string", "required": true },
+        "selected": { "type": "boolean" },
+        "enabled": { "type": "boolean" }
+      }
+    },
+    {
+      "name": "Checkbox",
+      "tier": 2,
+      "native": "MuseCheckbox",
+      "props": {
+        "checked": { "type": "boolean" },
+        "enabled": { "type": "boolean" },
+        "error": { "type": "boolean" }
+      }
+    },
+    {
+      "name": "Radio",
+      "tier": 2,
+      "native": "MuseRadio",
+      "props": {
+        "selected": { "type": "boolean" },
+        "enabled": { "type": "boolean" },
+        "error": { "type": "boolean" }
+      }
+    },
+    {
+      "name": "Switch",
+      "tier": 2,
+      "native": "MuseSwitch",
+      "props": {
+        "checked": { "type": "boolean" },
+        "enabled": { "type": "boolean" },
+        "icon": { "type": "string" }
+      }
+    },
+    {
+      "name": "Slider",
+      "tier": 2,
+      "native": "MuseSlider",
+      "props": {
+        "value": { "type": "number", "required": true },
+        "enabled": { "type": "boolean" }
+      }
+    },
+    {
+      "name": "Badge",
+      "tier": 2,
+      "native": "MuseBadge",
+      "props": {
+        "label": { "type": "string" },
+        "content": { "type": "slot" }
+      }
+    },
+    {
+      "name": "LinearProgress",
+      "tier": 2,
+      "native": "MuseLinearProgress",
+      "props": {
+        "progress": { "type": "number" },
+        "color": { "type": "token" }
+      }
+    },
+    {
+      "name": "CircularProgress",
+      "tier": 2,
+      "native": "MuseCircularProgress",
+      "props": {
+        "progress": { "type": "number" },
+        "color": { "type": "token" }
+      }
+    },
+    {
+      "name": "ListItem",
+      "tier": 2,
+      "native": "MuseListItem",
+      "props": {
+        "headline": { "type": "string", "required": true },
+        "supporting": { "type": "string" },
+        "icon": { "type": "string" },
+        "enabled": { "type": "boolean" }
+      }
+    },
+    {
+      "name": "Avatar",
+      "tier": 2,
+      "native": "MuseAvatar",
+      "props": {
+        "size": { "type": "string", "values": ["small", "medium", "large"] },
+        "source": { "type": "string" },
+        "label": { "type": "string" }
+      }
+    },
+    {
+      "name": "Tooltip",
+      "tier": 2,
+      "native": "MuseTooltip",
+      "props": {
+        "text": { "type": "string", "required": true },
+        "anchor": { "type": "slot" }
+      }
+    }
   ]
 }
