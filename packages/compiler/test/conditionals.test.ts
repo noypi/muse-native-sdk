@@ -76,6 +76,18 @@ describe('TC-TSX-011 — conditional shapes lower to conditional IR (AC-TSX-011)
   it('returns null for a literal slot', () => {
     assert.equal(compileConditional('"—"'), null);
   });
+
+  it('returns null for a forbidden form inside ternary shape', () => {
+    assert.equal(compileConditional('new Date() ? a : b'), null);
+  });
+
+  it('returns null for assignment inside && shape', () => {
+    assert.equal(compileConditional('count = count + 1 && <B/>'), null);
+  });
+
+  it('returns null for await inside ternary', () => {
+    assert.equal(compileConditional('await fetchData() ? <A/> : <B/>'), null);
+  });
 });
 
 // ---------------------------------------------------------------------------
