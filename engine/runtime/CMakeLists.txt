@@ -58,3 +58,18 @@ add_executable(vulkan_baseline_test tests/vulkan_baseline_test.cpp)
 target_link_libraries(vulkan_baseline_test PRIVATE runtime)
 target_compile_options(vulkan_baseline_test PRIVATE -Wall -Wextra -Wpedantic)
 add_test(NAME vulkan_baseline_test COMMAND vulkan_baseline_test)
+
+add_executable(request_frame_test tests/request_frame_test.cpp)
+target_link_libraries(request_frame_test PRIVATE runtime)
+target_compile_options(request_frame_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME request_frame_test COMMAND request_frame_test)
+
+add_executable(continuous_mode_test tests/continuous_mode_test.cpp)
+target_link_libraries(continuous_mode_test PRIVATE runtime)
+target_compile_options(continuous_mode_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME continuous_mode_test COMMAND continuous_mode_test)
+
+add_executable(js_lifecycle_test tests/js_lifecycle_test.cpp)
+target_link_libraries(js_lifecycle_test PRIVATE runtime)
+target_compile_options(js_lifecycle_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME js_lifecycle_test COMMAND js_lifecycle_test)

@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <exception>
+#include <memory>
 #include <string>
 #include <unordered_map>
 
@@ -31,6 +32,14 @@ class JsEngine {
  public:
   explicit JsEngine(JsRuntime& rt);
 
+  // Lifecycle (FR-RUNTIME-007 / AC-RUNTIME-020). Bootstrap creates exactly
+  // one isolate via the factory; destroy releases all handles and the
+  // isolate; double-destroy is a no-op.
+  static std::unique_ptr<JsEngine> create(FakeEngineHooks hooks);
+  void destroy();
+  int liveIsolates() const;
+  int liveHandles() const;
+
   InstanceId mount(const std::string& bodySource);
   int bodyRunCount(InstanceId id) const;
   void runEffect(InstanceId id, const std::string& effectSource);
@@ -38,8 +47,14 @@ class JsEngine {
 
  private:
   JsRuntime* rt_;
+  // Owned runtime for engines built via create(); null for the
+  // reference-constructed (T2) path which never owns its runtime.
+  std::unique_ptr<JsRuntime> owned_rt_;
   InstanceId next_id_ = 1;
   std::unordered_map<InstanceId, int> body_runs_;
+  int live_isolates_ = 0;
+  int live_handles_ = 0;
+  bool destroyed_ = false;
 };
 
 }  // namespace runtime
