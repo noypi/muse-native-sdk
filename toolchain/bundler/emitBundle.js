@@ -24,7 +24,7 @@ function fail(code, file, message) {
 // Normal absolute/relative entries produced by the toolchain never contain
 // a literal `..` segment.
 function hasTraversalSegment(entry) {
-  return String(entry).split(path.sep).some((part) => part === '..');
+  return String(entry).split(/[/\\]/).some((part) => part === '..');
 }
 
 // emitBundle({ entry, mode, outDir }): { bundlePath, mapPath, bytecode }

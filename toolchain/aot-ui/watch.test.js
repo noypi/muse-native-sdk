@@ -125,3 +125,13 @@ describe('T7 — hot-reload preservation signal (AC-BUILD-043)', () => {
     assert.deepEqual(changed, ['shared']);
   });
 });
+
+describe('T7 — security hardening: null graph fail-closed (AC-BUILD-043)', () => {
+  it('null graph throws TypeError like T3 non-string input', () => {
+    // Fail-closed on malformed gate input: a null graph must throw TypeError
+    // (same convention as T3 `compile(null)` in diagnostics.test.js), never
+    // silently coerce to an empty graph and return a misleading result.
+    const { recompileChanged } = loadImpl();
+    assert.throws(() => recompileChanged(null, ['shared']), TypeError);
+  });
+});

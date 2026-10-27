@@ -237,3 +237,27 @@ describe('T1 — boundary and error cases', () => {
     }
   });
 });
+
+describe('T1 — security hardening: backslash traversal (AC-BUILD-036)', () => {
+  it('Windows-style ..\\..\\ traversal entry throws ETRAVERSAL and emits nothing', () => {
+    // Backslash-separated `..` segments must be rejected exactly like
+    // forward-slash traversal: fail-closed with ETRAVERSAL, never read blindly.
+    const { emitBundle } = loadImpl();
+    const root = mkTmp('emit-backslash-traversal-');
+    const outDir = path.join(root, 'out');
+    assert.throws(
+      () =>
+        emitBundle({
+          entry: '..\\..\\evil.js',
+          mode: 'release',
+          outDir,
+        }),
+      (err) => {
+        assert.equal(err.name, 'BundleError');
+        assert.equal(err.code, 'ETRAVERSAL');
+        return true;
+      }
+    );
+    assert.ok(!fs.existsSync(outDir) || fs.readdirSync(outDir).length === 0);
+  });
+});

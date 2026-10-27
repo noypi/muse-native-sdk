@@ -7,7 +7,10 @@
 // each changed node plus its transitive dependents via reverse reachability.
 
 function recompileChanged(graph, changed) {
-  const nodes = graph !== null && typeof graph === 'object' ? graph : {};
+  if (graph === null || graph === undefined) {
+    throw new TypeError('recompileChanged: graph must be a non-null object');
+  }
+  const nodes = typeof graph === 'object' ? graph : {};
   const seeds = Array.isArray(changed) ? changed : [];
 
   // Reverse edges: dependency -> direct dependents. Own arrays only; never
