@@ -50,6 +50,14 @@ function main() {
     process.exitCode = 2;
     return;
   }
+  if (command === 'init') {
+    require('./init.js')(argv[1]);
+    return;
+  }
+  if (command === 'build') {
+    require('./build.js')(argv[1]);
+    return;
+  }
   process.stderr.write(`Command '${command}' is not implemented yet.\n`);
   process.exitCode = 1;
 }
