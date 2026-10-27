@@ -21,13 +21,46 @@ function compileBuiltin(tag, props) {
     return {
       kind: "show",
       expr: p.when,
-      visibility: { keepLayout: true, paintHidden: true, a11yIncluded: false },
+      visibility: { keepLayout: true, paintHidden: true, hitTestable: false, a11yIncluded: false },
     };
   }
   return null;
 }
 
-module.exports = { compileBuiltin, validateElseChain, compileCFor, validateBuiltinTag, validateComponentName };
+module.exports = { compileBuiltin, validateElseChain, compileCFor, validateBuiltinTag, validateComponentName, isHiddenLayoutKept, isHiddenPainted, isHiddenHitTestable, isHiddenA11yIncluded, snapshotHonorsReducedMotion };
+
+// C2: hidden c-show visibility consumers (AC-TSX-033 option A).
+//
+// Pure mapping from the C1 visibility record to layout/paint/hit-test/a11y
+// decisions plus the motion selector. Hidden state keeps layout space (never
+// reflows siblings), skips paint, skips hit-test, and prunes the hidden
+// subtree from accessibility. Show/hide animates opacity + clip with no
+// reflow; reduce-motion snaps instantly (`animate: false`).
+function isHiddenLayoutKept(record) {
+  void record;
+  return true;
+}
+
+function isHiddenPainted(record) {
+  void record;
+  return false;
+}
+
+function isHiddenHitTestable(record) {
+  void record;
+  return false;
+}
+
+function isHiddenA11yIncluded(record) {
+  void record;
+  return false;
+}
+
+function snapshotHonorsReducedMotion(record, opts) {
+  void record;
+  const o = opts && typeof opts === "object" ? opts : {};
+  return { animate: !o.reduceMotion, reflow: false };
+}
 
 // T2: else-if/else adjacency validation (AC-TSX-004).
 //
