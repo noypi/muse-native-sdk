@@ -28,18 +28,22 @@ function validateSingleComponent(sourceText, filePath) {
     /export\s+default(?:\s+function\s*([A-Za-z_$][\w$]*)?)?(?:\s+([A-Za-z_$][\w$]*))?/g;
   while ((m = defRe.exec(text)) !== null) {
     if (found.some((e) => e.index === m.index)) continue;
-    const name = m[1] || m[2] || "default";
-    if (/^[A-Z]/.test(name)) {
+    const name = m[1] || m[2];
+    if (name && /^[A-Z]/.test(name)) {
       if (found.some((e) => e.name === name)) continue;
       found.push({ index: m.index, name });
-    } else if (name === "default") {
-      if (found.some((e) => e.name === "default")) continue;
-      found.push({ index: m.index, name });
+    } else if (!name) {
+      if (found.some((e) => e.anonymousDefault)) continue;
+      found.push({ index: m.index, anonymousDefault: true });
     }
   }
   found.sort((a, b) => a.index - b.index);
   if (found.length <= 1) return null;
-  const second = found[1].name;
+  const secondEntry = found[1];
+  if (secondEntry.anonymousDefault) {
+    return `${filePath}: 1 component per .tsx, move the anonymous default export to its own file`;
+  }
+  const second = secondEntry.name;
   return `${filePath}: 1 component per .tsx, move ${second} to ${second}.tsx`;
 }
 
