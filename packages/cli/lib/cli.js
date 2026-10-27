@@ -1,12 +1,12 @@
 'use strict';
-// @muse/cli — argument parsing and dispatch for the muse-native/muse/capo binaries.
+// @muse/cli — argument parsing and dispatch for the muse-native binary plus supported muse alias.
 // FR-WORKFLOW owns command options later; this file only routes argv.
 const path = require('node:path');
 
 const COMMANDS = ['init', 'build', 'dev', 'run'];
 const INVOKED = path.basename(process.argv[1] || '', '.js');
 
-if (INVOKED === 'muse' || INVOKED === 'capo') {
+if (INVOKED === 'muse') {
   process.stderr.write(`Warning: '${INVOKED}' is deprecated, use 'muse-native' instead.\n`);
 }
 

@@ -1,7 +1,7 @@
 # @muse/cli
 
-Command-line interface for muse-native (`muse-native`, with deprecated
-`muse` / `capo` aliases).
+Command-line interface for muse-native (`muse-native`, with supported
+`muse` alias).
 
 ## `muse-native build <appDir>`
 
