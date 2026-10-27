@@ -11,6 +11,9 @@
     "test:lists": "node --test test/lists.test.ts",
     "test:style": "node --test test/style.test.ts",
     "test:literal": "node --test test/literal-style.test.ts",
-    "test:diagnostics": "node --test test/diagnostics.test.ts"
+    "test:diagnostics": "node --test test/diagnostics.test.ts",
+    "test:transition": "node --test test/transition-prop.test.ts",
+    "test:shared": "node --test test/shared-id.test.ts",
+    "test:routepattern": "node --test test/route-pattern.test.ts"
   }
 }

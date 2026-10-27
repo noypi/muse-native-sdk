@@ -15,4 +15,11 @@ export function computed<T>(fn: () => T): ComputedHandle<T>;
 export function effect(fn: () => void): void;
 export function batch(fn: () => void): void;
 export function onMount(fn: () => void): void;
+export interface SpringHandle {
+  value: number;
+  animateTo(target: number, opts?: { velocity?: number }): void;
+  getVelocity(): number;
+}
+
+export function spring(initial: number): SpringHandle;
 export function onUnmount(fn: () => void): void;
