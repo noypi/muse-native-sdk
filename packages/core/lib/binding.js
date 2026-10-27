@@ -6,9 +6,12 @@
 // (`{ mode: "two-way", target, reads, writes }`, with or without the verbatim
 // compiler `kind: "binding"` field) to a `state` holder: programmatic
 // `stateHandle.value = v` writes render via `pullStateValue()`, and
-// `pushInputValue(v)` writes land in state synchronously (same flush). A
-// `pushing` guard flag suppresses the echo write-back of a just-pushed value
-// so each push/programmatic write notifies readers exactly once.
+// `pushInputValue(v)` writes land in state synchronously (same flush). The
+// binding holds no subscribe-back path (`pullStateValue` is a plain read),
+// so there is no echo write-back to suppress — exactly-once notification
+// falls out of the T4 identical-value no-op plus scheduler dedup. The
+// `pushing` flag below is re-entrancy hygiene for synchronous
+// `pushInputValue`-inside-a-setter re-entry only.
 //
 // `bindReadonly(source, ir, onChange)` wires a one-way compiler IR
 // (`{ mode: "one-way", expr }`, `kind`-tolerant) to a `state`/computed

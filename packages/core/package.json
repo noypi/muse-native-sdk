@@ -2,7 +2,7 @@
   "name": "@muse/core",
   "version": "0.0.0",
   "scripts": {
-    "test": "node --test test/*.test.js 2>/dev/null || test ! -d test",
+    "test": "node --test test/instance.test.ts test/state.test.ts test/computed.test.ts test/effects.test.ts test/lifecycle.test.ts test/scope.test.ts test/binding.test.ts",
     "test:spring": "node --test test/spring.test.ts",
     "test:instance": "node --test test/instance.test.ts",
     "test:state": "node --test test/state.test.ts",

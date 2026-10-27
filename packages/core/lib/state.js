@@ -9,8 +9,7 @@
 // scheduler (`lib/scheduler.js`); reads track the current reader so the
 // later computed/effect/watch items can subscribe.
 //
-// Dependency hook consumed by T5/T6/T7 (documented here, implemented here):
-//   - `getActiveConsumer()` — the reader currently collecting deps (an
+// Dependency hook consumed by T5/T6/T7 (documented here, implemented here)://   - `getActiveConsumer()` — the reader currently collecting deps (an
 //     effect/computed/watch consumer) or `null` outside a tracked run.
 //   - `pushActiveConsumer(consumer)` / `popActiveConsumer()` — run a reader
 //     with `consumer` on the stack. A consumer is any object (or function)
@@ -33,6 +32,14 @@
 //
 // CommonJS, dependency-free pure JS. Usable outside a component: when no
 // instance is current, values simply live unowned.
+//
+// SUPPORTED readonly contract (holder form): `readonly(stateHandle)` returns
+// a live view that reflects source writes, tracks the reader via the source
+// record, and throws `MUSE_CORE_READONLY_WRITE` on any write through the
+// view — including `delete view.value` (delete-is-a-write; the `value`
+// accessor is non-configurable so `delete` throws instead of detaching).
+// The plain-object/reactive form (`readonly(obj)`) is a non-tracking
+// shallow frozen snapshot: reads do not subscribe the active consumer.
 
 var scheduler = require("./scheduler.js");
 
@@ -246,7 +253,7 @@ function readonly(value) {
     var record = holderRecords.get(src);
     var view = {};
     Object.defineProperty(view, "value", {
-      configurable: true,
+      configurable: false,
       enumerable: true,
       get: function () {
         if (record) trackRef(record);

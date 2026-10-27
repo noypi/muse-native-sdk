@@ -201,6 +201,9 @@ function registerErrorCapturer(handle, fn) {
 // instance that has any (each exactly once, in registration order) and
 // return true (handled — caller swallows). Return false when no capturer
 // exists anywhere on the chain (caller rethrows the identical object).
+// Contract: a throwing capturer replaces the error and aborts the chain —
+// its throw propagates to the boundary caller, the original error is
+// discarded, and remaining capturers never run.
 // A throwing capturer propagates its own error and counts as unhandled here
 // only in that the original error is replaced by the capturer's throw.
 function captureError(handle, err) {

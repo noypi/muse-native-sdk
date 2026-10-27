@@ -144,6 +144,16 @@ describe('TC-MCORE-005 — reactive-deep default, readonly-write throws, markRaw
     assert.throws(() => { ro.value = 12; }, /MUSE_CORE_READONLY_WRITE/);
   });
 
+  it('delete ro.value on a holder readonly view throws TypeError (non-configurable accessor)', () => {
+    // Pin Stage 3 MINOR fix (configurable: false): delete on the holder view
+    // surfaces as a strict-mode TypeError, NOT MUSE_CORE_READONLY_WRITE.
+    // The named-error contract covers set-paths; delete is pinned separately.
+    const src = state(10);
+    const ro = readonly(src);
+    assert.throws(() => { delete ro.value; }, TypeError);
+    assert.equal(ro.value, 10);
+  });
+
   it('markRaw opts the value (and subtree) out of conversion: nested writes never notify', () => {
     const raw = markRaw({ nested: { x: 1 } });
     const s = state({ inner: raw }, { deep: true });

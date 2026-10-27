@@ -122,6 +122,24 @@ describe('T2 — batch defers flush until fn returns', () => {
     }, /batch boom/);
     assert.equal(runs, 1);
   });
+
+  it('dual-fault batch attaches the flush error as cause on the fn error', () => {
+    // Pin Stage 3 MINOR fix: when both fn and a deferred job throw, the
+    // caller sees fn's error with the job error attached as .cause.
+    let caught = null;
+    try {
+      batch(() => {
+        schedule(() => { throw new Error('job'); });
+        throw new Error('fn');
+      });
+    } catch (err) {
+      caught = err;
+    }
+    assert.ok(caught instanceof Error);
+    assert.match(caught.message, /fn/);
+    assert.ok(caught.cause instanceof Error);
+    assert.match(caught.cause.message, /job/);
+  });
 });
 
 describe('T2 — reschedule-loop guard', () => {

@@ -114,7 +114,17 @@ function batch(fn) {
       try {
         flush();
       } catch (flushErr) {
-        void flushErr;
+        if (
+          fnError !== null &&
+          (typeof fnError === "object" || typeof fnError === "function") &&
+          fnError.cause === undefined
+        ) {
+          try {
+            fnError.cause = flushErr;
+          } catch (e) {
+            void e;
+          }
+        }
       }
       throw fnError;
     }
