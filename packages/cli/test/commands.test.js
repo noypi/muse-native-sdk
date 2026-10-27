@@ -339,3 +339,54 @@ describe('TC-TSX-023 Batch 4 — T10 gallery fixture builds both artefacts', () 
     fs.rmSync(path.join(gallery, 'dist'), { recursive: true, force: true });
   });
 });
+
+// ---------------------------------------------------------------------------
+// Security pin — hostile `<appDir>`/`<dir>` containment (AC-TSX-022).
+// Contract: resolve-and-contain. `..` segments / absolute paths resolve via
+// `path.resolve`; writes land only under the resolved dir (`init`: 3 fixed
+// template files; `build`: `dist/ir.json` + `dist/tree.mui.bin`);
+// `dev`/`run` write nothing. Missing targets fail closed (exit 1).
+// ---------------------------------------------------------------------------
+describe('Security pin — hostile appDir stays contained', () => {
+  it('build via `..` segments resolves and writes only inside the resolved app dir', () => {
+    const parent = mkTmp('muse-trav-');
+    const appDir = path.join(parent, 'app');
+    fs.mkdirSync(appDir);
+    writeMinimalApp(appDir);
+    const hostile = path.join(parent, 'sub', '..', 'app');
+    const r = runCli(['build', hostile]);
+    assert.equal(r.status, 0, `build via .. must exit 0, got ${r.status}: ${r.stderr}`);
+    assert.ok(fs.statSync(path.join(appDir, 'dist', 'ir.json')).isFile(), 'ir.json must land inside the resolved app dir');
+    assert.ok(fs.statSync(path.join(appDir, 'dist', 'tree.mui.bin')).isFile(), 'tree.mui.bin must land inside the resolved app dir');
+    assert.ok(!fs.existsSync(path.join(parent, 'sub')), 'must not create anything at the lexical .. segment');
+    assert.ok(!fs.existsSync(path.join(parent, 'dist')), 'must not write dist/ outside the resolved app dir');
+  });
+
+  it('init via `..` segments scaffolds only inside the resolved dir', () => {
+    const parent = mkTmp('muse-trav-');
+    const hostile = path.join(parent, 'sub', '..', 'newapp');
+    const r = runCli(['init', hostile]);
+    assert.equal(r.status, 0, `init via .. must exit 0, got ${r.status}: ${r.stderr}`);
+    const resolved = path.join(parent, 'newapp');
+    for (const rel of ['muse-native.yaml', 'src/App.tsx', 'package.json']) {
+      assert.ok(fs.statSync(path.join(resolved, rel)).isFile(), `${rel} must be created inside the resolved dir`);
+    }
+    assert.ok(!fs.existsSync(path.join(parent, 'sub')), 'must not create anything at the lexical .. segment');
+  });
+
+  it('build/dev/run against a hostile missing path fail closed with no writes outside', () => {
+    const parent = mkTmp('muse-trav-');
+    const hostile = path.join(parent, 'app', '..', 'no-such-app');
+    const rb = runCli(['build', hostile]);
+    assert.equal(rb.status, 1, `build of hostile missing dir must exit 1, got ${rb.status}`);
+    assert.ok(rb.stderr.length > 0, 'build must print an error to stderr');
+    const rd = runCli(['dev', hostile]);
+    assert.equal(rd.status, 1, `dev of hostile missing dir must exit 1, got ${rd.status}`);
+    assert.ok(!rd.stdout.includes('serving'), 'dev must not serve on failure');
+    const rr = runCli(['run', hostile]);
+    assert.equal(rr.status, 1, `run of hostile missing dir must exit 1, got ${rr.status}`);
+    assert.ok(!rr.stdout.includes('launching'), 'run must not launch on failure');
+    assert.ok(!fs.existsSync(path.join(parent, 'dist')), 'must not write dist/ outside on failure');
+    assert.ok(!fs.existsSync(path.join(parent, 'app')), 'must not create the lexical app dir on failure');
+  });
+});
