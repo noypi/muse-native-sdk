@@ -4,7 +4,13 @@
   "scripts": {
     "test": "node --test test/*.test.js 2>/dev/null || test ! -d test",
     "test:packages": "node --test test/packages.test.js",
-    "test:commands": "node --test test/commands.test.js"
+    "test:commands": "node --test test/commands.test.js",
+    "test:config": "node --test test/print-config.test.js",
+    "test:precedence": "node --test test/precedence.test.js",
+    "test:schema": "node --test test/schema.test.js",
+    "test:stages": "node --test test/stages.test.js",
+    "test:help": "node --test test/help.test.js",
+    "test:options": "node --test test/invalid-option.test.js"
   },
   "bin": {
     "muse-native": "./bin/muse-native.js",
