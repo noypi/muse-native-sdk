@@ -134,6 +134,36 @@ static bool check_empty_input_gives_empty_tree() {
   return tree.size() == 0;
 }
 
+// Named case (security): self-parent input returns kInvalidNodeId and
+// leaves the tree empty, never recursing.
+static bool check_self_parent_returns_error() {
+  runtime::CompiledNode nodes[2];
+  nodes[0].parent = -1;
+  nodes[0].tag = 100;
+  nodes[1].parent = 1;  // self-parent: parent == self index
+  nodes[1].tag = 101;
+  runtime::RuntimeTree tree;
+  if (runtime::instantiate(nodes, 2, tree) != runtime::kInvalidNodeId)
+    return false;
+  return tree.size() == 0;
+}
+
+// Named case (security): detached 2-cycle unreachable from the root returns
+// kInvalidNodeId and leaves the tree empty, never recursing.
+static bool check_detached_cycle_returns_error() {
+  runtime::CompiledNode nodes[3];
+  nodes[0].parent = -1;
+  nodes[0].tag = 100;
+  nodes[1].parent = 2;
+  nodes[1].tag = 101;
+  nodes[2].parent = 1;  // 1 <-> 2 cycle, unreachable from root 0
+  nodes[2].tag = 102;
+  runtime::RuntimeTree tree;
+  if (runtime::instantiate(nodes, 3, tree) != runtime::kInvalidNodeId)
+    return false;
+  return tree.size() == 0;
+}
+
 #define RUN_CASE(name)                                       \
   do {                                                       \
     if (!(name)()) {                                         \
@@ -155,6 +185,8 @@ int main() {
   RUN_CASE(check_duplicate_root_returns_error);
   RUN_CASE(check_orphan_parent_returns_error);
   RUN_CASE(check_empty_input_gives_empty_tree);
+  RUN_CASE(check_self_parent_returns_error);
+  RUN_CASE(check_detached_cycle_returns_error);
   if (failures > 0) {
     std::printf("instantiate_test: %d failing\n", failures);
     return 1;
