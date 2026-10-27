@@ -3,6 +3,7 @@
   "version": "0.0.0",
   "types": "index.d.ts",
   "scripts": {
-    "test": "node --test test/*.test.js 2>/dev/null || test ! -d test"
+    "test": "node --test test/*.test.js 2>/dev/null || test ! -d test",
+    "test:props": "node --test test/props.test.ts"
   }
 }
