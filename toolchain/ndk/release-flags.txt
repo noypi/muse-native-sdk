@@ -1,0 +1,19 @@
+# Release native-flags manifest — NFR-BUILD-016 (AC-BUILD-057), mirrors TC-BUILD-057 intent.
+# NDK pin (must agree with T1 catalog ndkVersion):
+# NDK 27.2.12479018
+-ndk-version=27.2.12479018
+# C++20 + libc++:
+-std=c++20
+-stdlib=libc++
+# ThinLTO:
+-flto=thin
+# Hidden visibility — only the plugin ABI surface exported.
+# Export surface uses __attribute__((visibility("default"))) / version-script; everything else stays hidden.
+-fvisibility=hidden
+# Render-path: no exceptions:
+-fno-exceptions
+# Release strip configuration (strip symbols):
+-s
+-Wl,-S
+# Page-size passthrough from NFR-BUILD-008 flag set (no alignment gate here):
+-Wl,-z,max-page-size=16384
