@@ -88,6 +88,17 @@ class TestLgplCheck(unittest.TestCase):
             os.unlink(path)
         self.assertEqual(proc.returncode, 0, msg=proc.stdout + proc.stderr)
 
+    def test_lgpl_shared_spelling_passes(self):
+        """LGPL + link "shared" is accepted as a synonym of "dynamic" (AC-DEPS-014)."""
+        entry = lgpl_dynamic_entry("shared-lgpl-lib-xyz")
+        entry["link"] = "shared"
+        path = write_manifest([entry])
+        try:
+            proc = run_cli("--manifest", path)
+        finally:
+            os.unlink(path)
+        self.assertEqual(proc.returncode, 0, msg=proc.stdout + proc.stderr)
+
     def test_lgpl_static_fails(self):
         """LGPL with a static link fails admission (AC-DEPS-014)."""
         entry = lgpl_dynamic_entry("static-lgpl-lib-xyz")

@@ -126,6 +126,47 @@ class TestDenylistCheck(unittest.TestCase):
         self.assertEqual(proc.returncode, 1, msg=proc.stdout + proc.stderr)
         self.assertIn("FR-DEPS-003", proc.stdout + proc.stderr)
 
+    def test_sqlite_clean_passes(self):
+        """`sqlite` is not a denied dep -> exit 0 (token-edge precision, AC-DEPS-007)."""
+        path = write_manifest([full_entry("sqlite")])
+        try:
+            proc = run_cli("--manifest", path)
+        finally:
+            os.unlink(path)
+        self.assertEqual(proc.returncode, 0, msg=proc.stdout + proc.stderr)
+
+    def test_sqlite_fts_clean_passes(self):
+        """`sqlite-fts` stays clean -> exit 0 (Qt short-trigger must not over-match, AC-DEPS-007)."""
+        path = write_manifest([full_entry("sqlite-fts")])
+        try:
+            proc = run_cli("--manifest", path)
+        finally:
+            os.unlink(path)
+        self.assertEqual(proc.returncode, 0, msg=proc.stdout + proc.stderr)
+
+    def test_nlohmann_json_variants_denied(self):
+        """`nlohmann_json` and `nlohmann-json` are denied (AC-DEPS-007)."""
+        for name in ("nlohmann_json", "nlohmann-json"):
+            path = write_manifest([full_entry(name)])
+            try:
+                proc = run_cli("--manifest", path)
+            finally:
+                os.unlink(path)
+            self.assertEqual(
+                proc.returncode, 1, msg="%s: %s" % (name, proc.stdout + proc.stderr)
+            )
+            self.assertIn("FR-DEPS-003", proc.stdout + proc.stderr)
+
+    def test_qtcore_denied(self):
+        """`qtcore` matches the Qt short trigger -> exit 1 (AC-DEPS-007)."""
+        path = write_manifest([full_entry("qtcore")])
+        try:
+            proc = run_cli("--manifest", path)
+        finally:
+            os.unlink(path)
+        self.assertEqual(proc.returncode, 1, msg=proc.stdout + proc.stderr)
+        self.assertIn("FR-DEPS-003", proc.stdout + proc.stderr)
+
     def test_folly_denied_dep_fails(self):
         """A non-Boost denied dep (Folly) fails naming the deny-list reason."""
         path = write_manifest([full_entry("Folly")])

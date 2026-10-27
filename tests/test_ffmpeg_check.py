@@ -118,6 +118,39 @@ class TestFfmpegCheck(unittest.TestCase):
         self.assertEqual(proc.returncode, 1, msg=proc.stdout + proc.stderr)
         self.assertIn("--enable-nonfree", proc.stdout + proc.stderr)
 
+    def test_shared_spelling_passes(self):
+        """FFmpeg with link "shared" passes (parity with lgpl_check, AC-DEPS-017)."""
+        path = write_manifest([ffmpeg_entry(link="shared")])
+        try:
+            proc = run_cli("--manifest", path)
+        finally:
+            os.unlink(path)
+        self.assertEqual(proc.returncode, 0, msg=proc.stdout + proc.stderr)
+
+    def test_gpl_only_codec_libx265_fails(self):
+        """A configure line with --enable-libx265 fails (AC-DEPS-018)."""
+        path = write_manifest(
+            [ffmpeg_entry(configure=LGPL_CONFIGURE + " --enable-libx265")]
+        )
+        try:
+            proc = run_cli("--manifest", path)
+        finally:
+            os.unlink(path)
+        self.assertEqual(proc.returncode, 1, msg=proc.stdout + proc.stderr)
+        self.assertIn("libx265", (proc.stdout + proc.stderr).lower())
+
+    def test_gpl_only_codec_libxvid_fails(self):
+        """A configure line with --enable-libxvid fails (AC-DEPS-018)."""
+        path = write_manifest(
+            [ffmpeg_entry(configure=LGPL_CONFIGURE + " --enable-libxvid")]
+        )
+        try:
+            proc = run_cli("--manifest", path)
+        finally:
+            os.unlink(path)
+        self.assertEqual(proc.returncode, 1, msg=proc.stdout + proc.stderr)
+        self.assertIn("libxvid", (proc.stdout + proc.stderr).lower())
+
     def test_gpl_only_codec_fails(self):
         """A configure line enabling a GPL-only codec (libx264) fails (AC-DEPS-018)."""
         path = write_manifest(
