@@ -7,6 +7,7 @@
     "test:grammar": "node --test test/grammar.test.ts",
     "test:conditionals": "node --test test/conditionals.test.ts",
     "test:builtins": "node --test test/builtins.test.ts",
-    "test:lists": "node --test test/lists.test.ts"
+    "test:lists": "node --test test/lists.test.ts",
+    "test:style": "node --test test/style.test.ts"
   }
 }
