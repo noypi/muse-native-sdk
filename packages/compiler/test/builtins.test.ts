@@ -41,6 +41,39 @@ const {
   validateComponentName,
 } = builtins;
 
+// BUG-TSX-007 U1: C2 consumer helpers (plan A2 landing: `../lib/builtins.js`
+// or new `../lib/visibility.js` required by it). Neither file exports them
+// yet, so these resolve to `undefined` and every new case below fails red
+// (missing-behavior red) while the harness still loads and all pre-existing
+// TC-TSX-003 assertions stay green.
+let visibilityHelpers = {};
+try {
+  visibilityHelpers = {
+    ...visibilityHelpers,
+    ...require('../lib/visibility.js'),
+  };
+} catch {
+  // Landing file not yet created — expected red; fall through to builtins.
+}
+for (const k of [
+  'isHiddenLayoutKept',
+  'isHiddenPainted',
+  'isHiddenHitTestable',
+  'isHiddenA11yIncluded',
+  'snapshotHonorsReducedMotion',
+]) {
+  if (typeof builtins[k] === 'function' && typeof visibilityHelpers[k] !== 'function') {
+    visibilityHelpers[k] = builtins[k];
+  }
+}
+const {
+  isHiddenLayoutKept,
+  isHiddenPainted,
+  isHiddenHitTestable,
+  isHiddenA11yIncluded,
+  snapshotHonorsReducedMotion,
+} = visibilityHelpers;
+
 function loc(overrides = {}) {
   return {
     file: 'Card.tsx',
@@ -76,6 +109,7 @@ describe('TC-TSX-003 — c-if/c-show lower to conditional/visibility IR (AC-TSX-
     assert.deepEqual(node.visibility, {
       keepLayout: true,
       paintHidden: true,
+      hitTestable: false,
       a11yIncluded: false,
     });
   });
@@ -86,6 +120,65 @@ describe('TC-TSX-003 — c-if/c-show lower to conditional/visibility IR (AC-TSX-
 
   it('returns null for a non-builtin tag', () => {
     assert.equal(compileBuiltin('div', {}), null);
+  });
+
+  // BUG-TSX-007 U1 (AC-TSX-033 option A) — six per-dimension red cases.
+  // (a) hidden keeps layout space (no-reflow invariant).
+  it('U1(a): hidden record keeps layout space (keepLayout: true, never reflows siblings)', () => {
+    const node = compileBuiltin('c-show', { when: 'open' });
+    assert.notEqual(node, null);
+    assert.equal(node.visibility.keepLayout, true);
+    // No-reflow invariant: the hidden box is kept, siblings never reflow.
+    assert.equal(isHiddenLayoutKept(node.visibility), true);
+  });
+
+  // (b) paint skipped when hidden.
+  it('U1(b): paint is skipped when hidden (paintHidden: true)', () => {
+    const node = compileBuiltin('c-show', { when: 'open' });
+    assert.notEqual(node, null);
+    assert.equal(node.visibility.paintHidden, true);
+    assert.equal(isHiddenPainted(node.visibility), false);
+  });
+
+  // (c) hit-test excluded when hidden (new flag).
+  it('U1(c): hit-test is excluded when hidden (hitTestable: false)', () => {
+    const node = compileBuiltin('c-show', { when: 'open' });
+    assert.notEqual(node, null);
+    assert.equal(node.visibility.hitTestable, false);
+    assert.equal(isHiddenHitTestable(node.visibility), false);
+  });
+
+  // (d) hidden subtree excluded from accessibility.
+  it('U1(d): hidden subtree is excluded from a11y (a11yIncluded: false)', () => {
+    const node = compileBuiltin('c-show', { when: 'open' });
+    assert.notEqual(node, null);
+    assert.equal(node.visibility.a11yIncluded, false);
+    assert.equal(isHiddenA11yIncluded(node.visibility), false);
+  });
+
+  // (e) reduce-motion instant snap (instant path, never frame counts).
+  it('U1(e): reduce-motion snaps instantly (animate: false, reflow: false)', () => {
+    const node = compileBuiltin('c-show', { when: 'open' });
+    assert.notEqual(node, null);
+    assert.deepEqual(
+      snapshotHonorsReducedMotion(node.visibility, { reduceMotion: true }),
+      { animate: false, reflow: false },
+    );
+  });
+
+  // (f) negative: visible state paints + hit-tests + exposes a11y normally.
+  it('U1(f): visible state paints + hit-tests + exposes a11y normally', () => {
+    const node = compileBuiltin('c-show', { when: 'open' });
+    assert.notEqual(node, null);
+    // Hidden helpers all deny (false) so the visible path paints, hit-tests
+    // and exposes a11y; motion without reduce-motion animates, still no reflow.
+    assert.equal(isHiddenPainted(node.visibility), false);
+    assert.equal(isHiddenHitTestable(node.visibility), false);
+    assert.equal(isHiddenA11yIncluded(node.visibility), false);
+    assert.deepEqual(
+      snapshotHonorsReducedMotion(node.visibility, { reduceMotion: false }),
+      { animate: true, reflow: false },
+    );
   });
 });
 
