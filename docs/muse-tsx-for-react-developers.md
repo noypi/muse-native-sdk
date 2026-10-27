@@ -5,7 +5,8 @@
 > `manual-context.local/specs-muse-core.md`, and the TSX entries
 > (hostility #1, #7, #8) in `manual-context.local/author-hostile-rules.md`.
 > Canonical package names are `@muse/*` (`muse` CLI, `muse.config.ts`,
-> `*.mui.zip`); `capo` spellings resolve as deprecated aliases
+> `*.mui.zip`); `muse-native` is canonical with `muse` as the single
+> supported alias — no other spelling is resolved, shipped, or aliased
 > (RULE-TSX-005).
 
 MuseNative components *look* like React function components, but they
