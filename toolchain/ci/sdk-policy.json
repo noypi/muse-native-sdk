@@ -1,0 +1,22 @@
+{
+  "enforcedTargetSdk": 35,
+  "playDeadline": "2025-08-31",
+  "owningChange": "NFR-BUILD-009",
+  "declarations": [
+    {
+      "id": "predictive-back",
+      "description": "predictive-back opt-in declaration",
+      "manifestMarker": "android:enableOnBackInvokedCallback=\"true\""
+    },
+    {
+      "id": "foreground-service-type",
+      "description": "foreground-service-type declaration",
+      "manifestMarker": "android:foregroundServiceType"
+    },
+    {
+      "id": "edge-to-edge",
+      "description": "edge-to-edge declaration",
+      "manifestMarker": "android:windowLayoutInDisplayCutoutMode=\"shortEdges\""
+    }
+  ]
+}
