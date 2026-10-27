@@ -9,6 +9,8 @@
     "test:builtins": "node --test test/builtins.test.ts",
     "test:binding": "node --test test/binding.test.ts",
     "test:lists": "node --test test/lists.test.ts",
-    "test:style": "node --test test/style.test.ts"
+    "test:style": "node --test test/style.test.ts",
+    "test:literal": "node --test test/literal-style.test.ts",
+    "test:diagnostics": "node --test test/diagnostics.test.ts"
   }
 }
