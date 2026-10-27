@@ -2,6 +2,8 @@
   "name": "@muse/native",
   "version": "0.0.0",
   "scripts": {
+    "check": "node scripts/check-manifest.js",
+    "prebuild": "node scripts/check-manifest.js",
     "test": "node --test test/*.test.js 2>/dev/null || test ! -d test"
   }
 }
