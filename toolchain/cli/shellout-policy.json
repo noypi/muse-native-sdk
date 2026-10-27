@@ -1,0 +1,21 @@
+{
+  "name": "shellout-policy",
+  "description": "NFR-BUILD-003 / AC-BUILD-003: IDE plugin shims and CI templates must shell out to the CLI entry point instead of duplicating build internals.",
+  "adapterLocations": [
+    "toolchain/ide/plugin-shim.js",
+    "toolchain/ide/",
+    "toolchain/ci/templates/",
+    ".github/workflows/"
+  ],
+  "forbiddenPatterns": [
+    "gradle",
+    "gradlew",
+    "cmake",
+    "bundler"
+  ],
+  "allowedShellOut": {
+    "binaries": ["muse-native", "muse"],
+    "optionalPrefix": "npx",
+    "registry": "packages/cli/lib/entry-point.js#getEntryPointCommands"
+  }
+}
