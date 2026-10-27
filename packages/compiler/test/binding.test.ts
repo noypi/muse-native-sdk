@@ -287,12 +287,32 @@ describe('TC-TSX-018 — spread never synthesizes two-way; model is rejected (AC
     );
   });
 
-  it('tsc --noEmit rejects model and accepts value/valueReadonly+onChange', { skip: !hasLocalTsc() }, () => {
+  it('tsc --noEmit rejects model and accepts value/valueReadonly+onChange', () => {
+    // Fail-closed live-tsc gate (FR-TSX-006, AC-TSX-018, RULE-TSX-003): a
+    // missing local tsc must FAIL, never silently SKIP. Probe unchanged.
+    if (!hasLocalTsc()) {
+      assert.fail(
+        'live tsc fixture requires node_modules/.bin/tsc — run npm install (declares typescript per T1)',
+      );
+    }
     // Real-toolchain half of the tsc gate: runs only when a local tsc exists
     // (never downloads — local node_modules/.bin/tsc only). Temp fixture
     // lives under os.tmpdir(); asserts on exit code, not message text.
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'muse-tsx-018-'));
     const jsxDts = path.join(__dirname, '..', '..', 'jsx', 'index.d.ts');
+    // Fixture-level resolution scaffolding (test-owned, under os.tmpdir()):
+    // (a) `paths` only redirects imports — it never adds files to the program —
+    // so the real index.d.ts (global JSX namespace) must be listed in `include`
+    // by absolute path or TS7026 reports "no interface 'JSX.IntrinsicElements'";
+    // (b) `jsx: react-jsx` requires a `@muse/jsx/jsx-runtime` module (TS2875),
+    // which the types-only @muse/jsx package legitimately does not ship
+    // (AC-TSX-021: "No runtime entry"), so the fixture provides a temp-local
+    // type-only shim. Neither changes production; both fix exit-2
+    // config/resolution failures, not type assertions.
+    fs.writeFileSync(
+      path.join(dir, 'jsx-runtime.d.ts'),
+      'export function jsx(...args: any[]): any;\nexport function jsxs(...args: any[]): any;\nexport const Fragment: any;\n',
+    );
     fs.writeFileSync(
       path.join(dir, 'tsconfig.json'),
       JSON.stringify({
@@ -305,9 +325,12 @@ describe('TC-TSX-018 — spread never synthesizes two-way; model is rejected (AC
           module: 'esnext',
           target: 'es2022',
           baseUrl: '.',
-          paths: { '@muse/jsx': [jsxDts] },
+          paths: {
+            '@muse/jsx': [jsxDts],
+            '@muse/jsx/jsx-runtime': ['./jsx-runtime.d.ts'],
+          },
         },
-        include: ['*.tsx'],
+        include: ['*.tsx', './jsx-runtime.d.ts', jsxDts],
       }),
     );
     fs.writeFileSync(
@@ -333,9 +356,12 @@ describe('TC-TSX-018 — spread never synthesizes two-way; model is rejected (AC
           module: 'esnext',
           target: 'es2022',
           baseUrl: '.',
-          paths: { '@muse/jsx': [jsxDts] },
+          paths: {
+            '@muse/jsx': [jsxDts],
+            '@muse/jsx/jsx-runtime': ['./jsx-runtime.d.ts'],
+          },
         },
-        include: ['accept-value.tsx'],
+        include: ['accept-value.tsx', './jsx-runtime.d.ts', jsxDts],
       }),
     );
     const tscBin = path.join(
