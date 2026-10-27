@@ -9,6 +9,9 @@ add_library(runtime
   src/tree.cpp
   src/frame.cpp
   src/layout.cpp
+  src/js_runtime.cpp
+  src/js_engine.cpp
+  src/vulkan_baseline.cpp
 )
 target_include_directories(runtime PUBLIC include)
 target_compile_options(runtime PRIVATE -Wall -Wextra -Wpedantic)
@@ -40,3 +43,18 @@ add_executable(relayout_scope_test tests/relayout_scope_test.cpp)
 target_link_libraries(relayout_scope_test PRIVATE runtime)
 target_compile_options(relayout_scope_test PRIVATE -Wall -Wextra -Wpedantic)
 add_test(NAME relayout_scope_test COMMAND relayout_scope_test)
+
+add_executable(js_abi_isolation_test tests/js_abi_isolation_test.cpp)
+target_link_libraries(js_abi_isolation_test PRIVATE runtime)
+target_compile_options(js_abi_isolation_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME js_abi_isolation_test COMMAND js_abi_isolation_test)
+
+add_executable(js_execution_test tests/js_execution_test.cpp)
+target_link_libraries(js_execution_test PRIVATE runtime)
+target_compile_options(js_execution_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME js_execution_test COMMAND js_execution_test)
+
+add_executable(vulkan_baseline_test tests/vulkan_baseline_test.cpp)
+target_link_libraries(vulkan_baseline_test PRIVATE runtime)
+target_compile_options(vulkan_baseline_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME vulkan_baseline_test COMMAND vulkan_baseline_test)
