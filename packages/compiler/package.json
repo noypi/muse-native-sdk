@@ -5,6 +5,7 @@
     "test": "node --test test/*.test.ts",
     "test:files": "node --test test/files.test.ts",
     "test:grammar": "node --test test/grammar.test.ts",
-    "test:conditionals": "node --test test/conditionals.test.ts"
+    "test:conditionals": "node --test test/conditionals.test.ts",
+    "test:builtins": "node --test test/builtins.test.ts"
   }
 }
