@@ -59,14 +59,21 @@ export type OverlayHostProps = {
   content?: unknown;
 };
 
-// FR-M3-002 / AC-M3-003 — @muse/native tier-2 prop types (T5).
+// FR-M3-002 / AC-M3-004 — @muse/native tier-2 prop types (T5, T6).
 // Per-component prop types generated from the T2 manifest schemas in
 // muse.manifest.json: `token` roles map to string, `slot` maps to unknown,
 // `values` lists map to string-literal unions, non-required props are
-// optional. Variants are prop values, not component names.
+// optional. Variants are prop values, not component names. The named
+// *Variant aliases below are generated from the manifest `values` lists so
+// types and manifest cannot drift (RULE-M3-003); `tsc --noEmit` rejects any
+// value outside these unions.
+
+export type ButtonVariant = 'filled' | 'tonal' | 'outlined' | 'text' | 'elevated';
+export type CardVariant = 'elevated' | 'filled' | 'outlined';
+export type ChipVariant = 'assist' | 'filter' | 'input' | 'suggestion';
 
 export type ButtonProps = {
-  variant?: 'filled' | 'tonal' | 'outlined' | 'text' | 'elevated';
+  variant?: ButtonVariant;
   label: string;
   enabled?: boolean;
   icon?: string;
@@ -92,13 +99,13 @@ export type ExtendedFabProps = {
 };
 
 export type CardProps = {
-  variant?: 'elevated' | 'filled' | 'outlined';
+  variant?: CardVariant;
   content?: unknown;
   enabled?: boolean;
 };
 
 export type ChipProps = {
-  variant?: 'assist' | 'filter' | 'input' | 'suggestion';
+  variant?: ChipVariant;
   label: string;
   selected?: boolean;
   enabled?: boolean;

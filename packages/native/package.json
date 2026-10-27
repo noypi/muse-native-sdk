@@ -2,8 +2,9 @@
   "name": "@muse/native",
   "version": "0.0.0",
   "scripts": {
-    "check": "node scripts/check-manifest.js",
-    "prebuild": "node scripts/check-manifest.js",
+    "check": "node scripts/check-manifest.js && node scripts/check-props.js && node scripts/check-tokens.js --scope lib",
+    "check:types": "tsc --noEmit",
+    "prebuild": "node scripts/check-manifest.js && node scripts/check-props.js && node scripts/check-tokens.js --scope lib",
     "test": "node --test test/*.test.js 2>/dev/null || test ! -d test"
   }
 }

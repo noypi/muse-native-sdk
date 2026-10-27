@@ -1,7 +1,12 @@
 'use strict';
-// FR-M3-001 / AC-M3-002 — library token gate (T4, lib scope only).
+// FR-M3-005 / AC-M3-009 — library token gate (T4, lib scope only) with the
+// application-literal advisory boundary (T7).
 // Fails the build when library component code contains a literal colour or
 // dimension; token roles stay plain strings resolved by the theme layer.
+// CONFLICT-M3-005 scope assignment: library literals fail the gate, while the
+// same literal in application code only warns via the lintAppLiteral advisory
+// (FR-TSX-010 / AC-TSX-027 boundary) — application literals warn (advisory)
+// instead of failing, so the app path never exits non-zero.
 
 const fs = require('node:fs');
 const path = require('node:path');
@@ -69,4 +74,20 @@ function main() {
   console.log(`check-tokens: OK — ${files.length} library files token-only`);
 }
 
-main();
+// FR-TSX-010 / AC-TSX-027 boundary (CONFLICT-M3-005): application-literal
+// advisory. Always returns an advisory record and never throws or exits
+// non-zero, so application code warns instead of failing the build.
+// Defined here beside the lib gate so the package entry can re-export it.
+function lintAppLiteral(file, line) {
+  return {
+    code: 'CAPO0012',
+    severity: 'advisory',
+    message: `app literal advisory at ${file}:${line} — prefer an M3 token role`,
+  };
+}
+
+if (require.main === module) {
+  main();
+}
+
+module.exports = { lintAppLiteral };

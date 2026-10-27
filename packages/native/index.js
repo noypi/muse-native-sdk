@@ -265,3 +265,4 @@ for (const entry of manifest.components) {
 const primitives = manifest.components.map((entry) => entry.name);
 
 module.exports = { primitives, components, manifest, driveState };
+module.exports.lintAppLiteral = require('./scripts/check-tokens.js').lintAppLiteral;
