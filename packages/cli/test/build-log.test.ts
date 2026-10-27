@@ -160,4 +160,10 @@ describe('TC-TSX-025 — runBothValidators runs both, exits 1 on either failure 
     assert.ok(result.log.includes('App.tsx:3:7'), 'combined log must carry the first location');
     assert.ok(result.log.includes('Home.tsx:9:2'), 'combined log must carry the second location');
   });
+
+  it('exits 1 and names the crashed validator when a validator throws', () => {
+    const result = runBothValidators(() => { throw new Error('boom'); }, () => []);
+    assert.equal(result.exitCode, 1, 'a throwing validator must exit 1');
+    assert.ok(result.log.includes('tsc'), 'combined log must name the crashed validator');
+  });
 });

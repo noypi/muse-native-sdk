@@ -50,15 +50,35 @@ function toEntry(raw, fallbackValidator) {
 }
 
 // Collect one validator fn's diagnostics without ever throwing: a throwing
-// or non-function validator contributes zero diagnostics so the OTHER
-// validator still runs to completion.
-function collectDiagnostics(fn) {
+// validator contributes a single crash diagnostic naming that validator so
+// the OTHER validator still runs to completion and the combined log records
+// the crash. Never throws; never lets a validator throw escape.
+function collectDiagnostics(fn, fallbackValidator) {
+  const fallback =
+    fallbackValidator == null || fallbackValidator === ''
+      ? 'unknown'
+      : String(fallbackValidator);
   if (typeof fn !== 'function') return [];
   let result;
   try {
     result = fn();
-  } catch {
-    return [];
+  } catch (err) {
+    const message =
+      err instanceof Error
+        ? err.message
+        : err != null && typeof err === 'object' && 'message' in err
+          ? String(err.message)
+          : String(err);
+    return [
+      {
+        validator: fallback,
+        file: '',
+        line: 0,
+        column: 0,
+        nodePath: '',
+        message,
+      },
+    ];
   }
   return Array.isArray(result) ? result : [];
 }
@@ -66,8 +86,8 @@ function collectDiagnostics(fn) {
 // Run BOTH validators always; any diagnostic yields `exitCode: 1` with one
 // combined log line per diagnostic, clean yields `exitCode: 0`. Never throws.
 function runBothValidators(tscFn, aotFn) {
-  const tscDiags = collectDiagnostics(tscFn);
-  const aotDiags = collectDiagnostics(aotFn);
+  const tscDiags = collectDiagnostics(tscFn, 'tsc');
+  const aotDiags = collectDiagnostics(aotFn, 'aot');
   let log = '';
   for (const raw of tscDiags) {
     log = appendVerdict(log, toEntry(raw, 'tsc'));
@@ -79,4 +99,4 @@ function runBothValidators(tscFn, aotFn) {
   return { log, exitCode };
 }
 
-module.exports = { appendVerdict, runBothValidators };
+module.exports = { appendVerdict, collectDiagnostics, runBothValidators };

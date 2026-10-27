@@ -81,4 +81,8 @@ describe('TC-TSX-027 — advisory CAPO0012 on token-value duplication, exit 0 (A
   it('returns null against an empty known-token list, never throws', () => {
     assert.equal(checkLiteralAgainstTokens('#6750A4', loc(), []), null);
   });
+
+  it('returns null for a tokenless entry (empty/missing token is skipped)', () => {
+    assert.equal(checkLiteralAgainstTokens('#6750A4', loc(), [{ value: '#6750A4' }]), null);
+  });
 });

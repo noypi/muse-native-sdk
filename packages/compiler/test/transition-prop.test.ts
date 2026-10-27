@@ -76,4 +76,17 @@ describe('TC-TSX-029 — transition token maps accepted, literal curve/duration 
     assert.doesNotThrow(() => checkTransitionProp('opacity', undefined, loc()));
     assert.doesNotThrow(() => checkTransitionProp('opacity', null, loc()));
   });
+
+  it('returns null for an absent (undefined) prop value — not a literal', () => {
+    assert.equal(checkTransitionProp('opacity', undefined, loc()), null);
+  });
+
+  it('rejects a boolean value as a non-token-string literal naming the property', () => {
+    const l = loc();
+    const d = checkTransitionProp('opacity', true, l);
+    assert.notEqual(d, null, 'boolean value must return a diagnostic');
+    assert.equal(d.code, 'TSX_TRANSITION_LITERAL');
+    assert.equal(d.property, 'opacity');
+    assert.equal(d.severity, 'error');
+  });
 });

@@ -21,7 +21,9 @@ function checkLiteralAgainstTokens(literal, loc, knownTokenValues) {
   try {
     const list = Array.isArray(knownTokenValues) ? knownTokenValues : [];
     for (const entry of list) {
-      if (entry && typeof entry === "object" && entry.value === literal) {
+      if (!entry || typeof entry !== "object") continue;
+      if (typeof entry.token !== "string" || entry.token === "") continue;
+      if (entry.value === literal) {
         return {
           code: "CAPO0012",
           literal,

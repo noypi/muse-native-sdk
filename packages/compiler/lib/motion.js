@@ -18,6 +18,8 @@ function isLiteralCurveString(s) {
 
 function checkTransitionProp(prop, value, loc) {
   try {
+    // Absent prop (undefined/null): nothing to check.
+    if (value === undefined || value === null) return null;
     if (typeof value === "string") {
       if (isLiteralCurveString(value)) {
         return {
@@ -45,16 +47,8 @@ function checkTransitionProp(prop, value, loc) {
         severity: "error",
       };
     }
-    // Unknown input shapes (undefined, null, boolean, ...): fail closed
+    // All other non-token-string shapes (boolean, ...): fail closed
     // with a diagnostic, never throw.
-    if (value === undefined || value === null) {
-      return {
-        code: "TSX_TRANSITION_LITERAL",
-        property: prop,
-        ...toLoc(loc),
-        severity: "error",
-      };
-    }
     return {
       code: "TSX_TRANSITION_LITERAL",
       property: prop,
