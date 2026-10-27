@@ -25,6 +25,11 @@ function loadImpl() {
   return require('../../packages/cli/lib/init.js');
 }
 
+// T6 composition entry point (toolchain/cli/scaffoldSmoke.js lands in batch 3).
+function loadImplT6() {
+  return require('./scaffoldSmoke.js');
+}
+
 const tmpRoots = [];
 function mkTmp(prefix) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
@@ -188,18 +193,64 @@ describe('T1 — failure paths throw scaffold-failed with cleanup', () => {
   });
 });
 
-describe('T6 composition placeholder — T1 scope only (skipped until batch 3)', () => {
-  it.skip('runScaffoldSmoke composes scaffold→signed-AAB→mount→symbols naming the failing stage', () => {
-    // T2–T4–T6 internals stay out: this case only requires that the composed
-    // smoke for T1-scoped inputs exists and reports the T1 stage shape.
-    // toolchain/cli/scaffoldSmoke.js lands in batch 3, so this is skipped
-    // until then (pending batch 3 — scaffoldSmoke.js lands there).
+describe('T6 composition — scaffold→signed-AAB→mount→symbols (batch 3)', () => {
+  it('runScaffoldSmoke composes scaffold→signed-AAB→mount→symbols naming the failing stage', () => {
+    // Batch-3 legitimate test update (GR-08 T1.13): the batch-1 `it.skip`
+    // placeholder is un-skipped into the real TC-BUILD-005 composition case.
+    // All 10 T1 cases above are untouched. Thin composition over T1–T4: no
+    // logic is reimplemented here, only the composed observable outcome.
     const { runScaffoldSmoke } = require('./scaffoldSmoke.js');
-    const root = mkTmp('smoke-t1-scope-');
+    const root = mkTmp('smoke-full-');
     const templateDir = writeTemplate(path.join(root, 'template'));
-    const result = runScaffoldSmoke({ templateDir, workDir: root, packName: 'fake-pack-not-real' });
+    const workDir = path.join(root, 'work');
+    fs.mkdirSync(workDir, { recursive: true });
+    const result = runScaffoldSmoke({ templateDir, workDir, packName: 'fake-pack-not-real' });
     assert.equal(result.ok, true);
     assert.equal(typeof result.projectDir, 'string');
-    assert.ok(fs.existsSync(path.join(result.projectDir, 'muse-native.yaml')));
+    assert.ok(fs.existsSync(path.join(result.projectDir, 'muse-native.yaml')), 'scaffolded manifest must exist');
+    assert.equal(typeof result.aabPath, 'string');
+    assert.ok(fs.existsSync(result.aabPath), `signed AAB must exist: ${result.aabPath}`);
+    assert.equal(typeof result.mountPoint, 'string');
+    assert.ok(fs.existsSync(result.mountPoint), `mount point must exist: ${result.mountPoint}`);
+    assert.ok(Array.isArray(result.symbols), 'symbols must be an array');
+    assert.ok(result.symbols.length > 0, 'symbols must be non-empty');
+  });
+
+  it('a scaffold-stage failure throws smoke-failed naming the scaffold stage', () => {
+    const { runScaffoldSmoke } = loadImplT6();
+    const root = mkTmp('smoke-bad-scaffold-');
+    const workDir = path.join(root, 'work');
+    fs.mkdirSync(workDir, { recursive: true });
+    assert.throws(
+      () => runScaffoldSmoke({ templateDir: path.join(root, 'absent'), workDir, packName: 'fake-pack-not-real' }),
+      (err) => err instanceof Error && /^smoke-failed: scaffold: \S/.test(err.message)
+    );
+  });
+
+  it('a delivery-stage failure throws smoke-failed naming the delivery stage', () => {
+    const { runScaffoldSmoke } = loadImplT6();
+    const root = mkTmp('smoke-bad-pack-');
+    const templateDir = writeTemplate(path.join(root, 'template'));
+    const workDir = path.join(root, 'work');
+    fs.mkdirSync(workDir, { recursive: true });
+    assert.throws(
+      () => runScaffoldSmoke({ templateDir, workDir, packName: '' }),
+      (err) => err instanceof Error && /^smoke-failed: \S/.test(err.message)
+    );
+  });
+
+  it('failure messages carry stage + reason and leak no fixture internals', () => {
+    const { runScaffoldSmoke } = loadImplT6();
+    const root = mkTmp('smoke-msg-');
+    const workDir = path.join(root, 'work');
+    fs.mkdirSync(workDir, { recursive: true });
+    let message = '';
+    try {
+      runScaffoldSmoke({ templateDir: path.join(root, 'absent'), workDir, packName: 'fake-pack-not-real' });
+    } catch (err) {
+      message = err.message;
+    }
+    assert.match(message, /^smoke-failed: \S+: \S.+/);
+    assert.doesNotMatch(message, /fake-secret|token|BEGIN PRIVATE KEY/);
   });
 });
