@@ -55,6 +55,8 @@ function main() {
     return;
   }
   if (command === 'build') {
+    // `<appDir>` stays positional; every flag after it — including
+    // `--stage <name>` and `--print-config` — passes through to build.js.
     require('./build.js')(argv[1], argv.slice(2));
     return;
   }

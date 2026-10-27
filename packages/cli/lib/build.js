@@ -6,8 +6,25 @@
 // is validated in memory before anything is written).
 const fs = require('node:fs');
 const path = require('node:path');
-const ir = require('./ir.js');
 const config = require('./config.js');
+const stages = require('./stages.js');
+
+// Pull `--stage <name>` out of the flags after <appDir>. Returns
+// `{ stageName, rest }` where `rest` keeps every other flag untouched so
+// config resolution never sees `--stage` (it is not a config key).
+function splitStageFlag(rest) {
+  const args = Array.isArray(rest) ? rest.slice() : [];
+  const at = args.indexOf('--stage');
+  if (at === -1) return { stageName: undefined, rest: args };
+  const value = args[at + 1];
+  if (typeof value !== 'string' || value.startsWith('--')) {
+    const err = new Error('Error: --stage requires a value. Expected one of: ' + stages.STAGES.join(', '));
+    err.code = 'STAGE_USAGE';
+    throw err;
+  }
+  args.splice(at, 2);
+  return { stageName: value, rest: args };
+}
 
 function runBuild(appDir, rest) {
   if (!appDir || appDir.startsWith('--')) {
@@ -16,11 +33,32 @@ function runBuild(appDir, rest) {
     return;
   }
   const resolved = path.resolve(appDir);
+  // `--stage <name>` runs one stage only; anything else after <appDir>
+  // stays flags for config resolution. Unknown stage values fail here,
+  // before any stage runs, naming the bad value.
+  let stageName;
+  let restArgs;
+  try {
+    const split = splitStageFlag(rest);
+    stageName = split.stageName;
+    restArgs = split.rest;
+  } catch (err) {
+    const message = err && err.message ? err.message : String(err);
+    process.stderr.write(message.endsWith('\n') ? message : message + '\n');
+    process.exitCode = 1;
+    return;
+  }
+  if (stageName !== undefined && !stages.STAGES.includes(stageName)) {
+    process.stderr.write(`Error: unknown stage '${stageName}'. Expected one of: ${stages.STAGES.join(', ')}\n`);
+    process.exitCode = 1;
+    return;
+  }
   // Resolve typed config first: failures are fail-closed before any
   // compilation or artefact writes (no partial config, no dist/ writes).
-  // `rest` holds the flags after <appDir>; argv for resolveConfig keeps the
-  // positional so `--<key> <value>` pairs parse the same either way.
-  const argv = [appDir].concat(Array.isArray(rest) ? rest : []);
+  // `restArgs` holds the flags after <appDir> minus `--stage`; argv for
+  // resolveConfig keeps the positional so `--<key> <value>` pairs parse
+  // the same either way.
+  const argv = [appDir].concat(restArgs);
   let resolvedConfig;
   try {
     resolvedConfig = config.resolveConfig(argv, process.env, resolved);
@@ -48,56 +86,40 @@ function runBuild(appDir, rest) {
     process.exitCode = 1;
     return;
   }
-  let sources;
-  try {
-    sources = ir.loadSources(resolved);
-  } catch (err) {
-    process.stderr.write(`Error: cannot read sources in '${appDir}': ${err && err.message ? err.message : err}\n`);
-    process.exitCode = 1;
-    return;
-  }
-  if (sources.length === 0) {
-    process.stderr.write(`Error: no .tsx sources found in '${appDir}'.\n`);
-    process.exitCode = 1;
-    return;
-  }
-  // Validate before writing: lowering + encoding happen fully in memory,
-  // so a failure here leaves `dist/` untouched.
-  let tree;
-  let bin;
-  try {
-    tree = ir.lowerToIR(sources);
-    if (!tree || tree.version !== 1 || !Array.isArray(tree.roots) || tree.roots.length === 0) {
-      throw new Error('lowering produced an empty tree');
-    }
-    bin = ir.encodeTree(tree);
-    if (!bin || bin.length <= 4) throw new Error('encoding produced an empty blob');
-  } catch (err) {
-    process.stderr.write(`Error: cannot build '${appDir}': ${err && err.message ? err.message : err}\n`);
-    process.exitCode = 1;
-    return;
-  }
-  // Artefact containment: everything lands under <appDir>/dist, nowhere else.
-  const distDir = path.join(resolved, 'dist');
-  const irPath = path.join(distDir, 'ir.json');
-  const binPath = path.join(distDir, 'tree.mui.bin');
-  try {
-    fs.mkdirSync(distDir, { recursive: true });
-    fs.writeFileSync(irPath, JSON.stringify(tree, null, 2) + '\n', 'utf8');
-    fs.writeFileSync(binPath, bin);
-  } catch (err) {
-    try {
-      fs.rmSync(irPath, { force: true });
-      fs.rmSync(binPath, { force: true });
-    } catch (_) {
-      // Best-effort cleanup; the error below is what matters.
-    }
-    process.stderr.write(`Error: cannot write artefacts for '${appDir}': ${err && err.message ? err.message : err}\n`);
-    process.exitCode = 1;
-    return;
-  }
-  process.stdout.write(`Built ${appDir}\nWrote ${irPath}\nWrote ${binPath}\n`);
-  process.exitCode = 0;
+  // Dispatch through the seven stages (or the one named by `--stage`).
+  // Per-stage outcome lines go to stdout; a failure also mirrors the error
+  // to stderr, stops the pipeline, and exits nonzero with no partial
+  // `dist/` writes (stages validate in memory before writing).
+  const ctx = { config: resolvedConfig.config, appDir: resolved };
+  Promise.resolve()
+    .then(() => stages.runStages(stageName, ctx))
+    .then((results) => {
+      let failed = false;
+      for (const result of results) {
+        if (result.ok) {
+          process.stdout.write(`${result.stage}: ok (${result.durationMs}ms)\n`);
+        } else {
+          failed = true;
+          const message = result.error && result.error.message ? result.error.message : 'unknown error';
+          const location = result.error && result.error.location ? result.error.location : resolved;
+          process.stdout.write(`${result.stage}: FAIL ${message} at ${location}\n`);
+          process.stderr.write(`Error: ${message}\n`);
+        }
+      }
+      if (failed) {
+        process.exitCode = 1;
+        return;
+      }
+      // Name the artefacts the run wrote, as the build has always done.
+      if (ctx._wroteIr) process.stdout.write(`Wrote ${ctx._wroteIr}\n`);
+      if (ctx._wroteBin) process.stdout.write(`Wrote ${ctx._wroteBin}\n`);
+      process.exitCode = 0;
+    })
+    .catch((err) => {
+      const message = err && err.message ? err.message : String(err);
+      process.stderr.write(message.endsWith('\n') ? message : message + '\n');
+      process.exitCode = 1;
+    });
 }
 
 module.exports = runBuild;
