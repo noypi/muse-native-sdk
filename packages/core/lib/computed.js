@@ -93,9 +93,16 @@ function computed(getter) {
       computing = false;
     }
     dirty = false;
-    if (!hasValue || !Object.is(next, value)) {
+    if (!hasValue) {
+      // First (cold) evaluation: subscribers that subscribed mid-read during
+      // this same evaluation already hold the fresh value synchronously
+      // (track-before-recompute in the `.value` getter), so there is no
+      // change to report — skip the fan-out to avoid a spurious wakeup
+      // (AC-MCORE-008: re-run only after a flush with a real change).
       value = next;
       hasValue = true;
+    } else if (!Object.is(next, value)) {
+      value = next;
       ownRecord.notifyJob();
     }
     return value;
