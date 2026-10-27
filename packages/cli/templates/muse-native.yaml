@@ -1,2 +1,6 @@
+# muse-native configuration.
+# Defaults (used when a key is set in no other layer):
+#   default name: hello-app
+#   default version: 0.0.1
 name: hello-app
 version: 0.0.1
