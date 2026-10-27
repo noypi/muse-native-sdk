@@ -99,3 +99,18 @@ add_executable(ime_inset_test tests/ime_inset_test.cpp)
 target_link_libraries(ime_inset_test PRIVATE runtime)
 target_compile_options(ime_inset_test PRIVATE -Wall -Wextra -Wpedantic)
 add_test(NAME ime_inset_test COMMAND ime_inset_test)
+
+add_executable(host_lifecycle_test tests/host_lifecycle_test.cpp)
+target_link_libraries(host_lifecycle_test PRIVATE runtime)
+target_compile_options(host_lifecycle_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME host_lifecycle_test COMMAND host_lifecycle_test)
+
+add_executable(touch_dispatch_test tests/touch_dispatch_test.cpp)
+target_link_libraries(touch_dispatch_test PRIVATE runtime)
+target_compile_options(touch_dispatch_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME touch_dispatch_test COMMAND touch_dispatch_test)
+
+add_executable(config_change_test tests/config_change_test.cpp)
+target_link_libraries(config_change_test PRIVATE runtime)
+target_compile_options(config_change_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME config_change_test COMMAND config_change_test)
