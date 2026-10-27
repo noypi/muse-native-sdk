@@ -33,27 +33,22 @@ function loadStages() {
   return ['configure', 'typecheck', 'compile', 'emit', 'native-build', 'package', 'install'];
 }
 
-// Stages that never run with `--release`: a release build is incompatible
-// with a debug-only stage run.
-const DEBUG_ONLY_STAGES = ['typecheck'];
-
-const ACCEPTED_OPTIONS = '--stage, --print-config, --release, --name, --version, --help';
+const ACCEPTED_OPTIONS = '--stage, --print-config, --name, --version, --help';
 
 // Validate the option layer (`--` flags) of an argv array. Positional
 // operands (the command, `<appDir>`) and `-h`/`--help` are skipped — help
 // and `--print-config` handling is unaffected. Throws OptionError naming
 // the option and the accepted values for: unknown options (including
-// out-of-scope `--with-sample`, `--strict`, `--abi`, `--modules`,
-// `--output`, `--archs`, `--packaging`), a missing/invalid `--stage`
-// value, and the incompatible `--release` + debug-only-stage combination.
-// Never validates config keys — unknown CONFIG keys stay ConfigError (T1/T2).
+// out-of-scope `--with-sample`, `--strict`, `--abi`, `--release`,
+// `--modules`, `--output`, `--archs`, `--packaging`), `--flag=value` form
+// (only `--<name> <value>` is accepted), and a missing/invalid `--stage`
+// value. Never validates config keys — unknown CONFIG keys stay ConfigError
+// (T1/T2).
 function validateOptions(argv) {
   const args = Array.isArray(argv) ? argv : [];
   const STAGES = loadStages();
   const VALUE_FLAGS = new Set(['--stage', '--name', '--version']);
-  const BOOL_FLAGS = new Set(['--print-config', '--release', '--help', '-h']);
-  let stageValue;
-  let sawRelease = false;
+  const BOOL_FLAGS = new Set(['--print-config', '--help', '-h']);
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
     if (typeof arg !== 'string' || arg.length === 0) continue;
@@ -67,18 +62,22 @@ function validateOptions(argv) {
       throw new OptionError(arg, `one of: ${ACCEPTED_OPTIONS}`);
     }
     const eq = arg.indexOf('=');
-    const name = eq === -1 ? arg : arg.slice(0, eq);
-    const inlineValue = eq === -1 ? undefined : arg.slice(eq + 1);
+    if (eq !== -1) {
+      // Only the space form (`--<name> <value>`) is accepted; `--flag=value`
+      // is rejected here at the option layer so validation and execution
+      // agree (the config/stage layers only read the space form).
+      throw new OptionError(arg, `one of: ${ACCEPTED_OPTIONS}`);
+    }
+    const name = arg;
     if (!VALUE_FLAGS.has(name) && !BOOL_FLAGS.has(name)) {
       throw new OptionError(name, `one of: ${ACCEPTED_OPTIONS}`);
     }
     if (BOOL_FLAGS.has(name)) {
-      if (name === '--release') sawRelease = true;
       continue;
     }
-    // Value flag: `--<name> <value>` or `--<name>=<value>`.
-    let value = inlineValue;
-    if (value === undefined) {
+    // Value flag: `--<name> <value>` (space form only).
+    let value;
+    {
       const next = args[i + 1];
       if (typeof next !== 'string' || next.startsWith('-')) {
         if (name === '--stage') {
@@ -93,14 +92,7 @@ function validateOptions(argv) {
       if (!STAGES.includes(value)) {
         throw new OptionError(`--stage '${value}'`, `one of: ${STAGES.join(', ')}`);
       }
-      stageValue = value;
     }
-  }
-  if (sawRelease && stageValue !== undefined && DEBUG_ONLY_STAGES.includes(stageValue)) {
-    throw new OptionError(
-      '--release',
-      `incompatible combination: --release cannot run with debug-only stage '${stageValue}'. Expected one of: ${STAGES.join(', ')} without --release, or a release stage without --stage ${stageValue}`,
-    );
   }
 }
 

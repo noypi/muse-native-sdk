@@ -14,7 +14,10 @@
 // `--stage` passthrough already exists (T3) — those are not re-tested here.
 // Out-of-scope flags rejected as unknown options per plan A3: `--with-sample`,
 // `--strict`, `--abi`, `--release`, `--modules`, `--output`, `--archs`,
-// `--packaging`.
+// `--packaging`. Post-review fix: `--release` was removed from known flags so
+// lone `--release` and the `--release`+debug-stage combo both fail via the
+// unknown-option path (exit 2, fail-closed); `--flag=value` (`=` form) is
+// rejected by `validateOptions` with the standard unknown-option OptionError.
 // ASSUMPTIONS (contract genuinely silent, most defensible behavior tested):
 // - A-T6a: `validateOptions(argv: string[])` is exported from
 //   `packages/cli/lib/cli.js`; it throws `OptionError { option, accepted }`
@@ -22,10 +25,14 @@
 // - A-T6b: `getExitCode(kind)` is exported from
 //   `packages/cli/lib/exit-codes.js` with kinds ok/config/compile/package.
 // - A-T6c: the incompatible-combination case is `--release` with a debug-only
-//   stage (plan example); the accepted-values message names the conflict.
+//   stage (plan example); post-review fix removed `--release` from known flags
+//   so the combo fails via the unknown-option path naming `--release`.
 // - A-T6d: CLI option errors exit 2 and write
 //   `Error: <option> ... Expected ...` to stderr before any compilation
 //   (no `dist/` artefacts).
+// - A-T6e (post-review fix): `--flag=value` (`=` form) is rejected by
+//   `validateOptions` with the standard unknown-option OptionError naming the
+//   `=` form; only `--<name> <value>` (space form) is accepted.
 
 const { describe, it, afterEach } = require('node:test');
 const assert = require('node:assert/strict');
@@ -115,12 +122,30 @@ describe('TC-WORKFLOW-011 — option validation and exit codes', () => {
     );
   });
 
-  it('validateOptions throws OptionError for an incompatible combination (--release with a debug-only stage)', () => {
+  it('validateOptions throws OptionError for an incompatible combination (--release with a debug-only stage) via the unknown-option path', () => {
     const cli = require('../lib/cli.js');
     assert.throws(
       () => cli.validateOptions(['build', '--release', '--stage', 'typecheck']),
-      (err) => err && err.name === 'OptionError' && typeof err.accepted === 'string' && err.accepted.length > 0,
-      'incompatible combination must throw OptionError with accepted values',
+      (err) => err && err.name === 'OptionError' && String(err.option).includes('--release') && typeof err.accepted === 'string' && err.accepted.length > 0,
+      'incompatible combination must throw OptionError naming --release via the unknown-option path',
+    );
+  });
+
+  it('validateOptions rejects --flag=value (= form) with OptionError naming the option', () => {
+    const cli = require('../lib/cli.js');
+    assert.throws(
+      () => cli.validateOptions(['build', '--stage=typecheck']),
+      (err) => err && err.name === 'OptionError' && String(err.option).includes('--stage=typecheck') && typeof err.accepted === 'string' && err.accepted.length > 0,
+      '--stage=typecheck must be rejected with OptionError naming the option',
+    );
+  });
+
+  it('validateOptions rejects a lone --release as an unknown option', () => {
+    const cli = require('../lib/cli.js');
+    assert.throws(
+      () => cli.validateOptions(['build', '--release']),
+      (err) => err && err.name === 'OptionError' && String(err.option).includes('--release') && typeof err.accepted === 'string' && err.accepted.length > 0,
+      'lone --release must throw OptionError naming --release via the unknown-option path',
     );
   });
 
@@ -143,13 +168,34 @@ describe('TC-WORKFLOW-011 — option validation and exit codes', () => {
     assert.ok(!fs.existsSync(path.join(appDir, 'dist', 'ir.json')), 'must not compile on invalid value');
   });
 
-  it('CLI: incompatible combination fails at configure with exit 2 before compilation', () => {
+  it('CLI: incompatible combination fails at configure with exit 2 via the unknown-option path before compilation', () => {
     const appDir = mkTmp('muse-invalidopt-');
     writeApp(appDir, 'name: good-app\nversion: 0.0.1\n');
     const r = runCli(['build', appDir, '--release', '--stage', 'typecheck']);
     assert.equal(r.status, 2, `incompatible combination must exit 2, got ${r.status}: ${r.stderr}`);
-    assert.ok(r.stderr.length > 0, 'must print an error to stderr');
+    assert.match(r.stderr, /--release/, 'stderr must name --release via the unknown-option path');
+    assert.match(r.stderr, /[Ee]xpected/, 'stderr must state the accepted values');
     assert.ok(!fs.existsSync(path.join(appDir, 'dist', 'ir.json')), 'must not compile on incompatible combination');
+  });
+
+  it('CLI: --flag=value (= form) fails with exit 2 naming the option, no dist/ writes', () => {
+    const appDir = mkTmp('muse-invalidopt-');
+    writeApp(appDir, 'name: good-app\nversion: 0.0.1\n');
+    const r = runCli(['build', appDir, '--stage=typecheck']);
+    assert.equal(r.status, 2, `--flag=value must exit 2, got ${r.status}: ${r.stderr}`);
+    assert.match(r.stderr, /--stage=typecheck/, 'stderr must name the rejected = form option');
+    assert.match(r.stderr, /[Ee]xpected/, 'stderr must state the accepted values');
+    assert.ok(!fs.existsSync(path.join(appDir, 'dist', 'ir.json')), 'must not compile on = form option error');
+  });
+
+  it('CLI: lone --release fails with exit 2 as an unknown option, no dist/ writes', () => {
+    const appDir = mkTmp('muse-invalidopt-');
+    writeApp(appDir, 'name: good-app\nversion: 0.0.1\n');
+    const r = runCli(['build', appDir, '--release']);
+    assert.equal(r.status, 2, `lone --release must exit 2, got ${r.status}: ${r.stderr}`);
+    assert.match(r.stderr, /--release/, 'stderr must name the rejected option');
+    assert.match(r.stderr, /[Ee]xpected/, 'stderr must state the accepted values');
+    assert.ok(!fs.existsSync(path.join(appDir, 'dist', 'ir.json')), 'must not compile on lone --release');
   });
 
   it('CLI: valid options still build with exit 0 (control, not a re-test of T3)', () => {
