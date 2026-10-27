@@ -5,7 +5,7 @@ Every manifest entry whose ``name`` contains ``ffmpeg``
 (case-insensitive) must prove shared-library linkage
 (``link`` of ``shared`` or ``dynamic``) and record its ``configure``
 line; the configure line must not carry ``--enable-gpl``,
-``--enable-nonfree``, or GPL-only codecs (``libx264``/``libx265``
+``--enable-nonfree``, or GPL-only codecs (``libx264``/``libx265``/``libxvid``
 family). Manifests with no FFmpeg entries pass vacuously.
 Missing/unparseable manifests and missing configure lines fail
 closed (exit 1). Stdlib only.
@@ -51,6 +51,8 @@ def check_entry(entry):
         return (label, "FFmpeg configure refuses GPL-only codec libx264")
     if "libx265" in low:
         return (label, "FFmpeg configure refuses GPL-only codec libx265")
+    if "libxvid" in low:
+        return (label, "FFmpeg configure refuses GPL-only codec libxvid")
     return None
 
 

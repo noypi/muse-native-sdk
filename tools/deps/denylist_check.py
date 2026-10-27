@@ -27,11 +27,38 @@ REQUIREMENT = "FR-DEPS-003"
 
 _STOPWORDS = {"all", "in", "production", "paths", "the"}
 
+# Short triggers matched token-wise (whole/prefix/suffix token) instead of
+# by raw substring, so e.g. "qt" does not fire inside unrelated names.
+_SHORT_TRIGGERS = {"qt", "poco", "eastl"}
+
 
 def _deny_triggers(deny_name):
     """Derive case-insensitive substring triggers from a deny-list name."""
     tokens = re.findall(r"[a-z0-9]+(?:[/_.+-][a-z0-9]+)*", deny_name.lower())
     return [t for t in tokens if t and t not in _STOPWORDS]
+
+
+def _canonical(text):
+    """Lower-case with separator spellings unified (/, _, -, ., +)."""
+    return re.sub(r"[_.+\-]", "/", text.lower())
+
+
+def _trigger_hit(key, lowered, lowered_canonical):
+    """Return True when deny trigger *key* matches a manifest candidate."""
+    stripped = re.sub(r"[^a-z0-9]", "", key)
+    if key in _SHORT_TRIGGERS or (stripped and len(stripped) <= 2):
+        # Word-boundary-aware: the short name must cover a whole token
+        # or anchor at a token edge (e.g. qt, qtcore, qt5, libqt), so
+        # unrelated interiors such as "sqlite" stay clean.
+        for token in re.findall(r"[a-z0-9]+", lowered):
+            if (
+                token == stripped
+                or token.startswith(stripped)
+                or token.endswith(stripped)
+            ):
+                return True
+        return False
+    return bool(key) and _canonical(key) in lowered_canonical
 
 
 def _entry_candidates(entry):
@@ -72,10 +99,11 @@ def find_denied(entries, denylist=None):
             label = repr(entry)
         for candidate in candidates:
             lowered = candidate.lower()
+            lowered_canonical = _canonical(candidate)
             matched = False
             for deny_name, reason, keys in triggers:
                 for key in keys:
-                    if key and key in lowered:
+                    if _trigger_hit(key, lowered, lowered_canonical):
                         hits.append((label, deny_name, reason))
                         matched = True
                         break

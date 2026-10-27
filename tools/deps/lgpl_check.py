@@ -2,7 +2,8 @@
 """LGPL conditional-admission check (FR-DEPS-006, AC-DEPS-014).
 
 Every manifest entry whose ``licence`` contains ``LGPL``
-(case-insensitive) must prove ``link == dynamic`` and record the three
+(case-insensitive) must prove ``link == dynamic`` (``shared`` accepted
+as a synonym, matching ``ffmpeg_check``) and record the three
 artifacts ``licence_text``, ``source_offer`` and ``relinkable_objects``.
 Manifests with no LGPL entries pass vacuously. Missing/unparseable
 manifests fail closed (exit 1). Stdlib only.
@@ -38,7 +39,7 @@ def find_violations(entries):
         name = entry.get("name") if isinstance(entry, dict) else None
         label = name if name else repr(entry)
         link = entry.get("link") if isinstance(entry, dict) else None
-        if not isinstance(link, str) or link.lower() != "dynamic":
+        if not isinstance(link, str) or link.lower() not in ("dynamic", "shared"):
             violations.append(
                 (label, "LGPL link must be dynamic (got %r)" % (link,))
             )

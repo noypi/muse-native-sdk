@@ -164,6 +164,89 @@ class TestLicenceCheck(unittest.TestCase):
         self.assertEqual(proc.returncode, 1, msg=proc.stdout + proc.stderr)
         self.assertIn("weird-lic-lib-xyz", proc.stdout + proc.stderr)
 
+    def test_admit_substring_denied(self):
+        """'Admit-1.0-xyz' merely contains 'mit' — not an allow-list licence -> exit 1 (AC-DEPS-013/016)."""
+        path = write_manifest(
+            [full_entry("admit-lib-xyz", licence="Admit-1.0-xyz")]
+        )
+        try:
+            proc = run_cli("--manifest", path)
+        finally:
+            os.unlink(path)
+        self.assertEqual(proc.returncode, 1, msg=proc.stdout + proc.stderr)
+        self.assertIn("admit-lib-xyz", proc.stdout + proc.stderr)
+
+    def test_misc_substring_denied(self):
+        """'MISC-1.0' merely contains 'isc' — not an allow-list licence -> exit 1 (AC-DEPS-013/016)."""
+        path = write_manifest([full_entry("misc-lib-xyz", licence="MISC-1.0")])
+        try:
+            proc = run_cli("--manifest", path)
+        finally:
+            os.unlink(path)
+        self.assertEqual(proc.returncode, 1, msg=proc.stdout + proc.stderr)
+        self.assertIn("misc-lib-xyz", proc.stdout + proc.stderr)
+
+    def test_golf_substring_denied(self):
+        """'Golf-1.0' is not an allow-list licence (near-miss spelling) -> exit 1 (AC-DEPS-013/016)."""
+        path = write_manifest([full_entry("golf-lib-xyz", licence="Golf-1.0")])
+        try:
+            proc = run_cli("--manifest", path)
+        finally:
+            os.unlink(path)
+        self.assertEqual(proc.returncode, 1, msg=proc.stdout + proc.stderr)
+        self.assertIn("golf-lib-xyz", proc.stdout + proc.stderr)
+
+    def test_apache_with_extra_restriction_denied(self):
+        """'Apache-2.0-Plus-Restricted' adds restriction text beyond 'Apache-2.0' -> exit 1 (AC-DEPS-013 closed list)."""
+        path = write_manifest(
+            [
+                full_entry(
+                    "apache-plus-lib-xyz",
+                    licence="Apache-2.0-Plus-Restricted",
+                )
+            ]
+        )
+        try:
+            proc = run_cli("--manifest", path)
+        finally:
+            os.unlink(path)
+        self.assertEqual(proc.returncode, 1, msg=proc.stdout + proc.stderr)
+        self.assertIn("apache-plus-lib-xyz", proc.stdout + proc.stderr)
+
+    def test_bsd_with_custom_suffix_denied(self):
+        """'BSD-3-Clause-Custom' is not the allow-listed 'BSD-3-Clause' -> exit 1 (AC-DEPS-013 closed list)."""
+        path = write_manifest(
+            [full_entry("bsd-custom-lib-xyz", licence="BSD-3-Clause-Custom")]
+        )
+        try:
+            proc = run_cli("--manifest", path)
+        finally:
+            os.unlink(path)
+        self.assertEqual(proc.returncode, 1, msg=proc.stdout + proc.stderr)
+        self.assertIn("bsd-custom-lib-xyz", proc.stdout + proc.stderr)
+
+    def test_genuine_allowlisted_licences_pass(self):
+        """Genuine allow-list licences (MIT/Apache-2.0/LGPL/BSD/Unicode/FTL/ISC/zlib/OFL/CC0) -> exit 0 (AC-DEPS-013)."""
+        path = write_manifest(
+            [
+                full_entry("gen-a", licence="MIT"),
+                full_entry("gen-b", licence="Apache-2.0"),
+                full_entry("gen-c", licence="LGPL-2.1-or-later"),
+                full_entry("gen-d", licence="BSD-3-Clause"),
+                full_entry("gen-e", licence="Unicode"),
+                full_entry("gen-f", licence="FTL"),
+                full_entry("gen-g", licence="ISC"),
+                full_entry("gen-h", licence="zlib"),
+                full_entry("gen-i", licence="OFL"),
+                full_entry("gen-j", licence="CC0-1.0"),
+            ]
+        )
+        try:
+            proc = run_cli("--manifest", path)
+        finally:
+            os.unlink(path)
+        self.assertEqual(proc.returncode, 0, msg=proc.stdout + proc.stderr)
+
     def test_missing_manifest_fails_closed(self):
         """Missing manifest is exit 1 (fail closed), not success or usage error."""
         proc = run_cli(

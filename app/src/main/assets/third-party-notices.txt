@@ -28,7 +28,7 @@ Dependencies
 17. FFmpeg — Licence: LGPL-2.1-or-later — Owner: media — Link: dynamic
    Licence text: third-party/FFmpeg-LICENSE (LGPL-2.1-or-later text shipped in notices)
    Source offer: Exact FFmpeg sources including local patches offered per LGPL section 6; see SBOM entry
-   Relinkable objects: ffmpeg-relikable-objects.zip recorded in SBOM
+   Relinkable objects: ffmpeg-relinkable-objects.zip recorded in SBOM
    Configure: --enable-shared --disable-static --disable-gpl --disable-nonfree
 18. WebRTC — Licence: BSD-3-Clause — Owner: media — Link: dynamic
 19. Lottie — Licence: Apache-2.0 — Owner: motion — Link: static
@@ -82,5 +82,5 @@ Licence texts and pointers
   dynamically (shared libraries, no static LGPL code); the complete LGPL-2.1
   text is bundled at third-party/FFmpeg-LICENSE, exact sources including
   local patches are offered per LGPL section 6 (see SBOM entry), and
-  relinkable objects ship as ffmpeg-relikable-objects.zip recorded in the SBOM.
+  relinkable objects ship as ffmpeg-relinkable-objects.zip recorded in the SBOM.
   (Full text: https://www.gnu.org/licenses/old-licenses/lgpl-2.1.html)

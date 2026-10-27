@@ -13,6 +13,7 @@ Missing/unparseable manifests fail closed (exit 1). Stdlib only.
 import argparse
 import json
 import os
+import re
 import sys
 import tempfile
 
@@ -22,20 +23,37 @@ from tools.deps._deps_data import DepsDataError, load_manifest
 
 DEFAULT_MANIFEST = os.path.join("build", "dependency-manifest.json")
 
-# Case-insensitive substrings marking an allow-listed licence.
-_ALLOW_SUBSTRINGS = (
-    "mit",
-    "apache",
-    "bsd",
-    "isc",
-    "zlib",
-    "unicode",
-    "ftl",
-    "ofl",
-    "cc0",
-    "public domain",
-    "lgpl",
+# Exact (normalised) identifiers marking an allow-listed licence.
+# Matched against the whole licence string, never by substring, so
+# look-alikes such as "Admit-1.0" (contains "mit") or "MISC-1.0"
+# (contains "isc") stay denied (AC-DEPS-013 closed list, AC-DEPS-016
+# deny-by-default).
+_ALLOW_IDENTIFIERS = frozenset(
+    {
+        "mit",
+        "apache-2.0",
+        "bsd-2-clause",
+        "bsd-3-clause",
+        "isc",
+        "zlib",
+        "unicode",
+        "unicode-dfs",
+        "ftl",
+        "ofl",
+        "ofl-1.1",
+        "cc0",
+        "cc0-1.0",
+        "public-domain",
+    }
 )
+
+
+def _normalise_licence(licence):
+    """Lower-case and normalise separators for exact allow-list compare."""
+    norm = licence.strip().lower()
+    norm = re.sub(r"[\s_]+", "-", norm)
+    norm = re.sub(r"-{2,}", "-", norm)
+    return norm
 
 
 def classify_licence(licence):
@@ -67,9 +85,8 @@ def classify_licence(licence):
         return False, "field-of-use restriction denied"
     if "proprietar" in low:
         return False, "proprietary licence without terms denied"
-    for token in _ALLOW_SUBSTRINGS:
-        if token in low:
-            return True, "allow-listed (%s)" % token
+    if _normalise_licence(licence) in _ALLOW_IDENTIFIERS:
+        return True, "allow-listed (%s)" % licence.strip()
     return False, "unidentifiable licence (treated as denied)"
 
 
