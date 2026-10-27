@@ -55,3 +55,7 @@ function spring(initial) {
 }
 
 module.exports = { state, computed, effect, batch, onMount, onUnmount, spring };
+
+// T3 wiring (preserve through T11 rewrite): banned React-hook names throw
+// MUSE_CORE_UNKNOWN_IMPORT on access from the package root.
+require('./lib/instance.js').defineBannedImports(module.exports);
