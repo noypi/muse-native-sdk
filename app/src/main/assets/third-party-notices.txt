@@ -1,0 +1,86 @@
+Third-Party Notices
+====================
+Muse native SDK — open-source attributions (FR-DEPS-006, AC-DEPS-015).
+
+This file lists every dependency in build/dependency-manifest.json with its
+licence, and gives the full licence texts (or where to find them) below.
+Generated from the committed dependency manifest; keep in sync when the
+manifest changes (see tools/deps/licence_check.py).
+
+Dependencies
+------------
+1. Hermes — Licence: MIT — Owner: core — Link: static
+2. QuickJS — Licence: MIT — Owner: core — Link: static
+3. Yoga — Licence: MIT — Owner: layout — Link: static
+4. Cassowary — Licence: MIT — Owner: layout — Link: static
+5. HarfBuzz — Licence: MIT — Owner: text — Link: static
+6. ICU4C — Licence: Unicode — Owner: text — Link: static
+7. FreeType — Licence: FTL — Owner: text — Link: static
+8. Vulkan Memory Allocator (VMA) — Licence: MIT — Owner: graphics — Link: static
+9. vk-bootstrap — Licence: MIT — Owner: graphics — Link: static
+10. Vulkan-Hpp — Licence: Apache-2.0 — Owner: graphics — Link: static
+11. libswappy — Licence: Apache-2.0 — Owner: graphics — Link: static
+12. FlatBuffers — Licence: Apache-2.0 — Owner: core — Link: static
+13. Crashpad — Licence: Apache-2.0 — Owner: core — Link: static
+14. Oboe — Licence: Apache-2.0 — Owner: media — Link: static
+15. AAudio — Licence: Apache-2.0 — Owner: media — Link: static
+16. Media3 — Licence: Apache-2.0 — Owner: media — Link: dynamic
+17. FFmpeg — Licence: LGPL-2.1-or-later — Owner: media — Link: dynamic
+   Licence text: third-party/FFmpeg-LICENSE (LGPL-2.1-or-later text shipped in notices)
+   Source offer: Exact FFmpeg sources including local patches offered per LGPL section 6; see SBOM entry
+   Relinkable objects: ffmpeg-relikable-objects.zip recorded in SBOM
+   Configure: --enable-shared --disable-static --disable-gpl --disable-nonfree
+18. WebRTC — Licence: BSD-3-Clause — Owner: media — Link: dynamic
+19. Lottie — Licence: Apache-2.0 — Owner: motion — Link: static
+20. Rive — Licence: MIT — Owner: motion — Link: static
+21. Play Core NDK — Licence: Apache-2.0 — Owner: build — Link: static
+22. moodycamel::ConcurrentQueue — Licence: MIT — Owner: core — Link: static
+23. ankerl::unordered_dense — Licence: MIT — Owner: core — Link: static
+24. {fmt} — Licence: MIT — Owner: core — Link: static
+25. magic_enum — Licence: MIT — Owner: core — Link: static
+26. simdjson — Licence: Apache-2.0 — Owner: build — Link: static
+
+Licence texts and pointers
+--------------------------
+- MIT: Permission is hereby granted, free of charge, to any person obtaining
+  a copy of this software and associated documentation files (the "Software"),
+  to deal in the Software without restriction, including without limitation
+  the rights to use, copy, modify, merge, publish, distribute, sublicense,
+  and/or sell copies of the Software, and to permit persons to whom the
+  Software is furnished to do so, subject to the following conditions: The
+  above copyright notice and this permission notice shall be included in all
+  copies or substantial portions of the Software. THE SOFTWARE IS PROVIDED
+  "AS IS", WITHOUT WARRANTY OF ANY KIND. (Full text: https://opensource.org/licenses/MIT)
+- Apache-2.0: Licensed under the Apache License, Version 2.0; you may not use
+  this file except in compliance with the License. You may obtain a copy at
+  http://www.apache.org/licenses/LICENSE-2.0. Unless required by applicable
+  law or agreed to in writing, software distributed under the License is
+  distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+  KIND. (Full text: https://www.apache.org/licenses/LICENSE-2.0)
+- BSD-3-Clause: Redistribution and use in source and binary forms, with or
+  without modification, are permitted provided that the following conditions
+  are met: (1) Redistributions of source code must retain the above copyright
+  notice, this list of conditions and the following disclaimer; (2)
+  Redistributions in binary form must reproduce the above copyright notice,
+  this list of conditions and the following disclaimer in the documentation
+  and/or other materials provided with the distribution; (3) Neither the name
+  of the copyright holder nor the names of its contributors may be used to
+  endorse or promote products derived from this software without specific
+  prior written permission. (Full text: https://opensource.org/licenses/BSD-3-Clause)
+- Unicode: See the Unicode Licence Agreement — Data Files and Software
+  (https://www.unicode.org/copyright.html). Permission is hereby granted to
+  deal in the Data Files and Software without restriction, provided the above
+  copyright notice(s) and this permission notice appear in all copies.
+- FTL: The FreeType Project LICENSE (FTL). Portions copyright the FreeType
+  authors; licensed under the FreeType License — a BSD-style licence with a
+  credit clause. Full text ships with the FreeType sources and at
+  https://freetype.org/license.html.
+- LGPL-2.1-or-later: This library is free software; you can redistribute it
+  and/or modify it under the terms of the GNU Lesser General Public License
+  as published by the Free Software Foundation; either version 2.1 of the
+  License, or (at your option) any later version. This build links FFmpeg
+  dynamically (shared libraries, no static LGPL code); the complete LGPL-2.1
+  text is bundled at third-party/FFmpeg-LICENSE, exact sources including
+  local patches are offered per LGPL section 6 (see SBOM entry), and
+  relinkable objects ship as ffmpeg-relikable-objects.zip recorded in the SBOM.
+  (Full text: https://www.gnu.org/licenses/old-licenses/lgpl-2.1.html)
