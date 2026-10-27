@@ -32,6 +32,19 @@ function runBuild(appDir, rest) {
     process.exitCode = 1;
     return;
   }
+  const { getExitCode } = require('./exit-codes.js');
+  const { validateOptions } = require('./cli.js');
+  // Option validation runs at `configure`, before any compilation: unknown
+  // options, invalid values and incompatible combinations exit 2 naming
+  // the option and the accepted values, with no `dist/` writes.
+  try {
+    validateOptions(['build', appDir].concat(Array.isArray(rest) ? rest : []));
+  } catch (err) {
+    const message = err && err.message ? err.message : String(err);
+    process.stderr.write(message.endsWith('\n') ? message : message + '\n');
+    process.exitCode = getExitCode('config');
+    return;
+  }
   const resolved = path.resolve(appDir);
   // `--stage <name>` runs one stage only; anything else after <appDir>
   // stays flags for config resolution. Unknown stage values fail here,
@@ -45,12 +58,12 @@ function runBuild(appDir, rest) {
   } catch (err) {
     const message = err && err.message ? err.message : String(err);
     process.stderr.write(message.endsWith('\n') ? message : message + '\n');
-    process.exitCode = 1;
+    process.exitCode = getExitCode('config');
     return;
   }
   if (stageName !== undefined && !stages.STAGES.includes(stageName)) {
     process.stderr.write(`Error: unknown stage '${stageName}'. Expected one of: ${stages.STAGES.join(', ')}\n`);
-    process.exitCode = 1;
+    process.exitCode = getExitCode('config');
     return;
   }
   // Resolve typed config first: failures are fail-closed before any
@@ -65,12 +78,12 @@ function runBuild(appDir, rest) {
   } catch (err) {
     const message = err && err.message ? err.message : String(err);
     process.stderr.write(message.endsWith('\n') ? message : message + '\n');
-    process.exitCode = 1;
+    process.exitCode = getExitCode('config');
     return;
   }
   if (argv.includes('--print-config')) {
     process.stdout.write(JSON.stringify(resolvedConfig, null, 2) + '\n');
-    process.exitCode = 0;
+    process.exitCode = getExitCode('ok');
     return;
   }
   let stat = null;
@@ -107,18 +120,18 @@ function runBuild(appDir, rest) {
         }
       }
       if (failed) {
-        process.exitCode = 1;
+        process.exitCode = getExitCode('compile');
         return;
       }
       // Name the artefacts the run wrote, as the build has always done.
       if (ctx._wroteIr) process.stdout.write(`Wrote ${ctx._wroteIr}\n`);
       if (ctx._wroteBin) process.stdout.write(`Wrote ${ctx._wroteBin}\n`);
-      process.exitCode = 0;
+      process.exitCode = getExitCode('ok');
     })
     .catch((err) => {
       const message = err && err.message ? err.message : String(err);
       process.stderr.write(message.endsWith('\n') ? message : message + '\n');
-      process.exitCode = 1;
+      process.exitCode = getExitCode('compile');
     });
 }
 

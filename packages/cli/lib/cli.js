@@ -10,6 +10,100 @@ if (INVOKED === 'muse') {
   process.stderr.write(`Warning: '${INVOKED}' is deprecated, use 'muse-native' instead.\n`);
 }
 
+// Error thrown for unknown options, invalid values and incompatible
+// combinations. Carries the offending `option` flag and the `accepted`
+// values description. Message format keeps `Error: <option> ... Expected
+// ...` so CLI stderr names the option and the accepted values.
+class OptionError extends Error {
+  constructor(option, accepted) {
+    super(`Error: ${option}: Expected ${accepted}`);
+    this.name = 'OptionError';
+    this.option = option;
+    this.accepted = accepted;
+  }
+}
+
+function loadStages() {
+  try {
+    const stages = require('./stages.js').STAGES;
+    if (Array.isArray(stages) && stages.length > 0) return stages;
+  } catch (_) {
+    // Fall through to the static list below.
+  }
+  return ['configure', 'typecheck', 'compile', 'emit', 'native-build', 'package', 'install'];
+}
+
+// Stages that never run with `--release`: a release build is incompatible
+// with a debug-only stage run.
+const DEBUG_ONLY_STAGES = ['typecheck'];
+
+const ACCEPTED_OPTIONS = '--stage, --print-config, --release, --name, --version, --help';
+
+// Validate the option layer (`--` flags) of an argv array. Positional
+// operands (the command, `<appDir>`) and `-h`/`--help` are skipped — help
+// and `--print-config` handling is unaffected. Throws OptionError naming
+// the option and the accepted values for: unknown options (including
+// out-of-scope `--with-sample`, `--strict`, `--abi`, `--modules`,
+// `--output`, `--archs`, `--packaging`), a missing/invalid `--stage`
+// value, and the incompatible `--release` + debug-only-stage combination.
+// Never validates config keys — unknown CONFIG keys stay ConfigError (T1/T2).
+function validateOptions(argv) {
+  const args = Array.isArray(argv) ? argv : [];
+  const STAGES = loadStages();
+  const VALUE_FLAGS = new Set(['--stage', '--name', '--version']);
+  const BOOL_FLAGS = new Set(['--print-config', '--release', '--help', '-h']);
+  let stageValue;
+  let sawRelease = false;
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (typeof arg !== 'string' || arg.length === 0) continue;
+    if (!arg.startsWith('-')) continue;
+    if (arg === '-' || arg === '--') {
+      throw new OptionError(arg, `one of: ${ACCEPTED_OPTIONS}`);
+    }
+    if (!arg.startsWith('--')) {
+      // Single-dash cluster: only -h is known.
+      if (arg === '-h') continue;
+      throw new OptionError(arg, `one of: ${ACCEPTED_OPTIONS}`);
+    }
+    const eq = arg.indexOf('=');
+    const name = eq === -1 ? arg : arg.slice(0, eq);
+    const inlineValue = eq === -1 ? undefined : arg.slice(eq + 1);
+    if (!VALUE_FLAGS.has(name) && !BOOL_FLAGS.has(name)) {
+      throw new OptionError(name, `one of: ${ACCEPTED_OPTIONS}`);
+    }
+    if (BOOL_FLAGS.has(name)) {
+      if (name === '--release') sawRelease = true;
+      continue;
+    }
+    // Value flag: `--<name> <value>` or `--<name>=<value>`.
+    let value = inlineValue;
+    if (value === undefined) {
+      const next = args[i + 1];
+      if (typeof next !== 'string' || next.startsWith('-')) {
+        if (name === '--stage') {
+          throw new OptionError(name, `one of: ${STAGES.join(', ')}`);
+        }
+        throw new OptionError(name, 'a value');
+      }
+      value = next;
+      i++;
+    }
+    if (name === '--stage') {
+      if (!STAGES.includes(value)) {
+        throw new OptionError(`--stage '${value}'`, `one of: ${STAGES.join(', ')}`);
+      }
+      stageValue = value;
+    }
+  }
+  if (sawRelease && stageValue !== undefined && DEBUG_ONLY_STAGES.includes(stageValue)) {
+    throw new OptionError(
+      '--release',
+      `incompatible combination: --release cannot run with debug-only stage '${stageValue}'. Expected one of: ${STAGES.join(', ')} without --release, or a release stage without --stage ${stageValue}`,
+    );
+  }
+}
+
 function printHelp() {
   process.stdout.write(
     [
@@ -32,8 +126,28 @@ function printUsageError(message) {
   process.stderr.write(`${message}\nUsage: muse-native <init|build|dev|run> [args]\n`);
 }
 
+function printBuildHelp() {
+  const { getOptionSchema } = require('./config.js');
+  const schema = getOptionSchema();
+  const lines = ['Usage: muse-native build <appDir> [options]', '', 'Options:'];
+  for (const entry of schema) {
+    let line = `  --${entry.name} <${entry.type}> (default: ${String(entry.default)})`;
+    if (Array.isArray(entry.allowed)) {
+      line += ` (allowed: ${entry.allowed.map(String).join(', ')})`;
+    }
+    lines.push(line);
+  }
+  lines.push('', '  -h, --help    show this help', '');
+  process.stdout.write(lines.join('\n'));
+}
+
 function main() {
   const argv = process.argv.slice(2);
+  if (argv[0] === 'build' && (argv.includes('--help') || argv.includes('-h'))) {
+    printBuildHelp();
+    process.exitCode = 0;
+    return;
+  }
   if (argv.includes('-h') || argv.includes('--help') || argv.length === 0) {
     if (argv.length === 0) {
       printUsageError('Usage: muse-native <init|build|dev|run> [args]');
@@ -57,6 +171,21 @@ function main() {
   if (command === 'build') {
     // `<appDir>` stays positional; every flag after it — including
     // `--stage <name>` and `--print-config` — passes through to build.js.
+    // Option validation runs here at `configure`, before any compilation:
+    // unknown/invalid/incompatible flags exit 2 naming the option and the
+    // accepted values, with no `dist/` writes.
+    try {
+      validateOptions(argv);
+    } catch (err) {
+      const message = err && err.message ? err.message : String(err);
+      process.stderr.write(message.endsWith('\n') ? message : message + '\n');
+      try {
+        process.exitCode = require('./exit-codes.js').getExitCode('config');
+      } catch (_) {
+        process.exitCode = 2;
+      }
+      return;
+    }
     require('./build.js')(argv[1], argv.slice(2));
     return;
   }
@@ -70,4 +199,22 @@ function main() {
   }
 }
 
-main();
+module.exports = { validateOptions, OptionError, main };
+
+// Run on direct invocation and when loaded through the `muse-native` (or
+// `muse`) bin wrapper. Do not auto-run when required in-process (unit
+// tests), where `require.main` is the test runner.
+(function autoRun() {
+  try {
+    const entry = require.main && require.main.filename ? String(require.main.filename) : '';
+    if (/muse(-native)?\.js$/.test(entry)) {
+      main();
+      return;
+    }
+  } catch (_) {
+    // Fall through to the module.parent check below.
+  }
+  if (!module.parent) {
+    main();
+  }
+})();

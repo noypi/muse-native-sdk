@@ -198,4 +198,30 @@ function resolveConfig(argv, env, cwd) {
   return { config, winningLayer };
 }
 
-module.exports = { SCHEMA, DEFAULTS, ConfigError, resolveConfig, validateConfig };
+// Option schema for `muse-native build --help`: derived from the same live
+// SCHEMA/DEFAULTS objects validateConfig/resolveConfig check, so the help
+// list cannot drift from validation. Build-only flags (e.g. `--stage`,
+// stripped before resolveConfig — not a config key) append here with their
+// live allowed values; config entries never duplicate the schema literals.
+function getOptionSchema() {
+  const entries = Object.keys(SCHEMA).map((name) => ({
+    name,
+    type: SCHEMA[name],
+    default: DEFAULTS[name],
+  }));
+  let stageAllowed = [];
+  try {
+    stageAllowed = require('./stages.js').STAGES;
+  } catch (_) {
+    stageAllowed = [];
+  }
+  entries.push({
+    name: 'stage',
+    type: 'string',
+    default: undefined,
+    allowed: Array.isArray(stageAllowed) ? stageAllowed.slice() : [],
+  });
+  return entries;
+}
+
+module.exports = { SCHEMA, DEFAULTS, ConfigError, resolveConfig, validateConfig, getOptionSchema };
