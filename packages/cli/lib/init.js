@@ -80,4 +80,93 @@ function runInit(dir) {
   process.exitCode = 0;
 }
 
+function fail(reason) {
+  throw new Error(`scaffold-failed: ${reason}`);
+}
+
+function scaffoldProject(args) {
+  const templateDir = args && args.templateDir;
+  const outDir = args && args.outDir;
+  if (typeof templateDir !== 'string' || templateDir.length === 0) {
+    fail('invalid templateDir');
+  }
+  if (typeof outDir !== 'string' || outDir.length === 0) {
+    fail('invalid outDir');
+  }
+  // Route through the existing entry-point registry (create→init).
+  let command = null;
+  try {
+    command = require('./entry-point.js').getEntryPointCommands('create');
+  } catch (err) {
+    fail(`registry lookup failed: ${err && err.message ? err.message : err}`);
+  }
+  if (command !== 'init') {
+    fail(`unexpected create command: ${command}`);
+  }
+  let templateStat = null;
+  try {
+    templateStat = fs.statSync(templateDir);
+  } catch (err) {
+    fail(`template not found: ${err && err.code ? err.code : 'ENOENT'}`);
+  }
+  if (!templateStat.isDirectory()) {
+    fail('template is not a directory');
+  }
+  let createdByUs = false;
+  try {
+    const stat = fs.statSync(outDir);
+    if (!stat.isDirectory()) {
+      fail('output exists and is not a directory');
+    }
+    const entries = fs.readdirSync(outDir);
+    if (entries.length > 0) {
+      fail('output directory already exists and is not empty');
+    }
+  } catch (err) {
+    if (err && err.message && err.message.indexOf('scaffold-failed:') === 0) {
+      throw err;
+    }
+    if (!err || err.code !== 'ENOENT') {
+      fail(`cannot inspect output directory: ${err && err.message ? err.message : err}`);
+    }
+    createdByUs = true;
+  }
+  try {
+    fs.mkdirSync(outDir, { recursive: true });
+    for (const rel of TEMPLATE_FILES) {
+      const src = path.join(templateDir, rel);
+      const dest = path.join(outDir, rel);
+      fs.mkdirSync(path.dirname(dest), { recursive: true });
+      fs.copyFileSync(src, dest);
+    }
+  } catch (err) {
+    if (err && err.message && err.message.indexOf('scaffold-failed:') === 0) {
+      throw err;
+    }
+    try {
+      if (createdByUs) {
+        fs.rmSync(outDir, { recursive: true, force: true });
+      } else {
+        for (const rel of TEMPLATE_FILES) {
+          try {
+            fs.rmSync(path.join(outDir, rel), { force: true });
+          } catch (_) {
+            // Continue removing the remaining scaffold files.
+          }
+        }
+        try {
+          fs.rmSync(path.join(outDir, 'src'), { recursive: true, force: true });
+        } catch (_) {
+          // src/ may not have been created; ignore.
+        }
+      }
+    } catch (_) {
+      // Best-effort cleanup; the error below is what matters.
+    }
+    fail(`copy failed: ${err && err.code ? err.code : (err && err.message ? err.message : err)}`);
+  }
+  return { ok: true, projectDir: outDir };
+}
+
 module.exports = runInit;
+module.exports.scaffoldProject = scaffoldProject;
