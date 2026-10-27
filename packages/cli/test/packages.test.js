@@ -69,23 +69,41 @@ describe('TC-TSX-021 Batch 1 — T1 workspace + harness', () => {
 });
 
 // ---------------------------------------------------------------------------
-// T2 — @muse/core skeleton.
-// Interface: `require('@muse/core')` → `{ state, computed, effect, batch,
-// onMount, onUnmount }`; each is a function with the documented arity; stub
-// bodies throw `Error('not implemented: FR-MCORE lane')` except
-// `state`/`computed` which return a minimal `{ value }` handle so
-// import-shape checks pass. No other named exports.
+// T2 — @muse/core surface (BUG-MCORE-001: specified FR-MCORE-002..007 surface).
+// Interface: `require('packages/core/index.js') → Object.keys(mod).sort()`
+// equals the 22 real names `['batch','bindReadonly','bindValue','computed',
+// 'createInstance','disposeInstance','effect','getCurrentInstance','markRaw',
+// 'mount','onBeforeMount','onBeforeUnmount','onErrorCaptured','onMounted',
+// 'onUnmounted','reactive','readonly','spring','state','unmount','watch',
+// 'watchEffect']` plus the 7 throwing getters `['onBeforeUpdate','onUpdated',
+// 'useCallback','useEffect','useMemo','useRef','useState']` (29 enumerable
+// keys total); `state`/`computed` return a minimal `{ value }` handle;
+// `effect`/`batch` are callable without the lane-stub error; the 5
+// banned-hook getters throw `MUSE_CORE_UNKNOWN_IMPORT` and the 2
+// unknown-lifecycle getters throw `MUSE_CORE_UNKNOWN_LIFECYCLE`, each pinned
+// by name and `err.code`. `spring` is the kept pre-existing extra (kept, not
+// redefined — packages/core/index.js:67-68), not a separate allowance.
 // ---------------------------------------------------------------------------
 describe('TC-TSX-021 Batch 1 — T2 @muse/core surface', () => {
   const CORE_INDEX = path.join(ROOT, 'packages', 'core', 'index.js');
-  const EXPECTED = ['batch', 'computed', 'effect', 'onMount', 'onUnmount', 'spring', 'state'];
+  const EXPECTED_REAL = ['batch', 'bindReadonly', 'bindValue', 'computed', 'createInstance', 'disposeInstance', 'effect', 'getCurrentInstance', 'markRaw', 'mount', 'onBeforeMount', 'onBeforeUnmount', 'onErrorCaptured', 'onMounted', 'onUnmounted', 'reactive', 'readonly', 'spring', 'state', 'unmount', 'watch', 'watchEffect'];
+  const THROWING_GETTERS = ['onBeforeUpdate', 'onUpdated', 'useCallback', 'useEffect', 'useMemo', 'useRef', 'useState'];
 
-  it('resolves to exactly the seven named function exports', () => {
+  it('resolves to exactly the 22 real exports plus 7 throwing getters (29 keys)', () => {
     const mod = require(CORE_INDEX);
-    assert.deepEqual(Object.keys(mod).sort(), [...EXPECTED].sort(), 'exact export list, no more, no fewer');
-    for (const name of EXPECTED) {
+    assert.deepEqual(
+      Object.keys(mod).sort(),
+      [...EXPECTED_REAL, ...THROWING_GETTERS].sort(),
+      'exact export list: 22 real exports + 7 throwing getters, no more, no fewer',
+    );
+    for (const name of EXPECTED_REAL) {
       assert.equal(typeof mod[name], 'function', `${name} must be a function`);
     }
+    for (const name of ['onMounted', 'onUnmounted', 'onBeforeMount', 'onBeforeUnmount']) {
+      assert.ok(name in mod, `${name} must be present (mount/unmount-only lifecycle)`);
+    }
+    assert.ok(!('onMount' in mod), 'onMount must be absent (never in spec)');
+    assert.ok(!('onUnmount' in mod), 'onUnmount must be absent (never in spec)');
   });
 
   it('state/computed return minimal `{ value }` handles', () => {
@@ -96,10 +114,27 @@ describe('TC-TSX-021 Batch 1 — T2 @muse/core surface', () => {
     assert.ok(c && typeof c === 'object' && 'value' in c, 'computed() must return a `{ value }` handle');
   });
 
-  it('effect/batch/onMount/onUnmount throw not-implemented for the FR-MCORE lane', () => {
+  it('effect/batch are callable; banned-hook and unknown-lifecycle getters throw named errors', () => {
     const mod = require(CORE_INDEX);
-    for (const name of ['effect', 'batch', 'onMount', 'onUnmount']) {
-      assert.throws(() => mod[name](() => {}), /not implemented: FR-MCORE lane/, `${name} must throw the lane stub error`);
+    let ran = false;
+    assert.doesNotThrow(() => mod.effect(() => { ran = true; }), 'effect(fn) must not throw the lane-stub error');
+    assert.equal(ran, true, 'effect(fn) must run fn');
+    let batched = false;
+    assert.doesNotThrow(() => mod.batch(() => { batched = true; }), 'batch(fn) must not throw the lane-stub error');
+    assert.equal(batched, true, 'batch(fn) must run fn');
+    for (const name of ['useState', 'useEffect', 'useMemo', 'useCallback', 'useRef']) {
+      assert.throws(
+        () => mod[name],
+        (err) => err && err.code === 'MUSE_CORE_UNKNOWN_IMPORT' && err.message.includes(name),
+        `${name} must throw MUSE_CORE_UNKNOWN_IMPORT pinned by name + code`,
+      );
+    }
+    for (const name of ['onUpdated', 'onBeforeUpdate']) {
+      assert.throws(
+        () => mod[name],
+        (err) => err && err.code === 'MUSE_CORE_UNKNOWN_LIFECYCLE' && err.message.includes(name),
+        `${name} must throw MUSE_CORE_UNKNOWN_LIFECYCLE pinned by name + code`,
+      );
     }
   });
 });
