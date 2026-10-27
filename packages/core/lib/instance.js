@@ -17,6 +17,12 @@
 //   (`onBeforeMount`/`onMounted`/`onBeforeUnmount`/`onUnmounted`); `mount`
 //   fires `beforeMount` then `mounted`, `unmount` fires `beforeUnmount`,
 //   disposes, then `unmounted`.
+// - `registerErrorCapturer(handle, fn)` + `captureError(handle, err)` —
+//   capturer registry + consult-on-throw-paths seam owned by T12 for T9's
+//   `lib/scope.js` delivery (`onErrorCaptured` registers via the former;
+//   every throw path below consults the latter nearest-ancestor-first:
+//   swallow exactly-once when a capturer handles, identical-object rethrow
+//   to the boundary caller when uncaptured).
 // - `defineBannedImports(target)` — require-time half of AC-MCORE-002 for
 //   T11 to wire into the package root: defines throwing getters for the
 //   banned React-hook names so that accessing them throws
@@ -93,6 +99,12 @@ function createInstance(body) {
   }
   var handle = {
     mounted: false,
+    // Ancestor link: the body running when this handle was created (null at
+    // root). Capture delivery walks it nearest-ancestor-first.
+    parent: instanceStack.length > 0 ? instanceStack[instanceStack.length - 1] : null,
+    // Error capturers registered via registerErrorCapturer (T12 seam for
+    // T9's `onErrorCaptured`); consulted nearest-ancestor-first on throw.
+    capturers: [],
     // Lifecycle hook lists, keyed by phase; T8 registers via registerHook.
     hooks: { beforeMount: [], mounted: [], beforeUnmount: [], unmounted: [] },
     // Owned disposers (effects/watches/cleanups/scopes); T6/T7/T9/T10
@@ -105,9 +117,18 @@ function createInstance(body) {
   instanceStack.push(handle);
   try {
     body();
-  } finally {
+  } catch (err) {
+    // T12 consult-on-throw: offer the error to the nearest ancestor capturer
+    // first (starting at this handle so a self-registered capturer also
+    // applies). Swallow exactly-once when handled; otherwise rethrow the
+    // identical object to the boundary caller (the root handler). The stack
+    // is already popped below before delivery so capturers observe the
+    // restored current instance.
     instanceStack.pop();
+    if (captureError(handle, err)) return handle;
+    throw err;
   }
+  instanceStack.pop();
   return handle;
 }
 
@@ -149,10 +170,68 @@ function registerHook(handle, phase, fn) {
   return fn;
 }
 
+// T12 capturer-registry seam for T9's `lib/scope.js` (`onErrorCaptured`
+// registers here): records `fn` on `handle`'s capturer stack and returns an
+// idempotent unregister disposer. Delivery (`captureError`, below) consults
+// nearest-ancestor-first and stops at the first instance that owns capturers.
+function registerErrorCapturer(handle, fn) {
+  assertHandle(handle, 'registerErrorCapturer');
+  if (typeof fn !== 'function') {
+    throw new TypeError('registerErrorCapturer(handle, fn): fn must be a function');
+  }
+  if (!Array.isArray(handle.capturers)) handle.capturers = [];
+  handle.capturers.push(fn);
+  var removed = false;
+  return function unregisterErrorCapturer() {
+    if (removed) return;
+    removed = true;
+    var list = handle.capturers;
+    if (!Array.isArray(list)) return;
+    for (var i = 0; i < list.length; i += 1) {
+      if (list[i] === fn) {
+        list.splice(i, 1);
+        return;
+      }
+    }
+  };
+}
+
+// T12 consult step callable from `lib/scope.js`: walk `handle` then its
+// `parent` chain nearest-first; invoke every capturer owned by the first
+// instance that has any (each exactly once, in registration order) and
+// return true (handled — caller swallows). Return false when no capturer
+// exists anywhere on the chain (caller rethrows the identical object).
+// A throwing capturer propagates its own error and counts as unhandled here
+// only in that the original error is replaced by the capturer's throw.
+function captureError(handle, err) {
+  var current = handle || null;
+  while (current !== null && typeof current === 'object') {
+    var list = current.capturers;
+    if (Array.isArray(list) && list.length > 0) {
+      var fns = list.slice();
+      for (var i = 0; i < fns.length; i += 1) {
+        fns[i](err);
+      }
+      return true;
+    }
+    if (!Object.prototype.hasOwnProperty.call(current, 'parent')) break;
+    current = current.parent;
+  }
+  return false;
+}
+
 function runHooks(handle, phase) {
   var fns = handle.hooks[phase].slice();
   for (var i = 0; i < fns.length; i += 1) {
-    fns[i]();
+    try {
+      fns[i]();
+    } catch (err) {
+      // T12 consult-on-throw for hook firing (mount/unmount paths): capture
+      // at the throwing handle's chain, swallow when handled, otherwise
+      // rethrow the identical object to the boundary caller.
+      if (captureError(handle, err)) return;
+      throw err;
+    }
   }
 }
 
@@ -206,9 +285,11 @@ module.exports = {
   mount: mount,
   unmount: unmount,
   getCurrentInstance: getCurrentInstance,
-  // Registry hooks owned by later items (T8 lifecycle, T9 scope).
+  // Registry hooks owned by later items (T8 lifecycle, T9 scope, T12 seam).
   registerDisposer: registerDisposer,
   registerHook: registerHook,
+  registerErrorCapturer: registerErrorCapturer,
+  captureError: captureError,
   // Banned-import require-time helper + metadata for T11's root wiring.
   defineBannedImports: defineBannedImports,
   bannedImportError: bannedImportError,
