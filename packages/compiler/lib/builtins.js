@@ -6,8 +6,8 @@ const { formatGrammarDiagnostic } = require("./grammar.js");
 //
 // `compileBuiltin` is a pure tag/prop shape check: it lowers `c-if`/`test`
 // and `c-show`/`when` to conditional/visibility IR, or `null` for anything
-// else. Missing required props fall through to `null` (boolean-only
-// validation is T3's domain, not here). `c-else-if`/`c-else`/`c-for` are
+// else. Missing required props fall through to `null` (boolean prop typing
+// is enforced at the type level, not here). `c-else-if`/`c-else`/`c-for` are
 // NOT T1's — they return `null` here (T2/T3 own them).
 
 function compileBuiltin(tag, props) {
@@ -102,6 +102,7 @@ const KNOWN_BUILTIN_TAGS = new Set([
 ]);
 
 function validateBuiltinTag(tag, loc) {
+  if (!String(tag).startsWith("c-")) return null;
   if (KNOWN_BUILTIN_TAGS.has(tag)) return null;
   const l = loc && typeof loc === "object" ? loc : {};
   const diag = {

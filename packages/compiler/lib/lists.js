@@ -43,8 +43,11 @@ function compileMapList(sourceText, loc) {
   const body = m[3].trim();
   // Block bodies (`=> { ... }`) and non-JSX bodies are non-canonical —
   // T7's domain. Return null here, never a diagnostic.
-  if (!/^<[\s\S]*\/>$/.test(body)) return null;
-  if (/^\{/.test(body)) return null;
+  // Canonical bodies are a self-closing element or a paired element whose
+  // open/close tag names match.
+  const selfClosing = /^<[\s\S]*\/>$/.test(body);
+  const paired = /^<([A-Za-z_$][\w$]*)\b[^>]*>[\s\S]*<\/\s*\1\s*>$/.test(body);
+  if (!selfClosing && !paired) return null;
   const keyMatch = /\bkey\s*=\s*\{([^}]*)\}/.exec(body);
   if (!keyMatch) return missingKeyDiagnostic(loc);
   const key = keyMatch[1].trim();
@@ -75,9 +78,9 @@ function validateMapCallback(sourceText, loc) {
   }
   // Single self-closing JSX element.
   if (/^<[A-Za-z_$][\w$]*\b[\s\S]*\/>$/.test(body)) return null;
-  // Single simple (paired) JSX element.
+  // Single simple (paired) JSX element with matching open/close names.
   if (
-    /^<[A-Za-z_$][\w$]*\b[^>]*>[\s\S]*<\/\s*[A-Za-z_$][\w$]*\s*>$/.test(body)
+    /^<([A-Za-z_$][\w$]*)\b[^>]*>[\s\S]*<\/\s*\1\s*>$/.test(body)
   ) {
     return null;
   }

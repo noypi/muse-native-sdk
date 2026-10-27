@@ -79,6 +79,13 @@ describe('TC-TSX-014 — canonical .map() compiles to a keyed list (AC-TSX-014)'
     assert.notEqual(d, null, 'empty key must return a diagnostic');
     assert.ok(d.form.includes('key'), 'diagnostic form must name `key`');
   });
+
+  it('compiles a paired canonical element to the same keyed-list node', () => {
+    assert.deepEqual(
+      compileMapList('items.map((item) => <Row key={item.id}></Row>)', loc()),
+      { kind: 'keyed-list', each: 'items', key: 'item.id' },
+    );
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -131,6 +138,21 @@ describe('TC-TSX-015 — block-body / non-single-JSX callbacks fail; c-for equiv
         loc(),
       ),
       false,
+    );
+  });
+
+  it('rejects a mismatched open/close tag pair with a non-null diagnostic', () => {
+    const d = validateMapCallback('items.map((i) => <Row>x</Div>)', loc());
+    assert.notEqual(d, null, 'mismatched tags must return a diagnostic');
+  });
+
+  it('accepts the paired canonical single-JSX callback (null)', () => {
+    assert.equal(
+      validateMapCallback(
+        'items.map((item) => <Row key={item.id}></Row>)',
+        loc(),
+      ),
+      null,
     );
   });
 });
