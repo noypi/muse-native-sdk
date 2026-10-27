@@ -9,5 +9,11 @@ declare namespace JSX {
     'c-else': { children?: unknown };
     'c-for': { each: unknown[]; key: string; children?: unknown };
     'c-show': { when: boolean; children?: unknown };
+    input: {
+      value?: unknown;
+      valueReadonly?: unknown;
+      onChange?: (next: unknown) => void;
+      children?: unknown;
+    };
   }
 }

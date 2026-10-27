@@ -72,4 +72,32 @@ function compileReadonlyBinding(args, loc) {
   return diag;
 }
 
-module.exports = { compileValueBinding, compileReadonlyBinding };
+// T3: spread inert + AOT `model` rejection (AC-TSX-018 AOT half).
+//
+// Spread never synthesizes two-way: always inert (`null`), even when the
+// spread carries a `value`. `validateBindingProp` rejects only `model` with
+// a diagnostic naming the unknown prop (file, line, column from `loc`)
+// whose shape round-trips through the shared `formatGrammarDiagnostic`;
+// known `value`/`valueReadonly`/`onChange` (and any other prop) pass.
+function compileSpreadBinding(args, loc) {
+  void args;
+  void loc;
+  return null;
+}
+
+function validateBindingProp(prop, loc) {
+  if (prop !== "model") {
+    return null;
+  }
+  const diag = {
+    ...toLoc(loc),
+    form: "unknown prop model",
+    fix: "remove model={...}; use value={...} with onChange={...} or valueReadonly={...} with onChange={...}",
+  };
+  // Keep the shared formatter as the single rendering path: the diagnostic
+  // must stay a one-liner naming the file.
+  void formatGrammarDiagnostic(diag);
+  return diag;
+}
+
+module.exports = { compileValueBinding, compileReadonlyBinding, compileSpreadBinding, validateBindingProp };
