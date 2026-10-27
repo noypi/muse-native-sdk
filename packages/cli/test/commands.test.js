@@ -207,3 +207,134 @@ describe('TC-TSX-022/023 Batch 3 — T7 build emits IR + binary tree', () => {
 });
 
 // === Batch 4 (T8 dev, T9 run, T10 fixture) appends NEW describe blocks below. ===
+
+// ---------------------------------------------------------------------------
+// T8 — `muse-native dev` validates + serves (minimal).
+// Interface: `muse-native dev <appDir>` → validates sources (same loader as
+// build), stdout `serving <appDir> at http://127.0.0.1:<port>/` (default port
+// documented, overridable later), stays alive until SIGINT; invalid tree →
+// stderr + exit 1 before serving.
+// ---------------------------------------------------------------------------
+describe('TC-TSX-022 Batch 4 — T8 dev validates + serves', () => {
+  const devChildren = [];
+  afterEach(() => {
+    while (devChildren.length) {
+      const child = devChildren.pop();
+      try {
+        child.kill('SIGINT');
+      } catch {
+        // already exited — nothing to kill
+      }
+    }
+  });
+
+  it('dev on the inline fixture prints the serve line and stays alive until SIGINT', async () => {
+    const { spawn } = require('node:child_process');
+    const appDir = mkTmp('muse-dev-');
+    writeMinimalApp(appDir);
+    const child = spawn(process.execPath, [BIN_NATIVE, 'dev', appDir]);
+    devChildren.push(child);
+    let stdout = '';
+    child.stdout.setEncoding('utf8');
+    child.stdout.on('data', (d) => {
+      stdout += d;
+    });
+    const serveRe = /serving .* at http:\/\/127\.0\.0\.1:\d+\//;
+    const seen = await new Promise((resolve) => {
+      const timer = setTimeout(() => resolve(false), 5000);
+      const poll = setInterval(() => {
+        if (serveRe.test(stdout)) {
+          clearTimeout(timer);
+          clearInterval(poll);
+          resolve(true);
+        }
+      }, 50);
+      child.on('exit', () => {
+        clearTimeout(timer);
+        clearInterval(poll);
+        resolve(false);
+      });
+    });
+    assert.ok(seen, `dev must print 'serving <appDir> at http://127.0.0.1:<port>/', got stdout: ${JSON.stringify(stdout)}`);
+    assert.ok(stdout.includes(appDir), 'serve line must name the appDir');
+    child.kill('SIGINT');
+    await new Promise((resolve) => {
+      const timer = setTimeout(resolve, 2000);
+      child.on('exit', () => {
+        clearTimeout(timer);
+        resolve();
+      });
+    });
+  });
+
+  it('dev on a missing dir exits 1 without serving', () => {
+    const missing = path.join(mkTmp('muse-dev-'), 'no-such-app');
+    const r = runCli(['dev', missing]);
+    assert.equal(r.status, 1, `dev on a missing dir must exit 1, got ${r.status}`);
+    assert.ok(!r.stdout.includes('serving'), 'must not print a serve line on failure');
+    assert.ok(r.stderr.length > 0, 'must print an error to stderr');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T9 — `muse-native run` builds then launches (stub launcher).
+// Interface: `muse-native run <appDir>` → runs the build pipeline
+// in-memory, then stdout `launching <appDir> (<target>)` with default target
+// `host`, exit 0; build failure → stderr + exit 1 without launching.
+// ---------------------------------------------------------------------------
+describe('TC-TSX-022 Batch 4 — T9 run builds then launches', () => {
+  it('run on the inline fixture prints the launch line with default target host, exit 0', () => {
+    const appDir = mkTmp('muse-run-');
+    writeMinimalApp(appDir);
+    const r = runCli(['run', appDir]);
+    assert.equal(r.status, 0, `run must exit 0, got ${r.status}: ${r.stderr}`);
+    assert.ok(r.stdout.includes(`launching ${appDir} (host)`), `stdout must be 'launching <appDir> (host)', got: ${JSON.stringify(r.stdout)}`);
+  });
+
+  it('run on a broken tree exits 1 with no launch line', () => {
+    const appDir = mkTmp('muse-run-');
+    fs.writeFileSync(path.join(appDir, 'muse-native.yaml'), 'name: broken\n');
+    const r = runCli(['run', appDir]);
+    assert.equal(r.status, 1, `run on a broken tree must exit 1, got ${r.status}`);
+    assert.ok(!r.stdout.includes('launching'), 'must not print a launch line on build failure');
+    assert.ok(r.stderr.length > 0, 'must print an error to stderr');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T10 — Minimal local fixture app for TC-TSX-023 (this run owns it;
+// NOT FR-SAMPLE scope).
+// Interface: none — fixture data only (two screens importing
+// `@muse/native` + `@muse/core`, static props/bindings only, no illegal
+// forms).
+// The committed `examples/gallery` tree does not exist yet (T10 creates it),
+// so the second case below builds the REAL committed path and is expected to
+// fail RED with ENOENT until T10 lands; the first case builds an equivalent
+// tmp tree to pin the build contract now.
+// ---------------------------------------------------------------------------
+describe('TC-TSX-023 Batch 4 — T10 gallery fixture builds both artefacts', () => {
+  it('build of a tmp gallery-shaped app exits 0 with ir.json + tree.mui.bin carrying MUI1', () => {
+    const appDir = mkTmp('muse-gallery-');
+    writeMinimalApp(appDir);
+    const r = runCli(['build', appDir]);
+    assert.equal(r.status, 0, `build must exit 0, got ${r.status}: ${r.stderr}`);
+    const ir = JSON.parse(fs.readFileSync(path.join(appDir, 'dist', 'ir.json'), 'utf8'));
+    assert.equal(ir.version, 1, 'IR version must be 1');
+    assert.ok(Array.isArray(ir.roots) && ir.roots.length > 0, 'IR must carry a non-empty roots array');
+    const buf = fs.readFileSync(path.join(appDir, 'dist', 'tree.mui.bin'));
+    assert.ok(buf.length > 4, 'binary tree must be non-empty');
+    assert.equal(buf.subarray(0, 4).toString('ascii'), 'MUI1', 'binary tree must start with the MUI1 magic header');
+  });
+
+  it('build of the committed examples/gallery exits 0 with both artefacts carrying MUI1', () => {
+    const gallery = path.resolve(CLI_DIR, '..', '..', 'examples', 'gallery');
+    const r = runCli(['build', gallery]);
+    assert.equal(r.status, 0, `build examples/gallery must exit 0, got ${r.status}: ${r.stderr}`);
+    const ir = JSON.parse(fs.readFileSync(path.join(gallery, 'dist', 'ir.json'), 'utf8'));
+    assert.equal(ir.version, 1, 'IR version must be 1');
+    assert.ok(Array.isArray(ir.roots) && ir.roots.length > 0, 'IR must carry a non-empty roots array');
+    const buf = fs.readFileSync(path.join(gallery, 'dist', 'tree.mui.bin'));
+    assert.ok(buf.length > 4, 'binary tree must be non-empty');
+    assert.equal(buf.subarray(0, 4).toString('ascii'), 'MUI1', 'binary tree must start with the MUI1 magic header');
+  });
+});
