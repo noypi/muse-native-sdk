@@ -52,6 +52,9 @@ function runRun(appDir) {
     if (!tree || tree.version !== 1 || !Array.isArray(tree.roots) || tree.roots.length === 0) {
       throw new Error('lowering produced an empty tree');
     }
+    // Full in-memory build pipeline: encoding must succeed too, even
+    // though nothing is written to `dist/`.
+    ir.encodeTree(tree);
   } catch (err) {
     process.stderr.write(`Error: cannot run '${appDir}': ${err && err.message ? err.message : err}\n`);
     process.exitCode = 1;

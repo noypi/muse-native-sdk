@@ -50,6 +50,28 @@ function runInit(dir) {
       fs.copyFileSync(src, dest);
     }
   } catch (err) {
+    // Best-effort rollback so no partial scaffold remains (mirrors
+    // build.js's artefact cleanup); the error below is what matters.
+    try {
+      if (entries === null) {
+        fs.rmSync(dir, { recursive: true, force: true });
+      } else {
+        for (const rel of TEMPLATE_FILES) {
+          try {
+            fs.rmSync(path.join(dir, rel), { force: true });
+          } catch (_) {
+            // Continue removing the remaining scaffold files.
+          }
+        }
+        try {
+          fs.rmSync(path.join(dir, 'src'), { recursive: true, force: true });
+        } catch (_) {
+          // src/ may not have been created; ignore.
+        }
+      }
+    } catch (_) {
+      // Best-effort cleanup; the error below is what matters.
+    }
     process.stderr.write(`Error: cannot init '${dir}': ${err && err.message ? err.message : err}\n`);
     process.exitCode = 1;
     return;

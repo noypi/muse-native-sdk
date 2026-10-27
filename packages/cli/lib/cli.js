@@ -16,10 +16,10 @@ function printHelp() {
       'Usage: muse-native <init|build|dev|run> [args]',
       '',
       'Commands:',
-      '  init    scaffold a new project (not implemented)',
-      '  build   build the project (not implemented)',
-      '  dev     start the dev server (not implemented)',
-      '  run     run the project (not implemented)',
+      '  init    scaffold a new project',
+      '  build   build the project',
+      '  dev     start the dev server',
+      '  run     run the project',
       '',
       'Options:',
       '  -h, --help    show this help',
@@ -66,8 +66,6 @@ function main() {
     require('./run.js')(argv[1]);
     return;
   }
-  process.stderr.write(`Command '${command}' is not implemented yet.\n`);
-  process.exitCode = 1;
 }
 
 main();

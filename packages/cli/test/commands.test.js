@@ -336,5 +336,6 @@ describe('TC-TSX-023 Batch 4 — T10 gallery fixture builds both artefacts', () 
     const buf = fs.readFileSync(path.join(gallery, 'dist', 'tree.mui.bin'));
     assert.ok(buf.length > 4, 'binary tree must be non-empty');
     assert.equal(buf.subarray(0, 4).toString('ascii'), 'MUI1', 'binary tree must start with the MUI1 magic header');
+    fs.rmSync(path.join(gallery, 'dist'), { recursive: true, force: true });
   });
 });

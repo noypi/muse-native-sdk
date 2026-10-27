@@ -40,7 +40,7 @@ function loadSources(appDir) {
 function lowerSource(source) {
   const { file, text } = source;
   const children = [];
-  const tagRe = /<([A-Za-z][A-Za-z0-9.]*)([^<>]*)\/?>/g;
+  const tagRe = /<([A-Za-z][A-Za-z0-9.:-]*)([^<>]*)\/?>/g;
   let match;
   while ((match = tagRe.exec(text)) !== null) {
     const type = match[1];
