@@ -35,6 +35,18 @@ void FrameScheduler::setContinuous(ComponentId owner, bool enabled) {
   }
 }
 
+void FrameScheduler::setFrameCallback(FrameCallback cb) {
+  frame_callback_ = std::move(cb);
+}
+
+void FrameScheduler::setClock(Clock* clock) { clock_ = clock; }
+
+void FrameScheduler::setTelemetrySink(TelemetrySink* sink) { sink_ = sink; }
+
+void FrameScheduler::setBudgetNs(std::uint64_t budgetNs) {
+  budget_ns_ = budgetNs;
+}
+
 // Applies pending invalidations, lays out dirty subtrees, presents once.
 // Visits only dirty nodes (RULE-RUNTIME-002): unmarked nodes are read
 // but never modified, so their identity is untouched and no
@@ -44,6 +56,7 @@ int FrameScheduler::pumpFrame() {
   if (!hasPending()) {
     return 0;
   }
+  const std::uint64_t startNs = clock_ != nullptr ? clock_->nowNs() : 0;
   // Clear flags on dirty nodes only. NOTE: RuntimeTree exposes no
   // mutable clear API (tree.h is owned by T2, out of T3 claim), and the
   // underlying nodes are genuinely mutable via tree_, so const_cast here
@@ -56,15 +69,47 @@ int FrameScheduler::pumpFrame() {
   }
   // Consume a single pending explicit one-shot (dirty and continuous
   // state are handled above/below, so a dirty+request pump still presents
-  // exactly one frame and then idles).
-  for (auto it = explicit_requests_.begin(); it != explicit_requests_.end();
-       ++it) {
-    if (--(it->second) <= 0) {
-      explicit_requests_.erase(it);
+  // exactly one frame and then idles). The consumed owner's id becomes the
+  // presented frame's owner; smallest id first keeps multi-owner pumps
+  // deterministic.
+  ComponentId owner = 0;
+  bool haveOwner = false;
+  if (!explicit_requests_.empty()) {
+    auto minIt = explicit_requests_.begin();
+    for (auto it = explicit_requests_.begin(); it != explicit_requests_.end();
+         ++it) {
+      if (it->first < minIt->first) {
+        minIt = it;
+      }
     }
-    break;
+    owner = minIt->first;
+    haveOwner = true;
+    if (--(minIt->second) <= 0) {
+      explicit_requests_.erase(minIt);
+    }
+  }
+  if (!haveOwner && !continuous_drivers_.empty()) {
+    owner = *continuous_drivers_.begin();
+    for (ComponentId id : continuous_drivers_) {
+      if (id < owner) {
+        owner = id;
+      }
+    }
+    haveOwner = true;
   }
   ++frames_presented_;
+  const std::uint64_t endNs = clock_ != nullptr ? clock_->nowNs() : 0;
+  FrameInfo info;
+  info.owner = haveOwner ? owner : 0;
+  info.budgetNs = budget_ns_;
+  info.actualNs = clock_ != nullptr ? endNs - startNs : 0;
+  info.overBudget = info.actualNs > info.budgetNs;
+  if (frame_callback_) {
+    frame_callback_(info);
+  }
+  if (info.overBudget && sink_ != nullptr) {
+    sink_->report(info);
+  }
   return 1;
 }
 

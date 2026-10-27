@@ -12,6 +12,7 @@ add_library(runtime
   src/js_runtime.cpp
   src/js_engine.cpp
   src/vulkan_baseline.cpp
+  src/renderer.cpp
 )
 target_include_directories(runtime PUBLIC include)
 target_compile_options(runtime PRIVATE -Wall -Wextra -Wpedantic)
@@ -73,3 +74,13 @@ add_executable(js_lifecycle_test tests/js_lifecycle_test.cpp)
 target_link_libraries(js_lifecycle_test PRIVATE runtime)
 target_compile_options(js_lifecycle_test PRIVATE -Wall -Wextra -Wpedantic)
 add_test(NAME js_lifecycle_test COMMAND js_lifecycle_test)
+
+add_executable(frame_budget_telemetry_test tests/frame_budget_telemetry_test.cpp)
+target_link_libraries(frame_budget_telemetry_test PRIVATE runtime)
+target_compile_options(frame_budget_telemetry_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME frame_budget_telemetry_test COMMAND frame_budget_telemetry_test)
+
+add_executable(render_smoke_test tests/render_smoke_test.cpp)
+target_link_libraries(render_smoke_test PRIVATE runtime)
+target_compile_options(render_smoke_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME render_smoke_test COMMAND render_smoke_test)
