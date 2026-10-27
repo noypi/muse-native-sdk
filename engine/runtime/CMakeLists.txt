@@ -84,3 +84,18 @@ add_executable(render_smoke_test tests/render_smoke_test.cpp)
 target_link_libraries(render_smoke_test PRIVATE runtime)
 target_compile_options(render_smoke_test PRIVATE -Wall -Wextra -Wpedantic)
 add_test(NAME render_smoke_test COMMAND render_smoke_test)
+
+add_executable(text_metrics_test tests/text_metrics_test.cpp)
+target_link_libraries(text_metrics_test PRIVATE runtime)
+target_compile_options(text_metrics_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME text_metrics_test COMMAND text_metrics_test)
+
+add_executable(text_editing_test tests/text_editing_test.cpp)
+target_link_libraries(text_editing_test PRIVATE runtime)
+target_compile_options(text_editing_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME text_editing_test COMMAND text_editing_test)
+
+add_executable(ime_inset_test tests/ime_inset_test.cpp)
+target_link_libraries(ime_inset_test PRIVATE runtime)
+target_compile_options(ime_inset_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME ime_inset_test COMMAND ime_inset_test)
