@@ -2,7 +2,9 @@
   "name": "@muse/cli",
   "version": "0.0.0",
   "scripts": {
-    "test": "node --test test/*.test.js 2>/dev/null || test ! -d test"
+    "test": "node --test test/*.test.js 2>/dev/null || test ! -d test",
+    "test:packages": "node --test test/packages.test.js",
+    "test:commands": "node --test test/commands.test.js"
   },
   "bin": {
     "muse-native": "./bin/muse-native.js",
