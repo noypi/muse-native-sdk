@@ -55,7 +55,7 @@ function main() {
     return;
   }
   if (command === 'build') {
-    require('./build.js')(argv[1]);
+    require('./build.js')(argv[1], argv.slice(2));
     return;
   }
   if (command === 'dev') {

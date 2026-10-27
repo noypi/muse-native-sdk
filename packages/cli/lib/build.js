@@ -7,14 +7,34 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const ir = require('./ir.js');
+const config = require('./config.js');
 
-function runBuild(appDir) {
-  if (!appDir) {
+function runBuild(appDir, rest) {
+  if (!appDir || appDir.startsWith('--')) {
     process.stderr.write('Error: missing <appDir>.\nUsage: muse-native build <appDir>\n');
     process.exitCode = 1;
     return;
   }
   const resolved = path.resolve(appDir);
+  // Resolve typed config first: failures are fail-closed before any
+  // compilation or artefact writes (no partial config, no dist/ writes).
+  // `rest` holds the flags after <appDir>; argv for resolveConfig keeps the
+  // positional so `--<key> <value>` pairs parse the same either way.
+  const argv = [appDir].concat(Array.isArray(rest) ? rest : []);
+  let resolvedConfig;
+  try {
+    resolvedConfig = config.resolveConfig(argv, process.env, resolved);
+  } catch (err) {
+    const message = err && err.message ? err.message : String(err);
+    process.stderr.write(message.endsWith('\n') ? message : message + '\n');
+    process.exitCode = 1;
+    return;
+  }
+  if (argv.includes('--print-config')) {
+    process.stdout.write(JSON.stringify(resolvedConfig, null, 2) + '\n');
+    process.exitCode = 0;
+    return;
+  }
   let stat = null;
   try {
     stat = fs.statSync(resolved);
