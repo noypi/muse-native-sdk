@@ -8,7 +8,6 @@
   },
   "bin": {
     "muse-native": "./bin/muse-native.js",
-    "muse": "./bin/muse.js",
-    "capo": "./bin/capo.js"
+    "muse": "./bin/muse.js"
   }
 }

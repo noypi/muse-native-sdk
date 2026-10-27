@@ -218,35 +218,53 @@ describe('TC-TSX-021 Batch 2 — T4 @muse/native skeleton + manifest', () => {
 });
 
 // ---------------------------------------------------------------------------
-// T5 — @muse/cli binary wiring with deprecated aliases.
-// Interface: `muse-native <init|build|dev|run> [args]`; `muse`/`capo`
-// identical + one-line deprecation warning on stderr. Unknown command →
-// stderr usage + exit 2. `package.json` `bin` maps all three names.
+// T5 — @muse/cli binary wiring: canonical `muse-native` + supported `muse`
+// alias, NO `capo` spelling (BUG-TSX-001, RULE-TSX-005 v1.12, D1).
+// Interface: `node --test test/packages.test.js` → exit 0 iff (bin map is
+// exactly `{muse-native, muse}`) and (`bin/capo.js` absent, `bin/muse.js`
+// present) and (`lib/cli.js` has no `capo` token / no `capo` alias branch
+// while retaining `muse` alias handling) and (`capo` invocation fails closed,
+// non-zero; `muse` invocation warns on stderr but behaves identically to
+// canonical); non-zero otherwise.
 // ---------------------------------------------------------------------------
-describe('TC-TSX-022 Batch 2 — T5 cli bin wiring', () => {
+describe('TC-TSX-022 Batch 2 — T5 cli bin wiring (muse alias, no capo)', () => {
   const CLI_DIR = path.join(ROOT, 'packages', 'cli');
   const BIN_NATIVE = path.join(CLI_DIR, 'bin', 'muse-native.js');
   const BIN_MUSE = path.join(CLI_DIR, 'bin', 'muse.js');
   const BIN_CAPO = path.join(CLI_DIR, 'bin', 'capo.js');
   const LIB_CLI = path.join(CLI_DIR, 'lib', 'cli.js');
 
-  it('package.json bin maps muse-native, muse and capo', () => {
+  it('package.json bin maps exactly muse-native + muse (no capo)', () => {
     const pkg = readJson(path.join(CLI_DIR, 'package.json'));
     assert.ok(pkg.bin && typeof pkg.bin === 'object', 'package.json must declare a bin map');
-    for (const name of ['muse-native', 'muse', 'capo']) {
-      assert.ok(typeof pkg.bin[name] === 'string', `bin must map ${name}`);
-    }
+    assert.deepEqual(
+      Object.keys(pkg.bin).sort(),
+      ['muse', 'muse-native'],
+      'bin map must be exactly {muse-native, muse} with no capo entry',
+    );
+  });
+
+  it('bin/capo.js is absent and bin/muse.js is present', () => {
+    assert.ok(!fs.existsSync(BIN_CAPO), 'packages/cli/bin/capo.js must not exist');
+    assert.ok(fs.statSync(BIN_MUSE).isFile(), 'packages/cli/bin/muse.js must exist');
   });
 
   it('bin shims delegate to ../lib/cli.js and lib/cli.js exists', () => {
     assert.ok(fs.statSync(LIB_CLI).isFile(), 'packages/cli/lib/cli.js must exist');
-    for (const bin of [BIN_NATIVE, BIN_MUSE, BIN_CAPO]) {
+    for (const bin of [BIN_NATIVE, BIN_MUSE]) {
       const text = fs.readFileSync(bin, 'utf8');
       assert.ok(
         text.includes('../lib/cli'),
         `${path.basename(bin)} must require ../lib/cli.js (one-line shim)`,
       );
     }
+  });
+
+  it('lib/cli.js contains no capo token/branch but retains muse handling', () => {
+    const text = fs.readFileSync(LIB_CLI, 'utf8');
+    assert.ok(!text.includes('capo'), 'lib/cli.js must contain no `capo` token or alias branch');
+    assert.ok(text.includes('muse'), 'lib/cli.js must retain `muse` alias handling');
+    assert.ok(text.includes('INVOKED'), 'lib/cli.js must keep invoked-name dispatch');
   });
 
   it('muse-native --help lists the four commands and exits 0', () => {
@@ -263,13 +281,23 @@ describe('TC-TSX-022 Batch 2 — T5 cli bin wiring', () => {
     assert.ok(/usage/i.test(r.stderr), 'unknown command must print usage to stderr');
   });
 
-  it('muse/capo aliases warn on stderr but behave identically', () => {
+  it('muse alias warns on stderr but behaves identically to canonical', () => {
     const want = spawnSync(process.execPath, [BIN_NATIVE, '--help'], { encoding: 'utf8' });
-    for (const bin of [BIN_MUSE, BIN_CAPO]) {
-      const r = spawnSync(process.execPath, [bin, '--help'], { encoding: 'utf8' });
-      assert.equal(r.status, want.status, `${path.basename(bin)} --help must exit like muse-native`);
-      assert.equal(r.stdout, want.stdout, `${path.basename(bin)} --help stdout must match muse-native`);
-      assert.match(r.stderr, /deprecat/i, `${path.basename(bin)} must print a one-line deprecation warning to stderr`);
+    const r = spawnSync(process.execPath, [BIN_MUSE, '--help'], { encoding: 'utf8' });
+    assert.equal(r.status, want.status, 'muse --help must exit like muse-native');
+    assert.equal(r.stdout, want.stdout, 'muse --help stdout must match muse-native');
+    assert.match(r.stderr, /deprecat/i, 'muse must print a one-line deprecation warning to stderr');
+  });
+
+  it('capo invocation fails closed (no identical stdout, non-zero)', () => {
+    const want = spawnSync(process.execPath, [BIN_NATIVE, '--help'], { encoding: 'utf8' });
+    const r = spawnSync(process.execPath, [BIN_CAPO, '--help'], { encoding: 'utf8' });
+    assert.ok(
+      r.error || r.status !== 0 || r.stdout !== want.stdout,
+      'capo path must fail closed: missing binary, non-zero exit, or stdout not identical to canonical',
+    );
+    if (!r.error) {
+      assert.ok(r.status !== 0 || r.stdout !== want.stdout, 'capo stdout must not match canonical --help');
     }
   });
 });
