@@ -10,7 +10,8 @@
     "test:schema": "node --test test/schema.test.js",
     "test:stages": "node --test test/stages.test.js",
     "test:help": "node --test test/help.test.js",
-    "test:options": "node --test test/invalid-option.test.js"
+    "test:options": "node --test test/invalid-option.test.js",
+    "test:buildlog": "node --test test/build-log.test.ts"
   },
   "bin": {
     "muse-native": "./bin/muse-native.js",

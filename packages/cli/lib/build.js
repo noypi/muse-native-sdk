@@ -8,6 +8,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const config = require('./config.js');
 const stages = require('./stages.js');
+const buildLog = require('./build-log.js');
 
 // Pull `--stage <name>` out of the flags after <appDir>. Returns
 // `{ stageName, rest }` where `rest` keeps every other flag untouched so
@@ -136,3 +137,8 @@ function runBuild(appDir, rest) {
 }
 
 module.exports = runBuild;
+// T2 (FR-TSX-009): the combined tsc+AOT build-log surface lives in
+// `./build-log.js`; the build flow owns any file writing, so the pure
+// string helpers are exposed here without changing existing behavior.
+module.exports.appendVerdict = buildLog.appendVerdict;
+module.exports.runBothValidators = buildLog.runBothValidators;

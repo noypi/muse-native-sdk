@@ -32,4 +32,26 @@ function onUnmount(fn) {
   throw new Error('not implemented: FR-MCORE lane');
 }
 
-module.exports = { state, computed, effect, batch, onMount, onUnmount };
+function spring(initial) {
+  var start = Number(initial);
+  if (!Number.isFinite(start)) start = 0;
+  var velocity = 0;
+  var handle = {
+    value: start,
+    animateTo: function (target, opts) {
+      var t = Number(target);
+      if (!Number.isFinite(t)) t = 0;
+      handle.value = t;
+      if (opts !== null && typeof opts === 'object' && opts.velocity !== undefined) {
+        var v = Number(opts.velocity);
+        velocity = Number.isFinite(v) ? v : 0;
+      }
+    },
+    getVelocity: function () {
+      return velocity;
+    },
+  };
+  return handle;
+}
+
+module.exports = { state, computed, effect, batch, onMount, onUnmount, spring };

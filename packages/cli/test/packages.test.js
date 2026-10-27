@@ -78,9 +78,9 @@ describe('TC-TSX-021 Batch 1 — T1 workspace + harness', () => {
 // ---------------------------------------------------------------------------
 describe('TC-TSX-021 Batch 1 — T2 @muse/core surface', () => {
   const CORE_INDEX = path.join(ROOT, 'packages', 'core', 'index.js');
-  const EXPECTED = ['state', 'computed', 'effect', 'batch', 'onMount', 'onUnmount'];
+  const EXPECTED = ['batch', 'computed', 'effect', 'onMount', 'onUnmount', 'spring', 'state'];
 
-  it('resolves to exactly the six named function exports', () => {
+  it('resolves to exactly the seven named function exports', () => {
     const mod = require(CORE_INDEX);
     assert.deepEqual(Object.keys(mod).sort(), [...EXPECTED].sort(), 'exact export list, no more, no fewer');
     for (const name of EXPECTED) {
