@@ -58,6 +58,14 @@ function main() {
     require('./build.js')(argv[1]);
     return;
   }
+  if (command === 'dev') {
+    require('./dev.js')(argv[1]);
+    return;
+  }
+  if (command === 'run') {
+    require('./run.js')(argv[1]);
+    return;
+  }
   process.stderr.write(`Command '${command}' is not implemented yet.\n`);
   process.exitCode = 1;
 }
