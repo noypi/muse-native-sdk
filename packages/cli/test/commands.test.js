@@ -2,7 +2,7 @@
 // TC-TSX-022 (T6 init, T7 build) + TC-TSX-023 (T7 artefacts) — Batch 3 of FR-TSX-008.
 // Hermetic: node:test + node:assert + stdlib (fs/os/path/child_process) only.
 // Spawns `node bin/muse-native.js` against fs.mkdtemp dirs; no network,
-// no secrets, no live services, no examples/gallery dependency (T10 owns it;
+// no secrets, no live services, no examples/m3-gallery dependency (T10 owns it;
 // Batch 4 adds the gallery test — here T7 uses a PRE-WRITTEN inline minimal
 // 2-screen tmp fixture).
 // Batch 4 (T8, T9, T10) appends NEW describe blocks below the marker at the
@@ -39,7 +39,7 @@ function runCli(args, options) {
 }
 
 // Pre-written inline minimal app (2 screens) for T7: written into a tmp dir
-// because examples/gallery (T10) does not exist yet.
+// because examples/m3-gallery (T10) does not exist yet.
 function writeMinimalApp(appDir) {
   fs.mkdirSync(path.join(appDir, 'src', 'screens'), { recursive: true });
   fs.writeFileSync(
@@ -307,7 +307,7 @@ describe('TC-TSX-022 Batch 4 — T9 run builds then launches', () => {
 // Interface: none — fixture data only (two screens importing
 // `@muse/native` + `@muse/core`, static props/bindings only, no illegal
 // forms).
-// The committed `examples/gallery` tree does not exist yet (T10 creates it),
+// The committed `examples/m3-gallery` tree does not exist yet (T10 creates it),
 // so the second case below builds the REAL committed path and is expected to
 // fail RED with ENOENT until T10 lands; the first case builds an equivalent
 // tmp tree to pin the build contract now.
@@ -326,10 +326,10 @@ describe('TC-TSX-023 Batch 4 — T10 gallery fixture builds both artefacts', () 
     assert.equal(buf.subarray(0, 4).toString('ascii'), 'MUI1', 'binary tree must start with the MUI1 magic header');
   });
 
-  it('build of the committed examples/gallery exits 0 with both artefacts carrying MUI1', () => {
-    const gallery = path.resolve(CLI_DIR, '..', '..', 'examples', 'gallery');
+  it('build of the committed examples/m3-gallery exits 0 with both artefacts carrying MUI1', () => {
+    const gallery = path.resolve(CLI_DIR, '..', '..', 'examples', 'm3-gallery');
     const r = runCli(['build', gallery]);
-    assert.equal(r.status, 0, `build examples/gallery must exit 0, got ${r.status}: ${r.stderr}`);
+    assert.equal(r.status, 0, `build examples/m3-gallery must exit 0, got ${r.status}: ${r.stderr}`);
     const ir = JSON.parse(fs.readFileSync(path.join(gallery, 'dist', 'ir.json'), 'utf8'));
     assert.equal(ir.version, 1, 'IR version must be 1');
     assert.ok(Array.isArray(ir.roots) && ir.roots.length > 0, 'IR must carry a non-empty roots array');
