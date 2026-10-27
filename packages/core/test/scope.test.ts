@@ -237,6 +237,25 @@ describe('TC-MCORE-015 — onErrorCaptured receives a descendant error exactly o
     assert.equal(outer.length, 0);
   });
 
+  it('a throwing capturer replaces the original error and aborts the chain (security pin)', () => {
+    const boom = new Error('boom');
+    let secondRan = 0;
+    let boundaryErr = null;
+    createInstance(() => {
+      onErrorCaptured((err) => { throw new Error('capture boom'); });
+      onErrorCaptured((err) => { secondRan += 1; });
+      try {
+        createInstance(() => { throw boom; });
+      } catch (err) {
+        boundaryErr = err;
+      }
+    });
+    assert.ok(boundaryErr instanceof Error);
+    assert.equal(boundaryErr.message, 'capture boom');
+    assert.notEqual(boundaryErr, boom);
+    assert.equal(secondRan, 0);
+  });
+
   it('a descendant lifecycle error is captured and mount does not throw', () => {
     const boom = new Error('boom-hook');
     const captured = [];
