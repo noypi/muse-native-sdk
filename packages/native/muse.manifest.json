@@ -1,0 +1,14 @@
+{
+  "name": "@muse/native",
+  "components": [
+    { "name": "View", "props": {} },
+    { "name": "Text", "props": {} },
+    { "name": "Image", "props": {} },
+    { "name": "ScrollView", "props": {} },
+    { "name": "TextInput", "props": {} },
+    { "name": "Button", "props": {} },
+    { "name": "FlatList", "props": {} },
+    { "name": "TouchableOpacity", "props": {} },
+    { "name": "Modal", "props": {} }
+  ]
+}

@@ -3,5 +3,10 @@
   "version": "0.0.0",
   "scripts": {
     "test": "node --test test/*.test.js 2>/dev/null || test ! -d test"
+  },
+  "bin": {
+    "muse-native": "./bin/muse-native.js",
+    "muse": "./bin/muse.js",
+    "capo": "./bin/capo.js"
   }
 }
