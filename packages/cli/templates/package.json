@@ -1,0 +1,9 @@
+{
+  "name": "hello-app",
+  "version": "0.0.1",
+  "private": true,
+  "type": "commonjs",
+  "scripts": {
+    "build": "muse-native build ."
+  }
+}
