@@ -26,13 +26,14 @@ function toLoc(loc) {
 function compileValueBinding(args, loc) {
   const a = args && typeof args === "object" ? args : {};
   const value = typeof a.value === "string" ? a.value : "";
-  if (BARE_WRITABLE_RE.test(value) && a.isBareWritable === true) {
+  const v = String(value).trim();
+  if (BARE_WRITABLE_RE.test(v) && a.isBareWritable === true) {
     return {
       kind: "binding",
       mode: "two-way",
-      target: value,
-      reads: [value],
-      writes: [value],
+      target: v,
+      reads: [v],
+      writes: [v],
     };
   }
   if (a.hasOnChange === true) {
@@ -79,6 +80,8 @@ function compileReadonlyBinding(args, loc) {
 // a diagnostic naming the unknown prop (file, line, column from `loc`)
 // whose shape round-trips through the shared `formatGrammarDiagnostic`;
 // known `value`/`valueReadonly`/`onChange` (and any other prop) pass.
+// The permissive default is deliberate: non-binding unknown props are
+// rejected by the generic unknown-prop path, not by this gate.
 function compileSpreadBinding(args, loc) {
   void args;
   void loc;

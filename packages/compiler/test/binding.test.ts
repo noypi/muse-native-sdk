@@ -68,14 +68,32 @@ describe('TC-TSX-016 — bare writable value lowers to two-way (AC-TSX-016)', ()
   });
 
   it('non-bare value (member access) falls through to the T2 gate, not two-way', () => {
+    // Row contract is not-two-way + fall-through ONLY; the one-way shape for
+    // the hasOnChange:true path is pinned by TC-TSX-017, not here.
     const node = compileValueBinding(
       { value: 'state.count', isBareWritable: true, hasOnChange: true },
       loc(),
     );
     assert.notEqual(node, null, 'non-bare value must not return null');
     assert.notEqual(node.mode, 'two-way', 'non-bare value must never be two-way');
-    assert.equal(node.mode, 'one-way');
-    assert.equal(node.expr, 'state.count');
+  });
+
+  it('call-expression value with isBareWritable:true is not two-way (fall-through)', () => {
+    const node = compileValueBinding(
+      { value: 'f()', isBareWritable: true, hasOnChange: true },
+      loc(),
+    );
+    assert.notEqual(node, null, 'call-expression value must not return null');
+    assert.notEqual(node.mode, 'two-way', 'call-expression value must never be two-way');
+  });
+
+  it('binary-expression value with isBareWritable:true is not two-way (fall-through)', () => {
+    const node = compileValueBinding(
+      { value: 'a + b', isBareWritable: true, hasOnChange: true },
+      loc(),
+    );
+    assert.notEqual(node, null, 'binary-expression value must not return null');
+    assert.notEqual(node.mode, 'two-way', 'binary-expression value must never be two-way');
   });
 
   it('bare-shape value with isBareWritable:false falls through, not two-way', () => {
@@ -86,6 +104,25 @@ describe('TC-TSX-016 — bare writable value lowers to two-way (AC-TSX-016)', ()
     assert.notEqual(node, null, 'readonly bare value must not return null');
     assert.notEqual(node.mode, 'two-way', 'readonly bare value must never be two-way');
     assert.equal(node.mode, 'one-way');
+  });
+
+  it('padded bare writable value lowers to two-way on the trimmed name', () => {
+    // Plan T1 Detail: the identifier-shape gate tests the trimmed value, so
+    // surrounding whitespace must not defeat two-way lowering; the node
+    // echoes the trimmed name.
+    assert.deepEqual(
+      compileValueBinding(
+        { value: ' someState ', isBareWritable: true, hasOnChange: false },
+        loc(),
+      ),
+      {
+        kind: 'binding',
+        mode: 'two-way',
+        target: 'someState',
+        reads: ['someState'],
+        writes: ['someState'],
+      },
+    );
   });
 });
 
@@ -136,6 +173,58 @@ describe('TC-TSX-017 — readonly / non-bare value requires onChange (AC-TSX-017
     assert.equal(d.line, l.line);
     assert.equal(d.column, l.column);
   });
+
+  it('readonly bare value (isBareWritable:false) without onChange returns a diagnostic naming the form', () => {
+    const l = loc();
+    const d = compileValueBinding(
+      { value: 'someReadonly', isBareWritable: false, hasOnChange: false },
+      l,
+    );
+    assert.notEqual(d, null, 'readonly bare value without onChange must fail');
+    assert.ok(
+      d.form.includes('someReadonly'),
+      'diagnostic form must name the readonly value form',
+    );
+    assert.equal(d.file, l.file);
+    assert.equal(d.line, l.line);
+    assert.equal(d.column, l.column);
+  });
+
+  it('readonly bare value (isBareWritable:false) with onChange lowers to a one-way node', () => {
+    const node = compileValueBinding(
+      { value: 'someReadonly', isBareWritable: false, hasOnChange: true },
+      loc(),
+    );
+    assert.notEqual(node, null);
+    assert.equal(node.mode, 'one-way');
+    assert.equal(node.expr, 'someReadonly');
+  });
+
+  it('computed value without onChange returns a diagnostic naming the form', () => {
+    const l = loc();
+    const d = compileValueBinding(
+      { value: 'a + b', isBareWritable: true, hasOnChange: false },
+      l,
+    );
+    assert.notEqual(d, null, 'computed value without onChange must fail');
+    assert.ok(
+      d.form.includes('a + b'),
+      'diagnostic form must name the computed value form',
+    );
+    assert.equal(d.file, l.file);
+    assert.equal(d.line, l.line);
+    assert.equal(d.column, l.column);
+  });
+
+  it('computed value with onChange lowers to a one-way node', () => {
+    const node = compileValueBinding(
+      { value: 'a + b', isBareWritable: true, hasOnChange: true },
+      loc(),
+    );
+    assert.notEqual(node, null);
+    assert.equal(node.mode, 'one-way');
+    assert.equal(node.expr, 'a + b');
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -174,15 +263,28 @@ describe('TC-TSX-018 — spread never synthesizes two-way; model is rejected (AC
     }
   });
 
-  it('index.d.ts declares no model prop (static half of the tsc gate)', () => {
-    // Static half: T4 authors the value/valueReadonly/onChange declarations
-    // next; the binding assertion is that `model` is absent from the
-    // applicable declarations in packages/jsx/index.d.ts.
-    const dts = fs.readFileSync(
+  it('index.d.ts declares value/valueReadonly/onChange and no model prop (static half of the tsc gate)', () => {
+    // Static half: asserts the three declared props are present on the
+    // applicable element AND that `model` is absent. Prop positions are
+    // matched with a declaration-position regex over comment-stripped text
+    // (bare substring checks would false-positive on comments/mentions).
+    const raw = fs.readFileSync(
       path.join(__dirname, '..', '..', 'jsx', 'index.d.ts'),
       'utf8',
     );
-    assert.ok(!dts.includes('model'), 'index.d.ts must not declare a `model` prop');
+    const dts = raw
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/\/\/.*$/gm, '');
+    for (const prop of ['value', 'valueReadonly', 'onChange']) {
+      assert.ok(
+        new RegExp(`\\b${prop}\\s*\\??:`).test(dts),
+        `index.d.ts must declare a \`${prop}\` prop`,
+      );
+    }
+    assert.ok(
+      !/\bmodel\s*\??:/.test(dts),
+      'index.d.ts must not declare a `model` prop',
+    );
   });
 
   it('tsc --noEmit rejects model and accepts value/valueReadonly+onChange', { skip: !hasLocalTsc() }, () => {
@@ -212,6 +314,30 @@ describe('TC-TSX-018 — spread never synthesizes two-way; model is rejected (AC
       path.join(dir, 'reject-model.tsx'),
       '/** @jsxImportSource @muse/jsx */\nexport function A() { return <input model={1} />; }\n',
     );
+    // Accept half, same temp dir: value + valueReadonly/onChange on the typed
+    // element must pass. Kept in a separate accept-only project (own tsconfig
+    // including just this file) so the reject fixture above cannot mask it.
+    fs.writeFileSync(
+      path.join(dir, 'accept-value.tsx'),
+      '/** @jsxImportSource @muse/jsx */\ndeclare const s: unknown;\ndeclare const e: unknown;\ndeclare const f: (next: unknown) => void;\nexport function B() { return <input value={s} />; }\nexport function C() { return <input valueReadonly={e} onChange={f} />; }\n',
+    );
+    fs.writeFileSync(
+      path.join(dir, 'tsconfig.accept.json'),
+      JSON.stringify({
+        compilerOptions: {
+          strict: true,
+          noEmit: true,
+          jsx: 'react-jsx',
+          jsxImportSource: '@muse/jsx',
+          moduleResolution: 'bundler',
+          module: 'esnext',
+          target: 'es2022',
+          baseUrl: '.',
+          paths: { '@muse/jsx': [jsxDts] },
+        },
+        include: ['accept-value.tsx'],
+      }),
+    );
     const tscBin = path.join(
       __dirname,
       '..',
@@ -223,6 +349,8 @@ describe('TC-TSX-018 — spread never synthesizes two-way; model is rejected (AC
     );
     const r = spawnSync(tscBin, ['--noEmit', '-p', dir], { encoding: 'utf8' });
     assert.notEqual(r.status, 0, 'tsc must reject the model prop');
+    const a = spawnSync(tscBin, ['--noEmit', '-p', path.join(dir, 'tsconfig.accept.json')], { encoding: 'utf8' });
+    assert.equal(a.status, 0, 'tsc must accept value and valueReadonly+onChange');
   });
 });
 
