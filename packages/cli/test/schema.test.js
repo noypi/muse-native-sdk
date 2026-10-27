@@ -136,3 +136,79 @@ describe('TC-WORKFLOW-003 — unknown key / wrong type fails before compilation'
     assert.equal(parsed.config.name, 'good-app', 'valid file value must resolve');
   });
 });
+
+describe('Security — hostile config VALUE containment (AC-WORKFLOW-003/004)', () => {
+  // A traversal-shaped VALUE (`../../evil`) is an inert string: it must
+  // resolve verbatim through every layer, never steer a path/shell sink,
+  // and leave every write under `<appDir>/dist` with nothing outside.
+  const EVIL = '../../evil';
+
+  function writeGoodApp(appDir) {
+    writeApp(appDir, 'name: good-app\nversion: 0.0.1\n');
+  }
+
+  function assertContained(parent, appDir, r) {
+    assert.equal(r.status, 0, `traversal value must stay inert (exit 0), got ${r.status}: ${r.stderr}`);
+    assert.deepEqual(fs.readdirSync(parent).sort(), ['app'], 'nothing may be created outside the app dir');
+    assert.ok(!fs.existsSync(path.join(parent, 'evil')), 'must not create an `evil` dir outside the app dir');
+    assert.ok(
+      fs.existsSync(path.join(appDir, 'dist', 'ir.json')),
+      'artefacts must still land under <appDir>/dist',
+    );
+    assert.ok(
+      fs.existsSync(path.join(appDir, 'dist', 'tree.mui.bin')),
+      'artefacts must still land under <appDir>/dist',
+    );
+  }
+
+  it('CLI layer: --name ../../evil resolves as an inert string with writes under <appDir>/dist', () => {
+    const parent = mkTmp('muse-schema-');
+    const appDir = path.join(parent, 'app');
+    fs.mkdirSync(appDir);
+    writeGoodApp(appDir);
+    const r = runCli(['build', appDir, '--name', EVIL]);
+    assertContained(parent, appDir, r);
+    const resolved = runCli(['build', appDir, '--print-config', '--name', EVIL]);
+    assert.equal(resolved.status, 0, `--print-config must exit 0, got ${resolved.status}: ${resolved.stderr}`);
+    assert.equal(JSON.parse(resolved.stdout.trim()).config.name, EVIL, 'CLI value must resolve verbatim');
+  });
+
+  it('env layer: MUSE_NATIVE_NAME=../../evil resolves as an inert string with writes under <appDir>/dist', () => {
+    const parent = mkTmp('muse-schema-');
+    const appDir = path.join(parent, 'app');
+    fs.mkdirSync(appDir);
+    writeGoodApp(appDir);
+    const r = runCli(['build', appDir], { env: { ...process.env, MUSE_NATIVE_NAME: EVIL } });
+    assertContained(parent, appDir, r);
+  });
+
+  it('file layer: `name: ../../evil` resolves as an inert string with writes under <appDir>/dist', () => {
+    const parent = mkTmp('muse-schema-');
+    const appDir = path.join(parent, 'app');
+    fs.mkdirSync(appDir);
+    writeApp(appDir, `name: ${EVIL}\nversion: 0.0.1\n`);
+    const r = runCli(['build', appDir]);
+    assertContained(parent, appDir, r);
+    const resolved = runCli(['build', appDir, '--print-config']);
+    assert.equal(JSON.parse(resolved.stdout.trim()).config.name, EVIL, 'file value must resolve verbatim');
+  });
+
+  it('symlink inside src/ is skipped, never read (Dirent semantics pinned)', () => {
+    // collectTsxFiles only collects Dirent.isFile() entries, which is false
+    // for symlinks — so a symlinked source is skipped rather than followed.
+    // If a future refactor changes the walker, this pin must fail loudly.
+    const parent = mkTmp('muse-schema-');
+    const appDir = path.join(parent, 'app');
+    fs.mkdirSync(appDir);
+    writeGoodApp(appDir);
+    const outside = path.join(parent, 'outside-secret.txt');
+    fs.writeFileSync(outside, 'OUTSIDE-MARKER-9f8e7d6c5b', 'utf8');
+    fs.symlinkSync(outside, path.join(appDir, 'src', 'link.tsx'));
+    const r = runCli(['build', appDir]);
+    assert.equal(r.status, 0, `build must exit 0 with the symlink skipped, got ${r.status}: ${r.stderr}`);
+    const irJson = fs.readFileSync(path.join(appDir, 'dist', 'ir.json'), 'utf8');
+    assert.ok(!irJson.includes('OUTSIDE-MARKER-9f8e7d6c5b'), 'symlink target contents must never be read');
+    assert.ok(!irJson.includes('link.tsx'), 'symlinked source must not appear in the build');
+    assert.ok(!r.stdout.includes('link.tsx'), 'stdout must not name the symlinked source');
+  });
+});

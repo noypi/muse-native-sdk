@@ -181,3 +181,22 @@ describe('TC-WORKFLOW-005 — any stage can run alone via --stage <name>', () =>
     assert.ok(combined.includes('frobnicate'), 'error output must name the bad stage value');
   });
 });
+
+describe('Security — stage-failure stderr never echoes secrets or stacks (AC-WORKFLOW-004/011)', () => {
+  it('a stage FAIL with secret env values set prints neither the canary nor a stack trace', () => {
+    const appDir = mkTmp('muse-stages-');
+    writeNoSourcesApp(appDir);
+    const canary = 'CANARY-MUSE-NATIVE-9f8e7d6c5b';
+    const r = runCli(['build', appDir], {
+      env: { ...process.env, MUSE_NATIVE_NAME: canary, MUSE_NATIVE_VERSION: canary },
+    });
+    assert.notEqual(r.status, 0, 'failing build must exit nonzero');
+    const combined = `${r.stdout}\n${r.stderr}`;
+    assert.ok(!combined.includes(canary), 'neither stdout nor stderr may echo the secret env value');
+    assert.doesNotMatch(combined, /^\s+at\s/m, 'must not print a stack trace (`at ...` frame line)');
+    assert.ok(!combined.includes('node:internal'), 'must not leak runtime internals');
+    for (const line of r.stderr.split('\n').filter((l) => l.trim())) {
+      assert.match(line, /^Error: /, `stderr line must be an option/key/location-shaped message, got: ${JSON.stringify(line)}`);
+    }
+  });
+});
