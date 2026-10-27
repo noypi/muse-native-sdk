@@ -1,0 +1,11 @@
+{
+  "name": "muse-native-sdk",
+  "private": true,
+  "version": "0.0.0",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "test": "npm test --workspaces"
+  }
+}

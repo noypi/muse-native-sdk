@@ -1,0 +1,8 @@
+{
+  "name": "@muse/jsx",
+  "version": "0.0.0",
+  "types": "index.d.ts",
+  "scripts": {
+    "test": "node --test test/*.test.js 2>/dev/null || test ! -d test"
+  }
+}
