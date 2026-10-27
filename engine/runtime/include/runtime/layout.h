@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <vector>
 
 #include "runtime/tree.h"
 
@@ -30,8 +31,12 @@ class LayoutEngine {
   std::size_t relayoutSubtree(RuntimeTree& tree, NodeId dirtyRoot);
 
  private:
-  LayoutBox root_box_;
-  bool has_root_ = false;
+  void layoutNode(const RuntimeTree& tree, NodeId id, float x, float y,
+                  float width, float height);
+  static void validateStyle(const Style& style);
+
+  std::vector<LayoutBox> boxes_;
+  bool has_computed_ = false;
 };
 
 }  // namespace runtime

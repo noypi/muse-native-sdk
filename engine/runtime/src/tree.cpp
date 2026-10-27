@@ -68,6 +68,7 @@ NodeId instantiate(const CompiledNode* nodes, std::size_t count,
     node.parent = nodes[i].parent;
     node.dirty = false;
     node.tag = nodes[i].tag;
+    node.style = nodes[i].style;
   }
   return root;
 }

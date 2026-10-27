@@ -30,3 +30,13 @@ add_executable(idle_frames_test tests/idle_frames_test.cpp)
 target_link_libraries(idle_frames_test PRIVATE runtime)
 target_compile_options(idle_frames_test PRIVATE -Wall -Wextra -Wpedantic)
 add_test(NAME idle_frames_test COMMAND idle_frames_test)
+
+add_executable(layout_test tests/layout_test.cpp)
+target_link_libraries(layout_test PRIVATE runtime)
+target_compile_options(layout_test PRIVATE -Wall -Wextra -Wpedantic -Werror)
+add_test(NAME layout_test COMMAND layout_test)
+
+add_executable(relayout_scope_test tests/relayout_scope_test.cpp)
+target_link_libraries(relayout_scope_test PRIVATE runtime)
+target_compile_options(relayout_scope_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME relayout_scope_test COMMAND relayout_scope_test)

@@ -11,12 +11,44 @@ namespace runtime {
 using NodeId = std::uint32_t;
 inline constexpr NodeId kInvalidNodeId = static_cast<NodeId>(-1);
 
+// Style channel (T5): minimal flexbox-subset properties per AC-RUNTIME-004.
+// Carried on CompiledNode (input fixture) and Node (live tree).
+enum class Direction {
+  Column,
+  Row,
+};
+
+enum class Justify {
+  Start,
+  Center,
+  End,
+};
+
+enum class Align {
+  Start,
+  Center,
+  End,
+};
+
+struct Style {
+  Direction direction = Direction::Column;
+  Justify justify = Justify::Start;
+  Align align = Align::Start;
+  float gap = 0.0f;
+  float padding = 0.0f;
+  float margin = 0.0f;
+  float width = 0.0f;
+  float height = 0.0f;
+  float flex = 0.0f;
+};
+
 // Plain C++ fixture describing one compiled-tree input node (T2 detail).
 // Byte-format fidelity with the real compiler is out of scope (plan A3);
 // `parent` is the parent index in the input array, or -1 for the root.
 struct CompiledNode {
   int parent = -1;
   int tag = 0;
+  Style style;
 };
 
 // Live node in the instantiated tree.
@@ -25,6 +57,7 @@ struct Node {
   int parent = -1;
   bool dirty = false;
   int tag = 0;
+  Style style;
 };
 
 class RuntimeTree {
