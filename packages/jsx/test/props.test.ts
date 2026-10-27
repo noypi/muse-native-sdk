@@ -113,15 +113,19 @@ afterEach(() => {
 });
 
 function localTscBin() {
-  return path.join(
-    __dirname,
-    '..',
-    '..',
-    '..',
-    'node_modules',
-    '.bin',
-    process.platform === 'win32' ? 'tsc.cmd' : 'tsc',
-  );
+  try {
+    return require.resolve('typescript/bin/tsc');
+  } catch {
+    return path.join(
+      __dirname,
+      '..',
+      '..',
+      '..',
+      'node_modules',
+      '.bin',
+      process.platform === 'win32' ? 'tsc.cmd' : 'tsc',
+    );
+  }
 }
 
 function hasLocalTsc() {
@@ -132,8 +136,57 @@ function hasLocalTsc() {
   }
 }
 
+// T3 — loud skip where AC-TSX-024 is authoritative (BUG-TSX-006 regression
+// test). Env contract: `MUSE_REQUIRE_LIVE_TSC=1` or `CI=true` (any non-empty
+// value other than '0'/'false') means the suite is authoritative, so an
+// unresolvable local tsc is a failure naming the missing tsc and TC-TSX-024
+// instead of a silent skip. Otherwise the historical skip is preserved.
+function isStrictLiveTscRequired() {
+  const on = (v) => v !== undefined && v !== '' && v !== '0' && v !== 'false';
+  return on(process.env.MUSE_REQUIRE_LIVE_TSC) || on(process.env.CI);
+}
+
+function liveTscGuard() {
+  if (hasLocalTsc()) return { skip: false };
+  if (isStrictLiveTscRequired()) {
+    throw new Error(
+      'Missing local tsc: no local TypeScript compiler resolves, but the run ' +
+        'is authoritative (MUSE_REQUIRE_LIVE_TSC or CI is set); ' +
+        'TC-TSX-024 live halves must FAIL here, not SKIP.',
+    );
+  }
+  return { skip: true };
+}
+
+// Non-throwing skip probe for the `it(..., { skip })` option: strict-but-
+// tsc-less resolves to `false` so the half runs and fails loudly in its
+// pre-run `liveTscGuard()` assertion instead of skipping.
+function liveTscSkip() {
+  try {
+    return liveTscGuard().skip;
+  } catch {
+    return false;
+  }
+}
+
 function writeTsProject(dir, files) {
   const jsxDts = path.join(__dirname, '..', 'index.d.ts');
+  // Fixture wiring for the react-jsx transform: the tmp dir must both load
+  // the subject declarations (global JSX.IntrinsicElements) and resolve the
+  // '@muse/jsx/jsx-runtime' module the transform imports. A `paths` entry
+  // alone does neither (it doesn't include the .d.ts in the program and it
+  // doesn't cover the /jsx-runtime subpath), so stage a verbatim copy of the
+  // subject plus a minimal jsx-runtime shim and include both in the project.
+  fs.writeFileSync(
+    path.join(dir, 'muse-jsx-subject.d.ts'),
+    fs.readFileSync(jsxDts, 'utf8'),
+  );
+  fs.writeFileSync(
+    path.join(dir, 'muse-jsx-runtime.d.ts'),
+    'export declare function jsx(type: unknown, props: unknown, key?: unknown): unknown;\n' +
+      'export declare const jsxs: typeof jsx;\n' +
+      'export declare const Fragment: unknown;\n',
+  );
   const baseConfig = {
     compilerOptions: {
       strict: true,
@@ -144,12 +197,19 @@ function writeTsProject(dir, files) {
       module: 'esnext',
       target: 'es2022',
       baseUrl: '.',
-      paths: { '@muse/jsx': [jsxDts] },
+      paths: {
+        '@muse/jsx': [jsxDts],
+        '@muse/jsx/jsx-runtime': ['./muse-jsx-runtime.d.ts'],
+      },
     },
   };
   for (const [name, content] of Object.entries(files)) {
     if (name.endsWith('.json')) {
-      const include = content.include;
+      const include = [
+        ...content.include,
+        'muse-jsx-subject.d.ts',
+        'muse-jsx-runtime.d.ts',
+      ];
       fs.writeFileSync(
         path.join(dir, name),
         JSON.stringify({ ...baseConfig, include }),
@@ -161,7 +221,8 @@ function writeTsProject(dir, files) {
 }
 
 describe('TC-TSX-024 toolchain — tsc validates built-in prop types (AC-TSX-024)', () => {
-  it('tsc rejects a wrong built-in prop type (string for boolean `test`)', { skip: !hasLocalTsc() }, () => {
+  it('tsc rejects a wrong built-in prop type (string for boolean `test`)', { skip: liveTscSkip() }, () => {
+    liveTscGuard();
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'muse-tsx-024-reject-'));
     tmpRoots.push(dir);
     writeTsProject(dir, {
@@ -174,7 +235,8 @@ describe('TC-TSX-024 toolchain — tsc validates built-in prop types (AC-TSX-024
     assert.notEqual(r.status, 0, 'tsc must reject a string `test` on `c-if`');
   });
 
-  it('tsc rejects a wrong `key` type (number for string `key`)', { skip: !hasLocalTsc() }, () => {
+  it('tsc rejects a wrong `key` type (number for string `key`)', { skip: liveTscSkip() }, () => {
+    liveTscGuard();
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'muse-tsx-024-rejectkey-'));
     tmpRoots.push(dir);
     writeTsProject(dir, {
@@ -187,7 +249,8 @@ describe('TC-TSX-024 toolchain — tsc validates built-in prop types (AC-TSX-024
     assert.notEqual(r.status, 0, 'tsc must reject a numeric `key` on `c-for`');
   });
 
-  it('tsc accepts correct built-in props on all five built-ins', { skip: !hasLocalTsc() }, () => {
+  it('tsc accepts correct built-in props on all five built-ins', { skip: liveTscSkip() }, () => {
+    liveTscGuard();
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'muse-tsx-024-accept-'));
     tmpRoots.push(dir);
     writeTsProject(dir, {
@@ -207,5 +270,215 @@ describe('TC-TSX-024 toolchain — tsc validates built-in prop types (AC-TSX-024
     });
     const r = spawnSync(localTscBin(), ['--noEmit', '-p', dir], { encoding: 'utf8' });
     assert.equal(r.status, 0, `tsc must accept correct built-in props, got: ${r.stdout}${r.stderr}`);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Batch-1 T2 — hardened `tsc` resolution (FR-TSX-009 / AC-TSX-024).
+// Hermetic: stubs `Module._resolveFilename` and `fs.existsSync` in-process,
+// restores both in `finally`; no downloads, no env/config reads, no live
+// services. RED before the T2 coder work: `localTscBin()` never consults
+// `require.resolve('typescript/bin/tsc')`, so the first and fourth cases fail.
+// ---------------------------------------------------------------------------
+describe('T2 — tsc resolution prefers require.resolve with legacy .bin fallback', () => {
+  const Module = require('node:module');
+
+  function withStubs({ resolvedPath, exists }) {
+    const origResolve = Module._resolveFilename;
+    const origExists = fs.existsSync;
+    Module._resolveFilename = function (request, ...rest) {
+      if (request === 'typescript/bin/tsc') {
+        if (resolvedPath instanceof Error) throw resolvedPath;
+        return resolvedPath;
+      }
+      return origResolve.call(this, request, ...rest);
+    };
+    fs.existsSync = () => exists;
+    return () => {
+      Module._resolveFilename = origResolve;
+      fs.existsSync = origExists;
+    };
+  }
+
+  it("localTscBin() uses require.resolve('typescript/bin/tsc') when resolvable", () => {
+    const fake = path.join(os.tmpdir(), 'fake-typescript-bin-tsc');
+    const restore = withStubs({ resolvedPath: fake, exists: true });
+    try {
+      assert.equal(
+        localTscBin(),
+        fake,
+        "localTscBin() must return require.resolve('typescript/bin/tsc') when it resolves",
+      );
+    } finally {
+      restore();
+    }
+  });
+
+  it('localTscBin() falls back to the legacy repo-root .bin shim when require.resolve fails', () => {
+    const restore = withStubs({
+      resolvedPath: Object.assign(new Error('not found'), { code: 'MODULE_NOT_FOUND' }),
+      exists: true,
+    });
+    try {
+      const expected = path.join(
+        __dirname,
+        '..',
+        '..',
+        '..',
+        'node_modules',
+        '.bin',
+        process.platform === 'win32' ? 'tsc.cmd' : 'tsc',
+      );
+      assert.equal(localTscBin(), expected, 'legacy .bin fallback must be preserved');
+    } finally {
+      restore();
+    }
+  });
+
+  it('hasLocalTsc() is true when the require.resolve path exists', () => {
+    const fake = path.join(os.tmpdir(), 'fake-typescript-bin-tsc');
+    const restore = withStubs({ resolvedPath: fake, exists: true });
+    try {
+      assert.equal(hasLocalTsc(), true, 'hasLocalTsc() must be true via the resolved path');
+    } finally {
+      restore();
+    }
+  });
+
+  it('hasLocalTsc() is false (never throws, never downloads) when no tsc resolves', () => {
+    const restore = withStubs({
+      resolvedPath: Object.assign(new Error('not found'), { code: 'MODULE_NOT_FOUND' }),
+      exists: false,
+    });
+    try {
+      assert.equal(hasLocalTsc(), false, 'missing tsc must read as false');
+    } finally {
+      restore();
+    }
+  });
+
+  it('hasLocalTsc() never throws when the existence check itself throws', () => {
+    const origResolve = Module._resolveFilename;
+    const origExists = fs.existsSync;
+    Module._resolveFilename = () => {
+      throw Object.assign(new Error('not found'), { code: 'MODULE_NOT_FOUND' });
+    };
+    fs.existsSync = () => {
+      throw new Error('EACCES');
+    };
+    try {
+      assert.equal(hasLocalTsc(), false, 'hasLocalTsc() must swallow probe errors');
+    } finally {
+      Module._resolveFilename = origResolve;
+      fs.existsSync = origExists;
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Batch-1 T3 — loud skip where AC-TSX-024 is authoritative (regression test
+// for BUG-TSX-006). Env contract: `MUSE_REQUIRE_LIVE_TSC=1` or `CI=true` set
+// and no local tsc resolves → each of the 3 live halves FAILS (naming the
+// missing tsc and TC-TSX-024) instead of SKIP; neither set → current skip
+// preserved. RED before the T3 coder work: no `liveTscGuard()` helper exists
+// and the three live halves still use the bare skip guard.
+// ---------------------------------------------------------------------------
+describe('T3 — authoritative-but-tsc-less fails instead of skipping (AC-TSX-024)', () => {
+  function guard() {
+    assert.equal(
+      typeof liveTscGuard,
+      'function',
+      'liveTscGuard() helper must exist (T3): authoritative skip must fail, not pass silently',
+    );
+    return liveTscGuard;
+  }
+
+  function withEnv(vars, fn) {
+    const saved = {};
+    for (const k of Object.keys(vars)) {
+      saved[k] = Object.prototype.hasOwnProperty.call(process.env, k)
+        ? process.env[k]
+        : undefined;
+      if (vars[k] === undefined) delete process.env[k];
+      else process.env[k] = vars[k];
+    }
+    try {
+      return fn();
+    } finally {
+      for (const k of Object.keys(vars)) {
+        if (saved[k] === undefined) delete process.env[k];
+        else process.env[k] = saved[k];
+      }
+    }
+  }
+
+  function withNoTsc(fn) {
+    const Module = require('node:module');
+    const origResolve = Module._resolveFilename;
+    const origExists = fs.existsSync;
+    Module._resolveFilename = function (request, ...rest) {
+      if (request === 'typescript/bin/tsc') {
+        throw Object.assign(new Error('not found'), { code: 'MODULE_NOT_FOUND' });
+      }
+      return origResolve.call(this, request, ...rest);
+    };
+    fs.existsSync = () => false;
+    try {
+      return fn();
+    } finally {
+      Module._resolveFilename = origResolve;
+      fs.existsSync = origExists;
+    }
+  }
+
+  it('without the env contract and without tsc, the live halves still SKIP (exit 0 path)', () => {
+    withEnv({ MUSE_REQUIRE_LIVE_TSC: undefined, CI: undefined }, () =>
+      withNoTsc(() => {
+        assert.equal(hasLocalTsc(), false, 'precondition: no local tsc in this probe');
+        const g = guard()();
+        assert.equal(g.skip, true, 'non-authoritative tsc-less runs must keep skipping');
+      }),
+    );
+  });
+
+  it('MUSE_REQUIRE_LIVE_TSC=1 without tsc throws naming the missing tsc and TC-TSX-024', () => {
+    withEnv({ MUSE_REQUIRE_LIVE_TSC: '1', CI: undefined }, () =>
+      withNoTsc(() => {
+        assert.throws(
+          () => guard()(),
+          (e) => {
+            const msg = String((e && e.message) || e);
+            return /tsc/i.test(msg) && /TC-TSX-024/.test(msg);
+          },
+          'strict-but-tsc-less must fail naming the missing tsc and TC-TSX-024',
+        );
+      }),
+    );
+  });
+
+  it('CI=true without tsc throws naming the missing tsc and TC-TSX-024', () => {
+    withEnv({ MUSE_REQUIRE_LIVE_TSC: undefined, CI: 'true' }, () =>
+      withNoTsc(() => {
+        assert.throws(
+          () => guard()(),
+          (e) => {
+            const msg = String((e && e.message) || e);
+            return /tsc/i.test(msg) && /TC-TSX-024/.test(msg);
+          },
+          'CI-but-tsc-less must fail naming the missing tsc and TC-TSX-024',
+        );
+      }),
+    );
+  });
+
+  it('the three live halves no longer use the bare silent-skip guard', () => {
+    const src = fs.readFileSync(__filename, 'utf8');
+    const bare = '!' + 'has' + 'LocalTsc()';
+    const occurrences = src.split('skip: ' + bare).length - 1;
+    assert.equal(
+      occurrences,
+      0,
+      `all 3 live halves must route through liveTscGuard() (found ${occurrences} bare guards)`,
+    );
   });
 });
