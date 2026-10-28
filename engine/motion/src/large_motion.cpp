@@ -1,5 +1,7 @@
 #include "motion/large_motion.h"
 
+#include <cmath>
+
 namespace motion {
 namespace {
 
@@ -79,6 +81,16 @@ float motion_scaledDuration(float baseMs, SizeClass sc, float minMs,
                             float maxMs) noexcept {
   float lo = minMs;
   float hi = maxMs;
+  if (!std::isfinite(lo) || !std::isfinite(hi)) {
+    if (std::isfinite(lo) && !std::isfinite(hi)) {
+      hi = lo;
+    } else if (std::isfinite(hi) && !std::isfinite(lo)) {
+      lo = hi;
+    } else {
+      lo = 0.0f;
+      hi = 0.0f;
+    }
+  }
   if (hi < lo) {
     float tmp = lo;
     lo = hi;
@@ -96,6 +108,7 @@ float motion_scaledDuration(float baseMs, SizeClass sc, float minMs,
       factor = 1.2f;
       break;
   }
+  if (!std::isfinite(baseMs)) return lo;
   float scaled = baseMs * factor;
   if (scaled < lo) return lo;
   if (scaled > hi) return hi;

@@ -13,6 +13,7 @@
 // ASSUMPTION (epsilon): float comparisons use 1e-5f.
 #include <cmath>
 #include <cstdio>
+#include <limits>
 #include <vector>
 
 #include "motion/layout_adapter.h"
@@ -86,6 +87,20 @@ bool check_children_unmoved() {
   return boxNear(kids[0], snapshot[0]) && boxNear(kids[1], snapshot[1]);
 }
 
+// Security: non-finite t01 maps to the `from` endpoint (matching the
+// motion_interpolateShared NaN→from convention) — NaN never escapes.
+bool check_nan_t01_returns_from() {
+  std::vector<motion::Box> kids = {box(1.0f, 2.0f, 3.0f, 4.0f)};
+  const float nan = std::numeric_limits<float>::quiet_NaN();
+  motion::Box out = motion::motion_containerTransform(
+      kids, box(10.0f, 20.0f, 100.0f, 50.0f),
+      box(30.0f, 60.0f, 200.0f, 90.0f), nan);
+  if (!std::isfinite(out.x) || !std::isfinite(out.y) ||
+      !std::isfinite(out.w) || !std::isfinite(out.h))
+    return false;
+  return boxNear(out, box(10.0f, 20.0f, 100.0f, 50.0f));
+}
+
 // Empty children: container still interpolates, exactly one box out.
 bool check_empty_children_still_interpolates() {
   std::vector<motion::Box> kids;
@@ -115,6 +130,7 @@ int main() {
   RUN_CASE(check_child_count_unchanged);
   RUN_CASE(check_children_unmoved);
   RUN_CASE(check_empty_children_still_interpolates);
+  RUN_CASE(check_nan_t01_returns_from);
   if (failures > 0) {
     std::printf("container_transform_test: %d failing\n", failures);
     return 1;

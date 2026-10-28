@@ -233,6 +233,35 @@ bool check_drive_shared_velocity_continuous_stepwise() {
   return near(t, 0.2f, kSettle);
 }
 
+// ---- Security: scrub unarmed/reset/re-arm lifecycle ----
+
+// Driving before any transition (unarmed) is clamped passthrough with no
+// crash; motion_resetSharedDrive() clears armed state so a post-reset
+// drive behaves as unarmed; a second transition re-arms cleanly.
+bool check_scrub_unarmed_reset_rearm_lifecycle() {
+  motion::motion_resetSharedDrive();
+  // 1. Unarmed: exact clamped passthrough.
+  if (!(motion::motion_driveShared(0.6f) == 0.6f)) return false;
+  if (!(motion::motion_driveShared(-0.5f) == 0.0f)) return false;
+  if (!(motion::motion_driveShared(2.0f) == 1.0f)) return false;
+  // 2. Arm, then reset: drive behaves as unarmed again (exact passthrough,
+  // not solver-settled approximation).
+  motion::Graph g;
+  motion::SharedAnchor from = anchor("hero", "/list", kFromBox, 4.0f);
+  motion::SharedAnchor to = anchor("hero", "/detail", kToBox, 16.0f);
+  motion::motion_sharedTransition(g, from, to, springSpec(180.0f, 1.0f));
+  motion::motion_resetSharedDrive();
+  if (!(motion::motion_driveShared(0.3f) == 0.3f)) return false;
+  // 3. Second transition re-arms: the scrub settles at the driven endpoint.
+  motion::Graph g2;
+  motion::motion_sharedTransition(g2, from, to, springSpec(180.0f, 1.0f));
+  float t = 0.0f;
+  for (int i = 0; i < 200; ++i) t = motion::motion_driveShared(1.0f);
+  if (!near(t, 1.0f, kSettle)) return false;
+  motion::motion_resetSharedDrive();
+  return true;
+}
+
 // ---- T6: platform-view surface-rect anchors ----
 
 // The injected surface rect is wrapped verbatim as a matchable anchor.
@@ -344,6 +373,7 @@ int main() {
   RUN_CASE(check_drive_shared_clamps_progress);
   RUN_CASE(check_drive_shared_pure_and_deterministic);
   RUN_CASE(check_drive_shared_velocity_continuous_stepwise);
+  RUN_CASE(check_scrub_unarmed_reset_rearm_lifecycle);
   RUN_CASE(check_pview_anchor_wraps_surface_rect);
   RUN_CASE(check_list_to_pview_matches_by_id);
   RUN_CASE(check_pview_to_list_matches_by_id);

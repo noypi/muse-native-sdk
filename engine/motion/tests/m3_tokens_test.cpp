@@ -193,6 +193,23 @@ bool check_token_name_constants_exist() {
          set.effectsSprings.count(fOpacity) > 0;
 }
 
+// Security: a `1e999` duration (strtod HUGE_VAL → +inf) must fail closed —
+// empty set with an error naming the field, never `inf` in the set.
+bool check_huge_exponent_duration_rejected() {
+  std::string json = makeFixtureJson(true);
+  const std::string needle = "\"short1\": 50";
+  std::string::size_type pos = json.find(needle);
+  if (pos == std::string::npos) return false;
+  json.replace(pos, needle.size(), "\"short1\": 1e999");
+  std::string path = writeFixture(json);
+  std::string error;
+  motion::M3TokenSet set = motion::motion_loadM3Tokens(path, &error);
+  removeFixture(path);
+  if (error.empty()) return false;
+  if (!contains(error, "durationsMs.short1")) return false;
+  return set.durationsMs.empty();
+}
+
 // Scoped-parser lock: an easing string containing a quoted dimension-key
 // substring (here `"shape"`) must not satisfy the spatialSprings.shape
 // lookup — the right dimension still parses to its own values.
@@ -227,6 +244,45 @@ bool check_value_containing_key_substring_parses_right_dimension() {
   return near(short1->second, 50.0f);
 }
 
+// Case 2 (malformed-JSON fail-closed): truncated JSON and unbalanced-braces
+// JSON must return the empty set with a non-empty error — no hang, no throw.
+bool check_malformed_json_fail_closed() {
+  std::string valid = makeFixtureJson(true);
+  std::string truncated = valid.substr(0, valid.size() / 2);
+  std::string unbalanced = valid;
+  // Drop the last three closing braces (top-level + effectsSprings + its last
+  // spring entry) so the effectsSprings object span can never close. NOTE: a
+  // single missing top-level brace alone is still tolerated by the
+  // dependency-free scoped parser (every dimension span still closes), so the
+  // unbalanced variant removes enough structure to be structurally damaged.
+  int stripped = 0;
+  while (!unbalanced.empty() && stripped < 3) {
+    if (unbalanced.back() == '}') ++stripped;
+    unbalanced.pop_back();
+  }
+  const std::string bodies[] = {truncated, unbalanced};
+  for (const std::string& body : bodies) {
+    std::string path = writeFixture(body);
+    std::string error;
+    bool threw = false;
+    motion::M3TokenSet set;
+    try {
+      set = motion::motion_loadM3Tokens(path, &error);
+    } catch (...) {
+      threw = true;
+    }
+    removeFixture(path);
+    if (threw) return false;
+    if (error.empty()) return false;
+    if (!set.version.empty()) return false;
+    if (!set.durationsMs.empty()) return false;
+    if (!set.easings.empty()) return false;
+    if (!set.spatialSprings.empty()) return false;
+    if (!set.effectsSprings.empty()) return false;
+  }
+  return true;
+}
+
 }  // namespace
 
 #define RUN_CASE(name)                     \
@@ -248,6 +304,8 @@ int main() {
   RUN_CASE(check_null_error_out_tolerated);
   RUN_CASE(check_token_name_constants_exist);
   RUN_CASE(check_value_containing_key_substring_parses_right_dimension);
+  RUN_CASE(check_huge_exponent_duration_rejected);
+  RUN_CASE(check_malformed_json_fail_closed);
   if (failures > 0) {
     std::printf("m3_tokens_test: %d failing\n", failures);
     return 1;

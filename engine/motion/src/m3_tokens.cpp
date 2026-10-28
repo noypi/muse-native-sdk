@@ -1,5 +1,6 @@
 #include "motion/m3_tokens.h"
 
+#include <cmath>
 #include <cstdlib>
 #include <fstream>
 #include <sstream>
@@ -37,6 +38,7 @@ bool parseDoubleAfter(const std::string& text, std::string::size_type colonPos,
   char* end = nullptr;
   const double value = std::strtod(begin, &end);
   if (end == begin) return false;
+  if (!std::isfinite(value)) return false;
   *valueOut = value;
   return true;
 }

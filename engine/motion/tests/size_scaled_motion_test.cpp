@@ -12,6 +12,7 @@
 // ASSUMPTION (epsilon): float comparisons use 1e-3f.
 #include <cmath>
 #include <cstdio>
+#include <limits>
 
 #include "motion/large_motion.h"
 
@@ -64,6 +65,19 @@ bool check_base_at_min_stays_at_min() {
   return c >= lo - kEps && c <= hi + kEps;
 }
 
+// Security: NaN baseMs must not escape the advertised [minMs,maxMs] bound —
+// the contract guarantees clamp-into-bounds, so NaN maps to a bound.
+bool check_nan_base_clamped_into_bounds() {
+  const float lo = 100.0f, hi = 600.0f;
+  const float nan = std::numeric_limits<float>::quiet_NaN();
+  float c = motion::motion_scaledDuration(nan, motion::SizeClass::Compact, lo, hi);
+  float m = motion::motion_scaledDuration(nan, motion::SizeClass::Medium, lo, hi);
+  float e = motion::motion_scaledDuration(nan, motion::SizeClass::Expanded, lo, hi);
+  if (!std::isfinite(c) || !std::isfinite(m) || !std::isfinite(e)) return false;
+  return c >= lo - kEps && c <= hi + kEps && m >= lo - kEps &&
+         m <= hi + kEps && e >= lo - kEps && e <= hi + kEps;
+}
+
 // Base exactly at max stays at max (no overflow above the bound).
 bool check_base_at_max_stays_at_max() {
   const float lo = 150.0f, hi = 500.0f;
@@ -91,6 +105,7 @@ int main() {
   RUN_CASE(check_clamps_at_upper_bound);
   RUN_CASE(check_base_at_min_stays_at_min);
   RUN_CASE(check_base_at_max_stays_at_max);
+  RUN_CASE(check_nan_base_clamped_into_bounds);
   if (failures > 0) {
     std::printf("size_scaled_motion_test: %d failing\n", failures);
     return 1;
