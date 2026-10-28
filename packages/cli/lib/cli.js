@@ -200,12 +200,12 @@ function main() {
 module.exports = { validateOptions, OptionError, main };
 
 // Run on direct invocation and when loaded through the `muse-native` (or
-// `muse`/`capo` alias) bin wrapper. Do not auto-run when required in-process (unit
+// `muse` alias) bin wrapper. Do not auto-run when required in-process (unit
 // tests), where `require.main` is the test runner.
 (function autoRun() {
   try {
     const entry = require.main && require.main.filename ? String(require.main.filename) : '';
-    if (/(muse-native|muse|capo)\.js$/.test(entry)) {
+    if (/(muse-native|muse)\.js$/.test(entry)) {
       main();
       return;
     }

@@ -10,14 +10,17 @@
 //   tree (muse-native.yaml, package.json with four fixed `@muse/*` deps,
 //   tsconfig.json with `jsxImportSource: "@muse/jsx"`, src/App.tsx, README
 //   with next commands) into `dir`; exits `2` usage on missing operand, `1`
-//   on guard refusal, non-zero with named path on copy failure. Deprecated
-//   `muse`/`capo` spellings alias to same path.
+//   on guard refusal, non-zero with named path on copy failure. Supported
+//   `muse` spelling aliases to same path; NO `capo` spelling exists
+//   (HIST-0290 / RULE-SAMPLE-004 v2.17: canonical `muse-native` + `muse`
+//   alias only).
 // ASSUMPTIONS (contract genuinely silent, most defensible behavior tested):
 // - A-T1a: the public boundary is the CLI (`muse-native init <dir>`); the
 //   `runInit` export shape is asserted, exit codes via the CLI.
-// - A-T1b: the `muse` alias is `bin/muse.js`; the `capo` alias is expected
-//   as `bin/capo.js` with the same wrapper shape (no capo bin exists yet,
-//   so that case is red until the coder adds the alias surface).
+// - A-T1b: the `muse` alias is `bin/muse.js`; per HIST-0290 there is NO
+//   `capo` alias — `bin/capo.js` must be absent and the `capo` spelling
+//   must not resolve (fails closed / unresolvable). Red until the coder
+//   removes the capo surface.
 
 const { describe, it, beforeEach, afterEach } = require('node:test');
 const assert = require('node:assert/strict');
@@ -110,7 +113,7 @@ describe('TC-SAMPLE-013 — init scaffolds a complete project (AC-SAMPLE-013)', 
     );
   });
 
-  it('deprecated `muse` spelling aliases to the same scaffold path', () => {
+  it('supported `muse` spelling aliases to the same scaffold path', () => {
     const dir = path.join(scratch, 'alias-app');
     const r = runCli(BIN_MUSE, ['init', dir]);
     assert.equal(r.status, 0, `muse init must exit 0, got ${r.status}: ${r.stderr}`);
@@ -122,16 +125,22 @@ describe('TC-SAMPLE-013 — init scaffolds a complete project (AC-SAMPLE-013)', 
     }
   });
 
-  it('deprecated `capo` spelling aliases to the same scaffold path', () => {
-    assert.ok(fs.existsSync(BIN_CAPO), 'capo alias bin (bin/capo.js) must exist');
+  it('`capo` bin is absent (HIST-0290: no capo spelling)', () => {
+    assert.ok(
+      !fs.existsSync(BIN_CAPO),
+      'bin/capo.js must NOT exist (canonical muse-native + muse alias only)',
+    );
+  });
+
+  it('`capo` spelling is not resolved (fails closed)', () => {
+    // The capo bin must be unresolvable: invoking it via node fails closed
+    // (non-zero, ENOENT-style error) and scaffolds nothing.
     const dir = path.join(scratch, 'capo-app');
     const r = runCli(BIN_CAPO, ['init', dir]);
-    assert.equal(r.status, 0, `capo init must exit 0, got ${r.status}: ${r.stderr}`);
-    for (const rel of EXPECTED_TREE) {
-      assert.ok(
-        fs.existsSync(path.join(dir, rel)),
-        `capo-alias scaffold must contain ${rel}`,
-      );
-    }
+    assert.notEqual(r.status, 0, 'capo init must fail closed (non-zero exit)');
+    assert.ok(
+      !fs.existsSync(path.join(dir, 'muse-native.yaml')),
+      'capo invocation must not scaffold a project',
+    );
   });
 });
