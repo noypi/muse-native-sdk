@@ -12,6 +12,7 @@ add_library(motion
   src/arbitration.cpp
   src/layout_adapter.cpp
   src/implicit.cpp
+  src/route_transition.cpp
 )
 target_include_directories(motion PUBLIC include)
 target_compile_options(motion PRIVATE -Wall -Wextra -Wpedantic)
@@ -53,3 +54,23 @@ add_executable(implicit_retarget_test tests/implicit_retarget_test.cpp)
 target_link_libraries(implicit_retarget_test PRIVATE motion)
 target_compile_options(implicit_retarget_test PRIVATE -Wall -Wextra -Wpedantic)
 add_test(NAME implicit_retarget_test COMMAND implicit_retarget_test)
+
+add_executable(route_transition_test tests/route_transition_test.cpp)
+target_link_libraries(route_transition_test PRIVATE motion)
+target_compile_options(route_transition_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME route_transition_test COMMAND route_transition_test)
+
+add_executable(implicit_flow_test tests/implicit_flow_test.cpp)
+target_link_libraries(implicit_flow_test PRIVATE motion)
+target_compile_options(implicit_flow_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME implicit_flow_test COMMAND implicit_flow_test)
+
+add_executable(frame_budget_test tests/frame_budget_test.cpp)
+target_link_libraries(frame_budget_test PRIVATE motion)
+target_compile_options(frame_budget_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME frame_budget_test COMMAND frame_budget_test)
+
+add_executable(interrupt_session_test tests/interrupt_session_test.cpp)
+target_link_libraries(interrupt_session_test PRIVATE motion)
+target_compile_options(interrupt_session_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME interrupt_session_test COMMAND interrupt_session_test)

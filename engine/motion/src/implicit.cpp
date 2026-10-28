@@ -1,5 +1,8 @@
 #include "motion/implicit.h"
 
+#include <algorithm>
+#include <vector>
+
 namespace motion {
 
 namespace {
@@ -78,6 +81,73 @@ SpringState ImplicitRegistry::evaluate(const Entry& e, float tMs) const
     return e.state;
   }
   return advanceTo(e.state, e.spec.spring, e.target, e.startMs, tMs);
+}
+
+float ImplicitRegistry::getOpacity(PropertyId p, float tMs) const noexcept {
+  auto it = opacity_.find(p.value);
+  if (it == opacity_.end() || !it->second.removed) return 1.0f;
+  const OpacityFade& o = it->second;
+  if (!(tMs > o.startMs)) return 1.0f;  // No snap: still fully visible.
+  SpringState s = advanceTo(o.state, o.spec.spring, 0.0f, o.startMs, tMs);
+  if (s.value < 0.0f) return 0.0f;
+  if (s.value > 1.0f) return 1.0f;
+  return s.value;
+}
+
+void ImplicitRegistry::applyLayoutFlow(std::vector<ItemMove> moves,
+                                       float tMs) {
+  for (const ItemMove& m : moves) {
+    auto it = entries_.find(m.p.value);
+    if (it == entries_.end()) continue;  // Unknown id: skip, rest apply.
+    const bool entryImplicit = it->second.implicit;
+    const TransitionSpec entrySpec = it->second.spec;
+    // Position/size retargets through the implicit path, so reorder and
+    // compact<->expanded (a position+size target swap) animate via get().
+    set(m.p, m.toIndex, tMs);
+    if (m.removed) {
+      OpacityFade& o = opacity_[m.p.value];
+      o.removed = true;
+      if (entryImplicit) {
+        o.spec = entrySpec;
+      } else {
+        o.spec.spring.stiffness = 180.0f;
+        o.spec.spring.dampingRatio = 1.0f;
+        o.spec.delayMs = 0.0f;
+        o.spec.staggerMs = 0.0f;
+      }
+      o.hasSpec = true;
+      o.state.value = 1.0f;
+      o.state.velocity = 0.0f;
+      o.startMs = tMs + o.spec.delayMs + o.spec.staggerMs;
+    } else {
+      // Live item (reorder/insert preview): fully opaque.
+      opacity_.erase(m.p.value);
+    }
+  }
+}
+
+void ImplicitRegistry::applyTheme(float colorFrom, float colorTo,
+                                   float elevFrom, float elevTo, float tMs) {
+  (void)colorFrom;
+  (void)elevFrom;
+  // Theme channels are the implicit entries already holding values, ordered
+  // by PropertyId so the color/elevation routing is deterministic: the
+  // lowest id carries color, the highest carries elevation. Sources retarget
+  // from their current values, so the toggle animates instead of snapping.
+  std::vector<std::uint32_t> ids;
+  for (const auto& kv : entries_) {
+    if (kv.second.implicit && kv.second.hasValue) ids.push_back(kv.first);
+  }
+  if (ids.empty()) return;
+  std::sort(ids.begin(), ids.end());
+  PropertyId color;
+  color.value = ids.front();
+  set(color, colorTo, tMs);
+  if (ids.size() > 1) {
+    PropertyId elev;
+    elev.value = ids.back();
+    set(elev, elevTo, tMs);
+  }
 }
 
 }  // namespace motion
