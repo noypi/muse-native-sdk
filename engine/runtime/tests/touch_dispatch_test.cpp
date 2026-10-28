@@ -109,6 +109,41 @@ static bool check_drag_does_not_fire_tap_handler() {
   return ok;
 }
 
+// T1 (BUG-RUNTIME-001 hardening): two independent Hosts never share counts.
+// Host B is unaffected by dispatches to host A.
+static bool check_two_hosts_have_independent_fire_counts() {
+  runtime::Host a = make_host_with_button_and_list();
+  runtime::Host b = make_host_with_button_and_list();
+  runtime::dispatch_touch(a, tap_at(10.0f, 10.0f));
+  const bool ok = runtime::handler_fire_count(b, kButtonNode) == 0 &&
+                  runtime::handler_fire_count(a, kButtonNode) == 1;
+  runtime::destroy_host(a);
+  runtime::destroy_host(b);
+  return ok;
+}
+
+// T1 (BUG-RUNTIME-001 hardening): list scroll offsets are per-host.
+static bool check_two_hosts_have_independent_scroll_offsets() {
+  runtime::Host a = make_host_with_button_and_list();
+  runtime::Host b = make_host_with_button_and_list();
+  runtime::dispatch_touch(a, drag_by(0.0f, 48.0f));
+  const bool ok = runtime::list_scroll_offset(b, kListId) == 0.0f &&
+                  runtime::list_scroll_offset(a, kListId) == 48.0f;
+  runtime::destroy_host(a);
+  runtime::destroy_host(b);
+  return ok;
+}
+
+// T1: unknown node/list ids return 0 (never throws).
+static bool check_unknown_ids_return_zero() {
+  runtime::Host h = make_host_with_button_and_list();
+  runtime::dispatch_touch(h, tap_at(10.0f, 10.0f));
+  const bool ok = runtime::handler_fire_count(h, 999) == 0 &&
+                  runtime::list_scroll_offset(h, 999) == 0.0f;
+  runtime::destroy_host(h);
+  return ok;
+}
+
 #define RUN_CASE(name)                                       \
   do {                                                       \
     if (!(name)()) {                                         \
@@ -129,6 +164,9 @@ int main() {
   RUN_CASE(check_drag_scrolls_list);
   RUN_CASE(check_sub_slop_drag_does_not_scroll);
   RUN_CASE(check_drag_does_not_fire_tap_handler);
+  RUN_CASE(check_two_hosts_have_independent_fire_counts);
+  RUN_CASE(check_two_hosts_have_independent_scroll_offsets);
+  RUN_CASE(check_unknown_ids_return_zero);
   if (failures > 0) {
     std::printf("touch_dispatch_test: %d failing\n", failures);
     return 1;
