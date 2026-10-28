@@ -99,8 +99,17 @@ describe('stepSignal', () => {
     );
   });
 
-  it('throws E_INSPECTOR_BAD_SEQ for a non-array history (ASSUMPTION)', () => {
+  it('throws E_INSPECTOR_BAD_SEQ for a non-array history', () => {
     const { stepSignal } = load();
-    assert.throws(() => stepSignal(null, 1), (err) => err.code === 'E_INSPECTOR_BAD_SEQ');
+    for (const bad of [null, undefined, 'seq-1', 42, {}]) {
+      assert.throws(() => stepSignal(bad, 1), (err) => err.code === 'E_INSPECTOR_BAD_SEQ');
+    }
+  });
+
+  it('throws E_INSPECTOR_BAD_SEQ for a non-array describeSignal history', () => {
+    const { describeSignal } = load();
+    const { state } = require(STATE_LIB);
+    const h = state(0);
+    assert.throws(() => describeSignal(h, { history: 'not-an-array' }), (err) => err.code === 'E_INSPECTOR_BAD_SEQ');
   });
 });

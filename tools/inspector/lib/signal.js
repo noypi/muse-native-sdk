@@ -30,7 +30,10 @@ function readSubs(handle) {
 
 function describeSignal(handle, opts) {
   const raw = opts && opts.history !== undefined ? opts.history : [];
-  const history = Array.isArray(raw) ? raw : [];
+  if (raw !== undefined && !Array.isArray(raw)) {
+    throw badSeqError('history must be an array');
+  }
+  const history = raw;
   const snapshot = copyHistory(history);
 
   let lastInvalidation = null;

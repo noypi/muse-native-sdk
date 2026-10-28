@@ -85,7 +85,7 @@ function recordRequest(entry) {
     id,
     url: entry.url,
     method: entry.method,
-    timings: { ...entry.timings },
+    timings: clone(entry.timings),
     cacheDecision: entry.cacheDecision,
     body: clone(entry.body),
   });
@@ -107,10 +107,17 @@ function describeRequest(id, redact) {
     id: stored.id,
     url: stored.url,
     method: stored.method,
-    timings: { ...stored.timings },
+    timings: clone(stored.timings),
     cacheDecision: stored.cacheDecision,
     body,
   };
 }
 
-module.exports = { recordRequest, describeRequest };
+function clearRequests() {
+  const removed = requests.size;
+  requests.clear();
+  nextId = 1;
+  return { removed };
+}
+
+module.exports = { recordRequest, describeRequest, clearRequests };

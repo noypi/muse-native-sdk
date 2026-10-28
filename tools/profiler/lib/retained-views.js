@@ -4,7 +4,16 @@
 // shapes inside the profiler timeline (no new capture, no device, no clock).
 // attachRetainedViews re-exposes the same session as four views:
 // dag (render DAG nodes + edges), layoutTree, signalGraph, vulkanTimings.
-// verifyAttribution attributes an injected fault to its subsystem verbatim.
+// The dag and vulkanTimings are a synthetic projection of
+// session.frames[].passes (pass name/subsystem/costMs round-trip verbatim).
+// When the session also carries T1/T2 shapes — session.layoutNodes (array of
+// { id, label?, subsystem? }) and session.signalHistory (array of
+// { seq, value } / { from, to } entries) — layoutTree and signalGraph are
+// built from those shapes instead of the synthetic fallback.
+// verifyAttribution searches exported.trace.events for the injected fault
+// signature (allocation byte evidence, render-pass passName) and throws
+// E_PROFILER_ATTRIBUTION_MISMATCH when the export carries no evidence of
+// the fault.
 
 function isPlainObject(value) {
   if (value === null || typeof value !== 'object') return false;
@@ -36,12 +45,20 @@ function malformedExportError(detail) {
   return err;
 }
 
+function malformedAttributionError(detail) {
+  const err = new Error(`unattributed profiler fault (DX-004 / AC-DX-019): ${detail}`);
+  err.code = 'E_PROFILER_ATTRIBUTION_MISMATCH';
+  err.cause = detail;
+  err.action = 'Export a session whose trace events carry the fault signature (allocation bytes or render-pass passName) and re-run attribution.';
+  return err;
+}
+
 function validateSession(session) {
   if (!isPlainObject(session)) throw malformedSessionError('session must be an object');
   if (typeof session.sessionId !== 'string' || session.sessionId.length === 0) {
     throw malformedSessionError('session.sessionId must be a non-empty string');
   }
-  for (const key of ['frames', 'snapshots']) {
+  for (const key of ['frames', 'snapshots', 'layoutNodes', 'signalHistory']) {
     if (session[key] !== undefined && !Array.isArray(session[key])) {
       throw malformedSessionError(`session.${key} must be an array when present`);
     }
@@ -72,6 +89,9 @@ function attachRetainedViews(session) {
   validateSession(session);
   const { frames, passes } = collectPasses(session);
 
+  const layoutNodes = Array.isArray(session.layoutNodes) ? session.layoutNodes : [];
+  const signalHistory = Array.isArray(session.signalHistory) ? session.signalHistory : [];
+
   const nodes = passes.map((p, index) => ({
     id: `pass-${p.frame}-${p.name}-${index}`,
     label: p.name,
@@ -84,19 +104,49 @@ function attachRetainedViews(session) {
   }
   const dag = { nodes, edges };
 
+  // T1 shape: forward caller-supplied layout nodes when present; otherwise
+  // fall back to the synthetic pass projection.
   const layoutTree = {
     type: 'layout-tree',
     sessionId: session.sessionId,
     root: {
       id: 'root',
-      children: nodes.map((n) => ({ id: n.id, label: n.label, subsystem: n.subsystem })),
+      children:
+        layoutNodes.length > 0
+          ? layoutNodes.map((n, index) => ({
+            id: n && typeof n.id === 'string' ? n.id : `layout-${index}`,
+            label: n && typeof n.label === 'string' ? n.label : (n && typeof n.name === 'string' ? n.name : `layout-${index}`),
+            subsystem: n && typeof n.subsystem === 'string' ? n.subsystem : 'engine',
+          }))
+          : nodes.map((n) => ({ id: n.id, label: n.label, subsystem: n.subsystem })),
     },
   };
 
-  const signalGraph = {
-    nodes: nodes.map((n) => ({ id: n.id, subsystem: n.subsystem })),
-    edges,
-  };
+  // T2 shape: forward caller-supplied signal history when present; otherwise
+  // fall back to the synthetic pass projection.
+  let signalGraph;
+  if (signalHistory.length > 0) {
+    const sigNodes = signalHistory.map((entry, index) => ({
+      id: entry && entry.seq !== undefined ? String(entry.seq) : `sig-${index}`,
+      subsystem:
+        entry && typeof entry.subsystem === 'string' ? entry.subsystem : session.sessionId,
+    }));
+    const sigEdges = [];
+    for (let i = 1; i < sigNodes.length; i += 1) {
+      sigEdges.push({ from: sigNodes[i - 1].id, to: sigNodes[i].id });
+    }
+    for (const entry of signalHistory) {
+      if (entry && typeof entry.from === 'string' && typeof entry.to === 'string') {
+        sigEdges.push({ from: entry.from, to: entry.to });
+      }
+    }
+    signalGraph = { nodes: sigNodes, edges: sigEdges };
+  } else {
+    signalGraph = {
+      nodes: nodes.map((n) => ({ id: n.id, subsystem: n.subsystem })),
+      edges,
+    };
+  }
 
   const vulkanTimings = frames.map((frame, frameIndex) => {
     const list = frame && Array.isArray(frame.passes) ? frame.passes : [];
@@ -138,9 +188,73 @@ function validateExported(exported) {
   if (!Array.isArray(exported.trace.events)) throw malformedExportError('export.trace.events must be an array');
 }
 
+function eventSubsystem(event) {
+  if (!event || typeof event !== 'object') return undefined;
+  const args = event.args;
+  if (args && typeof args === 'object') {
+    if (typeof args.subsystem === 'string') return args.subsystem;
+  }
+  if (typeof event.subsystem === 'string') return event.subsystem;
+  if (typeof event.cat === 'string') return event.cat;
+  return undefined;
+}
+
+function eventByteValues(event) {
+  if (!event || typeof event !== 'object') return [];
+  const out = [];
+  const push = (v) => {
+    if (typeof v === 'number' && Number.isFinite(v) && v >= 0) out.push(v);
+  };
+  push(event.bytesPerFrame);
+  push(event.bytes);
+  const args = event.args;
+  if (args && typeof args === 'object') {
+    push(args.bytesPerFrame);
+    push(args.bytes);
+    push(args.size);
+    push(args.engineBytes);
+    push(args.jsHeapBytes);
+    push(args.vramBytes);
+    push(args.nativeHeapBytes);
+  }
+  return out;
+}
+
 function verifyAttribution(exported, fault) {
   validateExported(exported);
   validateFault(fault);
+  const events = exported.trace.events;
+  let matched = null;
+  if (fault.kind === 'allocation') {
+    matched = events.find((event) => {
+      const values = eventByteValues(event);
+      const hasBytes = values.some((v) => v >= fault.bytesPerFrame);
+      if (!hasBytes) return false;
+      const sub = eventSubsystem(event);
+      // Memory/counter events carry no subsystem — byte evidence alone counts.
+      if (sub === undefined) return true;
+      if (event && event.name === 'memory') return true;
+      return sub === fault.subsystem;
+    });
+    if (!matched) {
+      throw malformedAttributionError(
+        `no trace event carries allocation evidence (>= ${fault.bytesPerFrame} bytes) for subsystem ${JSON.stringify(fault.subsystem)}`,
+      );
+    }
+  } else {
+    matched = events.find((event) => {
+      if (!event || typeof event !== 'object') return false;
+      if (event.name !== fault.passName) return false;
+      const sub = eventSubsystem(event);
+      if (sub === undefined) return true;
+      return sub === fault.subsystem;
+    });
+    if (!matched) {
+      throw malformedAttributionError(
+        `no trace event named ${JSON.stringify(fault.passName)} for subsystem ${JSON.stringify(fault.subsystem)}`,
+      );
+    }
+  }
   return { attributedTo: fault.subsystem };
 }
 

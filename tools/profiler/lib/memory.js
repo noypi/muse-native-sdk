@@ -13,7 +13,11 @@ function isPlainObject(value) {
 }
 
 function malformedError(detail) {
-  return new Error(`malformed profiler snapshot (DX-004 / AC-DX-016): ${detail}`);
+  const err = new Error(`malformed profiler snapshot (DX-004 / AC-DX-016): ${detail}`);
+  err.code = 'E_PROFILER_MALFORMED_SNAPSHOT';
+  err.cause = detail;
+  err.action = 'Classify a snapshot shaped { jsHeapBytes, engineBytes, vramBytes, nativeHeapBytes, gcEvents: [] } with finite byte counts >= 0.';
+  return err;
 }
 
 function assertByteCount(snapshot, field) {

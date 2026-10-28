@@ -4,6 +4,22 @@
 // (getConstraintInput / getComputedBox / getWinningDeclaration).
 // Unknown node rejects with a structured NFR-DX-002 diagnostic.
 
+function isPlainObject(value) {
+  if (value === null || typeof value !== 'object') return false;
+  const proto = Object.getPrototypeOf(value);
+  return proto === Object.prototype || proto === null;
+}
+
+function clone(value) {
+  if (Array.isArray(value)) return value.map(clone);
+  if (isPlainObject(value)) {
+    const out = {};
+    for (const key of Object.keys(value)) out[key] = clone(value[key]);
+    return out;
+  }
+  return value;
+}
+
 const BLOCKED_IDS = new Set(['__proto__', 'prototype', 'constructor']);
 
 function unknownNodeError() {
@@ -37,7 +53,7 @@ function describeLayout(nodeId, source) {
   };
   return {
     nodeId,
-    constraintInput: { ...constraintInput },
+    constraintInput: clone(constraintInput),
     computedBox: box,
     styleProvenance: { declaration: winning.declaration, origin: winning.origin },
   };

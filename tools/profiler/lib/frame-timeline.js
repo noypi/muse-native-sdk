@@ -8,13 +8,14 @@
 // costMs exceeds the caller-supplied budgetMs, with exact
 // overByMs = costMs - budgetMs. Frames at or under budget are unattributed.
 // Sessions are isolated; an unknown sessionId yields [].
-// attributeJank reports only frames recorded since the previous
-// attributeJank call for that session (per-session cursor), so repeated
-// polls do not re-report the same jank. The underlying log is retained.
+// attributeJank is a pure scan: every call re-scans all recorded frames for
+// that session, so repeated polls report the same jank until clearFrames()
+// is called. The log is bounded (MAX_FRAMES, oldest-first eviction); call
+// clearFrames() to reset between runs or tests.
 
 const frames = [];
-const cursors = new Map();
 let nextId = 1;
+const MAX_FRAMES = 1000;
 
 function isPlainObject(value) {
   if (value === null || typeof value !== 'object') return false;
@@ -23,7 +24,11 @@ function isPlainObject(value) {
 }
 
 function malformedError(detail) {
-  return new Error(`malformed profiler frame (DX-004 / AC-DX-015): ${detail}`);
+  const err = new Error(`malformed profiler frame (DX-004 / AC-DX-015): ${detail}`);
+  err.code = 'E_PROFILER_MALFORMED_FRAME';
+  err.cause = detail;
+  err.action = 'Record a frame shaped { sessionId, passes: [{ name, subsystem, costMs }] } with a finite budgetMs >= 0.';
+  return err;
 }
 
 function validateFrame(frame) {
@@ -57,6 +62,7 @@ function recordFrame(frame) {
     sessionId: frame.sessionId,
     passes: frame.passes.map((p) => ({ name: p.name, subsystem: p.subsystem, costMs: p.costMs })),
   });
+  while (frames.length > MAX_FRAMES) frames.shift();
   return { id };
 }
 
@@ -65,9 +71,8 @@ function attributeJank(sessionId, budgetMs) {
   if (typeof budgetMs !== 'number' || !Number.isFinite(budgetMs) || budgetMs < 0) {
     throw malformedError('budgetMs must be a finite number >= 0');
   }
-  const start = cursors.get(sessionId) ?? 0;
   const out = [];
-  for (let i = start; i < frames.length; i += 1) {
+  for (let i = 0; i < frames.length; i += 1) {
     const f = frames[i];
     if (f.sessionId !== sessionId) continue;
     let slowest = null;
@@ -83,8 +88,14 @@ function attributeJank(sessionId, budgetMs) {
       });
     }
   }
-  cursors.set(sessionId, frames.length);
   return out;
 }
 
-module.exports = { recordFrame, attributeJank };
+function clearFrames() {
+  const removed = frames.length;
+  frames.length = 0;
+  nextId = 1;
+  return { removed };
+}
+
+module.exports = { recordFrame, attributeJank, clearFrames, resetTimeline: clearFrames, MAX_FRAMES };

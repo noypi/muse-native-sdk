@@ -105,6 +105,17 @@ describe('generateDeclarations files', () => {
       assert.ok(typeof d.code === 'string' && typeof d.cause === 'string' && typeof d.action === 'string');
     }
   });
+  it('maps an unknown prop type to unknown and records an E_CODEGEN_UNKNOWN_TYPE diagnostic', () => {
+    const { generateDeclarations } = load();
+    const out = generateDeclarations({
+      components: [{ name: 'Weird', props: { mystery: { type: 'frobnicator' } } }],
+    });
+    assert.ok(typeof out.files['Weird'] === 'string', 'unknown-type component must still emit a file');
+    assert.ok(out.files['Weird'].includes('unknown'), 'unknown type must be emitted as unknown');
+    const diag = out.diagnostics.find((d) => d.code === 'E_CODEGEN_UNKNOWN_TYPE');
+    assert.ok(diag, 'expected an E_CODEGEN_UNKNOWN_TYPE diagnostic');
+    assert.ok(typeof diag.cause === 'string' && typeof diag.action === 'string');
+  });
 });
 
 describe('generateDeclarations errors', () => {

@@ -118,13 +118,14 @@ describe('classifyLeak', () => {
     assert.equal(classifyLeak({ ...rest, jsHeapBytes: 1 << 20 }).classification, 'engine');
   });
 
-  it('rejects a malformed snapshot without leaking internals (ASSUMPTION)', () => {
+  it('rejects a malformed snapshot with E_PROFILER_MALFORMED_SNAPSHOT without leaking internals', () => {
     const { classifyLeak } = load();
     for (const bad of [null, undefined, {}, { jsHeapBytes: 'huge' }, { engineBytes: -1 }]) {
       assert.throws(
         () => classifyLeak(bad),
         (err) => {
           assert.ok(err instanceof Error, 'must throw an Error');
+          assert.equal(err.code, 'E_PROFILER_MALFORMED_SNAPSHOT');
           assert.doesNotMatch(String(err.stack ?? '').split('\n').slice(1).join('\n'), /node_modules/);
           return true;
         },

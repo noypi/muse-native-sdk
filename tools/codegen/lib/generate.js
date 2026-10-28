@@ -15,13 +15,17 @@ function fail(code, cause, action) {
   throw err;
 }
 
-function mapType(type) {
+function mapType(type, diagnostics, where) {
   switch (type) {
     case 'string':
     case 'boolean':
     case 'number':
+    case 'bigint':
     case 'object':
     case 'void':
+    case 'unknown':
+    case 'any':
+    case 'never':
       return type;
     case 'token':
       return 'string';
@@ -29,8 +33,16 @@ function mapType(type) {
     case null:
     case '':
       return 'unknown';
-    default:
-      return String(type);
+    default: {
+      if (Array.isArray(diagnostics)) {
+        diagnostics.push({
+          code: 'E_CODEGEN_UNKNOWN_TYPE',
+          cause: `DX-005: unknown type ${JSON.stringify(String(type))}${where ? ` for ${where}` : ''} mapped to unknown`,
+          action: 'Use a known DX-005 type (string, boolean, number, object, void, token, unknown) in the manifest.',
+        });
+      }
+      return 'unknown';
+    }
   }
 }
 
@@ -44,7 +56,7 @@ function checkName(name) {
   }
 }
 
-function renderComponent(component) {
+function renderComponent(component, diagnostics) {
   checkName(component.name);
   const name = component.name;
   const props = component.props && typeof component.props === 'object' ? component.props : {};
@@ -72,7 +84,7 @@ function renderComponent(component) {
     const def = props[propName] && typeof props[propName] === 'object' ? props[propName] : {};
     const optional = def.required === true ? '' : '?';
     lines.push(`  /** Prop \`${propName}\` of \`${name}\`. */`);
-    lines.push(`  ${propName}${optional}: ${mapType(def.type)};`);
+    lines.push(`  ${propName}${optional}: ${mapType(def.type, diagnostics, `prop ${propName} on ${name}`)};`);
   }
   lines.push('}');
   lines.push('');
@@ -88,7 +100,7 @@ function renderComponent(component) {
     const params = Array.isArray(method.params) ? method.params : [];
     const rendered = params.map((p, i) => `${IDENT.test(String(p)) && !BLOCKED_NAMES.has(String(p)) ? String(p) : `arg${i}`}: any`).join(', ');
     lines.push(`/** Method \`${mName}\` of \`${name}\`. */`);
-    lines.push(`export function ${mName}(${rendered}): ${mapType(method.returns)};`);
+    lines.push(`export function ${mName}(${rendered}): ${mapType(method.returns, diagnostics, `method ${mName} on ${name}`)};`);
     lines.push('');
   }
   for (const event of events) {
@@ -101,7 +113,7 @@ function renderComponent(component) {
       );
     }
     lines.push(`/** Event \`${eName}\` of \`${name}\`. */`);
-    lines.push(`export const ${eName}: (payload: ${mapType(event.payload)}) => void;`);
+    lines.push(`export const ${eName}: (payload: ${mapType(event.payload, diagnostics, `event ${eName} on ${name}`)}) => void;`);
     lines.push('');
   }
   for (const en of enums) {
@@ -141,6 +153,7 @@ function generateDeclarations(manifest) {
     );
   }
   const files = Object.create(null);
+  const diagnostics = [];
   for (const component of manifest.components) {
     if (!component || typeof component !== 'object') {
       fail(
@@ -149,10 +162,10 @@ function generateDeclarations(manifest) {
         'Fix the malformed component entry and re-run the DX-005 generator.',
       );
     }
-    const text = renderComponent(component);
+    const text = renderComponent(component, diagnostics);
     files[component.name] = text;
   }
-  return { files: { ...files }, diagnostics: [] };
+  return { files: { ...files }, diagnostics };
 }
 
 module.exports = { generateDeclarations, HEADER };
