@@ -13,10 +13,8 @@
 #   :benchmark:profileCheck -> benchmark.profile_check.check.is_profile_active
 #                              (module path benchmark/profile-check/check.py)
 #   :benchmark:frameGuard   -> alias of :benchmark:frame (closest existing harness)
-#   :benchmark:powerSaver   -> alias of :benchmark:thermal sustained probe
-#                              (closest existing harness for power/soak timing)
-#   :benchmark:soak         -> alias of :benchmark:thermal sustained probe
-#                              (soak growth itself is reported by :benchmark:memory)
+#   :benchmark:powerSaver   -> benchmark.powersaver.run.measure_power_saver
+#   :benchmark:soak         -> benchmark.soak.run.measure_soak
 set -eu
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 
@@ -32,8 +30,8 @@ Tasks:
   :benchmark:perfGate     benchmark.gate.run.gate against benchmark/budgets.json
   :benchmark:profileCheck  benchmark/profile-check/check.py is_profile_active
   :benchmark:frameGuard    alias of :benchmark:frame (no separate guard module)
-  :benchmark:powerSaver    alias of :benchmark:thermal sustained probe
-  :benchmark:soak          alias of :benchmark:thermal sustained probe
+  :benchmark:powerSaver    benchmark.powersaver.run.measure_power_saver
+  :benchmark:soak          benchmark.soak.run.measure_soak
 Extra args after :benchmark:perfGate are forwarded to benchmark/gate/run.py
 as <manifest> <results-json>.
 EOF
@@ -81,10 +79,21 @@ for k in ('touch','keyboard','back','scroll'):
     r = measure_latency(k)
     print('latency', k, 'ms=%s fps=%s' % (r.ms, r.fps))"
     ;;
-  :benchmark:thermal|:benchmark:powerSaver|:benchmark:soak)
+  :benchmark:thermal)
     run_py "from benchmark.thermal.run import measure_sustained
 r = measure_sustained()
 print('thermal p99=%s drain=%s http=%s headroom=%s' % (r.p99_ms, r.drain_mah, r.http_dispatch_ms, r.headroom))"
+    ;;
+  :benchmark:powerSaver)
+    run_py "from benchmark.powersaver.run import measure_power_saver
+for on in (True, False):
+    r = measure_power_saver(on)
+    print('powersaver on=%s reduced=%s deferred=%s p99=%s' % (on, r.reduced, r.deferred, r.p99_ms))"
+    ;;
+  :benchmark:soak)
+    run_py "from benchmark.soak.run import measure_soak
+r = measure_soak()
+print('soak p99=%s drain=%s jank_cliff=%s' % (r.p99_ms, r.drain_mah, r.jank_cliff))"
     ;;
   :benchmark:perfGate)
     if [ "$#" -ge 2 ]; then
