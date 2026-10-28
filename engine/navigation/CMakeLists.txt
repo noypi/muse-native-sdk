@@ -7,6 +7,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 add_library(navigation
   src/graph.cpp
+  src/snapshot.cpp
   src/state_schema.cpp
   src/trie.cpp
   src/predictive_back.cpp
@@ -49,6 +50,31 @@ target_link_libraries(state_schema_test PRIVATE navigation)
 target_compile_options(state_schema_test PRIVATE -Wall -Wextra -Wpedantic)
 add_test(NAME state_schema_test COMMAND state_schema_test)
 
+add_executable(snapshot_capture_test tests/snapshot_capture_test.cpp)
+target_link_libraries(snapshot_capture_test PRIVATE navigation)
+target_compile_options(snapshot_capture_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME snapshot_capture_test COMMAND snapshot_capture_test)
+
+add_executable(snapshot_scroll_focus_test tests/snapshot_scroll_focus_test.cpp)
+target_link_libraries(snapshot_scroll_focus_test PRIVATE navigation)
+target_compile_options(snapshot_scroll_focus_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME snapshot_scroll_focus_test COMMAND snapshot_scroll_focus_test)
+
+add_executable(snapshot_truncation_test tests/snapshot_truncation_test.cpp)
+target_link_libraries(snapshot_truncation_test PRIVATE navigation)
+target_compile_options(snapshot_truncation_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME snapshot_truncation_test COMMAND snapshot_truncation_test)
+
+add_executable(restore_test tests/restore_test.cpp)
+target_link_libraries(restore_test PRIVATE navigation)
+target_compile_options(restore_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME restore_test COMMAND restore_test)
+
+add_executable(process_death_proxy_test tests/process_death_proxy_test.cpp)
+target_link_libraries(process_death_proxy_test PRIVATE navigation)
+target_compile_options(process_death_proxy_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME process_death_proxy_test COMMAND process_death_proxy_test)
+
 add_executable(router_bridge_test tests/router_bridge_test.cpp)
 target_link_libraries(router_bridge_test PRIVATE navigation)
 target_compile_options(router_bridge_test PRIVATE -Wall -Wextra -Wpedantic)
@@ -73,6 +99,11 @@ add_executable(link_validation_test tests/link_validation_test.cpp)
 target_link_libraries(link_validation_test PRIVATE navigation)
 target_compile_options(link_validation_test PRIVATE -Wall -Wextra -Wpedantic)
 add_test(NAME link_validation_test COMMAND link_validation_test)
+
+add_executable(security_gate_test tests/security_gate_test.cpp)
+target_link_libraries(security_gate_test PRIVATE navigation)
+target_compile_options(security_gate_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME security_gate_test COMMAND security_gate_test)
 
 # FR-NAV-006 T2 (NAV-APPLINKS codegen invocation — documentation only, no new
 # engine target added here):

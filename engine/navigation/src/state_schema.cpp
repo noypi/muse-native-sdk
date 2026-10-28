@@ -11,6 +11,8 @@ namespace {
 // this minimal registry; anything structurally sound but referencing an
 // outside route degrades to home (UNKNOWN_ROUTE) instead of crashing.
 // Kept in sync with the route table used by the T6 contract tests.
+// NOTE: test-stand-in registry only — wire to the app route table before
+// device-lab (no behavior change in this run).
 const std::vector<std::string>& KnownRoutes() {
   static const std::vector<std::string> kRoutes = {"home", "details",
                                                    "settings"};
@@ -131,11 +133,22 @@ DecodeResult decodeState(const std::string& blob) {
   if (blob.empty()) return Corrupt();
   uint32_t version = 0;
   if (!ParseVersion(blob, version)) return Corrupt();
-  if (version != kNavStateVersion) {
+  if (version > kNavStateVersion) {
     return HomeFallback(DecodeError::BAD_VERSION, false, blob);
   }
+  // T4 migration: v1 blobs (token `v=1`, no content sections) decode into
+  // v2 snapshots. The canonical token stays `v=1` so `NavGraph::restore`
+  // keeps parsing it; a v1 blob with no payload is already the empty-content
+  // v2 form (cf. `captureSnapshotWithContent`, which emits the bare blob
+  // when every destination opts out), so the graphBlob passes through.
+  // Blobs at/after T2 may carry a trailing `;content=` section, which the
+  // canonical graph parser rejects; strip it before restore/validation but
+  // keep the full blob on the returned snapshot.
+  std::string structural = blob;
+  std::string::size_type cpos = blob.find(";content=");
+  if (cpos != std::string::npos) structural = blob.substr(0, cpos);
   NavGraph g(KnownRoutes());
-  NavResult r = g.restore(blob);
+  NavResult r = g.restore(structural);
   if (r.ok) {
     DecodeResult d;
     d.ok = true;
@@ -151,7 +164,7 @@ DecodeResult decodeState(const std::string& blob) {
   // restore rejects both cases with SCHEMA_MISMATCH, so check whether the
   // blob at least carries the five canonical fields with a sane sel/drawer.
   const std::string body =
-      blob.size() > 5 ? blob.substr(5) : std::string();
+      structural.size() > 5 ? structural.substr(5) : std::string();
   std::vector<std::string> fields;
   std::string cur;
   for (char c : body) {
@@ -163,7 +176,8 @@ DecodeResult decodeState(const std::string& blob) {
     }
   }
   fields.push_back(cur);
-  bool wellFormed = fields.size() == 5 && fields[0] == "v=1" &&
+  bool wellFormed = fields.size() == 5 &&
+                      (fields[0] == "v=1" || fields[0] == "v=2") &&
                     fields[1].rfind("sel=", 0) == 0 &&
                     fields[2].rfind("tabs=", 0) == 0 &&
                     fields[3].rfind("modals=", 0) == 0 &&

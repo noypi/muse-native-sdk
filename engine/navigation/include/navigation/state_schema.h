@@ -3,11 +3,14 @@
 #include <cstdint>
 #include <string>
 
-constexpr uint32_t kNavStateVersion = 1;
+constexpr uint32_t kNavStateVersion = 2;  // Envelope-only version: the wire
+// token intentionally stays `v=1` so `NavGraph::restore` keeps parsing it;
+// a `v=2` token on the wire is treated as unknown and degrades to home.
 
 // T6 owns this definition (plan named an undefined `NavGraphState` member
 // type): the graph is carried as a string blob in T1's canonical
-// `NAV1;v=1;...` format (see navigation/graph.h).
+// `NAV1;v=1;...` format (envelope v2, wire token `v=1`; see
+// navigation/graph.h).
 struct NavSnapshot {
   uint32_t version = kNavStateVersion;
   std::string graphBlob;
