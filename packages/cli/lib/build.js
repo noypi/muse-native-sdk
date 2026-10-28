@@ -200,6 +200,26 @@ function runBuild(appDir, rest) {
     process.exitCode = getExitCode('ok');
     return;
   }
+  // T3 (AC-WORKFLOW-007): a selected sample target must exist before any
+  // compilation or `dist/` write. Fails closed with exit 2 (config-error),
+  // naming the target and the expected path. `--print-config` above stays
+  // a pure resolution print and never fails on an absent sample.
+  if (stages.isSampleSelected(resolvedConfig.config)) {
+    const sampleDir = stages.resolveSampleDir(resolved);
+    let sampleStat = null;
+    try {
+      sampleStat = fs.statSync(sampleDir);
+    } catch (_) {
+      sampleStat = null;
+    }
+    if (!sampleStat || !sampleStat.isDirectory()) {
+      process.stderr.write(
+        `Error: sample target 'examples/m3-gallery' not found. Expected directory at '${sampleDir}'.\n`,
+      );
+      process.exitCode = getExitCode('config');
+      return;
+    }
+  }
   // Dispatch through the seven stages (or the one named by `--stage`).
   // Per-stage outcome lines go to stdout; a failure also mirrors the error
   // to stderr, stops the pipeline, and exits nonzero with no partial

@@ -74,4 +74,13 @@ function resolveSeverity(code, configured, packageType) {
   return packageType === 'library' ? 'error' : 'warn';
 }
 
-module.exports = { checkLiteralAgainstTokens, resolveSeverity, ConfigError };
+// T5 (AC-WORKFLOW-014): `--strict` promotes warnings to errors.
+//
+// Maps `warn` to `error` when `strict === true`, identity otherwise.
+// Pure, no I/O, never throws (unknown severities pass through unchanged).
+function applyStrict(severity, strict) {
+  if (strict === true && severity === 'warn') return 'error';
+  return severity;
+}
+
+module.exports = { checkLiteralAgainstTokens, resolveSeverity, applyStrict, ConfigError };

@@ -77,26 +77,91 @@ function assertAppDir(ctx) {
   }
 }
 
+// Sample target (FR-WORKFLOW-003): `examples/m3-gallery` resolved relative
+// to the build working directory (child `cwd`), i.e. `<cwd>/examples/m3-gallery`.
+// Selected builds compile/package its sources into the same artefacts;
+// default builds never touch it.
+const SAMPLE_TARGET = path.join('examples', 'm3-gallery');
+
+function isSampleSelected(config) {
+  const v = config && config.withSample;
+  return v === true || v === 'true';
+}
+
+// Resolve the sample dir: cwd-relative first (the `<cwd>/examples/m3-gallery`
+// form the spec and the T2 positional operand name), falling back to a
+// sibling of the app dir. Returns the cwd-based path when neither exists so
+// callers fail closed naming the expected path.
+function resolveSampleDir(appDir) {
+  const cwdBased = path.resolve(SAMPLE_TARGET);
+  try {
+    if (fs.statSync(cwdBased).isDirectory()) return cwdBased;
+  } catch (_) {
+    // Fall through to the sibling candidate below.
+  }
+  const sibling = path.join(path.dirname(path.resolve(appDir)), 'examples', 'm3-gallery');
+  try {
+    if (fs.statSync(sibling).isDirectory()) return sibling;
+  } catch (_) {
+    // Neither exists — report the cwd-based expected path.
+  }
+  return cwdBased;
+}
+
+// Assert the resolved `withSample` selection's target is present. Throws a
+// stage failure naming the target and the expected path.
+function assertSampleTargetOrThrow(appDir) {
+  const dir = resolveSampleDir(appDir);
+  let stat = null;
+  try {
+    stat = fs.statSync(dir);
+  } catch (_) {
+    stat = null;
+  }
+  if (!stat || !stat.isDirectory()) {
+    throw stageError(`sample target 'examples/m3-gallery' not found. Expected directory at '${dir}'.`, dir);
+  }
+  return dir;
+}
+
+// Effective sources for a build: app sources, plus the sample sources when
+// `withSample` selects them. Fails closed (no partial return) when the
+// sample is selected but absent.
+function loadEffectiveSourcesOrThrow(ctx) {
+  const appSources = loadSourcesOrThrow(ctx.appDir);
+  if (!isSampleSelected(ctx && ctx.config)) return appSources;
+  const sampleDir = assertSampleTargetOrThrow(ctx.appDir);
+  let sampleSources;
+  try {
+    sampleSources = ir.loadSources(sampleDir);
+  } catch (err) {
+    const detail = err && err.message ? err.message : String(err);
+    throw stageError(`cannot read sample sources in '${sampleDir}': ${detail}`, sampleDir);
+  }
+  return appSources.concat(sampleSources);
+}
+
 async function configureStage(ctx) {
   assertAppDir(ctx);
   loadSourcesOrThrow(ctx.appDir);
+  if (isSampleSelected(ctx && ctx.config)) assertSampleTargetOrThrow(ctx.appDir);
 }
 
 async function typecheckStage(ctx) {
   assertAppDir(ctx);
-  loadSourcesOrThrow(ctx.appDir);
+  loadEffectiveSourcesOrThrow(ctx);
 }
 
 async function compileStage(ctx) {
   assertAppDir(ctx);
-  const sources = loadSourcesOrThrow(ctx.appDir);
+  const sources = loadEffectiveSourcesOrThrow(ctx);
   const lowered = lowerAndEncodeOrThrow(ctx.appDir, sources);
   ctx._tree = lowered.tree;
 }
 
 async function emitStage(ctx) {
   assertAppDir(ctx);
-  const sources = loadSourcesOrThrow(ctx.appDir);
+  const sources = loadEffectiveSourcesOrThrow(ctx);
   const lowered = lowerAndEncodeOrThrow(ctx.appDir, sources);
   const distDir = path.join(ctx.appDir, 'dist');
   const irPath = path.join(distDir, 'ir.json');
@@ -122,7 +187,7 @@ async function nativeBuildStage(ctx) {
 
 async function packageStage(ctx) {
   assertAppDir(ctx);
-  const sources = loadSourcesOrThrow(ctx.appDir);
+  const sources = loadEffectiveSourcesOrThrow(ctx);
   const lowered = lowerAndEncodeOrThrow(ctx.appDir, sources);
   const distDir = path.join(ctx.appDir, 'dist');
   const binPath = path.join(distDir, 'tree.mui.bin');
@@ -182,4 +247,4 @@ async function runStages(stageName, ctx) {
   return results;
 }
 
-module.exports = { STAGES, runStages };
+module.exports = { STAGES, runStages, SAMPLE_TARGET, isSampleSelected, resolveSampleDir };
