@@ -70,6 +70,9 @@ using ComponentFactory =
 
 // Registry of C++ components available to server descriptors. Unknown names
 // inflate to placeholder entries; the rest of the descriptor still renders.
+// Trusted-input only: inflate takes an already-verified Descriptor. Callers
+// must route untrusted bytes via renderWithFallback (verify-then-inflate);
+// never inflate a Descriptor parsed from untrusted input directly.
 class ServerUiRegistry {
  public:
   ServerUiRegistry() = default;

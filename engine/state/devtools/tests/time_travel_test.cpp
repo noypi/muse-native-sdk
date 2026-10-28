@@ -12,6 +12,7 @@
 //          std::size_t nodeCount() const, bool contains(AtomId) const.
 //   A-DT4: rewind/forward out-of-range returns non-kOk Status, never throws,
 //          and leaves present() unchanged.
+#include <cstddef>
 #include <cstdio>
 
 #include "muse/state/atom.hpp"
@@ -144,6 +145,42 @@ static bool check_partial_rewind_restores_only_latest_delta() {
   return true;
 }
 
+// Ring bound: recording past 4096 pins size at the cap with overwrite-oldest
+// eviction; rewind/forward invariants hold at the bound.
+static bool check_ring_bound_pins_4096_overwrite_oldest() {
+  DevTimeline tl;
+  constexpr std::size_t kCap = 4096;
+  constexpr std::size_t kExtra = 10;
+  const std::size_t total = kCap + kExtra;
+  constexpr AtomId kBase = 1000;
+  for (std::size_t i = 0; i < total; ++i) {
+    tl.record(static_cast<AtomId>(kBase + i), TypedValue(0),
+              TypedValue(static_cast<int>(i)));
+  }
+  // Size cap: DAG holds exactly the retained cap entries.
+  auto d = tl.exportDag();
+  if (!d.ok()) return false;
+  if (d.value().nodeCount() != kCap) return false;
+  // Oldest evicted: first recorded atoms no longer present; latest is.
+  auto p = tl.present();
+  if (!p.ok()) return false;
+  if (p.value().get(kBase).ok()) return false;
+  int v = -1;
+  const AtomId kLast = static_cast<AtomId>(kBase + total - 1);
+  if (!snapshot_value(p.value(), kLast, &v)) return false;
+  if (v != static_cast<int>(total - 1)) return false;
+  // Rewind/forward invariants at the bound: full-cap rewind ok, one more
+  // rejected; full forward restores latest; over-forward rejected.
+  if (tl.rewind(kCap) != Status::kOk) return false;
+  if (tl.rewind(1) == Status::kOk) return false;
+  if (tl.forward(kCap) != Status::kOk) return false;
+  if (tl.forward(1) == Status::kOk) return false;
+  auto back = tl.present();
+  if (!back.ok()) return false;
+  return snapshot_value(back.value(), kLast, &v) &&
+         v == static_cast<int>(total - 1);
+}
+
 }  // namespace
 
 #define RUN_CASE(name)                 \
@@ -166,6 +203,7 @@ int main() {
   RUN_CASE(check_empty_timeline_rewind_forward_rejected);
   RUN_CASE(check_export_dag_shows_causal_chain);
   RUN_CASE(check_partial_rewind_restores_only_latest_delta);
+  RUN_CASE(check_ring_bound_pins_4096_overwrite_oldest);
   if (failures > 0) {
     std::printf("time_travel_test: %d failing\n", failures);
     return 1;

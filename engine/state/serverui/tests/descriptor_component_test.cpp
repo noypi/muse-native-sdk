@@ -113,6 +113,20 @@ static bool check_factory_error_propagates() {
   return !r.inflate(d).ok();
 }
 
+// Null/empty factory registration is rejected with non-kOk, never throws;
+// inflate is unaffected (unknown name still degrades to placeholder, kOk).
+static bool check_null_factory_registration_rejected_inflate_unaffected() {
+  ServerUiRegistry r;
+  ComponentFactory empty;
+  if (r.registerComponent("X", empty) == Status::kOk) return false;
+  if (r.registerComponent("X", nullptr) == Status::kOk) return false;
+  Descriptor d;
+  d.addNode("X", Props());
+  auto t = r.inflate(d);
+  if (!t.ok()) return false;
+  return t.value().size() == 1 && t.value().at(0).isPlaceholder();
+}
+
 }  // namespace
 
 #define RUN_CASE(name)                           \
@@ -133,6 +147,7 @@ int main() {
   RUN_CASE(check_empty_descriptor_inflates_empty);
   RUN_CASE(check_duplicate_registration_replaces_factory);
   RUN_CASE(check_null_name_registration_rejected);
+  RUN_CASE(check_null_factory_registration_rejected_inflate_unaffected);
   RUN_CASE(check_factory_error_propagates);
   if (failures > 0) {
     std::printf("descriptor_component_test: %d failing\n", failures);

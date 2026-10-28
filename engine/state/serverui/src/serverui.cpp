@@ -5,7 +5,7 @@ namespace state {
 
 Status ServerUiRegistry::registerComponent(const char* name,
                                            ComponentFactory f) {
-  if (name == nullptr) return Status::kNotFound;
+  if (name == nullptr || !f) return Status::kNotFound;
   factories_[std::string(name)] = f;
   return Status::kOk;
 }

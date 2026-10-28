@@ -22,6 +22,7 @@
 //         `setTestOnlyNow(std::uint64_t)`.
 #include <cstdio>
 #include <cstdint>
+#include <string>
 
 #include "muse/state/atom.hpp"
 #include "muse/state/descriptor.hpp"
@@ -92,6 +93,27 @@ static bool check_null_key_anchor_rejected() {
   return !r.ok();
 }
 
+// Wrapped/huge payload_len envelope is kCorrupt without crash. payload_len
+// near UINT64_MAX would wrap (body_begin + payload_len + 18) into range
+// under a naive addition-form bound; the subtraction-form guard rejects
+// before any indexing. Process-alive proof: a well-formed descriptor still
+// verifies afterwards in the same process.
+static bool check_wrapped_huge_payload_len_rejected_process_alive() {
+  const char* evil_lens[] = {
+      "18446744073709551615",  // UINT64_MAX: maximal wrap pressure.
+      "18446744073709551599",  // UINT64_MAX-16: tuned near-wrap residue.
+  };
+  for (const char* len : evil_lens) {
+    const std::string evil =
+        std::string("MUSE1|1|test-key-1|9000|") + len + "|x|#0000000000000000";
+    DescriptorBytes b = DescriptorBytes::from(evil.data(), evil.size());
+    if (muse::state::verifyDescriptor(b, anchor()).ok()) return false;
+  }
+  DescriptorBytes good =
+      muse::state::signTestOnly("screen:home", "test-key-1", 9000, 1);
+  return muse::state::verifyDescriptor(good, anchor()).ok();
+}
+
 }  // namespace
 
 #define RUN_CASE(name)                           \
@@ -113,6 +135,7 @@ int main() {
   RUN_CASE(check_newer_than_client_version_fails_soft);
   RUN_CASE(check_empty_bytes_rejected);
   RUN_CASE(check_null_key_anchor_rejected);
+  RUN_CASE(check_wrapped_huge_payload_len_rejected_process_alive);
   if (failures > 0) {
     std::printf("descriptor_signature_test: %d failing\n", failures);
     return 1;

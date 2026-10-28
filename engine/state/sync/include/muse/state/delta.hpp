@@ -53,6 +53,8 @@ StatusOr<Delta> diff(const SnapshotState& base, const SnapshotState& next);
 
 // Applies a diff produced by diff(). Null snapshots are rejected with
 // Status::kNotFound and never crash; empty deltas are a no-op kOk.
+// Precondition: d was produced by diff() in-process and never deserialized
+// from untrusted bytes (Delta is opaque; only diff() can populate it).
 Status apply(SnapshotState* s, const Delta& d);
 
 }  // namespace state

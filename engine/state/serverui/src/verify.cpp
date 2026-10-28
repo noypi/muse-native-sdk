@@ -83,8 +83,12 @@ StatusOr<Descriptor> verifyDescriptor(const DescriptorBytes& b,
   if (key_id.empty()) return Status::kCorrupt;
 
   const std::size_t body_begin = len_end + 1;
-  // Need exactly: body + "|#" + 16 hex digits.
-  if (s.size() < body_begin + payload_len + 2 + 16) return Status::kCorrupt;
+  // Need exactly: body + "|#" + 16 hex digits. Subtraction-form
+  // overflow-free checks: reject before any indexing so a crafted huge
+  // payload_len can never wrap (body_begin + payload_len + 18) into range.
+  if (body_begin > s.size()) return Status::kCorrupt;
+  if (s.size() - body_begin < 18) return Status::kCorrupt;
+  if (payload_len > s.size() - body_begin - 18) return Status::kCorrupt;
   if (s[body_begin + payload_len] != '|' ||
       s[body_begin + payload_len + 1] != '#') {
     return Status::kCorrupt;

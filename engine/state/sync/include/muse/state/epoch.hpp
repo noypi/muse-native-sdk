@@ -28,8 +28,11 @@ struct Epoch {
 
 // Per-account epoch fence. Unknown accounts report Status::kNotFound;
 // stale (!supersedes) advances are rejected with Status::kNotFound and
-// never applied, so the stored epoch stays bit-identical. Null or empty
-// account names are rejected, never crash. Thread-safe via one short-held
+// never applied, so the stored epoch stays bit-identical. Callers are
+// expected to advance with an Epoch whose account tag matches the tag
+// already stored for that account name; a mismatched (cross-account) tag
+// never supersedes and is rejected the same way as a stale generation.
+// Null or empty account names are rejected, never crash. Thread-safe via one short-held
 // member mutex, mirroring MutationQueue/CrdtRegistry.
 class EpochStore {
  public:
