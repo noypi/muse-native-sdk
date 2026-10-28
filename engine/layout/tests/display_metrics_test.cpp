@@ -148,6 +148,34 @@ static bool check_invalid_window_id_reports_unknown_display() {
   return false;
 }
 
+// Ghost-id hole: a never-issued small id below any fast-reject cap (500,
+// with only two windows created) is rejected by the windowExists oracle on
+// both the apply and observe paths — never silently accepted.
+static bool check_never_issued_small_id_reports_unknown_display() {
+  layout::WindowId a = layout::createWindow(px(360.0f, 640.0f));
+  layout::WindowId b = layout::createWindow(px(1200.0f, 800.0f));
+  if (!layout::windowExists(a) || !layout::windowExists(b)) return false;
+  if (layout::windowExists(static_cast<layout::WindowId>(500))) return false;
+  bool apply_threw = false;
+  try {
+    layout::applyDisplayMetrics(static_cast<layout::WindowId>(500),
+                                metrics(2.0f, 0.0f, 0.0f, 0.0f, 0.0f));
+  } catch (const layout::LayoutError& e) {
+    apply_threw = is_unknown_display_error(e);
+  } catch (...) {
+    return false;
+  }
+  if (!apply_threw) return false;
+  try {
+    (void)layout::displayMetricsOf(static_cast<layout::WindowId>(500));
+  } catch (const layout::LayoutError& e) {
+    return is_unknown_display_error(e);
+  } catch (...) {
+    return false;
+  }
+  return false;
+}
+
 #define RUN_CASE(name)                  \
   do {                                  \
     if (!(name)()) {                    \
@@ -166,6 +194,7 @@ int main() {
   RUN_CASE(check_identical_reapply_is_stable);
   RUN_CASE(check_unknown_display_reports_error);
   RUN_CASE(check_invalid_window_id_reports_unknown_display);
+  RUN_CASE(check_never_issued_small_id_reports_unknown_display);
   if (failures > 0) {
     std::printf("display_metrics_test: %d failing\n", failures);
     return 1;

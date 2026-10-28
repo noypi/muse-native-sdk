@@ -125,9 +125,8 @@ std::uint64_t inspectorOverheadNs() {
   // nothing: the counter is a constant zero.
   return 0u;
 #else
-  // Dev hooks are live; the counter is callable and documents hook cost.
-  // Dumps copy from the committed store without mutating it, so the hook
-  // path never perturbs solve output (bit-identical dumps).
+  // Dev hooks are live and callable; the counter is intentionally a zero
+  // stub — the bit-identical-dump comparison is the no-perturbation proof.
   return 0u;
 #endif
 }

@@ -460,6 +460,13 @@ WindowId& windowNextId() {
 
 }  // namespace
 
+bool windowExists(WindowId id) noexcept {
+  if (id == kInvalidWindowId) {
+    return false;
+  }
+  return windowStore().find(id) != windowStore().end();
+}
+
 WindowId createWindow(PxSize size) {
   WindowRec rec;
   rec.bounds = size;
@@ -503,6 +510,33 @@ WindowResizeResult applyWindowBounds(WindowId id, PxSize size,
   out.preservedSelection = rec.selection;
   out.recreated = false;
   return out;
+}
+
+// Test-visible setters through the public path: overwrite the stored
+// focus/scroll/selection so a later applyWindowBounds must echo the exact
+// values back. The echo semantics of applyWindowBounds are untouched.
+void setWindowFocus(WindowId id, FocusId focus) {
+  auto it = windowStore().find(id);
+  if (it == windowStore().end()) {
+    throw LayoutError::kUnknownWindow;
+  }
+  it->second.focus = focus;
+}
+
+void setWindowScroll(WindowId id, ScrollAnchor scroll) {
+  auto it = windowStore().find(id);
+  if (it == windowStore().end()) {
+    throw LayoutError::kUnknownWindow;
+  }
+  it->second.scroll = scroll;
+}
+
+void setWindowSelection(WindowId id, SelectionRange selection) {
+  auto it = windowStore().find(id);
+  if (it == windowStore().end()) {
+    throw LayoutError::kUnknownWindow;
+  }
+  it->second.selection = selection;
 }
 
 // ---- T4 cross-window drag targets during resize (FR-LAYOUT-013,
@@ -627,7 +661,7 @@ SweepReport runResizeSweep(SweepSpec spec) {
     }
     try {
       applyDisplayMetrics(id, spec.fromDisplay);
-    } catch (...) {
+    } catch (const LayoutError&) {
       // Metrics store unavailable: density path cannot be verified, but the
       // T1 resize retention below is still meaningful. Mark only the density
       // flag dirty and continue the sweep.
@@ -643,7 +677,7 @@ SweepReport runResizeSweep(SweepSpec spec) {
           if (!sameDisplayMetrics(stored, spec.toDisplay)) {
             densityOk = false;
           }
-        } catch (...) {
+        } catch (const LayoutError&) {
           densityOk = false;
         }
       }

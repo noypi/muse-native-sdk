@@ -121,6 +121,42 @@ static bool check_disabled_in_release_error_exists() {
   return layout::LayoutError::kDisabledInRelease != static_cast<layout::LayoutError>(0);
 }
 
+// AC-LAYOUT-009 + AC-LAYOUT-048: dumped node geometry matches the baked
+// fixture values — every node is 100x50.
+static bool check_dump_node_geometry_matches_baked_values() {
+  layout::RootId root = layout::createInspectorTree(3);
+  layout::InspectorDump dump = layout::dumpLayoutTree(root);
+  if (dump.nodes.size() != 3) return false;
+  for (std::size_t i = 0; i < dump.nodes.size(); ++i) {
+    if (dump.nodes[i].w != 100.0f || dump.nodes[i].h != 50.0f) return false;
+  }
+  return true;
+}
+
+// AC-LAYOUT-009 + AC-LAYOUT-048: the resolved token carries its cascade
+// source — tokens[0] records cascadeSource 0, distinct from its token id 7.
+static bool check_dump_token_records_distinct_cascade_source() {
+  layout::RootId root = layout::createInspectorTree(3);
+  layout::InspectorDump dump = layout::dumpLayoutTree(root);
+  if (dump.tokens.size() < 1) return false;
+  const layout::ResolvedToken& tok = dump.tokens[0];
+  return tok.token == 7u && tok.cascadeSource == 0u &&
+         tok.cascadeSource != tok.token;
+}
+
+// AC-LAYOUT-009 + AC-LAYOUT-048: every invalidation reason is bound to its
+// source node — reasons[i].node == nodes[i].node for all i.
+static bool check_dump_reasons_match_source_nodes() {
+  layout::RootId root = layout::createInspectorTree(3);
+  layout::InspectorDump dump = layout::dumpLayoutTree(root);
+  if (dump.nodes.size() != 3) return false;
+  if (dump.reasons.size() < dump.nodes.size()) return false;
+  for (std::size_t i = 0; i < dump.nodes.size(); ++i) {
+    if (dump.reasons[i].node != dump.nodes[i].node) return false;
+  }
+  return true;
+}
+
 #define RUN_CASE(name)                 \
   do {                                 \
     if (!(name)()) {                   \
@@ -138,6 +174,9 @@ int main() {
   RUN_CASE(check_dump_contains_constraint_variable);
   RUN_CASE(check_dump_contains_resolved_token);
   RUN_CASE(check_dump_contains_invalidation_reason_per_node);
+  RUN_CASE(check_dump_node_geometry_matches_baked_values);
+  RUN_CASE(check_dump_token_records_distinct_cascade_source);
+  RUN_CASE(check_dump_reasons_match_source_nodes);
   RUN_CASE(check_unknown_root_is_rejected);
   RUN_CASE(check_disabled_in_release_error_exists);
   if (failures > 0) {

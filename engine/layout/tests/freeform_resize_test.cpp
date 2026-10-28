@@ -134,6 +134,30 @@ static bool check_invalid_window_id_reports_error() {
   return false;
 }
 
+// AC-LAYOUT-036: non-default state set via the public setters survives a
+// resize with exact values — focus field 42, scroll anchor (node 7,
+// offset 12.5), selection (5, 9).
+static bool check_non_default_state_survives_resize() {
+  layout::WindowId id = layout::createWindow(px(360.0f, 640.0f));
+  layout::FocusId focus;
+  focus.field = 42u;
+  layout::ScrollAnchor scroll;
+  scroll.node = 7u;
+  scroll.offset = 12.5f;
+  layout::SelectionRange selection;
+  selection.start = 5u;
+  selection.end = 9u;
+  layout::setWindowFocus(id, focus);
+  layout::setWindowScroll(id, scroll);
+  layout::setWindowSelection(id, selection);
+  layout::ResizeOpts opts;
+  layout::WindowResizeResult r =
+      layout::applyWindowBounds(id, px(900.0f, 700.0f), opts);
+  if (r.recreated) return false;
+  return r.preservedFocus == focus && r.preservedScroll == scroll &&
+         r.preservedSelection == selection;
+}
+
 #define RUN_CASE(name)                 \
   do {                                 \
     if (!(name)()) {                   \
@@ -150,6 +174,7 @@ int main() {
   RUN_CASE(check_resize_preserves_scroll_anchor);
   RUN_CASE(check_resize_preserves_focus);
   RUN_CASE(check_resize_preserves_selection);
+  RUN_CASE(check_non_default_state_survives_resize);
   RUN_CASE(check_zero_size_resize_stays_in_place);
   RUN_CASE(check_unknown_window_reports_error);
   RUN_CASE(check_invalid_window_id_reports_error);

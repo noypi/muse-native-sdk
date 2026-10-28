@@ -118,6 +118,20 @@ struct DisplayMetrics {
 // preservation is observable. Never throws for valid sizes.
 WindowId createWindow(PxSize size);
 
+// Window-existence oracle shared across translation units (solver.cpp owns
+// the window store): true when `id` was issued and still stored, false for
+// kInvalidWindowId and never-issued ids. Used by the metrics path to reject
+// ghost ids; never throws.
+bool windowExists(WindowId id) noexcept;
+
+// Test-visible state setters through the public path (preservation contract):
+// set non-default focus/scroll/selection on a window so a later
+// applyWindowBounds resize must echo the exact values back. Unknown ids
+// (including kInvalidWindowId) throw `LayoutError::kUnknownWindow`.
+void setWindowFocus(WindowId id, FocusId focus);
+void setWindowScroll(WindowId id, ScrollAnchor scroll);
+void setWindowSelection(WindowId id, SelectionRange selection);
+
 // Freeform resize entry point (FR-LAYOUT-013, AC-LAYOUT-036). Re-solves the
 // dirty subtree only (NFR-LAYOUT-005 pattern, consumed read-only) on each
 // continuous-resize step; never recreates (`recreated` is always false,
@@ -153,7 +167,8 @@ WindowId createWindowAt(WindowBounds b);
 // bounds; the latest matching window wins on overlap. Throws
 // `LayoutError::kNoTarget` when the point is outside all windows (no
 // nearest-window fallback). `s` is an opaque session handle and plays no
-// role in hit-testing.
+// role in hit-testing. Note: stacked same-origin windows are ambiguous —
+// the latest origin-matching window wins.
 DragTarget resolveDropTarget(DragSession s, PxPoint p,
                              WindowBounds resizing);
 
@@ -167,7 +182,7 @@ DragTarget resolveDropTarget(DragSession s, PxPoint p,
 // report stable flags.
 struct SweepSpec {
   float widths[8] = {};
-  std::size_t widthCount = 0;
+  std::size_t widthCount = 0;  // Clamped to 8 entries.
   std::uint32_t focusField = 0;
   std::uint32_t scrollNode = 0;
   DisplayMetrics fromDisplay;

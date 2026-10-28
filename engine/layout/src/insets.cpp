@@ -100,17 +100,10 @@ EdgeInsets InsetBus::safeArea() const noexcept {
 namespace layout {
 namespace {
 
-// ASSUMPTION (validation bound): window issuance is owned by T1's store in
-// solver.cpp, which is outside T3's production claims and invisible from
-// this translation unit. The invalid sentinel is always rejected exactly,
-// and ids with stored metrics are validated by map membership. A
-// never-before-seen id below kNeverIssuedCap is accepted and recorded
-// (harmless: it becomes that id's stored metrics); ids at or above the cap
-// — far beyond any hermetic or realistic single-process window count — are
-// rejected as unknown displays. Follow-up (needs solver.cpp, out of claim):
-// replace the cap with a window-existence oracle, e.g. when T5 (which owns
-// solver.cpp changes) wires density-triggered re-solve of the affected
-// window's dirty subtree.
+// Window issuance is owned by T1's store in solver.cpp and shared here via
+// the layout::windowExists oracle. The cap below is only a fast-reject fast
+// path; the oracle is the sole gate: never-issued small ids (e.g. 500 with
+// only ids 0,1 created) throw kUnknownDisplay.
 constexpr WindowId kNeverIssuedCap = 4096;
 
 std::unordered_map<WindowId, DisplayMetrics>& displayMetricsStore() {
@@ -120,6 +113,9 @@ std::unordered_map<WindowId, DisplayMetrics>& displayMetricsStore() {
 
 void requireKnownDisplay(WindowId id) {
   if (id == kInvalidWindowId || id >= kNeverIssuedCap) {
+    throw LayoutError::kUnknownDisplay;
+  }
+  if (!windowExists(id)) {
     throw LayoutError::kUnknownDisplay;
   }
 }
