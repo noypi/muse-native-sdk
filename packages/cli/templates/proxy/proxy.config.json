@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "routes": {
+    "segment": {
+      "endpoint": "http://localhost:8787/stub/segment"
+    },
+    "reason": {
+      "endpoint": "http://localhost:8787/stub/reason"
+    },
+    "structure": {
+      "endpoint": "http://localhost:8787/stub/structure"
+    },
+    "transcribe": {
+      "endpoint": "http://localhost:8787/stub/transcribe"
+    },
+    "generate-image": {
+      "endpoint": "http://localhost:8787/stub/generate-image"
+    }
+  }
+}

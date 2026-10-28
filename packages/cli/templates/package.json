@@ -4,7 +4,8 @@
   "private": true,
   "type": "commonjs",
   "scripts": {
-    "build": "muse-native build ."
+    "build": "muse-native build .",
+    "start": "muse-native run . # starts the local stub alongside the app (see proxy/proxy.config.json)"
   },
   "dependencies": {
     "@muse/compiler": "*",

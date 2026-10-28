@@ -14,6 +14,7 @@ const TEMPLATE_FILES = [
   'tsconfig.json',
   'README.md',
   path.join('src', 'App.tsx'),
+  path.join('proxy', 'proxy.config.json'),
 ];
 
 function printInitUsage() {
@@ -75,6 +76,11 @@ function runInit(dir, opts) {
           fs.rmSync(path.join(dir, 'src'), { recursive: true, force: true });
         } catch (_) {
           // src/ may not have been created; ignore.
+        }
+        try {
+          fs.rmSync(path.join(dir, 'proxy'), { recursive: true, force: true });
+        } catch (_) {
+          // proxy/ may not have been created; ignore.
         }
       }
     } catch (_) {
@@ -167,6 +173,11 @@ function scaffoldProject(args) {
           fs.rmSync(path.join(outDir, 'src'), { recursive: true, force: true });
         } catch (_) {
           // src/ may not have been created; ignore.
+        }
+        try {
+          fs.rmSync(path.join(outDir, 'proxy'), { recursive: true, force: true });
+        } catch (_) {
+          // proxy/ may not have been created; ignore.
         }
       }
     } catch (_) {
