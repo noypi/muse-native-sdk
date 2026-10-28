@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "toolchain": "offline-glslang",
+  "shaders": [
+    { "id": "ui-background", "entry": "main", "stage": "fragment" },
+    { "id": "ui-text", "entry": "main", "stage": "fragment" },
+    { "id": "ui-composite", "entry": "main", "stage": "fragment" }
+  ]
+}
