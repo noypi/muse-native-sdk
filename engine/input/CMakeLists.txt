@@ -5,7 +5,7 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-add_library(input STATIC src/event_model.cpp src/hit_test.cpp src/gesture_arena.cpp src/back_gesture.cpp src/focus_tree.cpp src/focus_restore.cpp src/device_harness.cpp)
+add_library(input STATIC src/event_model.cpp src/hit_test.cpp src/gesture_arena.cpp src/back_gesture.cpp src/focus_tree.cpp src/focus_restore.cpp src/device_harness.cpp src/stylus_history.cpp src/haptics_settings.cpp)
 target_include_directories(input PUBLIC include)
 target_compile_options(input PRIVATE -Wall -Wextra -Wpedantic)
 
@@ -73,3 +73,17 @@ target_link_libraries(focus_rebuild_test PRIVATE input)
 target_compile_options(focus_rebuild_test PRIVATE -Wall -Wextra -Wpedantic)
 
 add_test(NAME focus_rebuild_test COMMAND focus_rebuild_test)
+
+add_executable(stylus_history_test tests/stylus_history_test.cpp)
+target_include_directories(stylus_history_test PRIVATE include)
+target_link_libraries(stylus_history_test PRIVATE input)
+target_compile_options(stylus_history_test PRIVATE -Wall -Wextra -Wpedantic)
+
+add_test(NAME stylus_history_test COMMAND stylus_history_test)
+
+add_executable(haptics_settings_test tests/haptics_settings_test.cpp)
+target_include_directories(haptics_settings_test PRIVATE include)
+target_link_libraries(haptics_settings_test PRIVATE input)
+target_compile_options(haptics_settings_test PRIVATE -Wall -Wextra -Wpedantic)
+
+add_test(NAME haptics_settings_test COMMAND haptics_settings_test)
