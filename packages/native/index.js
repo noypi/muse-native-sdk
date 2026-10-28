@@ -10,6 +10,12 @@
 
 const manifest = require('./muse.manifest.json');
 
+// FR-M3-006 — `TextInput` tier-2 component over the tier-1 text-field edit
+// core (T1). The descriptor factory lives in textinput.js beside the
+// `createTextInput` engine-adapter handle; it is re-exported here so the
+// package surface keeps one registry map.
+const { TextInput, createTextInput } = require('./textinput.js');
+
 // FR-M3-001 / AC-M3-002 — shared Ripple/state layer (T4).
 // Every interactive primitive routes state transitions through driveState so
 // hover/focus/pressed/disabled output stays token-role only and consistent.
@@ -257,11 +263,12 @@ const tier2 = {
   ListItem,
   Avatar,
   Tooltip,
+  TextInput,
 };
 
 const components = { ...tier1, ...tier2 };
 
 const primitives = manifest.components.map((entry) => entry.name);
 
-module.exports = { primitives, components, manifest, driveState };
+module.exports = { primitives, components, manifest, driveState, createTextInput, TextInput };
 module.exports.lintAppLiteral = require('./scripts/check-tokens.js').lintAppLiteral;

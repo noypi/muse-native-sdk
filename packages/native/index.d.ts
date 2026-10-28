@@ -167,6 +167,63 @@ export type TooltipProps = {
   anchor?: unknown;
 };
 
+// FR-M3-006 — `TextInput` tier-2 component over the tier-1 text-field edit
+// core (T1). Prop keys mirror the `TextInput` manifest schema exactly.
+export type TextInputProps = {
+  value?: string;
+  selection?: { start: number; end: number };
+  composing?: string;
+  contentType?: 'plain' | 'rich';
+  onSelectionChange?: (sel: { start: number; end: number }) => void;
+};
+
+export type EditingEngine = {
+  setComposingText(s: string): void;
+  commitText(s: string): void;
+  cancelComposition(): void;
+  getText(): string;
+  setSelection(start: number, end: number): void;
+  getSelection(): { start: number; end: number };
+};
+
+export type PlatformClipboard = {
+  readText(): string | Promise<string>;
+  writeText(s: string): void | Promise<void>;
+  hasText(): boolean;
+};
+
+export type InsetFrames = {
+  current(): { imeBottom: number };
+  subscribe(fn: (frame: { imeBottom: number }) => void): () => void;
+};
+
+export type TwoWayBinding = {
+  value: string;
+  set?(value: string): void;
+};
+
+export type TextInputHandle = {
+  setComposingText(s: string): void;
+  commitText(s: string): void;
+  cancelComposition(): void;
+  setSelection(start: number, end: number): void;
+  getSelection(): { start: number; end: number };
+  cut(): void;
+  copy(): void;
+  paste(): void | Promise<void>;
+  selectAll(): void;
+  value: string;
+  selection: { start: number; end: number };
+  dispose(): void;
+};
+
+export declare function createTextInput(deps: {
+  editingEngine: EditingEngine;
+  clipboard: PlatformClipboard;
+  insets: InsetFrames;
+  binding?: TwoWayBinding;
+}): TextInputHandle;
+
 export type Tier2Props =
   | ButtonProps
   | IconButtonProps
@@ -201,6 +258,7 @@ export declare function CircularProgress(props?: CircularProgressProps): NativeD
 export declare function ListItem(props?: ListItemProps): NativeDescriptor;
 export declare function Avatar(props?: AvatarProps): NativeDescriptor;
 export declare function Tooltip(props?: TooltipProps): NativeDescriptor;
+export declare function TextInput(props?: TextInputProps): NativeDescriptor;
 
 export type Tier2Name =
   | 'Button'
@@ -218,7 +276,8 @@ export type Tier2Name =
   | 'CircularProgress'
   | 'ListItem'
   | 'Avatar'
-  | 'Tooltip';
+  | 'Tooltip'
+  | 'TextInput';
 
 export declare function Surface(props?: SurfaceProps): NativeDescriptor;
 export declare function Text(props?: TextProps): NativeDescriptor;
