@@ -18,6 +18,14 @@ add_library(navigation
   src/uri_validation.cpp
   src/deferred_link.cpp
   src/link_validation.cpp
+  src/route_guard.cpp
+  src/typed_routes.cpp
+  src/nested_graph.cpp
+  src/result_channel.cpp
+  src/route_transition.cpp
+  src/predictive_transition.cpp
+  src/entry_funnel.cpp
+  src/back_dispatch.cpp
 )
 target_include_directories(navigation PUBLIC include)
 target_compile_options(navigation PRIVATE -Wall -Wextra -Wpedantic)
@@ -104,6 +112,51 @@ add_executable(security_gate_test tests/security_gate_test.cpp)
 target_link_libraries(security_gate_test PRIVATE navigation)
 target_compile_options(security_gate_test PRIVATE -Wall -Wextra -Wpedantic)
 add_test(NAME security_gate_test COMMAND security_gate_test)
+
+add_executable(route_guard_test tests/route_guard_test.cpp)
+target_link_libraries(route_guard_test PRIVATE navigation)
+target_compile_options(route_guard_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME route_guard_test COMMAND route_guard_test)
+
+add_executable(param_validation_test tests/param_validation_test.cpp)
+target_link_libraries(param_validation_test PRIVATE navigation)
+target_compile_options(param_validation_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME param_validation_test COMMAND param_validation_test)
+
+add_executable(nested_deeplink_test tests/nested_deeplink_test.cpp)
+target_link_libraries(nested_deeplink_test PRIVATE navigation)
+target_compile_options(nested_deeplink_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME nested_deeplink_test COMMAND nested_deeplink_test)
+
+add_executable(result_channel_test tests/result_channel_test.cpp)
+target_link_libraries(result_channel_test PRIVATE navigation)
+target_compile_options(result_channel_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME result_channel_test COMMAND result_channel_test)
+
+add_executable(route_transition_config_test tests/route_transition_config_test.cpp)
+target_link_libraries(route_transition_config_test PRIVATE navigation)
+target_compile_options(route_transition_config_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME route_transition_config_test COMMAND route_transition_config_test)
+
+add_executable(predictive_progress_test tests/predictive_progress_test.cpp)
+target_link_libraries(predictive_progress_test PRIVATE navigation)
+target_compile_options(predictive_progress_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME predictive_progress_test COMMAND predictive_progress_test)
+
+add_executable(transition_retarget_test tests/transition_retarget_test.cpp)
+target_link_libraries(transition_retarget_test PRIVATE navigation)
+target_compile_options(transition_retarget_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME transition_retarget_test COMMAND transition_retarget_test)
+
+add_executable(entry_funnel_test tests/entry_funnel_test.cpp)
+target_link_libraries(entry_funnel_test PRIVATE navigation)
+target_compile_options(entry_funnel_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME entry_funnel_test COMMAND entry_funnel_test)
+
+add_executable(back_dispatch_test tests/back_dispatch_test.cpp)
+target_link_libraries(back_dispatch_test PRIVATE navigation)
+target_compile_options(back_dispatch_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME back_dispatch_test COMMAND back_dispatch_test)
 
 # FR-NAV-006 T2 (NAV-APPLINKS codegen invocation — documentation only, no new
 # engine target added here):
