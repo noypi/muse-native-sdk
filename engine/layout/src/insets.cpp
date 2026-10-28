@@ -1,5 +1,9 @@
 #include "layout/insets.h"
 
+#include "layout/window.h"
+
+#include <unordered_map>
+
 namespace layout {
 namespace {
 
@@ -82,6 +86,59 @@ EdgeInsets InsetBus::safeArea() const noexcept {
   safe_rev_nav_ = rNav;
   safe_dirty_ = false;
   return safe_area_;
+}
+
+}  // namespace layout
+
+// ---- T3 per-display metrics (FR-LAYOUT-013, AC-LAYOUT-037) ----
+// Per-window applied display metrics, keyed by WindowId so each window on
+// its own synthetic display keeps its own density and per-edge insets with
+// no cross-contamination: re-applying one window's metrics touches only
+// that window's entry. Density is stored, not validated, here — the plan's
+// T3 interface exposes only the kUnknownDisplay error channel, so there is
+// no invalid-density error to report on this path.
+namespace layout {
+namespace {
+
+// ASSUMPTION (validation bound): window issuance is owned by T1's store in
+// solver.cpp, which is outside T3's production claims and invisible from
+// this translation unit. The invalid sentinel is always rejected exactly,
+// and ids with stored metrics are validated by map membership. A
+// never-before-seen id below kNeverIssuedCap is accepted and recorded
+// (harmless: it becomes that id's stored metrics); ids at or above the cap
+// — far beyond any hermetic or realistic single-process window count — are
+// rejected as unknown displays. Follow-up (needs solver.cpp, out of claim):
+// replace the cap with a window-existence oracle, e.g. when T5 (which owns
+// solver.cpp changes) wires density-triggered re-solve of the affected
+// window's dirty subtree.
+constexpr WindowId kNeverIssuedCap = 4096;
+
+std::unordered_map<WindowId, DisplayMetrics>& displayMetricsStore() {
+  static std::unordered_map<WindowId, DisplayMetrics> store;
+  return store;
+}
+
+void requireKnownDisplay(WindowId id) {
+  if (id == kInvalidWindowId || id >= kNeverIssuedCap) {
+    throw LayoutError::kUnknownDisplay;
+  }
+}
+
+}  // namespace
+
+void applyDisplayMetrics(WindowId id, DisplayMetrics m) {
+  requireKnownDisplay(id);
+  displayMetricsStore()[id] = m;
+}
+
+DisplayMetrics displayMetricsOf(WindowId id) {
+  requireKnownDisplay(id);
+  auto& store = displayMetricsStore();
+  const auto it = store.find(id);
+  if (it == store.end()) {
+    throw LayoutError::kUnknownDisplay;
+  }
+  return it->second;
 }
 
 }  // namespace layout

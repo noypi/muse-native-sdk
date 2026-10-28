@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 
 namespace layout {
@@ -13,6 +14,27 @@ struct PxSize {
   float width = 0.0f;
   float height = 0.0f;
 };
+
+struct PxPoint {
+  float x = 0.0f;
+  float y = 0.0f;
+};
+
+struct WindowBounds {
+  float x = 0.0f;
+  float y = 0.0f;
+  float w = 0.0f;
+  float h = 0.0f;
+};
+
+// Opaque drag-session handle (T4): the session id plays no role in
+// hit-testing; it is carried so call sites can correlate drag queries.
+struct DragSession {
+  std::uint32_t id = 0;
+};
+
+// The drop target is the owning window id (T4 interface: -> WindowId).
+using DragTarget = WindowId;
 
 struct ResizeOpts {
 };
@@ -61,8 +83,16 @@ struct SolveStats {
 // std::out_of_range cases): `throw LayoutError::kUnknownWindow;` is caught
 // as `const LayoutError&`. kDisabledInRelease is declared here so the
 // inspector release contract (T6) pins against the same type; the T2/T6
-// inspector header reuses this enumerator.
-enum class LayoutError : std::uint8_t { kUnknownWindow, kDisabledInRelease };
+// inspector header reuses this enumerator. kUnknownDisplay is the T3
+// per-display error: unknown/invalid display ids on the metrics path throw
+// it (distinct from kUnknownWindow so callers can tell a bad display id on
+// applyDisplayMetrics apart from a bad window id on applyWindowBounds).
+enum class LayoutError : std::uint8_t {
+  kUnknownWindow,
+  kDisabledInRelease,
+  kUnknownDisplay,
+  kNoTarget
+};
 
 struct WindowResizeResult {
   SolveStats stats;
@@ -70,6 +100,17 @@ struct WindowResizeResult {
   FocusId preservedFocus;
   SelectionRange preservedSelection;
   bool recreated = false;
+};
+
+// Per-display metrics (FR-LAYOUT-013, AC-LAYOUT-037). density is the
+// display's scale factor; the inset fields are the per-edge system insets
+// in dp applied independently per window/display.
+struct DisplayMetrics {
+  float density = 0.0f;
+  float insetLeft = 0.0f;
+  float insetTop = 0.0f;
+  float insetRight = 0.0f;
+  float insetBottom = 0.0f;
 };
 
 // Fixture entry point (plan names no constructor): returns a valid id for a
@@ -86,5 +127,60 @@ WindowId createWindow(PxSize size);
 // `LayoutError::kUnknownWindow`.
 WindowResizeResult applyWindowBounds(WindowId id, PxSize size,
                                      ResizeOpts opts);
+
+// Per-display density/insets entry point (FR-LAYOUT-013, AC-LAYOUT-037).
+// Stores the metrics for the window's display; re-applying one window's
+// metrics never alters another window's stored metrics. Unknown ids
+// (including kInvalidWindowId) throw `LayoutError::kUnknownDisplay`
+// (distinct from kUnknownWindow so a bad display id on this path is told
+// apart from a bad window id on applyWindowBounds).
+void applyDisplayMetrics(WindowId id, DisplayMetrics m);
+
+// Observation helper for the metrics path: echoes the last metrics applied
+// to the window via applyDisplayMetrics. Ids with no stored metrics
+// (never applied, or unknown) throw `LayoutError::kUnknownDisplay`.
+DisplayMetrics displayMetricsOf(WindowId id);
+
+// Fixture placement entry point (T4, FR-LAYOUT-013 AC-LAYOUT-038): creates a
+// window whose committed bounds equal `b` and returns its id. Never throws
+// for valid bounds.
+WindowId createWindowAt(WindowBounds b);
+
+// Cross-window drop-target resolution mid-resize (T4, FR-LAYOUT-013
+// AC-LAYOUT-038). Hit-tests `p` against in-flight bounds: the window under
+// resize (identified by committed origin matching `resizing`'s origin) is
+// tested against `resizing`, all other windows against their committed
+// bounds; the latest matching window wins on overlap. Throws
+// `LayoutError::kNoTarget` when the point is outside all windows (no
+// nearest-window fallback). `s` is an opaque session handle and plays no
+// role in hit-testing.
+DragTarget resolveDropTarget(DragSession s, PxPoint p,
+                             WindowBounds resizing);
+
+// Scripted resize sweep plus display move (T5, FR-LAYOUT-013 AC-LAYOUT-039).
+// Builds its own window from the spec (no caller-side setup): drives the
+// spec widths phone->desktop via applyWindowBounds, and when
+// moveDisplayMidSweep is true delivers toDisplay in place mid-script via
+// applyDisplayMetrics (FR-LIFECYCLE-003 consumed read-only: no lifecycle
+// change, no recreation). No error surface: asserts internally and never
+// throws; degenerate specs (widthCount == 0, or clamped to 8 entries)
+// report stable flags.
+struct SweepSpec {
+  float widths[8] = {};
+  std::size_t widthCount = 0;
+  std::uint32_t focusField = 0;
+  std::uint32_t scrollNode = 0;
+  DisplayMetrics fromDisplay;
+  DisplayMetrics toDisplay;
+  bool moveDisplayMidSweep = false;
+};
+
+struct SweepReport {
+  bool focusKept = false;
+  bool scrollKept = false;
+  bool densityRelayoutClean = false;
+};
+
+SweepReport runResizeSweep(SweepSpec spec);
 
 }  // namespace layout
