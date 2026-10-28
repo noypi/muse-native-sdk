@@ -16,6 +16,7 @@
 #   :benchmark:powerSaver   -> benchmark.powersaver.run.measure_power_saver
 #   :benchmark:soak         -> benchmark.soak.run.measure_soak
 #   :engine:core:allocator   -> tests.test_core_allocator (arena/pool contract, TC-CORE-003)
+#   :testing:cliAllTiers     -> testing.cli.run.run_all_tiers (four tiers, JUnit XML)
 set -eu
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 
@@ -34,6 +35,7 @@ Tasks:
   :benchmark:powerSaver    benchmark.powersaver.run.measure_power_saver
   :benchmark:soak          benchmark.soak.run.measure_soak
   :engine:core:allocator   tests.test_core_allocator (arena/pool contract)
+  :testing:cliAllTiers     testing.cli.run.run_all_tiers (four tiers, JUnit XML)
 Extra args after :benchmark:perfGate are forwarded to benchmark/gate/run.py
 as <manifest> <results-json>.
 EOF
@@ -226,6 +228,13 @@ EOF
     ;;
   :engine:core:pluginManifest)
     cd "$ROOT" && python3 -m unittest tests.test_core_plugin_manifest
+    ;;
+  :testing:cliAllTiers)
+    run_py "import os, sys
+from testing.cli.run import run_all_tiers
+out = sys.argv[1] if len(sys.argv) > 1 else os.path.join('build', 'testing', 'tiers')
+results = run_all_tiers(out)
+raise SystemExit(0 if all(v['passed'] for v in results.values()) else 1)"
     ;;
   *)
     echo "gradlew: unknown task '$TASK'" >&2
