@@ -26,6 +26,7 @@ add_library(motion
   src/large_motion.cpp
   src/m3_tokens.cpp
   src/spring_class.cpp
+  src/tokens.cpp
 )
 target_include_directories(motion PUBLIC include)
 target_compile_options(motion PRIVATE -Wall -Wextra -Wpedantic)
@@ -192,3 +193,8 @@ file(WRITE ${CMAKE_BINARY_DIR}/check_m3_tokens.cmake
   "message(STATUS \"TC-MOTION-044: tokens/m3.json exists with non-empty version key\")\n"
 )
 add_test(NAME m3_tokens_file COMMAND ${CMAKE_COMMAND} -P ${CMAKE_BINARY_DIR}/check_m3_tokens.cmake)
+
+add_executable(motion_tokens_test tests/motion_tokens_test.cpp)
+target_link_libraries(motion_tokens_test PRIVATE motion)
+target_compile_options(motion_tokens_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME motion_tokens_test COMMAND motion_tokens_test)
