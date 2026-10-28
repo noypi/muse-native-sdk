@@ -79,6 +79,9 @@ def render_snapshot(component: str, variant: str) -> dict:
         raise ValueError("component must not be empty")
     if not variant:
         raise ValueError("variant must not be empty")
+    for _name, _value in (("component", component), ("variant", variant)):
+        if "/" in _value or "\\" in _value or ".." in _value.replace("\\", "/").split("/"):
+            raise ValueError("%s must not contain a path separator or '..'" % _name)
     rendered = _pattern(component, variant)
     expected = _expected_bytes(component, variant)
     diff_pixels, mean_channel_error = _compare(rendered, expected)

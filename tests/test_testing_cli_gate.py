@@ -317,6 +317,23 @@ class SnapshotTest(unittest.TestCase):
         with self.assertRaises(Exception):
             render_snapshot("", "light")
 
+    def test_snapshot_path_traversal_rejected(self):
+        # Security follow-up: component/variant containing a path
+        # separator or '..' is rejected fail-closed (ValueError)
+        # before any artifact is written.
+        import tempfile
+
+        from testing.cli.snapshot import render_snapshot
+
+        tmp_root = tempfile.gettempdir()
+        before = set(os.listdir(tmp_root))
+        with self.assertRaises(ValueError):
+            render_snapshot("../../evil", "light")
+        with self.subTest(variant="backslash-dotdot"):
+            with self.assertRaises(ValueError):
+                render_snapshot("Button", "..\\evil")
+        self.assertEqual(set(os.listdir(tmp_root)), before)
+
 
 class IntegrationTest(unittest.TestCase):
     def test_integration_result_shape(self):
