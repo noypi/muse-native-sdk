@@ -2,9 +2,9 @@
 // T8 gallery story file — MuseImage all five states in light+dark (T8 owns it).
 // Proves AC-MUSE-030 (every state has a light+dark story; moderated renders M3
 // illustration + message + edit affordance, never a broken-image icon) and
-// documents the TC-MUSE-030 manual half in-file (not executed in CI).
+// documents the TC-MUSE-029 manual half in-file (not executed in CI).
 //
-// TC-MUSE-030 manual procedure:
+// TC-MUSE-029 manual procedure:
 // 1. Render each story below on a device (light, then dark theme).
 // 2. Confirm `idle` shows the empty slot, `generating` shows the progressive
 //    shimmer in the reserved box, `ready` shows the generated asset at the
@@ -43,8 +43,8 @@ const stories = {
     dark: imageStory('generating', 'dark', { previewUrl: 'preview:1', reservedBox: { width: 512, height: 512 } }),
   },
   ready: {
-    light: imageStory('ready', 'light', READY_ASSET),
-    dark: imageStory('ready', 'dark', READY_ASSET),
+    light: imageStory('ready', 'light', { ...READY_ASSET }),
+    dark: imageStory('ready', 'dark', { ...READY_ASSET }),
   },
   moderated: {
     light: imageStory('moderated', 'light', {

@@ -74,10 +74,15 @@ function MuseImage(props, deps) {
   const d = deps ?? {};
   assertPreset(d, p.preset);
 
-  const key = p.cacheKey !== undefined && p.cacheKey !== null ? String(p.cacheKey) : defaultKey(p);
+  let key = p.cacheKey !== undefined && p.cacheKey !== null ? String(p.cacheKey) : defaultKey(p);
   const memo = memoFor(d.generateImage);
   const explicitKey = p.cacheKey !== undefined && p.cacheKey !== null;
   let currentPrompt = p.prompt;
+  // Fallback-only memo entries are namespaced by `fallbackOf` so different
+  // fallback URLs never share an asset; route memo stays keyed per injected
+  // `generateImage` fn + key (shared-recorder behavior preserved).
+  const scopeKey = (map, k) =>
+    map === fallbackMemo ? `${String(p.fallbackOf ?? '')}\u0000${k}` : k;
 
   const handle = { props: { ...p }, cacheKey: key, status: 'idle', lastError: undefined };
 
@@ -85,7 +90,10 @@ function MuseImage(props, deps) {
   // from `size` at construction (no shift, observable before resolve).
   handle.contentDescription = p.prompt;
   const reservedBox = parseSizeToken(p.size);
-  if (reservedBox !== undefined) handle.reservedBox = reservedBox;
+  if (reservedBox === undefined) {
+    throw { code: 'unknown-size', route: 'generate-image', size: p.size };
+  }
+  handle.reservedBox = reservedBox;
   handle.layoutShift = false;
 
   function toModerated(err) {
@@ -148,11 +156,12 @@ function MuseImage(props, deps) {
       if (typeof d.onCrossFade === 'function') d.onCrossFade({ layoutShift: false });
     }
 
-    if (memo.has(key)) {
+    if (memo.has(scopeKey(memo, key))) {
       handle.status = 'generating';
-      const hit = memo.get(key);
+      const hit = memo.get(scopeKey(memo, key));
       handle.status = 'ready';
       handle.lastError = undefined;
+      fireCrossFade();
       return hit;
     }
 
@@ -164,7 +173,7 @@ function MuseImage(props, deps) {
     if (p.fallbackOf !== undefined && p.fallbackOf !== null && typeof d.fetchFallback === 'function') {
       const res = await d.fetchFallback(p.fallbackOf);
       if (res && res.status === 200 && res.body !== null && res.body !== undefined) {
-        memo.set(key, res.body);
+        memo.set(scopeKey(memo, key), res.body);
         handle.status = 'ready';
         handle.lastError = undefined;
         fireCrossFade();
@@ -176,7 +185,7 @@ function MuseImage(props, deps) {
     // never cached, never retried; safety blocks resolve to moderated.
     const out = await generateOnce(currentPrompt);
     if (out && out.__moderated) return out.__moderated;
-    memo.set(key, out);
+    memo.set(scopeKey(memo, key), out);
     handle.status = 'ready';
     handle.lastError = undefined;
     fireCrossFade();
@@ -194,7 +203,12 @@ function MuseImage(props, deps) {
     handle.status = 'generating';
     const out = await generateOnce(next);
     if (out && out.__moderated) return out.__moderated;
-    store.set(storeKey, out);
+    store.set(store === fallbackMemo ? scopeKey(store, storeKey) : storeKey, out);
+    // A subsequent `resolveImage()` reads the edited asset (default-key case).
+    if (!explicitKey) {
+      key = storeKey;
+      handle.cacheKey = key;
+    }
     handle.status = 'ready';
     handle.lastError = undefined;
     return out;

@@ -107,10 +107,7 @@ function createPlatformSpeech(opts) {
   }
 
   function pause() {
-    if (state !== 'speaking') {
-      state = 'paused';
-      return;
-    }
+    if (state !== 'speaking') return;
     state = 'paused';
     try {
       if (tts && typeof tts.pause === 'function') tts.pause();

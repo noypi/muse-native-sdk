@@ -7,7 +7,9 @@
 // committed first; the same turn re-committing after move-on is also stale.
 
 let seqCounter = 0;
-let maxCommittedSeq = -1;
+// Per-commit-target high-water mark: turns committed to different targets
+// never invalidate each other; same-target rapid turns still go stale.
+const maxCommittedByTarget = new Map();
 
 function mintId() {
   seqCounter += 1;
@@ -27,13 +29,15 @@ function createTurn() {
         turn.lastError = { code: 'stale-turn', route: 'transcribe' };
         return false;
       }
-      // A newer turn committed first — drop the write.
-      if (maxCommittedSeq > seq) {
+      // A newer turn committed first to the SAME target — drop the write.
+      // Commits to other targets never invalidate this turn.
+      const maxForTarget = maxCommittedByTarget.has(_targetId) ? maxCommittedByTarget.get(_targetId) : -1;
+      if (maxForTarget > seq) {
         turn.lastError = { code: 'stale-turn', route: 'transcribe' };
         return false;
       }
       turn.committed = true;
-      if (seq > maxCommittedSeq) maxCommittedSeq = seq;
+      if (seq > maxForTarget) maxCommittedByTarget.set(_targetId, seq);
       return true;
     },
     deny(route = 'transcribe') {

@@ -150,4 +150,22 @@ describe('T4 — errors surface only the proxy taxonomy (RULE-MUSE-007)', () => 
     assert.equal(typeof seen.error.route, 'string');
     assert.ok(!('body' in seen.error) && !('stack' in seen.error));
   });
+
+  it('async route rejection settles via done to error with the proxy-taxonomy code/route', async () => {
+    const deps = stubDeps();
+    deps.fetchImpl = async (url, opts) => {
+      deps.calls.push({ url, opts });
+      const err = new Error('reason timed out');
+      err.code = 'timeout';
+      err.route = 'reason';
+      throw err;
+    };
+    const control = makeControl();
+    const turn = createTurn();
+    const seen = startTurn(control, new Uint8Array([1]), { ...deps, turn });
+    const final = await seen.done;
+    assert.equal(final.status, 'error');
+    assert.equal(final.error.code, 'timeout');
+    assert.equal(final.error.route, 'reason');
+  });
 });

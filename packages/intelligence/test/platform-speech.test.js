@@ -95,6 +95,16 @@ describe('T10 — handle shape and states (AC-MUSE-037)', () => {
     h.stop();
     assert.equal(h.state, 'idle');
   });
+
+  it('pause() from idle stays idle and touches no bridge call', () => {
+    const { tts, calls } = makeTts();
+    const h = createPlatformSpeech({ script: 'hello', tts });
+    assert.equal(h.state, 'idle');
+    h.pause();
+    assert.equal(h.state, 'idle');
+    assert.deepEqual(tts.spoken, []);
+    assert.equal(calls.length, 0);
+  });
 });
 
 // --- T10: script resolution -------------------------------------------------

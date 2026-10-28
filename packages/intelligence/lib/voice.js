@@ -78,6 +78,8 @@ function createMuseVoice(opts) {
     throw { code: 'shared-target' };
   }
   usedTargets.add(target);
+  // Additive remount handle: releasing is explicit so a held target still
+  // rejects a second factory with `{ code: 'shared-target' }`.
 
   const turn = createTurn();
   const turnId = turn.id;
@@ -171,19 +173,23 @@ function startTurn(control, audioChunk, deps) {
     }
   };
 
-  const emptySeen = (status, error) => ({
-    partials: [],
-    final: '',
-    reasonDeltas: [],
-    partialTurnIds: [],
-    finalTurnId: turnId,
-    reasonTurnIds: [],
-    route: 'transcribe→reason',
-    latencyMs: Math.max(0, readClock(clock) - readClock(clock)),
-    reason: '',
-    status,
-    error,
-  });
+  const emptySeen = (status, error) => {
+    const out = {
+      partials: [],
+      final: '',
+      reasonDeltas: [],
+      partialTurnIds: [],
+      finalTurnId: turnId,
+      reasonTurnIds: [],
+      route: 'transcribe→reason',
+      latencyMs: Math.max(0, readClock(clock) - readClock(clock)),
+      reason: '',
+      status,
+      error,
+    };
+    out.done = Promise.resolve(out);
+    return out;
+  };
 
   // Mic denial — named `denied` state, never silent.
   if (audio.denied) {
@@ -241,6 +247,18 @@ function startTurn(control, audioChunk, deps) {
     for (const delta of reasonDeltas) d.sseEvents.push({ type: 'reason-delta', turnId, delta });
   }
 
+  // Additive observed-completion signal: `seen.done` resolves to the final
+  // outcome once all route promises settle. The sync return shape is
+  // unchanged; the sync path resolves immediately with the same object.
+  const pending = [];
+  const attachDone = () => {
+    seen.done =
+      pending.length === 0
+        ? Promise.resolve(seen)
+        : Promise.allSettled(pending).then(() => seen);
+    return seen;
+  };
+
   if (typeof fetchImpl === 'function') {
     // Route availability via the T2 seam (best-effort; never blocks the turn).
     try {
@@ -255,10 +273,14 @@ function startTurn(control, audioChunk, deps) {
         'muse://transcribe',
         { method: 'POST', body: JSON.stringify({ turnId, partials, transcript: final }) }
       );
-      if (res && typeof res.catch === 'function') res.catch((err) => settleError(err, 'transcribe'));
+      if (res && typeof res.then === 'function') {
+        pending.push(Promise.resolve(res));
+        if (typeof res.catch === 'function') res.catch((err) => settleError(err, 'transcribe'));
+      }
     } catch (err) {
       settleError(err, 'transcribe');
-      return finish();
+      finish();
+      return attachDone();
     }
     // Then Muse `reason`: the task instruction plus the transcript.
     try {
@@ -266,14 +288,19 @@ function startTurn(control, audioChunk, deps) {
         'muse://reason',
         { method: 'POST', body: JSON.stringify({ turnId, transcript: final, prompt }) }
       );
-      if (res && typeof res.catch === 'function') res.catch((err) => settleError(err, 'reason'));
+      if (res && typeof res.then === 'function') {
+        pending.push(Promise.resolve(res));
+        if (typeof res.catch === 'function') res.catch((err) => settleError(err, 'reason'));
+      }
     } catch (err) {
       settleError(err, 'reason');
-      return finish();
+      finish();
+      return attachDone();
     }
   }
 
-  return finish();
+  finish();
+  return attachDone();
 }
 
 // --- T5 — listening sheet + Field-style write-through ------------------------
@@ -389,4 +416,21 @@ function MuseVoiceSpeaker(args) {
   return out;
 }
 
-module.exports = { createMuseVoice, startTurn, openListeningSheet, commitSheet, MuseVoiceSpeaker };
+// Additive: free a bound target so voice controls can be remounted on the
+// same target object. While held (no release), double-mount still throws
+// `{ code: 'shared-target' }`.
+function releaseTarget(target) {
+  usedTargets.delete(target);
+}
+
+const MuseVoice = createMuseVoice;
+
+module.exports = {
+  createMuseVoice,
+  MuseVoice,
+  releaseTarget,
+  startTurn,
+  openListeningSheet,
+  commitSheet,
+  MuseVoiceSpeaker,
+};

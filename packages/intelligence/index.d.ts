@@ -40,6 +40,50 @@ export declare function createMuseVoice(
   opts: MuseVoiceOptions
 ): readonly [MuseVoiceControl, MuseVoiceSpeaker, VoiceState];
 
+/** Alias for `createMuseVoice` (root-entry convenience). */
+export declare const MuseVoice: typeof createMuseVoice;
+
+/**
+ * Free a target bound by `createMuseVoice` so voice controls can be
+ * remounted on the same target object. While held, double-mount still
+ * throws `{ code: 'shared-target' }`.
+ */
+export declare function releaseTarget(target: unknown): void;
+
+export interface TurnHandle {
+  readonly id: string;
+  status: string;
+  lastError: { code: string; route: string } | undefined;
+  commit(targetId: string): boolean;
+  deny(route?: string): void;
+  noSpeech(route?: string): void;
+  fail(code: string, route: string): void;
+}
+
+export declare function createTurn(): TurnHandle;
+
+export interface StartTurnSeen {
+  partials: string[];
+  final: string;
+  reasonDeltas: string[];
+  partialTurnIds: Array<string | undefined>;
+  finalTurnId: string | undefined;
+  reasonTurnIds: Array<string | undefined>;
+  route: string;
+  latencyMs: number;
+  reason: string;
+  status: string;
+  error: { code: string; route: string } | undefined;
+  /** Resolves to this same outcome once all route promises settle. */
+  done: Promise<StartTurnSeen>;
+}
+
+export declare function startTurn(
+  control: unknown,
+  audioChunk: unknown,
+  deps?: Record<string, unknown>
+): StartTurnSeen;
+
 // T7 — MuseImage fallbackOf→generate-image (Q-MUSE-003 settled shapes).
 // `size` is an opaque string token; `fallbackOf`/`cacheKey`/`preset` optional.
 
@@ -105,12 +149,19 @@ export interface PlatformSpeechOptions {
   voice?: string;
   rate?: number;
   tts: AndroidTtsBridge;
+  controls?: 'bar' | 'minimal' | 'none';
 }
 
 export interface SpeechHandle {
   play(): void;
   pause(): void;
   stop(): void;
+  setChildren(next: TextBearing): void;
+  interrupt(reason: string): void;
+  duck(): void;
+  readonly state: SpeechState;
+  readonly controls: { buttons: string[]; progress?: string; routeChip?: string };
+  readonly lastError: { code: string; source: 'platform' } | undefined;
 }
 
 export declare function createPlatformSpeech(
@@ -119,10 +170,4 @@ export declare function createPlatformSpeech(
     audioFocus?: { duck(): void; restore(): void };
     lifecycle?: { onPause(fn: () => void): void; onResume(fn: () => void): void };
   }
-): SpeechHandle & {
-  readonly state: SpeechState;
-  readonly lastError: { code: string; source: 'platform' } | undefined;
-  setChildren(next: TextBearing): void;
-  interrupt(reason: string): void;
-  duck(): void;
-};
+): SpeechHandle;
