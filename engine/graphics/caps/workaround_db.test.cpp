@@ -221,6 +221,51 @@ static bool check_oversized_entry_cannot_crash_matching() {
   }
 }
 
+// Settled semantic (a) pin: `feature`/`engine_version` are recorded but
+// never matched — empty vendor/driver/gpu constraints match any fingerprint,
+// so the entry below matches and returns ["w"] regardless of its
+// `feature`/`engine_version` values. Control: a non-empty vendor that differs
+// from the fingerprint must not match.
+static bool check_settled_semantic_feature_engine_version_not_matched() {
+  const char* kSettledDb =
+      "{\"version\":1,\"entries\":[{\"vendor\":\"\",\"driver_version\":\"\","
+      "\"gpu_id\":\"\",\"feature\":\"f\",\"workaround_flag\":\"w\","
+      "\"engine_version\":\"999\"}]}";
+  const std::string p = write_tmp_db(kSettledDb);
+  if (p.empty()) return false;
+  try {
+    graphics::reload_db(p);
+  } catch (...) {
+    std::remove(p.c_str());
+    return false;
+  }
+  std::remove(p.c_str());
+  const std::vector<std::string> got = graphics::match_workarounds(
+      make_fp("any-vendor", "any-gpu", "any-driver", 8, true, true, true));
+  if (got.size() != 1 || got[0] != "w") return false;
+  // Control: entry vendor "X" vs fingerprint vendor "Y" → no match.
+  const char* kControlDb =
+      "{\"version\":1,\"entries\":[{\"vendor\":\"X\",\"driver_version\":\"\","
+      "\"gpu_id\":\"\",\"feature\":\"f\",\"workaround_flag\":\"w\","
+      "\"engine_version\":\"999\"}]}";
+  const std::string p2 = write_tmp_db(kControlDb);
+  if (p2.empty()) return false;
+  try {
+    graphics::reload_db(p2);
+  } catch (...) {
+    std::remove(p2.c_str());
+    return false;
+  }
+  std::remove(p2.c_str());
+  try {
+    return graphics::match_workarounds(
+                    make_fp("Y", "any-gpu", "any-driver", 8, true, true, true))
+        .empty();
+  } catch (...) {
+    return false;
+  }
+}
+
 #define RUN_CASE(name)                                       \
   do {                                                       \
     if (!(name)()) {                                         \
@@ -242,6 +287,7 @@ int main() {
   RUN_CASE(check_bad_schema_version_yields_mismatch_error);
   RUN_CASE(check_malformed_db_never_crashes_and_leaks_nothing);
   RUN_CASE(check_oversized_entry_cannot_crash_matching);
+  RUN_CASE(check_settled_semantic_feature_engine_version_not_matched);
   if (failures > 0) {
     std::printf("workaround_db.test: %d failing\n", failures);
     return 1;

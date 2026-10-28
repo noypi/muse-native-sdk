@@ -159,6 +159,32 @@ static bool check_hostile_shader_ids_never_crash_or_compile() {
   return true;
 }
 
+// Settled: prewarm dedupes duplicate critical ids, keeping first-occurrence
+// order — {"ui-text","ui-text"} yields exactly one id [ui-text].
+static bool check_prewarm_dedupes_duplicate_critical_ids() {
+  const graphics::PrewarmReceipt r = graphics::prewarm(
+      std::vector<graphics::ShaderId>{"ui-text", "ui-text"});
+  const std::vector<graphics::ShaderId> warmed = r.warmed_ids();
+  return warmed.size() == 1 && warmed[0] == "ui-text";
+}
+
+// Settled: unknown-id error shape — load_shader on a 4096-char id throws
+// with what() exactly "UNKNOWN_SHADER" and echoes no id substring.
+static bool check_unknown_id_error_shape_hides_id() {
+  const std::string big(4096, 's');
+  try {
+    (void)graphics::load_shader(big);
+    return false;
+  } catch (const std::exception& e) {
+    const std::string w = e.what();
+    return w == "UNKNOWN_SHADER" &&
+           w.find(big) == std::string::npos &&
+           w.find(big.substr(0, 16)) == std::string::npos;
+  } catch (...) {
+    return false;
+  }
+}
+
 #define RUN_CASE(name)                                       \
   do {                                                       \
     if (!(name)()) {                                         \
@@ -181,6 +207,8 @@ int main() {
   RUN_CASE(check_prewarm_empty_and_idempotent);
   RUN_CASE(check_prewarm_unknown_id_fails_loudly);
   RUN_CASE(check_hostile_shader_ids_never_crash_or_compile);
+  RUN_CASE(check_prewarm_dedupes_duplicate_critical_ids);
+  RUN_CASE(check_unknown_id_error_shape_hides_id);
   if (failures > 0) {
     std::printf("spirv_only.test: %d failing\n", failures);
     return 1;

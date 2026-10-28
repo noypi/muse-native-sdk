@@ -155,6 +155,19 @@ static bool check_hostile_scene_ids_never_crash_or_pass() {
   return true;
 }
 
+// Settled: an embedded-NUL scene id never aliases the reference scene —
+// std::string("ui-reference\0.gold",17) yields a non-passing report.
+static bool check_embedded_nul_scene_id_never_passes() {
+  const std::string nul_scene("ui-reference\0.gold", 17);
+  try {
+    const graphics::EquivalenceReport r =
+        graphics::run_equivalence(nul_scene);
+    return !report_passes(r);
+  } catch (...) {
+    return true;  // loud failure is also safe; never a pass.
+  }
+}
+
 #define RUN_CASE(name)                                       \
   do {                                                       \
     if (!(name)()) {                                         \
@@ -177,6 +190,7 @@ int main() {
   RUN_CASE(check_empty_scene_id_fails_safely);
   RUN_CASE(check_same_scene_yields_identical_report);
   RUN_CASE(check_hostile_scene_ids_never_crash_or_pass);
+  RUN_CASE(check_embedded_nul_scene_id_never_passes);
   if (failures > 0) {
     std::printf("equivalence.test: %d failing\n", failures);
     return 1;

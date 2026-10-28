@@ -27,10 +27,13 @@ class GlslRuntimeBlockedError : public std::runtime_error {
 
 // Thrown for unknown shader ids. Deliberately NOT a GlslRuntimeBlockedError
 // so callers can distinguish "unknown id" from the release GLSL gate.
+// what() is exactly "UNKNOWN_SHADER" and never echoes the raw id.
 class UnknownShaderError : public std::runtime_error {
  public:
   explicit UnknownShaderError(const std::string& id)
-      : std::runtime_error("unknown shader: " + id) {}
+      : std::runtime_error("UNKNOWN_SHADER") {
+    (void)id;
+  }
 };
 
 // Receipt echoing every warmed critical id, exactly once each.

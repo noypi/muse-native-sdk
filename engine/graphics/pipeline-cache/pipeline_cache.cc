@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <fstream>
+#include <mutex>
 #include <string>
 #include <system_error>
 #include <vector>
@@ -25,6 +26,15 @@ std::string& cache_dir() {
 bool& last_was_hit() {
   static bool hit = false;
   return hit;
+}
+
+// Guards cache_dir()/last_was_hit() like workaround_db.cc's g_mu. Public
+// entry points (set_cache_dir_for_test/open_cache/record_frame_trace) hold
+// it; internal helpers assume the caller holds it. Single-threaded behavior
+// is unchanged.
+std::mutex& state_mu() {
+  static std::mutex mu;
+  return mu;
 }
 
 constexpr uint32_t kBlobMagic = 0x50434143;  // 'PCAC'
@@ -135,6 +145,7 @@ void store_blob(const CacheKey& key, const std::vector<uint8_t>& blob) {
 }  // namespace
 
 void set_cache_dir_for_test(const std::string& dir) {
+  std::lock_guard<std::mutex> lock(state_mu());
   cache_dir() = dir;
   // Hermetic seam: start each test from a clean slate so reruns observe
   // first-open misses. Only the test-owned dir is touched.
@@ -149,6 +160,7 @@ void set_cache_dir_for_test(const std::string& dir) {
 }
 
 CacheHandle open_cache(const CacheKey& key) {
+  std::lock_guard<std::mutex> lock(state_mu());
   std::vector<uint8_t> blob;
   if (load_stored(key, blob)) {
     last_was_hit() = true;
@@ -161,6 +173,7 @@ CacheHandle open_cache(const CacheKey& key) {
 }
 
 FrameTrace record_frame_trace() {
+  std::lock_guard<std::mutex> lock(state_mu());
   FrameTrace trace;
   trace.compile_stalls = last_was_hit() ? 0u : 1u;
   return trace;
