@@ -40,7 +40,18 @@ function dispatch(command, args) {
   if (!plugin) {
     throw new Error(`unknown command '${command}'`);
   }
-  return plugin.run(Array.isArray(args) ? args : []);
+  const argv = Array.isArray(args) ? args : [];
+  try {
+    return plugin.run(argv);
+  } catch (err) {
+    const raw = err && err.message ? String(err.message) : String(err);
+    const cause = String(raw).split('\n')[0];
+    return {
+      command,
+      cause: cause.length > 0 ? cause : `plugin '${command}' failed`,
+      action: `Fix '${command}' plugin failure, then re-run the command.`,
+    };
+  }
 }
 
 module.exports = { registerPlugin, getPlugin, listCommands, dispatch };

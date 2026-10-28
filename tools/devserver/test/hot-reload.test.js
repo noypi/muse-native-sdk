@@ -82,6 +82,24 @@ describe('dev-channel applyDelta (T1)', () => {
     assert.equal(typeof res.action, 'string');
   });
 
+  it('hugely oversized delta is rejected structurally, never throws or OOMs (security: NFR-DX-002 DoS hardening)', () => {
+    const { applyDelta } = load();
+    // 32 MiB of non-JSON bytes: far beyond any legitimate {component, patch}
+    // envelope; must be rejected without unbounded parse cost escaping as a
+    // throw or a process OOM.
+    const huge = Buffer.alloc(32 * 1024 * 1024, 0x78);
+    let res;
+    assert.doesNotThrow(() => {
+      res = applyDelta(huge);
+    }, 'oversized delta must never throw');
+    assert.equal(res.status, 'rejected');
+    assert.equal(res.command, 'applyDelta');
+    assert.equal(typeof res.cause, 'string');
+    assert.ok(res.cause.length > 0, 'cause must name the failure');
+    assert.equal(typeof res.action, 'string');
+    assert.ok(res.action.length > 0, 'action must give a next step');
+  });
+
   it('release channel is never required from this path (T10 owns refusal)', () => {
     const src = fs.readFileSync(LIB, 'utf8');
     assert.ok(!/release-stub|release channel|dev channel/i.test(src) || !/require\(['"]\..*release/.test(src),

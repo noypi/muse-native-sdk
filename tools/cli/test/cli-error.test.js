@@ -142,6 +142,35 @@ describe('plugin-host registerPlugin (T5)', () => {
     const { registerPlugin } = fresh(PLUGIN_HOST);
     assert.throws(() => registerPlugin({ name: 'x' }), TypeError);
   });
+
+  it('throwing plugin run surfaces structured {command, cause, action} with no stack/frame text (security: NFR-DX-002)', () => {
+    const mod = fresh(PLUGIN_HOST);
+    const raw = new Error('simulated plugin failure marker');
+    assert.ok(raw.stack && raw.stack.includes('at '), 'precondition: raw error carries a stack');
+    mod.registerPlugin({
+      name: 'thrower',
+      command: 'thrower-sec-case',
+      run: () => {
+        throw raw;
+      },
+    });
+    let surfaced;
+    try {
+      surfaced = mod.dispatch('thrower-sec-case', []);
+    } catch (e) {
+      surfaced = e;
+    }
+    assert.ok(surfaced && typeof surfaced === 'object', 'dispatch must surface a failure object, never the raw throw');
+    assert.equal(surfaced.command, 'thrower-sec-case');
+    assert.equal(typeof surfaced.cause, 'string');
+    assert.ok(surfaced.cause.length > 0, 'cause must name the failure');
+    assert.equal(typeof surfaced.action, 'string');
+    assert.ok(surfaced.action.length > 0, 'action must give a next step');
+    assert.equal(surfaced.stack, undefined, 'surfaced failure must not carry a stack property');
+    const text = JSON.stringify(surfaced);
+    assert.ok(!/\n\s*at\s/.test(text), 'surfaced failure must not contain raw stack frames');
+    assert.ok(!/\.js:\d+/.test(text), 'surfaced failure must not contain frame paths');
+  });
 });
 
 describe('build-backend facade delegates to BUILD-001 (T5)', () => {

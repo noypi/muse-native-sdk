@@ -4,10 +4,19 @@
 // This module never inspects UI internals: it only validates and decodes
 // the envelope so the caller can apply it while preserving state per D1.
 
+const MAX_DELTA_BYTES = 1024 * 1024;
+
 function parseDelta(delta) {
   if (!Buffer.isBuffer(delta) || delta.length === 0) {
     const err = new Error('Empty delta buffer: expected a Buffer with a JSON {component, patch} envelope.');
     err.code = 'E_DELTA_EMPTY';
+    throw err;
+  }
+  if (delta.length > MAX_DELTA_BYTES) {
+    const err = new Error(
+      `Delta too large (${delta.length} bytes exceeds ${MAX_DELTA_BYTES} byte limit): expected a JSON {component, patch} envelope.`,
+    );
+    err.code = 'E_DELTA_TOO_LARGE';
     throw err;
   }
   let text;
@@ -34,4 +43,4 @@ function parseDelta(delta) {
   return envelope;
 }
 
-module.exports = { parseDelta };
+module.exports = { parseDelta, MAX_DELTA_BYTES };
