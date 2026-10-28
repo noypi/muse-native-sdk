@@ -102,6 +102,13 @@ describe('convertFlutter — representative screen conversion', () => {
     assert.ok(output.includes('Welcome'), 'body text preserved');
   });
 
+  it('rewrites every Text( widget, not just the first (Stage-3 regression)', () => {
+    const src = `Widget build(BuildContext context) { return Column(children: [Text('Alpha'), Text('Beta')]); }`;
+    const { output } = convertFlutter(src);
+    assert.ok(!output.includes('Text('), 'no Text( remnant — all Text widgets rewritten');
+    assert.equal(output.split('Label(').length - 1, 2, 'expected two Label( renderings');
+  });
+
   it('produces output that parses as TSX', () => {
     const { output } = convertFlutter(CLEAN_SCREEN);
     assertParsesAsTsx(output);

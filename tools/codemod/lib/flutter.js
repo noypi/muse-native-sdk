@@ -100,7 +100,7 @@ function rewriteToEngine(source) {
     ['Column', 'VStack'],
     ['Row', 'HStack'],
     ['Container', 'Box'],
-    [/([^A-Za-z_$])Text(?![A-Za-z0-9_$])/, '$1Label'],
+    [/([^A-Za-z_$])Text(?![A-Za-z0-9_$])/g, '$1Label'],
     ['ElevatedButton', 'Button'],
     ['TextButton', 'Button'],
     ['OutlinedButton', 'Button'],

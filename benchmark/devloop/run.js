@@ -4,33 +4,13 @@
 // at `benchmark/budgets.json` (numeric `reloadBudgetMs`). This file imports it
 // and never defines it — see loadBudgetMs() below.
 //
-// OUT-OF-CLAIM NOTE: `benchmark/budgets.json` does not exist in this checkout
-// (perf-owned, must NOT be created here). Until perf publishes it, measurement
-// falls back to FALLBACK_RELOAD_MS below, which is a perf-owned override
-// pending placeholder — not an authoritative budget. Report to planner/perf.
+// The manifest exists at `benchmark/budgets.json` (borrowed, perf-owned);
+// the threshold is always read from there.
 
-const fs = require('node:fs');
-const path = require('node:path');
-
-// Perf-owned override pending: used only while `benchmark/budgets.json` is
-// absent. (Spelled via Number('...') so this placeholder never reads as a
-// defined budget literal; the real threshold always comes from the manifest.)
-const FALLBACK_RELOAD_MS = Number('2000');
+const budgets = require('../budgets.json');
 
 function loadBudgetMs() {
-  try {
-    const raw = fs.readFileSync(
-      path.join(__dirname, '..', 'budgets.json'),
-      'utf8',
-    );
-    const parsed = JSON.parse(raw);
-    if (Number.isFinite(parsed.reloadBudgetMs)) {
-      return parsed.reloadBudgetMs;
-    }
-  } catch {
-    // Manifest missing/unreadable/invalid — fall through to the pending fallback.
-  }
-  return FALLBACK_RELOAD_MS;
+  return budgets.reloadBudgetMs;
 }
 
 function measureReload(marks) {

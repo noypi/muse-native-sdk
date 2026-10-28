@@ -1,6 +1,9 @@
 'use strict';
 
 function applyComponentRefresh(tree, edit) {
+  if (tree === null || tree === undefined) {
+    throw new Error('applyComponentRefresh requires a component tree');
+  }
   const componentId = edit && edit.componentId;
   const target = (tree.components || []).find((c) => c.id === componentId);
   if (!target) {
