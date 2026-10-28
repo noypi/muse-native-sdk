@@ -19,6 +19,9 @@ function applyTokenSwap(tree, delta) {
   const components = (tree && tree.components) || [];
   for (const [name, value] of Object.entries(tokens)) {
     const scopedIds = mapping[name];
+    if (scopedIds !== undefined && !Array.isArray(scopedIds)) {
+      throw new TypeError(`Token scope mapping for "${name}" must be an array`);
+    }
     const targets =
       scopedIds === undefined
         ? components

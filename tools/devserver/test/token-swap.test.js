@@ -74,4 +74,14 @@ describe('applyTokenSwap — re-theme without re-instantiation', () => {
       /nopeToken/,
     );
   });
+
+  it('rejects a non-array token-scope mapping safely', () => {
+    assert.throws(
+      () => applyTokenSwap(makeTree(), {
+        tokens: { colorPrimary: '#111111' },
+        mapping: { colorPrimary: 'a' },
+      }),
+      TypeError,
+    );
+  });
 });

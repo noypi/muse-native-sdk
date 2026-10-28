@@ -64,6 +64,14 @@ describe('scaffoldTemplate — one-command scaffold contract', () => {
     assert.throws(() => scaffoldTemplate({ name: '../escape' }), TypeError);
     assert.throws(() => scaffoldTemplate(null), TypeError);
   });
+
+  it('does not escape the scaffold root for a traversal name (../evil)', () => {
+    assert.throws(() => scaffoldTemplate({ name: '../evil' }), TypeError);
+    const { files } = scaffoldTemplate({ name: 'my-app' });
+    for (const f of files) {
+      assert.ok(!f.includes('..') && !path.isAbsolute(f), `file stays within root: ${f}`);
+    }
+  });
 });
 
 describe('template content — navigation, theming, network call, generated test', () => {

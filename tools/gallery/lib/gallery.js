@@ -47,7 +47,18 @@ function resolveTokenValue(value, theme) {
 function resolveTokens(tokens, theme) {
   const resolved = {};
   for (const [key, value] of Object.entries(tokens)) {
-    resolved[key] = resolveTokenValue(value, theme);
+    const resolvedValue = resolveTokenValue(value, theme);
+    if (key === '__proto__' || key === 'constructor' || key === 'prototype') {
+      // Define as inert own data property without touching the prototype.
+      Object.defineProperty(resolved, key, {
+        value: resolvedValue,
+        enumerable: true,
+        configurable: true,
+        writable: true,
+      });
+    } else {
+      resolved[key] = resolvedValue;
+    }
   }
   return resolved;
 }

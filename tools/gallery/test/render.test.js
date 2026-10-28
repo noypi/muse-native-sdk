@@ -115,4 +115,15 @@ describe('renderGallery — boundary and error paths', () => {
     assert.throws(() => renderGallery(makeRegistry(), { theme: 'sepia', dir: 'ltr' }), TypeError);
     assert.throws(() => renderGallery(makeRegistry(), { theme: 'light', dir: 'ttb' }), TypeError);
   });
+
+  it('does not pollute the prototype for a __proto__ token key', () => {
+    const pages = renderGallery(
+      [{ name: 'X', props: {}, tokens: JSON.parse('{"__proto__":{"polluted":true}}'), a11y: {} }],
+      { theme: 'light', dir: 'ltr' },
+    );
+    const tokens = pages[0].tokens;
+    assert.equal(tokens.polluted, undefined);
+    assert.equal(Object.getPrototypeOf(tokens), Object.prototype);
+    assert.equal({}.polluted, undefined);
+  });
 });
