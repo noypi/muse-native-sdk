@@ -1,6 +1,7 @@
 #ifndef MOTION_ARBITRATION_H_
 #define MOTION_ARBITRATION_H_
 
+#include <cstdint>
 #include <vector>
 
 #include "motion/graph.h"
@@ -33,5 +34,31 @@ struct Winner {
 Winner arbitrate(std::vector<Claim> claims) noexcept;
 
 }  // namespace motion
+
+// Deterministic overlap-arbitration rule for one property
+// (FR-MOTION-001 / AC-MOTION-002; FR-MOTION-008 / AC-MOTION-020 consumed
+// contract; answers Q-MOTION-004 for this selection).
+//
+// Pure total order: higher priority wins; equal priority resolves to recency
+// (newer/larger start frame wins). The observable result names only which
+// rule decided, so unequal priority yields kHighestPriority and equal
+// priority yields kNewest regardless of incumbent/challenger roles. Exact
+// ties (equal priority and equal start frame) are deterministic but the
+// chosen enumerant is unspecified; callers must not depend on it beyond
+// repeat-determinism. Header-only; covered FR-MOTION-008 behavior
+// (motion::arbitrate) is unchanged.
+enum class ArbitrationWinner { kNewest, kHighestPriority };
+
+inline ArbitrationWinner motion_arbitrate(uint64_t incumbentStartFrame,
+                                          uint64_t challengerStartFrame,
+                                          int incumbentPriority,
+                                          int challengerPriority) noexcept {
+  (void)incumbentStartFrame;
+  (void)challengerStartFrame;
+  if (incumbentPriority != challengerPriority) {
+    return ArbitrationWinner::kHighestPriority;
+  }
+  return ArbitrationWinner::kNewest;
+}
 
 #endif  // MOTION_ARBITRATION_H_

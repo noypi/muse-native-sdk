@@ -7,6 +7,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 add_library(motion
   src/solver.cpp
+  src/spring.cpp
   src/graph.cpp
   src/gesture_binding.cpp
   src/arbitration.cpp
@@ -79,3 +80,8 @@ add_executable(security_hardening_test tests/security_hardening_test.cpp)
 target_link_libraries(security_hardening_test PRIVATE motion)
 target_compile_options(security_hardening_test PRIVATE -Wall -Wextra -Wpedantic)
 add_test(NAME security_hardening_test COMMAND security_hardening_test)
+
+add_executable(retarget_test tests/retarget_test.cpp)
+target_link_libraries(retarget_test PRIVATE motion)
+target_compile_options(retarget_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME retarget_test COMMAND retarget_test)
