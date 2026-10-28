@@ -5,6 +5,7 @@
 // same layout across frames without reshape; any key change is a miss.
 // Pure C++: no JNI types, no network, no downloads.
 
+#include <cstddef>
 #include <cstdint>
 #include <map>
 #include <memory>
@@ -15,6 +16,13 @@
 #include "muse/text/text_types.h"
 
 namespace muse::text {
+
+// Bound for the variation-shape cache owned by shapeRunWithVariations.
+// Keeps worst-case memory flat under distinct-input soak.
+inline constexpr std::size_t kVariationCacheMaxEntries = 256;
+
+// Current variation-cache entry count. Never throws.
+std::size_t VariationCacheSize() noexcept;
 
 // Full cache key. Every field participates in equality: text, style,
 // variation vector, width budget, scale, and font-set generation.
