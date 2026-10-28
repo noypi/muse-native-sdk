@@ -4,7 +4,6 @@
 // file's bytes (extension gate: .o/.obj/.a/.so, intentional — mirrors
 // tools/check_dynamic_init.py so both surfaces share the same scope)
 // for ELF dynamic-initializer markers (init-array/ctors sections and the
-// for ELF dynamic-initializer markers (init-array/ctors sections and the
 // compiler-generated global-init symbols). One
 // `DYNAMIC_INIT:<file>:<symbol>` line per offending file goes to stdout.
 // Empty directories scan zero objects and return 0; null paths,
@@ -30,8 +29,9 @@ namespace startup {
 namespace {
 
 // Cap per-file read so an unexpectedly large artifact cannot exhaust
-// memory; markers live in headers/symbol tables near the front, so a
-// truncated tail cannot hide a violation, only the head window matters.
+// memory. An over-cap file fails closed (return 2, never clean) because
+// a truncated tail could hide a violation; the scanner must never pass
+// a file it could not fully read.
 constexpr std::size_t kMaxScanBytes = 8u * 1024u * 1024u;
 
 // Marker patterns built from fragments at runtime (see file NOTE).
@@ -47,22 +47,20 @@ std::vector<std::string> markerPatterns() {
   return out;
 }
 
-// Scan scope is intentionally gated to startup-path object extensions
-// (.o/.obj/.a/.so, ASCII case-insensitive), matching
-// tools/check_dynamic_init.py::_iter_object_files. Only startup-path
-// objects are scanned; non-object sidecars are out of scope by design,
-// and both surfaces document this gate so they cannot drift apart.
-// True when `path` looks like a linkable object worth scanning. Unknown
-// extensions are still scanned (fail-closed: never skip silently by
-// extension alone) — this gate only documents intent; the loop below
-// scans every regular file regardless.
+// True when `path` is a regular file. A file is scanned only when it is
+// both a regular file AND a startup-path object (see `isObjectFile`
+// below); non-object sidecars are out of scope by design.
 bool isRegularFile(const std::filesystem::path& path) noexcept {
   std::error_code ec;
   bool ok = std::filesystem::is_regular_file(path, ec);
   return !ec && ok;
 }
 
-// Intentional extension gate (startup-path objects only): mirrors the
+// Scan scope is intentionally gated to startup-path object extensions
+// (.o/.obj/.a/.so, ASCII case-insensitive), matching
+// tools/check_dynamic_init.py::_iter_object_files, so both surfaces
+// cannot drift apart. Intentional extension gate (startup-path objects
+// only): mirrors the
 // `.o`/`.obj`/`.a`/`.so` set in tools/check_dynamic_init.py. Compared
 // ASCII case-insensitively, like the Python check.
 bool isObjectFile(const std::filesystem::path& path) noexcept {
@@ -123,10 +121,9 @@ int check_dynamic_initializers(const char* object_dir) noexcept {
           break;
         }
         if (total + static_cast<std::size_t>(got) > kMaxScanBytes) {
-          const std::size_t keep =
-              kMaxScanBytes > total ? kMaxScanBytes - total : 0;
-          contents.append(chunk, keep);
-          break;
+          std::fprintf(stderr, "DYNAMIC_INIT_TRUNCATED:%s:over-cap\n",
+                       it->path().string().c_str());
+          return 2;
         }
         contents.append(chunk, static_cast<std::size_t>(got));
         total += static_cast<std::size_t>(got);

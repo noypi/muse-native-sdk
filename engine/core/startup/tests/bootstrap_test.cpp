@@ -34,6 +34,7 @@ namespace {
 
 using muse::startup::BootstrapConfig;
 using muse::startup::BootstrapResult;
+using muse::startup::kBootstrapPhaseCount;
 using muse::startup::runBootstrap;
 
 int g_failed_checks = 0;
@@ -167,6 +168,30 @@ bool check_failure_shape_and_no_partial_execution() {
   return g_failed_checks == 0;
 }
 
+bool check_out_of_range_failAtPhase_disables_injection() {
+  // Security pin (NFR-CORE-012 diagnostic-only hook): out-of-range
+  // `failAtPhase` values disable injection — `ok=true` with the full six
+  // timings. An off-by-one in the gate (`i == failAtPhase`) is the exact
+  // line a production-caller mistake would hit; production callers leaving
+  // the `-1` default see byte-identical behavior to pre-hook code.
+  const int kOutOfRange[] = {99, kBootstrapPhaseCount, -5};
+  for (int f : kOutOfRange) {
+    BootstrapConfig cfg{};
+    cfg.failAtPhase = f;
+    BootstrapResult r = runBootstrap(cfg);
+    CHECK(r.ok);
+    if (!r.ok) return false;
+    CHECK(r.error.code == 0);
+    for (int i = 0; i < 6; ++i) {
+      CHECK(r.timings[i].phase == i);
+      CHECK(r.timings[i].name != nullptr);
+      CHECK(std::strcmp(r.timings[i].name, kExpectedOrder[i]) == 0);
+    }
+    CHECK(timings_monotonic(r));
+  }
+  return g_failed_checks == 0;
+}
+
 bool check_noexcept_and_result_width() {
   // Compile-time: noexcept signature and six-entry timing array.
   static_assert(noexcept(runBootstrap(BootstrapConfig{})),
@@ -198,6 +223,7 @@ int main() {
   RUN_CASE(check_every_phase_has_timing);
   RUN_CASE(check_eager_gate_defaults_off);
   RUN_CASE(check_failure_shape_and_no_partial_execution);
+  RUN_CASE(check_out_of_range_failAtPhase_disables_injection);
   RUN_CASE(check_noexcept_and_result_width);
   if (failures > 0) {
     std::printf("bootstrap_test: %d failing\n", failures);

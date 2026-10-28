@@ -32,6 +32,7 @@
 #include <cstddef>
 #include <cstdio>
 #include <cstring>
+#include <limits>
 
 #include "core/startup/pool_warmup.h"
 
@@ -138,6 +139,27 @@ bool check_prewarm_failure_names_thread_pools_phase() {
   return g_failed_checks == 0;
 }
 
+bool check_oversized_threadCount_stub_acceptance_pinned() {
+  // Security pin (NFR-CORE-010 scope; security-review LOW upper-bound
+  // finding): `threadCount = INT_MAX` has NO upper-bound check today, so
+  // the CURRENT stub accepts it (`ok=true`, `threadsReady == INT_MAX`).
+  // This is harmless only because the stub creates no threads — it records
+  // the number. Pinned explicitly here so the CORE-010 real-hook backend
+  // swap cannot silently inherit an unclamped value into thread/allocation
+  // sizing: when the hook lands, this case must flip to a named-denial
+  // (or clamp) assertion against the NFR-CORE-010-owned pool maximum, and
+  // the flip itself is the review signal. Until then the bound is
+  // UNPINNED by design — accepted with the declared stub shape.
+  PoolWarmupConfig cfg{};
+  cfg.threadCount = std::numeric_limits<int>::max();
+  WarmupResult r = prewarmPools(cfg);
+  CHECK(r.ok);
+  if (!r.ok) return false;
+  CHECK(r.threadsReady == std::numeric_limits<int>::max());
+  CHECK(r.error.code == 0);
+  return g_failed_checks == 0;
+}
+
 bool check_noexcept_signatures() {
   // Compile-time: both entry points are noexcept.
   static_assert(noexcept(prewarmPools(PoolWarmupConfig{})),
@@ -172,6 +194,7 @@ int main() {
   RUN_CASE(check_gate_denies_handle_before_declared_phase);
   RUN_CASE(check_gate_allows_at_and_after_declared_phase);
   RUN_CASE(check_prewarm_failure_names_thread_pools_phase);
+  RUN_CASE(check_oversized_threadCount_stub_acceptance_pinned);
   RUN_CASE(check_noexcept_signatures);
   if (failures > 0) {
     std::printf("pool_warmup_test: %d failing\n", failures);

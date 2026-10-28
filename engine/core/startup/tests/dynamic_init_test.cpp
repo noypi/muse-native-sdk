@@ -167,6 +167,75 @@ bool check_violation_line_format() {
   return g_failed_checks == 0;
 }
 
+bool check_truncated_scan_returns_nonzero_with_truncated_line() {
+  // Security pin (AC-CORE-031 fail-closed; security-review LOW truncation
+  // finding): a >8 MB object whose only marker sits beyond the 8 MB scan
+  // window must NOT return clean. Production returns `2` plus a
+  // `DYNAMIC_INIT_TRUNCATED:<path>:over-cap` line on stderr — never `0`.
+  // The marker is assembled at runtime from fragments so this test's own
+  // object file never contains a contiguous marker byte sequence.
+  const std::string marker = std::string("_GLOBAL__") + "sub_I_";
+  const char* dir = "test-fixtures/dynamic-init-truncated";
+  const std::string obj = std::string(dir) + "/big.o";
+  std::error_code ec;
+  std::filesystem::create_directories(dir, ec);
+  CHECK(!ec);
+  {
+    std::ofstream out(obj, std::ios::binary | std::ios::trunc);
+    CHECK(static_cast<bool>(out));
+    if (!out) return false;
+    // Fill past the 8 MB scan window before emitting the marker, so the
+    // marker is reachable only by a full-file scan (which the capped
+    // reader refuses to do).
+    const std::size_t kFill = 8u * 1024u * 1024u + 4096u;
+    const std::string chunk(65536, 'P');
+    std::size_t written = 0;
+    while (written < kFill) {
+      const std::size_t n =
+          (kFill - written < chunk.size()) ? (kFill - written) : chunk.size();
+      out.write(chunk.data(), static_cast<std::streamsize>(n));
+      written += n;
+    }
+    const std::string tail = marker + ":tail";
+    out.write(tail.data(), static_cast<std::streamsize>(tail.size()));
+    out.close();
+    CHECK(static_cast<bool>(out));
+  }
+  // Capture the production stderr line via an fd-level redirect.
+  const std::string cap = std::string(dir) + "/stderr.txt";
+  std::fflush(stderr);
+  const int saved = dup(STDERR_FILENO);
+  CHECK(saved >= 0);
+  FILE* sink = std::fopen(cap.c_str(), "w");
+  CHECK(sink != nullptr);
+  if (sink == nullptr) {
+    if (saved >= 0) close(saved);
+    return false;
+  }
+  CHECK(dup2(fileno(sink), STDERR_FILENO) >= 0);
+  const int rc = check_dynamic_initializers(dir);
+  std::fflush(stderr);
+  CHECK(dup2(saved, STDERR_FILENO) >= 0);
+  close(saved);
+  std::fclose(sink);
+  // Fail-closed: nonzero (exactly 2 = unscannable input), never 0.
+  CHECK(rc != 0);
+  CHECK(rc == 2);
+  std::string errOutput;
+  {
+    std::ifstream in(cap, std::ios::binary);
+    CHECK(static_cast<bool>(in));
+    if (in) {
+      errOutput.assign(std::istreambuf_iterator<char>(in),
+                       std::istreambuf_iterator<char>());
+    }
+  }
+  CHECK(errOutput.find("DYNAMIC_INIT_TRUNCATED:") != std::string::npos);
+  CHECK(errOutput.find("big.o") != std::string::npos);
+  CHECK(errOutput.find(":over-cap") != std::string::npos);
+  return g_failed_checks == 0;
+}
+
 bool check_return_contract_values() {
   // Return contract: 0 means clean; any nonzero means violation/error and
   // the CMake `dynamicInitCheck` target must fail the build on nonzero.
@@ -197,6 +266,7 @@ int main() {
   RUN_CASE(check_missing_dir_fails_closed);
   RUN_CASE(check_null_dir_fails_closed);
   RUN_CASE(check_violation_line_format);
+  RUN_CASE(check_truncated_scan_returns_nonzero_with_truncated_line);
   RUN_CASE(check_return_contract_values);
   if (failures > 0) {
     std::printf("dynamic_init_test: %d failing\n", failures);

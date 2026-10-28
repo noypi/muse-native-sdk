@@ -53,6 +53,7 @@ namespace {
 
 using muse::sandbox::BundleRef;
 using muse::sandbox::KeySet;
+using muse::sandbox::setRejectLogHook;
 using muse::sandbox::verifyAndMap;
 using muse::sandbox::VerifyResult;
 
@@ -80,6 +81,10 @@ const char* kUntrustedId = "untrusted-key-not-pinned";
 constexpr uint64_t kValidExpiry = 4102444800ULL;  // 2100-01-01.
 // Long-past expiry carried inline in the fixture.
 constexpr uint64_t kExpiredExpiry = 946684800ULL;  // 2000-01-01.
+
+// Fixed structural "now" from verifier.cc (no OS clock read):
+// 2026-01-01T00:00:00Z.
+constexpr uint64_t kNowUnixSec = 1767225600ULL;
 
 KeySet pinnedKeys() {
   KeySet ks{};
@@ -207,6 +212,104 @@ bool check_valid_bundle_verifies_rx_only() {
   return g_failed_checks == 0;
 }
 
+bool check_expiry_boundary_equal_now_denies_fail_closed() {
+  // Security pin (NFR-CORE-008): `expiryUnixSec == now` denies fail-closed
+  // (`<=` comparison) with the `signature-expiry` check — the classic
+  // fail-open slip (`<` would admit the boundary second) pinned shut.
+  BundleRef b = validBundle();
+  b.path = "test-bundle/expiry-boundary.ota";
+  b.expiryUnixSec = kNowUnixSec;
+  VerifyResult r = verifyAndMap(b, pinnedKeys());
+  CHECK(!r.ok);
+  if (r.ok) return false;
+  CHECK(r.error.code != 0);
+  CHECK(r.error.check != nullptr &&
+        std::strcmp(r.error.check, "signature-expiry") == 0);
+  CHECK(r.error.file != nullptr &&
+        std::strcmp(r.error.file, "test-bundle/expiry-boundary.ota") == 0);
+  CHECK(r.error.expected != nullptr && r.error.expected[0] != '\0');
+  CHECK(!r.mapping.valid);
+  CHECK(r.mapping.base == nullptr);
+  CHECK(r.mapping.size == 0);
+  return g_failed_checks == 0;
+}
+
+bool check_null_adjacent_denials_fail_closed_hook_safe() {
+  // Security pin (NFR-CORE-008 / AC-SECURITY-011): null-adjacent inputs
+  // deny fail-closed without crashing, and the hook path stays safe with
+  // the default (null) hook installed — `logReject` null-checks before
+  // calling, so a denial with no sink installed never faults.
+  setRejectLogHook(nullptr);
+  {
+    // Null bundle path: `path` is attribution-only (echoed into
+    // `error.file`, never a trust input), so the case pairs a null path
+    // with an integrity failure to exercise the denial path with a null
+    // `file` echo and a null hook: fail-closed, no crash, nothing mapped.
+    BundleRef b = validBundle();
+    b.path = nullptr;
+    b.bytes = g_bytes_tampered;
+    b.size = sizeof(g_bytes_tampered);
+    bool threw = false;
+    VerifyResult r{};
+    try {
+      r = verifyAndMap(b, pinnedKeys());
+    } catch (...) {
+      threw = true;
+    }
+    CHECK(!threw);
+    if (threw) return false;
+    CHECK(!r.ok);
+    CHECK(r.error.code != 0);
+    CHECK(r.error.file == nullptr);
+    CHECK(!r.mapping.valid);
+    CHECK(r.mapping.base == nullptr);
+    CHECK(r.mapping.size == 0);
+  }
+  {
+    // Null keyId: key-trust denial, never reaches expiry/integrity.
+    BundleRef b = validBundle();
+    b.path = "test-bundle/null-key-id.ota";
+    b.keyId = nullptr;
+    bool threw = false;
+    VerifyResult r{};
+    try {
+      r = verifyAndMap(b, pinnedKeys());
+    } catch (...) {
+      threw = true;
+    }
+    CHECK(!threw);
+    if (threw) return false;
+    CHECK(!r.ok);
+    CHECK(r.error.code != 0);
+    CHECK(r.error.check != nullptr &&
+          std::strcmp(r.error.check, "key-trust") == 0);
+    CHECK(!r.mapping.valid);
+    CHECK(r.mapping.base == nullptr);
+  }
+  {
+    // Empty KeySet: key-trust denial even for an otherwise-valid bundle.
+    BundleRef b = validBundle();
+    b.path = "test-bundle/empty-keyset.ota";
+    KeySet empty{};
+    bool threw = false;
+    VerifyResult r{};
+    try {
+      r = verifyAndMap(b, empty);
+    } catch (...) {
+      threw = true;
+    }
+    CHECK(!threw);
+    if (threw) return false;
+    CHECK(!r.ok);
+    CHECK(r.error.code != 0);
+    CHECK(r.error.check != nullptr &&
+          std::strcmp(r.error.check, "key-trust") == 0);
+    CHECK(!r.mapping.valid);
+    CHECK(r.mapping.base == nullptr);
+  }
+  return g_failed_checks == 0;
+}
+
 bool check_zero_rwx_pages_on_success() {
   // W^X self-check (AC-SECURITY-010): no RWX pages on a verified
   // mapping. Single-page mapping here, so the conjunction must be false.
@@ -238,15 +341,19 @@ int main() {
       check_tampered_byte_rejected_pre_execution);
   run("expired_signature_rejected_pre_execution",
       check_expired_signature_rejected_pre_execution);
+  run("expiry_boundary_equal_now_denies_fail_closed",
+      check_expiry_boundary_equal_now_denies_fail_closed);
+  run("null_adjacent_denials_fail_closed_hook_safe",
+      check_null_adjacent_denials_fail_closed_hook_safe);
   run("untrusted_key_rejected_pre_execution",
       check_untrusted_key_rejected_pre_execution);
   run("denial_reasons_are_distinct", check_denial_reasons_are_distinct);
   run("valid_bundle_verifies_rx_only", check_valid_bundle_verifies_rx_only);
   run("zero_rwx_pages_on_success", check_zero_rwx_pages_on_success);
   if (failed > 0) {
-    std::printf("RESULT FAIL %d/7 cases failed\n", failed);
+    std::printf("RESULT FAIL %d/9 cases failed\n", failed);
     return 1;
   }
-  std::printf("RESULT PASS 7/7 cases\n");
+  std::printf("RESULT PASS 9/9 cases\n");
   return 0;
 }
