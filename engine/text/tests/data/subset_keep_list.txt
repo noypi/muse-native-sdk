@@ -1,0 +1,54 @@
+# T7 — AC-TEXT-027 / FR-TEXT-011: font-subset keep-list.
+# Every codepoint/range below MUST survive the subset plan. The guard
+# (toolchain/font-subset/main.cpp) exits 2 + offending range list if any
+# entry here is stripped by the plan.
+# Format: U+XXXX or U+XXXX-U+YYYY (inclusive); '#' starts a comment.
+# Derived from the shipped locale set (T1/T3 matrix) + the AC-TEXT-021
+# emoji corpus (ZWJ, skin tones, regional indicators, keycaps, variation
+# selectors).
+
+# --- Shipped locales: Latin (en-US) ---
+U+0020-U+007E
+U+00A0-U+00FF
+
+# --- Shipped locales: CJK (zh-Hans-CN) ---
+U+4E00-U+9FFF
+U+3000-U+303F
+
+# --- Shipped locales: Arabic (ar-EG) ---
+U+0600-U+06FF
+
+# --- Shipped locales: Hebrew (he-IL) ---
+U+0590-U+05FF
+
+# --- Shipped locales: Devanagari (hi-IN) ---
+U+0900-U+097F
+
+# --- Shipped locales: Thai (th-TH) ---
+U+0E00-U+0E7F
+
+# --- Shipped locales: Khmer (km-KH) ---
+U+1780-U+17FF
+
+# --- Shipped locales: Myanmar (my-MM) ---
+U+1000-U+109F
+
+# --- Emoji: ZERO WIDTH JOINER (family / profession sequences) ---
+U+200D
+
+# --- Emoji: skin-tone modifiers (light .. dark) ---
+U+1F3FB-U+1F3FF
+
+# --- Emoji: regional indicators (flag pairs) ---
+U+1F1E6-U+1F1FF
+
+# --- Emoji: keycap base + selectors ---
+U+20E3
+U+FE0F
+U+0023
+U+0030-U+0039
+
+# --- Emoji: symbols, pictographs, transport, supplemental ---
+U+1F300-U+1FAFF
+U+2600-U+27BF
+U+2B00-U+2BFF

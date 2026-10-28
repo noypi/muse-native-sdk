@@ -8,6 +8,8 @@
 
 #include "muse/text/shaper.h"
 
+#include "muse/text/font_discovery.h"
+
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -312,6 +314,56 @@ bool advancesMatchReference(ShapedRunView a, const float* refAdvances,
     }
   }
   return true;
+}
+
+// FR-TEXT-011 / AC-TEXT-028: pipeline over the T1/T3/T6 seams. Single
+// synchronous layout pass: no retry, no second frame — a failed download
+// degrades to the bundled-face shaping in the same call. Only malformed
+// UTF-8 surfaces an error (kInvalidInput); every fallback miss degrades to
+// ok() shaping, never kMissingGlyph.
+StatusOr<ShapedRun> shapeRunWithFallback(const std::uint8_t* bytes,
+                                         std::size_t len,
+                                         const TextStyle& style,
+                                         const FontRequest& req) noexcept {
+  try {
+    if (len == 0) {
+      return ShapedRun{};
+    }
+    if (bytes == nullptr) {
+      return Status::kInvalidInput;
+    }
+    if (req.variation_count > 0 && req.variations == nullptr) {
+      return Status::kInvalidInput;
+    }
+    // Resolve the shaping face. A usable downloadable face wins; anything
+    // else (absent handle or failed fetch) falls through to the T3 chain,
+    // which itself terminates at the bundled face. Chain misses never
+    // propagate: they degrade to the bundled face synchronously.
+    FontHandle face{};
+    bool have_face = false;
+    if (req.has_downloadable_font && !req.download_failed) {
+      face = req.downloadable_font;
+      have_face = true;
+    } else {
+      StatusOr<FontHandle> chained = resolveFallbackChain(
+          req.script_tag, req.bcp47_locale, req.generic_family);
+      if (chained.ok()) {
+        face = *chained;
+      } else {
+        face = SystemFontEnumerator().LastResortFace(req.script_tag);
+      }
+      have_face = true;
+    }
+    (void)have_face;
+    StatusOr<ShapedRun> shaped = shapeRunWithVariations(
+        bytes, len, face, style, req.variations, req.variation_count);
+    if (!shaped.ok()) {
+      return Status::kInvalidInput;
+    }
+    return *shaped;
+  } catch (...) {
+    return Status::kInvalidInput;
+  }
 }
 
 }  // namespace muse::text

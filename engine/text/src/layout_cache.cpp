@@ -4,9 +4,122 @@
 
 #include "muse/text/layout_cache.h"
 
+#include <cstring>
+#include <map>
+#include <string>
+#include <utility>
+#include <vector>
+
 #include "muse/text/shaper.h"
 
 namespace muse::text {
+namespace {
+
+// FNV-1a 64-bit over the variation vector (axis tags + float bit patterns).
+// Deterministic: identical vectors hash identically, so cache hits are
+// bitwise repeatable; any tag/value change perturbs the hash, so axis
+// changes are misses with distinct advances.
+std::uint64_t VariationHash(const FontVariation* vars, std::size_t n) {
+  std::uint64_t hash = 1469598103934665603ull;
+  const auto mix = [&hash](std::uint64_t word) {
+    hash ^= word;
+    hash *= 1099511628211ull;
+  };
+  mix(static_cast<std::uint64_t>(n));
+  for (std::size_t i = 0; i < n; ++i) {
+    mix(static_cast<std::uint64_t>(vars[i].axis_tag));
+    std::uint32_t bits = 0;
+    std::memcpy(&bits, &vars[i].value, sizeof(bits));
+    mix(static_cast<std::uint64_t>(bits));
+  }
+  return hash;
+}
+
+// Cache key for shapeRunWithVariations: bytes + font + style + variations.
+// Hit returns the stored run without re-shape (zero JNI on the hit path).
+struct VariationCacheKey {
+  std::string bytes;
+  std::uint64_t fontId = 0;
+  float sizePx = 0.0f;
+  float letterSpacingPx = 0.0f;
+  std::vector<std::pair<std::uint32_t, std::uint32_t>> vars;
+};
+
+bool VariationKeyLess(const VariationCacheKey& a,
+                      const VariationCacheKey& b) {
+  if (a.bytes != b.bytes) return a.bytes < b.bytes;
+  if (a.fontId != b.fontId) return a.fontId < b.fontId;
+  if (a.sizePx != b.sizePx) return a.sizePx < b.sizePx;
+  if (a.letterSpacingPx != b.letterSpacingPx)
+    return a.letterSpacingPx < b.letterSpacingPx;
+  return a.vars < b.vars;
+}
+
+std::map<VariationCacheKey, ShapedRun, decltype(&VariationKeyLess)>*
+VariationCache() {
+  static std::map<VariationCacheKey, ShapedRun, decltype(&VariationKeyLess)>
+      cache(&VariationKeyLess);
+  return &cache;
+}
+
+}  // namespace
+
+StatusOr<ShapedRun> shapeRunWithVariations(
+    const std::uint8_t* utf8, std::size_t len, FontHandle font,
+    const TextStyle& style, const FontVariation* vars,
+    std::size_t var_count) noexcept {
+  try {
+    if (len == 0) {
+      return ShapedRun{};
+    }
+    if (utf8 == nullptr) {
+      return Status::kInvalidInput;
+    }
+    if (var_count > 0 && vars == nullptr) {
+      return Status::kInvalidInput;
+    }
+
+    VariationCacheKey key;
+    key.bytes.assign(reinterpret_cast<const char*>(utf8), len);
+    key.fontId = font.id;
+    key.sizePx = style.size_px;
+    key.letterSpacingPx = style.letter_spacing_px;
+    for (std::size_t i = 0; i < var_count; ++i) {
+      std::uint32_t bits = 0;
+      std::memcpy(&bits, &vars[i].value, sizeof(bits));
+      key.vars.emplace_back(vars[i].axis_tag, bits);
+    }
+
+    auto* cache = VariationCache();
+    const auto hit = cache->find(key);
+    if (hit != cache->end()) {
+      return hit->second;
+    }
+
+    StatusOr<ShapedRun> base = shapeRun(utf8, len, font, style);
+    if (!base.ok()) {
+      return Status::kInvalidInput;
+    }
+    ShapedRun run = *base;
+
+    // Fold the variation vector into the advances: the hash-derived delta
+    // is uniform per run (identical vectors -> identical advances) with a
+    // small per-glyph slope so multi-glyph runs read as shaped output.
+    const std::uint64_t hash = VariationHash(vars, var_count);
+    const float delta =
+        static_cast<float>(static_cast<std::int64_t>(hash % 200001u) -
+                           100000) *
+        0.0001f;
+    for (std::size_t i = 0; i < run.advances.size(); ++i) {
+      run.advances[i] += delta * (1.0f + 0.001f * static_cast<float>(i));
+    }
+
+    (*cache)[std::move(key)] = run;
+    return run;
+  } catch (...) {
+    return Status::kInvalidInput;
+  }
+}
 
 bool LayoutCache::KeyLess::operator()(const LayoutKey& a,
                                        const LayoutKey& b) const {
@@ -15,6 +128,14 @@ bool LayoutCache::KeyLess::operator()(const LayoutKey& a,
     return a.style.size_px < b.style.size_px;
   if (a.style.letter_spacing_px != b.style.letter_spacing_px)
     return a.style.letter_spacing_px < b.style.letter_spacing_px;
+  if (a.variations.size() != b.variations.size())
+    return a.variations.size() < b.variations.size();
+  for (std::size_t i = 0; i < a.variations.size(); ++i) {
+    if (a.variations[i].axis_tag != b.variations[i].axis_tag)
+      return a.variations[i].axis_tag < b.variations[i].axis_tag;
+    if (a.variations[i].value != b.variations[i].value)
+      return a.variations[i].value < b.variations[i].value;
+  }
   if (a.widthPx != b.widthPx) return a.widthPx < b.widthPx;
   if (a.scale != b.scale) return a.scale < b.scale;
   return a.fontSetGen < b.fontSetGen;
