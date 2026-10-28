@@ -549,3 +549,200 @@ test('package.json declares the test:tier3 script running node --test test/tier3
     'test:tier3 must run node --test test/tier3.test.ts',
   );
 });
+
+// ---------------------------------------------------------------------------
+// Review MINOR (Stage 3 fix): composites/*.tsx ↔ index.js tier-3 "mirror" is
+// enforced — drift fails the suite.
+//
+// The .tsx sources return raw `{ type, props }` literals while the index.js
+// factories call the tier-1/2 factories (whose withStateLayer injects a
+// `stateLayer` key only when a nested prop named `state` is a string — no
+// tier-3 representative prop set passes one, so the comparison below is
+// unaffected). Exact deep-equality between the two graphs would couple the
+// test to that mechanism difference, so source-text comparison is asserted
+// only where the contract is mechanism-independent, and the rest is asserted
+// on runtime behavior:
+//
+//  1. the .tsx source declares `export function <Name>` with outer
+//     `type: '<Name>'` and echoes caller props via `props: next` (same
+//     contract the runtime echo tests assert on index.js);
+//  2. every `type: '…'` literal in the .tsx source is the composite's own
+//     name or a tier-1/2 name (no new native primitive on the .tsx side);
+//  3. the .tsx nested-type SET equals the index.js descriptor's DIRECT
+//     composition set (one entry per composed member, not descending into a
+//     nested tier-2 member's own tier-1 expansion — which is why the .tsx
+//     side, written as one literal per member, matches exactly). Adding OR
+//     removing a nested member on either side without the other fails;
+//  4. OverlayHost presence agrees on both sides (and matches overlay
+//     membership), so an overlay member that stops layering — on either
+//     side — fails.
+//
+// ASSUMPTION M1 (mirror traversal): .tsx nested descriptors are written as
+// `type: '<Name>'` literals; the regex below collects them. A future .tsx
+// that computes a type string dynamically would need this collector
+// extended — the runtime-behavior assertions (outer type, echo, tier-1/2
+// closure, OverlayHost) still hold regardless.
+// ---------------------------------------------------------------------------
+
+function tsxTypeLiterals(source) {
+  const out = [];
+  const re = /type:\s*['"]([A-Za-z][A-Za-z0-9]*)['"]/g;
+  let m;
+  while ((m = re.exec(source)) !== null) out.push(m[1]);
+  return out;
+}
+
+// Direct composition members of a runtime descriptor: the `type` of each
+// nested descriptor found under sibling keys beside `props`, without
+// descending into a composed descriptor's own expansion (so a nested
+// tier-2 member counts once as itself, matching how the .tsx source writes
+// one literal per composed member).
+function directNestedTypes(descriptor) {
+  const out = [];
+  const visit = (node) => {
+    if (Array.isArray(node)) {
+      for (const item of node) visit(item);
+      return;
+    }
+    if (node !== null && typeof node === 'object') {
+      if (typeof node.type === 'string') return void out.push(node.type);
+      for (const value of Object.values(node)) visit(value);
+    }
+  };
+  for (const [key, value] of Object.entries(descriptor)) {
+    if (key === 'props') continue;
+    visit(value);
+  }
+  return out;
+}
+
+for (const name of TIER_3) {
+  test(`${name} mirror: tsx source and index.js factory agree (outer type, echo, nested tier-1/2 set, OverlayHost)`, () => {
+    const source = readFileSync(new URL(`./${name}.tsx`, COMPOSITES_URL), 'utf8');
+    assert.ok(
+      source.includes(`export function ${name}`),
+      `composites/${name}.tsx must declare export function ${name}`,
+    );
+    assert.ok(
+      source.includes(`type: '${name}'`),
+      `composites/${name}.tsx outer type must equal its name`,
+    );
+    assert.ok(
+      /props:\s*next\b/.test(source),
+      `composites/${name}.tsx must echo caller props via props: next`,
+    );
+    const literals = tsxTypeLiterals(source);
+    assert.ok(literals.length > 0, `composites/${name}.tsx must carry a type literal`);
+    assert.ok(
+      literals.includes(name),
+      `composites/${name}.tsx must hold its own outer type literal`,
+    );
+    for (const type of literals) {
+      assert.ok(
+        type === name || TIER_1.has(type) || TIER_2.has(type),
+        `composites/${name}.tsx nests "${type}", which is not a tier-1/2 name (new native primitive)`,
+      );
+    }
+    const descriptor = components[name](REPRESENTATIVE_PROPS[name]);
+    assert.equal(descriptor.type, name, `${name} runtime outer type must equal its name`);
+    assert.deepEqual(descriptor.props, REPRESENTATIVE_PROPS[name]);
+    assert.deepEqual(
+      [...new Set(directNestedTypes(descriptor))].sort(),
+      [...new Set(literals.filter((type) => type !== name))].sort(),
+      `${name} mirror drift: composites/${name}.tsx nested type set differs from the index.js direct composition set`,
+    );
+    const tsxHasOverlay = source.includes('OverlayHost');
+    const runtimeHasOverlay = JSON.stringify(descriptor).includes('OverlayHost');
+    assert.equal(
+      runtimeHasOverlay,
+      tsxHasOverlay,
+      `${name} mirror drift: OverlayHost presence disagrees (tsx=${tsxHasOverlay}, index.js=${runtimeHasOverlay})`,
+    );
+    assert.equal(
+      runtimeHasOverlay,
+      OVERLAY_MEMBERS.includes(name),
+      `${name} OverlayHost layering must match overlay membership`,
+    );
+  });
+}
+
+// ---------------------------------------------------------------------------
+// T2 build gate probes (check-composites.js, MAJOR fix): import closure and
+// no-native-registration now fail the build, not just this suite. The spawn
+// probes below follow this file's conventions (execFileSync, tmp-dir
+// fixtures via COMPOSITES_DIR override, production files never mutated).
+// ---------------------------------------------------------------------------
+
+test('check-composites.js exits 0 on the real tree (import-closed, no native registration)', () => {
+  const { execFileSync } = require('node:child_process');
+  const { fileURLToPath } = require('node:url');
+  const scriptPath = fileURLToPath(new URL('../scripts/check-composites.js', import.meta.url));
+  const out = execFileSync(process.execPath, [scriptPath], { encoding: 'utf8' });
+  assert.ok(out.includes('OK'), 'composites gate must report OK on the clean tree');
+});
+
+test('check-composites.js exits 1 naming file:line for a smuggled third-package import (tmp fixture)', () => {
+  const { execFileSync } = require('node:child_process');
+  const { fileURLToPath } = require('node:url');
+  const fs = require('node:fs');
+  const os = require('node:os');
+  const path = require('node:path');
+  const scriptPath = fileURLToPath(new URL('../scripts/check-composites.js', import.meta.url));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'muse-composites-'));
+  try {
+    fs.writeFileSync(
+      path.join(dir, 'Smuggled.tsx'),
+      'import \'evil-pkg\';\nexport const Smuggled = { type: \'Smuggled\', props: {} };\n',
+    );
+    let err = null;
+    try {
+      execFileSync(process.execPath, [scriptPath], {
+        encoding: 'utf8',
+        env: { ...process.env, COMPOSITES_DIR: dir },
+      });
+    } catch (e) {
+      err = e;
+    }
+    assert.ok(err, 'composites gate must fail when a third-package import is smuggled in');
+    assert.equal(err.status, 1, 'composites gate must exit 1 on a smuggled import');
+    assert.ok(
+      /Smuggled\.tsx:\d+/.test(String(err.stdout) + String(err.stderr)),
+      'composites gate must list file:line of the smuggled import',
+    );
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('check-composites.js exits 1 naming file:line for a smuggled native registration (tmp fixture)', () => {
+  const { execFileSync } = require('node:child_process');
+  const { fileURLToPath } = require('node:url');
+  const fs = require('node:fs');
+  const os = require('node:os');
+  const path = require('node:path');
+  const scriptPath = fileURLToPath(new URL('../scripts/check-composites.js', import.meta.url));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'muse-composites-'));
+  try {
+    fs.writeFileSync(
+      path.join(dir, 'Smuggled.tsx'),
+      'export const Smuggled = { type: \'Smuggled\', props: {} };\nregisterNative(\'Smuggled\');\n',
+    );
+    let err = null;
+    try {
+      execFileSync(process.execPath, [scriptPath], {
+        encoding: 'utf8',
+        env: { ...process.env, COMPOSITES_DIR: dir },
+      });
+    } catch (e) {
+      err = e;
+    }
+    assert.ok(err, 'composites gate must fail when a native registration is smuggled in');
+    assert.equal(err.status, 1, 'composites gate must exit 1 on a smuggled native registration');
+    assert.ok(
+      /Smuggled\.tsx:\d+/.test(String(err.stdout) + String(err.stderr)),
+      'composites gate must list file:line of the smuggled native registration',
+    );
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});

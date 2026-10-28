@@ -4,7 +4,7 @@
 // (Chip, Surface, Text, Ripple) with token-role-only props.
 
 export interface SegmentedButtonProps {
-  selected?: string;
+  selected: string;
   enabled?: boolean;
   [key: string]: unknown;
 }

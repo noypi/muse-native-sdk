@@ -5,7 +5,7 @@
 // ListItem, Text) with token-role-only props.
 
 export interface MenuProps {
-  open?: boolean;
+  open: boolean;
   anchor?: unknown;
   content?: unknown;
   [key: string]: unknown;

@@ -6,8 +6,8 @@
 // Surface, Text, Button) with token-role-only props.
 
 export interface DialogProps {
-  open?: boolean;
-  title?: string;
+  open: boolean;
+  title: string;
   content?: unknown;
   actions?: unknown;
   [key: string]: unknown;

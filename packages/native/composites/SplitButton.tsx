@@ -4,7 +4,7 @@
 // (Button, IconButton, Icon, Divider) with token-role-only props.
 
 export interface SplitButtonProps {
-  label?: string;
+  label: string;
   enabled?: boolean;
   icon?: string;
   [key: string]: unknown;

@@ -4,7 +4,7 @@
 // (Button, Surface, Text) with token-role-only props.
 
 export interface ButtonGroupProps {
-  selected?: string;
+  selected: string;
   enabled?: boolean;
   content?: unknown;
   [key: string]: unknown;

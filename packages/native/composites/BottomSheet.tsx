@@ -5,7 +5,7 @@
 // token-role-only props.
 
 export interface BottomSheetProps {
-  open?: boolean;
+  open: boolean;
   content?: unknown;
   [key: string]: unknown;
 }

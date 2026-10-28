@@ -4,7 +4,7 @@
 // (Scroll, Stack, Image, Surface) with token-role-only props.
 
 export interface CarouselProps {
-  index?: number;
+  index: number;
   content?: unknown;
   [key: string]: unknown;
 }

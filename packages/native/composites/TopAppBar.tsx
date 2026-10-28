@@ -8,7 +8,7 @@
 // documented configuration (ASSUMPTION C2: variants are prop values).
 
 export interface TopAppBarProps {
-  title?: string;
+  title: string;
   size?: 'small' | 'medium' | 'large';
   navigationIcon?: string;
   actions?: unknown;
@@ -23,7 +23,7 @@ const TITLE_VARIANT: Record<string, string> = {
 
 export function TopAppBar(props?: TopAppBarProps) {
   const next = props === undefined ? {} : props;
-  const size = typeof (next as Record<string, unknown>).size === 'string'
+  const size = next !== null && typeof next === 'object' && typeof (next as Record<string, unknown>).size === 'string'
     ? (next as Record<string, unknown>).size as string
     : 'small';
   return {

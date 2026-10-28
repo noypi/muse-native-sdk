@@ -5,7 +5,7 @@
 // token-role-only props.
 
 export interface SnackbarHostProps {
-  message?: string;
+  message: string;
   content?: unknown;
   [key: string]: unknown;
 }

@@ -4,7 +4,7 @@
 // (Surface, ListItem, Icon, Text, Divider) with token-role-only props.
 
 export interface NavigationDrawerProps {
-  selected?: string;
+  selected: string;
   enabled?: boolean;
   content?: unknown;
   [key: string]: unknown;
