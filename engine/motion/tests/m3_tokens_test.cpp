@@ -21,6 +21,7 @@
 // are the test's proposal and reconcile by rename if the coder differs.
 // ASSUMPTION (error channel): `errorOut` may be nullptr (loader still
 // returns the empty set); when non-null, failures name the field.
+#include <cmath>
 #include <cstdio>
 #include <fstream>
 #include <string>
@@ -28,6 +29,8 @@
 #include "motion/m3_tokens.h"
 
 namespace {
+
+bool near(float a, float b) { return std::fabs(a - b) <= 1e-5f; }
 
 const char* kPinnedVersion = "1.0.0-pinned";
 
@@ -190,6 +193,40 @@ bool check_token_name_constants_exist() {
          set.effectsSprings.count(fOpacity) > 0;
 }
 
+// Scoped-parser lock: an easing string containing a quoted dimension-key
+// substring (here `"shape"`) must not satisfy the spatialSprings.shape
+// lookup — the right dimension still parses to its own values.
+bool check_value_containing_key_substring_parses_right_dimension() {
+  std::string json = makeFixtureJson(true);
+  const std::string needle =
+      "\"standard\": \"cubic-bezier(0.2, 0.0, 0.0, 1.0)\"";
+  const std::string replacement =
+      "\"standard\": \"curve for \\\"shape\\\" tokens (0.2, 0.0, 0.0, 1.0)\"";
+  std::string::size_type pos = json.find(needle);
+  if (pos == std::string::npos) return false;
+  json.replace(pos, needle.size(), replacement);
+  std::string path = writeFixture(json);
+  std::string error;
+  motion::M3TokenSet set = motion::motion_loadM3Tokens(path, &error);
+  removeFixture(path);
+  if (!error.empty()) return false;
+  // The tricky easing entry still loads (non-empty; the dependency-free
+  // parser does not unescape inner quotes, so only scoping is asserted
+  // here, not the round-tripped string).
+  auto easing = set.easings.find("standard");
+  if (easing == set.easings.end()) return false;
+  if (easing->second.empty()) return false;
+  // spatialSprings.shape still resolves to its own object, not the string.
+  auto shape = set.spatialSprings.find("shape");
+  if (shape == set.spatialSprings.end()) return false;
+  if (!near(shape->second.stiffness, 140.0f)) return false;
+  if (!near(shape->second.dampingRatio, 1.0f)) return false;
+  // Sibling dimensions unaffected.
+  auto short1 = set.durationsMs.find("short1");
+  if (short1 == set.durationsMs.end()) return false;
+  return near(short1->second, 50.0f);
+}
+
 }  // namespace
 
 #define RUN_CASE(name)                     \
@@ -210,6 +247,7 @@ int main() {
   RUN_CASE(check_missing_file_reports_error);
   RUN_CASE(check_null_error_out_tolerated);
   RUN_CASE(check_token_name_constants_exist);
+  RUN_CASE(check_value_containing_key_substring_parses_right_dimension);
   if (failures > 0) {
     std::printf("m3_tokens_test: %d failing\n", failures);
     return 1;

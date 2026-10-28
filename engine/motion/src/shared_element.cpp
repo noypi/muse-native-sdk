@@ -15,8 +15,9 @@ float lerpChannel(float from, float to, float t) {
 SharedFrame frameFromAnchor(const SharedAnchor& anchor, float t01) {
   SharedFrame frame;
   frame.box = anchor.box;
-  frame.clipX = 0.0f;
-  frame.clipY = 0.0f;
+  frame.clip = anchor.clip;
+  frame.clipX = anchor.clip.x;
+  frame.clipY = anchor.clip.y;
   frame.cornerRadius = anchor.cornerRadius;
   frame.t01 = t01;
   return frame;
@@ -27,7 +28,19 @@ SharedFrame frameFromAnchor(const SharedAnchor& anchor, float t01) {
 const SharedAnchor* motion_matchShared(const std::vector<SharedAnchor>& from,
                                        const std::vector<SharedAnchor>& to,
                                        const std::string& elementId) noexcept {
-  (void)from;
+  // Deep-link carve-out: empty `from` matches when `to` holds the id.
+  // Otherwise the id must exist on BOTH sides; a non-empty `from` lacking
+  // the id yields nullptr even when `to` holds it.
+  if (!from.empty()) {
+    bool inFrom = false;
+    for (const SharedAnchor& anchor : from) {
+      if (anchor.elementId == elementId) {
+        inFrom = true;
+        break;
+      }
+    }
+    if (!inFrom) return nullptr;
+  }
   for (const SharedAnchor& anchor : to) {
     if (anchor.elementId == elementId) {
       return &anchor;
@@ -56,8 +69,13 @@ SharedFrame motion_interpolateShared(const SharedAnchor& from,
   frame.box.y = lerpChannel(from.box.y, to.box.y, clamped);
   frame.box.w = lerpChannel(from.box.w, to.box.w, clamped);
   frame.box.h = lerpChannel(from.box.h, to.box.h, clamped);
-  frame.clipX = 0.0f;
-  frame.clipY = 0.0f;
+  // Clip rect rides the same t01 as the box and corner radius.
+  frame.clip.x = lerpChannel(from.clip.x, to.clip.x, clamped);
+  frame.clip.y = lerpChannel(from.clip.y, to.clip.y, clamped);
+  frame.clip.w = lerpChannel(from.clip.w, to.clip.w, clamped);
+  frame.clip.h = lerpChannel(from.clip.h, to.clip.h, clamped);
+  frame.clipX = frame.clip.x;
+  frame.clipY = frame.clip.y;
   frame.cornerRadius = lerpChannel(from.cornerRadius, to.cornerRadius, clamped);
   frame.t01 = clamped;
   return frame;
@@ -109,6 +127,12 @@ NodeId motion_sharedTransition(Graph& g, const SharedAnchor& from,
   return id;
 }
 
+void motion_resetSharedDrive() noexcept {
+  g_scrubState.value = 0.0f;
+  g_scrubState.velocity = 0.0f;
+  g_scrubArmed = false;
+}
+
 float motion_driveShared(float backProgress01) noexcept {
   float target = clampProgress01(backProgress01);
   // Retarget preserves the current value+velocity (solver semantics), so a
@@ -119,10 +143,12 @@ float motion_driveShared(float backProgress01) noexcept {
     g_scrubState.velocity = 0.0f;
     return target;
   }
-  // Settle toward the driven target through the stored spec. Draining to
-  // the target each call keeps repeated identical drives exactly
-  // deterministic while every intermediate scrub position stays on the
-  // continuous solver path from the pre-retarget value+velocity.
+  // Settle toward the driven target through the stored spec with a bounded
+  // physical step budget: fixed 8ms steps, capped at 100000 iterations
+  // (~800s simulated) with early-out at 1e-6. The returned value is the
+  // genuinely settled solver state, never a forced snap: a full drain
+  // converges to the driven endpoint, while mid-drain states carry the
+  // live value+velocity. Non-finite progress maps to 0 via clamp above.
   for (int i = 0; i < 100000; ++i) {
     if (std::fabs(g_scrubState.value - target) <= 1e-6f &&
         std::fabs(g_scrubState.velocity) <= 1e-6f) {
@@ -140,7 +166,6 @@ float motion_driveShared(float backProgress01) noexcept {
     }
     g_scrubState = next;
   }
-  g_scrubState.value = target;
   return clampProgress01(g_scrubState.value);
 }
 
@@ -155,6 +180,8 @@ SharedAnchor motion_pviewAnchor(const std::string& elementId,
   anchor.route = route;
   anchor.depth = 0;
   anchor.box = surfaceRect;
+  // Contract fixes this signature (no clip param); clip stays zeroed.
+  anchor.clip = Box{};
   anchor.cornerRadius = cornerRadius;
   return anchor;
 }

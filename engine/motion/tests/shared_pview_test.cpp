@@ -204,6 +204,35 @@ bool check_drive_shared_pure_and_deterministic() {
   return near(a, b, kExact);
 }
 
+// Drive-velocity continuity: after arming, fine-stepping 0 -> 0.6 -> 0.2
+// moves monotonically toward each driven target within epsilon at every
+// step — the observable solver state tracks the target, never snapping
+// past it or teleporting (this probes the drive path itself, not lerp).
+bool check_drive_shared_velocity_continuous_stepwise() {
+  motion::motion_resetSharedDrive();
+  motion::Graph g;
+  motion::SharedAnchor from = anchor("hero", "/list", kFromBox, 4.0f);
+  motion::SharedAnchor to = anchor("hero", "/detail", kToBox, 16.0f);
+  motion::motion_sharedTransition(g, from, to, springSpec(180.0f, 1.0f));
+  float t = motion::motion_driveShared(0.0f);
+  if (!near(t, 0.0f, kSettle)) return false;
+  const float up[] = {0.15f, 0.3f, 0.45f, 0.6f};
+  for (float target : up) {
+    float next = motion::motion_driveShared(target);
+    if (!near(next, target, kSettle)) return false;
+    if (!(next >= t)) return false;  // monotonic toward the rising target
+    t = next;
+  }
+  const float down[] = {0.45f, 0.3f, 0.2f};
+  for (float target : down) {
+    float next = motion::motion_driveShared(target);
+    if (!near(next, target, kSettle)) return false;
+    if (!(next <= t)) return false;  // monotonic toward the falling target
+    t = next;
+  }
+  return near(t, 0.2f, kSettle);
+}
+
 // ---- T6: platform-view surface-rect anchors ----
 
 // The injected surface rect is wrapped verbatim as a matchable anchor.
@@ -314,6 +343,7 @@ int main() {
   RUN_CASE(check_drive_shared_settles_at_driven_endpoint);
   RUN_CASE(check_drive_shared_clamps_progress);
   RUN_CASE(check_drive_shared_pure_and_deterministic);
+  RUN_CASE(check_drive_shared_velocity_continuous_stepwise);
   RUN_CASE(check_pview_anchor_wraps_surface_rect);
   RUN_CASE(check_list_to_pview_matches_by_id);
   RUN_CASE(check_pview_to_list_matches_by_id);

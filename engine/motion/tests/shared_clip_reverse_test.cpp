@@ -20,8 +20,9 @@
 // cornerRadius) interpolates linearly: from + (to - from) * clampedT.
 // ASSUMPTION (t01 echo): the returned `t01` field echoes the clamped input
 // (non-finite input returns the `from` frame with `t01 == 0`).
-// ASSUMPTION (clip channels): `clipX`/`clipY` are NOT asserted here —
-// clip/reversal belongs to T5's half in this file later.
+// ASSUMPTION (clip channels): the clip rect (`Box clip` on the anchors,
+// mirrored as `clipX`/`clipY` on the frame) rides the same t01 as the box
+// and corner radius; covered by the check_clip_* cases below.
 // ASSUMPTION (float epsilon): 1e-5f, mirroring
 // layout_interpolation_test.cpp.
 #include <cmath>
@@ -69,6 +70,23 @@ motion::SharedAnchor fromAnchor() {
 
 motion::SharedAnchor toAnchor() {
   return anchor("hero", box(30.0f, 60.0f, 200.0f, 90.0f), 12.0f);
+}
+
+motion::SharedAnchor anchorClip(const std::string& id, const motion::Box& b,
+                                const motion::Box& c, float radius) {
+  motion::SharedAnchor a = anchor(id, b, radius);
+  a.clip = c;
+  return a;
+}
+
+motion::SharedAnchor fromClipAnchor() {
+  return anchorClip("hero", box(10.0f, 20.0f, 100.0f, 50.0f),
+                    box(0.0f, 0.0f, 50.0f, 25.0f), 0.0f);
+}
+
+motion::SharedAnchor toClipAnchor() {
+  return anchorClip("hero", box(30.0f, 60.0f, 200.0f, 90.0f),
+                    box(10.0f, 20.0f, 150.0f, 75.0f), 12.0f);
 }
 
 // t=0 returns the `from` frame exactly.
@@ -151,6 +169,30 @@ bool check_identical_anchors_stable() {
   return true;
 }
 
+// Clip rect rides the same t01: t=0 returns the `from` clip exactly.
+bool check_clip_t0_returns_from_clip_exactly() {
+  motion::SharedFrame f = motion::motion_interpolateShared(
+      fromClipAnchor(), toClipAnchor(), 0.0f);
+  return boxNear(f.clip, box(0.0f, 0.0f, 50.0f, 25.0f), kExact) &&
+         near(f.clipX, 0.0f, kExact) && near(f.clipY, 0.0f, kExact);
+}
+
+// Clip midpoint equals the lerp of the endpoint clips.
+bool check_clip_midpoint_lerps_clip() {
+  motion::SharedFrame f = motion::motion_interpolateShared(
+      fromClipAnchor(), toClipAnchor(), 0.5f);
+  return boxNear(f.clip, box(5.0f, 10.0f, 100.0f, 50.0f), kExact) &&
+         near(f.clipX, 5.0f, kExact) && near(f.clipY, 10.0f, kExact);
+}
+
+// Clip t=1 returns the `to` clip exactly.
+bool check_clip_t1_returns_to_clip_exactly() {
+  motion::SharedFrame f = motion::motion_interpolateShared(
+      fromClipAnchor(), toClipAnchor(), 1.0f);
+  return boxNear(f.clip, box(10.0f, 20.0f, 150.0f, 75.0f), kExact) &&
+         near(f.clipX, 10.0f, kExact) && near(f.clipY, 20.0f, kExact);
+}
+
 }  // namespace
 
 #define RUN_CASE(name)                     \
@@ -173,6 +215,9 @@ int main() {
   RUN_CASE(check_above_one_t_clamps_to_to);
   RUN_CASE(check_nonfinite_t_returns_from);
   RUN_CASE(check_identical_anchors_stable);
+  RUN_CASE(check_clip_t0_returns_from_clip_exactly);
+  RUN_CASE(check_clip_midpoint_lerps_clip);
+  RUN_CASE(check_clip_t1_returns_to_clip_exactly);
   if (failures > 0) {
     std::printf("shared_clip_reverse_test: %d failing\n", failures);
     return 1;

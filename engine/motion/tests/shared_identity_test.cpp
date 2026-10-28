@@ -125,6 +125,18 @@ bool check_empty_to_returns_nullptr() {
   return motion::motion_matchShared(from, to, "hero") == nullptr;
 }
 
+// From-side rule: a non-empty `from` lacking the id yields nullptr even
+// when `to` holds it (deep-link carve-out applies only to empty `from`).
+bool check_from_present_but_id_absent_returns_nullptr() {
+  std::vector<motion::SharedAnchor> from = {
+      anchor("other", "/home", 0, box(0.0f, 0.0f, 10.0f, 10.0f), 0.0f),
+  };
+  std::vector<motion::SharedAnchor> to = {
+      anchor("hero", "/detail", 0, box(1.0f, 1.0f, 11.0f, 11.0f), 1.0f),
+  };
+  return motion::motion_matchShared(from, to, "hero") == nullptr;
+}
+
 // The matcher is noexcept: it must never throw, even on empty inputs.
 bool check_match_never_throws() {
   return noexcept(motion::motion_matchShared(
@@ -151,6 +163,7 @@ int main() {
   RUN_CASE(check_nested_depths_match_returns_to_record);
   RUN_CASE(check_empty_from_deep_link_matches_to);
   RUN_CASE(check_absent_id_returns_nullptr);
+  RUN_CASE(check_from_present_but_id_absent_returns_nullptr);
   RUN_CASE(check_empty_to_returns_nullptr);
   RUN_CASE(check_match_never_throws);
   if (failures > 0) {

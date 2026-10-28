@@ -41,35 +41,14 @@ bool parseDoubleAfter(const std::string& text, std::string::size_type colonPos,
   return true;
 }
 
-// Parses `"key": <number>` searching from `fromPos`.
-bool parseNumberKey(const std::string& text, const std::string& key,
-                    std::string::size_type fromPos, float* valueOut) {
-  const std::string::size_type keyPos =
-      text.find("\"" + key + "\"", fromPos);
-  if (keyPos == std::string::npos) return false;
-  const std::string::size_type colon = text.find(':', keyPos);
-  if (colon == std::string::npos) return false;
-  double value = 0.0;
-  if (!parseDoubleAfter(text, colon, &value)) return false;
-  *valueOut = static_cast<float>(value);
-  return true;
-}
-
-// Parses `"key": "<string>"` searching from `fromPos`.
-bool parseStringKey(const std::string& text, const std::string& key,
-                    std::string::size_type fromPos, std::string* valueOut) {
-  const std::string::size_type keyPos =
-      text.find("\"" + key + "\"", fromPos);
-  if (keyPos == std::string::npos) return false;
-  const std::string::size_type colon = text.find(':', keyPos);
-  if (colon == std::string::npos) return false;
-  return parseQuotedStringAfter(text, colon, valueOut);
-}
-
-// Parses `"key": {"stiffness": N, "dampingRatio": M}` searching from
-// `fromPos`.
-bool parseSpringKey(const std::string& text, const std::string& key,
-                    std::string::size_type fromPos, SpringSpec* specOut) {
+// Finds the `{...}` object span for `"key": {...}` searching from
+// `fromPos`. On success sets [openOut, closeOut] to the brace range and
+// returns true. Keeps the parser dependency-free while preventing a key
+// string appearing inside a *value* (or a sibling dimension) from matching.
+bool findObjectSpan(const std::string& text, const std::string& key,
+                    std::string::size_type fromPos,
+                    std::string::size_type* openOut,
+                    std::string::size_type* closeOut) {
   const std::string::size_type keyPos =
       text.find("\"" + key + "\"", fromPos);
   if (keyPos == std::string::npos) return false;
@@ -77,10 +56,68 @@ bool parseSpringKey(const std::string& text, const std::string& key,
   if (colon == std::string::npos) return false;
   const std::string::size_type open = text.find('{', colon);
   if (open == std::string::npos) return false;
+  int depth = 0;
+  for (std::string::size_type i = open; i < text.size(); ++i) {
+    if (text[i] == '{') ++depth;
+    if (text[i] == '}') {
+      --depth;
+      if (depth == 0) {
+        *openOut = open;
+        *closeOut = i;
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+// Parses `"key": <number>` searching only within [spanOpen, spanClose].
+bool parseNumberKeyIn(const std::string& text, const std::string& key,
+                      std::string::size_type spanOpen,
+                      std::string::size_type spanClose, float* valueOut) {
+  const std::string::size_type keyPos =
+      text.find("\"" + key + "\"", spanOpen);
+  if (keyPos == std::string::npos || keyPos > spanClose) return false;
+  const std::string::size_type colon = text.find(':', keyPos);
+  if (colon == std::string::npos || colon > spanClose) return false;
+  double value = 0.0;
+  if (!parseDoubleAfter(text, colon, &value)) return false;
+  *valueOut = static_cast<float>(value);
+  return true;
+}
+
+// Parses `"key": "<string>"` searching only within [spanOpen, spanClose].
+bool parseStringKeyIn(const std::string& text, const std::string& key,
+                      std::string::size_type spanOpen,
+                      std::string::size_type spanClose,
+                      std::string* valueOut) {
+  const std::string::size_type keyPos =
+      text.find("\"" + key + "\"", spanOpen);
+  if (keyPos == std::string::npos || keyPos > spanClose) return false;
+  const std::string::size_type colon = text.find(':', keyPos);
+  if (colon == std::string::npos || colon > spanClose) return false;
+  return parseQuotedStringAfter(text, colon, valueOut);
+}
+
+// Parses `"key": {"stiffness": N, "dampingRatio": M}` searching only within
+// [spanOpen, spanClose].
+bool parseSpringKeyIn(const std::string& text, const std::string& key,
+                      std::string::size_type spanOpen,
+                      std::string::size_type spanClose,
+                      SpringSpec* specOut) {
+  const std::string::size_type keyPos =
+      text.find("\"" + key + "\"", spanOpen);
+  if (keyPos == std::string::npos || keyPos > spanClose) return false;
+  const std::string::size_type colon = text.find(':', keyPos);
+  if (colon == std::string::npos || colon > spanClose) return false;
+  const std::string::size_type open = text.find('{', colon);
+  if (open == std::string::npos || open > spanClose) return false;
   float stiffness = 0.0f;
   float dampingRatio = 0.0f;
-  if (!parseNumberKey(text, "stiffness", open, &stiffness)) return false;
-  if (!parseNumberKey(text, "dampingRatio", open, &dampingRatio)) return false;
+  if (!parseNumberKeyIn(text, "stiffness", open, spanClose, &stiffness))
+    return false;
+  if (!parseNumberKeyIn(text, "dampingRatio", open, spanClose, &dampingRatio))
+    return false;
   specOut->stiffness = stiffness;
   specOut->dampingRatio = dampingRatio;
   return true;
@@ -134,10 +171,19 @@ M3TokenSet motion_loadM3Tokens(const std::string& jsonPath,
   static const char* kSpatial[] = {"position", "size", "shape"};
   static const char* kEffects[] = {"colour", "opacity"};
 
+  // Each dimension is parsed within its own object span so a key string
+  // appearing inside a value (e.g. an easing string) or a sibling object
+  // can never satisfy a lookup.
+  std::string::size_type dimOpen = 0, dimClose = 0;
+  if (!findObjectSpan(text, "durationsMs", 0, &dimOpen, &dimClose)) {
+    setError(errorOut, "m3_tokens: missing field: durationsMs");
+    return M3TokenSet{};
+  }
   // Durations: all members required; each must parse to a positive value.
   for (const char* key : kDurations) {
     float value = 0.0f;
-    if (!parseNumberKey(text, key, 0, &value) || !(value > 0.0f)) {
+    if (!parseNumberKeyIn(text, key, dimOpen, dimClose, &value) ||
+        !(value > 0.0f)) {
       setError(errorOut,
                std::string("m3_tokens: missing field: durationsMs.") + key);
       return M3TokenSet{};
@@ -145,10 +191,15 @@ M3TokenSet motion_loadM3Tokens(const std::string& jsonPath,
     set.durationsMs[key] = value;
   }
 
+  if (!findObjectSpan(text, "easings", 0, &dimOpen, &dimClose)) {
+    setError(errorOut, "m3_tokens: missing field: easings");
+    return M3TokenSet{};
+  }
   // Easings: all members required; each must be a non-empty string.
   for (const char* key : kEasings) {
     std::string value;
-    if (!parseStringKey(text, key, 0, &value) || value.empty()) {
+    if (!parseStringKeyIn(text, key, dimOpen, dimClose, &value) ||
+        value.empty()) {
       setError(errorOut,
                std::string("m3_tokens: missing field: easings.") + key);
       return M3TokenSet{};
@@ -156,11 +207,15 @@ M3TokenSet motion_loadM3Tokens(const std::string& jsonPath,
     set.easings[key] = value;
   }
 
+  if (!findObjectSpan(text, "spatialSprings", 0, &dimOpen, &dimClose)) {
+    setError(errorOut, "m3_tokens: missing field: spatialSprings");
+    return M3TokenSet{};
+  }
   // Springs: all members required with positive stiffness/dampingRatio.
   for (const char* key : kSpatial) {
     SpringSpec spec;
-    if (!parseSpringKey(text, key, 0, &spec) || !(spec.stiffness > 0.0f) ||
-        !(spec.dampingRatio > 0.0f)) {
+    if (!parseSpringKeyIn(text, key, dimOpen, dimClose, &spec) ||
+        !(spec.stiffness > 0.0f) || !(spec.dampingRatio > 0.0f)) {
       setError(errorOut,
                std::string("m3_tokens: missing field: spatialSprings.") +
                    key);
@@ -168,10 +223,14 @@ M3TokenSet motion_loadM3Tokens(const std::string& jsonPath,
     }
     set.spatialSprings[key] = spec;
   }
+  if (!findObjectSpan(text, "effectsSprings", 0, &dimOpen, &dimClose)) {
+    setError(errorOut, "m3_tokens: missing field: effectsSprings");
+    return M3TokenSet{};
+  }
   for (const char* key : kEffects) {
     SpringSpec spec;
-    if (!parseSpringKey(text, key, 0, &spec) || !(spec.stiffness > 0.0f) ||
-        !(spec.dampingRatio > 0.0f)) {
+    if (!parseSpringKeyIn(text, key, dimOpen, dimClose, &spec) ||
+        !(spec.stiffness > 0.0f) || !(spec.dampingRatio > 0.0f)) {
       setError(errorOut,
                std::string("m3_tokens: missing field: effectsSprings.") +
                    key);

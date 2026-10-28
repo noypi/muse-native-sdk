@@ -15,6 +15,10 @@ struct SharedAnchor {
   std::string route;
   int depth = 0;
   Box box;
+  // Clip rect riding the same t01 as the box. Defaults to zeros so existing
+  // call sites compile unchanged; legacy clipX/clipY on SharedFrame mirror
+  // clip.x/clip.y.
+  Box clip;
   float cornerRadius = 0.0f;
 };
 
@@ -24,6 +28,9 @@ const SharedAnchor* motion_matchShared(const std::vector<SharedAnchor>& from,
 
 struct SharedFrame {
   Box box;
+  // Real clip rect, lerped with the same t01 as the box. Legacy scalar
+  // channels mirror clip.x/clip.y for compat; prefer `clip`.
+  Box clip;
   float clipX = 0.0f;
   float clipY = 0.0f;
   float cornerRadius = 0.0f;
@@ -44,7 +51,14 @@ NodeId motion_sharedTransition(Graph& g, const SharedAnchor& from,
 // T5: absorbs a back-progress sample in [0,1] (out-of-range clamps) and
 // returns the current scrub t01. Continuity comes from the existing solver
 // retarget (value+velocity carry over); noexcept and deterministic.
+// Single-active-transition: scrub state is process-wide file-global armed by
+// the latest motion_sharedTransition; concurrent transitions interfere.
+// Tests use motion_resetSharedDrive() to clear the armed state.
 float motion_driveShared(float backProgress01) noexcept;
+
+// Test-only reset: clears the armed scrub state so cases do not leak into
+// each other. Production behavior unchanged.
+void motion_resetSharedDrive() noexcept;
 
 // T6: wraps an injected platform-view surface rect as a matchable anchor;
 // matching reuses motion_matchShared.

@@ -127,6 +127,28 @@ bool check_tabletop_none_allows_crossing() {
   return m.crossHinge == true && boxNear(m.fromPane, a) && boxNear(m.toPane, b);
 }
 
+// Posture-differentiating case: identical crossing boxes under Partial
+// occlusion give different documented outputs per the in-code rule —
+// Flat/Folded snap `to` onto the source side (crossHinge false) while
+// Tabletop/HalfOpened preserve endpoints (crossHinge from placement).
+bool check_flat_vs_tabletop_partial_differ() {
+  motion::Box a = box(100.0f, 100.0f, 200.0f, 300.0f);   // left
+  motion::Box b = box(600.0f, 100.0f, 200.0f, 300.0f);   // right
+  motion::PaneMove flat = motion::motion_paneMove(
+      motion::Posture::Flat, motion::HingeOcclusion::Partial, a, b);
+  motion::PaneMove table = motion::motion_paneMove(
+      motion::Posture::Tabletop, motion::HingeOcclusion::Partial, a, b);
+  if (!(flat.crossHinge == false)) return false;
+  if (!(table.crossHinge == true)) return false;
+  // Tabletop preserves endpoints verbatim; Flat snaps `to` onto the left.
+  if (!boxNear(table.fromPane, a)) return false;
+  if (!boxNear(table.toPane, b)) return false;
+  if (!boxNear(flat.toPane, box(300.0f, 100.0f, 200.0f, 300.0f)))
+    return false;
+  // The two postures observably differ on the same input.
+  return !boxNear(flat.toPane, table.toPane);
+}
+
 }  // namespace
 
 #define RUN_CASE(name)                     \
@@ -150,6 +172,7 @@ int main() {
   RUN_CASE(check_halfOpened_partial_pane_move_variant);
   RUN_CASE(check_halfOpened_none_allows_crossing);
   RUN_CASE(check_tabletop_none_allows_crossing);
+  RUN_CASE(check_flat_vs_tabletop_partial_differ);
   if (failures > 0) {
     std::printf("hinge_motion_test: %d failing\n", failures);
     return 1;
