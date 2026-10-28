@@ -276,6 +276,19 @@ void case_poll_null_residual_safe() {
   check(stream.PollSettled(0, nullptr) == true, "poll_null_residual_safe");
 }
 
+// Regression (code-reviewer BLOCKER): the settled latch must clear on Start.
+// Start, Cancel, Start with no new terminal must poll not-settled.
+void case_poll_false_after_restart_before_terminal() {
+  StubNavSink sink;
+  input::BackGestureStream stream(&sink);
+  stream.OnEvent(input::BackPhase::Start, 0.0f);
+  stream.OnEvent(input::BackPhase::Cancel, 0.0f);
+  stream.OnEvent(input::BackPhase::Start, 0.0f);
+  float residual = -1.0f;
+  check(stream.PollSettled(1, &residual) == false,
+        "poll_false_after_restart_before_terminal");
+}
+
 }  // namespace
 
 int main() {
@@ -293,6 +306,7 @@ int main() {
   case_settled_visible_within_one_frame();
   case_poll_no_events_false();
   case_poll_null_residual_safe();
+  case_poll_false_after_restart_before_terminal();
   if (g_failures == 0) {
     std::printf("ALL PASS\n");
     return 0;

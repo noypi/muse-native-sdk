@@ -3,7 +3,12 @@
 namespace input {
 
 void BackGestureStream::OnEvent(BackPhase phase, float progress) {
-  if (phase == BackPhase::Cancel || phase == BackPhase::Commit) settled_ = true;
+  if (phase == BackPhase::Start) {
+    settled_ = false;
+  } else if (phase == BackPhase::Cancel || phase == BackPhase::Commit) {
+    if (settled_) return;
+    settled_ = true;
+  }
   if (sink_ == nullptr) return;
   sink_->OnBackProgress(progress);
   switch (phase) {
