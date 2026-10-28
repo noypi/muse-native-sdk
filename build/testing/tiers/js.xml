@@ -1,9 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<testsuite name="js" tests="6" failures="0" errors="0" skipped="0">
-  <testcase classname="js" name="case-0"/>
-  <testcase classname="js" name="case-1"/>
-  <testcase classname="js" name="case-2"/>
-  <testcase classname="js" name="case-3"/>
-  <testcase classname="js" name="case-4"/>
-  <testcase classname="js" name="case-5"/>
-</testsuite>

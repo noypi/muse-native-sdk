@@ -1,7 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<testsuite name="integration" tests="4" failures="0" errors="0" skipped="0">
-  <testcase classname="integration" name="case-0"/>
-  <testcase classname="integration" name="case-1"/>
-  <testcase classname="integration" name="case-2"/>
-  <testcase classname="integration" name="case-3"/>
-</testsuite>
