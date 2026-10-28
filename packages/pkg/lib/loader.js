@@ -12,7 +12,7 @@ const path = require('node:path');
 
 const { PkgError } = require('./errors.js');
 const { validateManifest } = require('./manifest.js');
-const { validateLayout, CANONICAL_MANIFEST, ALIAS_MANIFESTS } = require('./layout.js');
+const { validateLayout, CANONICAL_MANIFEST } = require('./layout.js');
 const { verifyIntegrity } = require('./integrity.js');
 const { checkAbiCoverage, checkEngineAbi } = require('./native.js');
 const { bindExports } = require('./exports.js');
@@ -89,10 +89,7 @@ function loadPackage(pkgDir, opts) {
 
   // Stage 1 (layout): manifest presence, allowed roots, entry form.
   // Runs before any hash comparison so off-layout dirs never reach verify.
-  const manifestRel =
-    byName.has(CANONICAL_MANIFEST)
-      ? CANONICAL_MANIFEST
-      : ALIAS_MANIFESTS.find((alias) => byName.has(alias));
+  const manifestRel = byName.has(CANONICAL_MANIFEST) ? CANONICAL_MANIFEST : undefined;
   if (!manifestRel) {
     throw new PkgError(
       'E_LAYOUT',
