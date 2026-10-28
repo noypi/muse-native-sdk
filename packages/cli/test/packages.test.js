@@ -243,11 +243,40 @@ describe('TC-TSX-021 Batch 2 — T4 @muse/native skeleton + manifest', () => {
 
   it('stub components return { type: name, props } descriptors', () => {
     const mod = require(NATIVE_INDEX);
+    // FR-M3-002/AC-M3-003 subset seam: `type` equals the stub name and `props`
+    // echoes the caller's props exactly; sibling keys (e.g. tier-2 `content`
+    // composition) are permitted beside them.
+    const LITERAL_RE = /#(?:[0-9a-fA-F]{3,8})\b|rgba?\(|\b\d+(?:\.\d+)?\s?(?:px|dp|pt|rem|em)\b/i;
+    const assertTokenRolesOnly = (value, trail) => {
+      if (typeof value === 'string') {
+        assert.ok(!LITERAL_RE.test(value), `${trail} must be token-role only, got ${JSON.stringify(value)}`);
+      } else if (Array.isArray(value)) {
+        value.forEach((entry, index) => assertTokenRolesOnly(entry, `${trail}[${index}]`));
+      } else if (value !== null && typeof value === 'object') {
+        for (const [key, entry] of Object.entries(value)) {
+          assertTokenRolesOnly(entry, `${trail}.${key}`);
+        }
+      }
+    };
     for (const name of mod.primitives) {
       const withProps = mod.components[name]({ label: 'x' });
-      assert.deepEqual(withProps, { type: name, props: { label: 'x' } }, `${name} stub must return a descriptor`);
+      assert.equal(withProps.type, name, `${name} stub must set type to its name`);
+      assert.deepEqual(withProps.props, { label: 'x' }, `${name} stub must echo props exactly`);
       const bare = mod.components[name]();
-      assert.deepEqual(bare, { type: name, props: {} }, `${name} stub with no args must default props to {}`);
+      assert.equal(bare.type, name, `${name} stub with no args must set type to its name`);
+      assert.deepEqual(bare.props, {}, `${name} stub with no args must default props to {}`);
+    }
+    // Tier-2 composition: Button/IconButton/Fab expose a `content` array of
+    // `{ type, props }` tier-1 descriptors with token-role-only props.
+    for (const name of ['Button', 'IconButton', 'Fab']) {
+      const desc = mod.components[name]();
+      assert.ok(Array.isArray(desc.content), `${name} stub must expose a content array`);
+      assert.ok(desc.content.length > 0, `${name} stub content must be non-empty`);
+      for (const entry of desc.content) {
+        assert.ok(entry && typeof entry.type === 'string', `${name} content entry must have a string type`);
+        assert.ok(entry.props !== null && typeof entry.props === 'object', `${name} content entry must have a props object`);
+        assertTokenRolesOnly(entry.props, `${name} content ${entry.type} props`);
+      }
     }
   });
 });
