@@ -35,7 +35,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 
-const { resolveConfig } = require('../lib/config.js');
+const { resolveConfig, ConfigError } = require('../lib/config.js');
 const compilerDiagnostics = require('../../compiler/lib/diagnostics.js');
 const { resolveSeverity } = compilerDiagnostics;
 const { applyStrict } = compilerDiagnostics;
@@ -130,10 +130,7 @@ describe('T5 strict resolution — CLI > env > file > default with winning layer
     const dir = mkTmp('muse-t5-strict-');
     fs.writeFileSync(path.join(dir, 'muse-native.yaml'), 'strict: false\n', 'utf8');
     const { config, winningLayer } = resolveConfig([], { MUSE_NATIVE_STRICT: 'true' }, dir);
-    // Boolean env passthrough follows the committed T1 convention (see
-    // targets.test.js: env values arrive via String(), file layer stays
-    // strictly typed): the env layer wins with the string form.
-    assert.equal(config.strict, 'true');
+    assert.equal(config.strict, true);
     assert.equal(winningLayer.strict, 'env');
   });
 
@@ -143,6 +140,26 @@ describe('T5 strict resolution — CLI > env > file > default with winning layer
     const { config, winningLayer } = resolveConfig([], {}, dir);
     assert.equal(config.strict, true);
     assert.equal(winningLayer.strict, 'file');
+  });
+
+  it('bare --strict means true; --strict false means false', () => {
+    const dir = mkTmp('muse-t5-strict-');
+    const bare = resolveConfig(['--strict'], {}, dir);
+    assert.equal(bare.config.strict, true);
+    assert.equal(bare.winningLayer.strict, 'cli');
+    const negated = resolveConfig(['--strict', 'false'], {}, dir);
+    assert.equal(negated.config.strict, false);
+    assert.equal(negated.winningLayer.strict, 'cli');
+  });
+
+  it('--strict with a garbage token throws ConfigError naming strict', () => {
+    const dir = mkTmp('muse-t5-strict-');
+    assert.throws(() => resolveConfig(['--strict', 'foo'], {}, dir), (err) => {
+      assert.ok(err instanceof ConfigError);
+      assert.equal(err.key, 'strict');
+      assert.ok(String(err.message).includes('strict'));
+      return true;
+    });
   });
 
   it('--print-config reports strict active', () => {

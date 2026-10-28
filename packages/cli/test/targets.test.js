@@ -62,7 +62,7 @@ describe('T1 targets — withSample/strict/diagnostics schema + resolution', () 
     fs.writeFileSync(path.join(dir, 'muse-native.yaml'), 'withSample: false\n', 'utf8');
     const { config, winningLayer } = resolveConfig([], { MUSE_NATIVE_WITH_SAMPLE: 'true' }, dir);
     assert.equal(winningLayer.withSample, 'env');
-    assert.equal(config.withSample, 'true');
+    assert.equal(config.withSample, true);
   });
 
   it('CLI --strict is reflected with layer "cli"', () => {
@@ -79,6 +79,33 @@ describe('T1 targets — withSample/strict/diagnostics schema + resolution', () 
       assert.ok(err instanceof ConfigError);
       assert.equal(err.key, 'withSample');
       assert.ok(String(err.message).includes('withSample'));
+      return true;
+    });
+  });
+
+  it('file diagnostics nested block resolves to an object map', () => {
+    const dir = mkTmp('muse-t1-targets-');
+    fs.writeFileSync(path.join(dir, 'muse-native.yaml'), 'diagnostics:\n  CAPO0012: warn\n', 'utf8');
+    const { config, winningLayer } = resolveConfig([], {}, dir);
+    assert.deepEqual(config.diagnostics, { CAPO0012: 'warn' });
+    assert.equal(winningLayer.diagnostics, 'file');
+  });
+
+  it('file diagnostics flat diagnostics.CODE line resolves to an object map', () => {
+    const dir = mkTmp('muse-t1-targets-');
+    fs.writeFileSync(path.join(dir, 'muse-native.yaml'), 'diagnostics.CAPO0012: error\n', 'utf8');
+    const { config, winningLayer } = resolveConfig([], {}, dir);
+    assert.deepEqual(config.diagnostics, { CAPO0012: 'error' });
+    assert.equal(winningLayer.diagnostics, 'file');
+  });
+
+  it('bad diagnostics severity fails closed naming the code', () => {
+    const dir = mkTmp('muse-t1-targets-');
+    fs.writeFileSync(path.join(dir, 'muse-native.yaml'), 'diagnostics:\n  CAPO0012: scream\n', 'utf8');
+    assert.throws(() => resolveConfig([], {}, dir), (err) => {
+      assert.ok(err instanceof ConfigError);
+      assert.equal(err.key, 'CAPO0012');
+      assert.ok(String(err.message).includes('CAPO0012'));
       return true;
     });
   });
