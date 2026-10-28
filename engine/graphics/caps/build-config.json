@@ -1,0 +1,8 @@
+{
+  "version": 1,
+  "validation_layers": {
+    "DEV": ["VK_LAYER_KHRONOS_validation"],
+    "PROFILE": ["VK_LAYER_KHRONOS_validation"],
+    "RELEASE": []
+  }
+}
