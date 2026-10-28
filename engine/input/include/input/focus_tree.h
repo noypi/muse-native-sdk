@@ -12,6 +12,12 @@ using GroupId = int;
 enum class Status {
   kOk,
   kNotFound,
+  kTargetGone,
+  kOrderChanged,
+};
+
+struct Subtree {
+  std::vector<NodeId> nodes;
 };
 
 struct A11yNode {
@@ -29,6 +35,7 @@ class FocusTree {
   Status assignToGroup(NodeId node, GroupId group);
   Status enterGroup(GroupId group);
   Status exitGroup();
+  Status rebuild(Subtree subtree);
   std::vector<A11yNode> exposeToA11y() const;
 
  private:

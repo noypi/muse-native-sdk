@@ -1,5 +1,7 @@
 #include "input/focus_tree.h"
 
+#include <algorithm>
+
 namespace input {
 
 Status FocusTree::setOrder(std::vector<NodeId> order) {
@@ -105,6 +107,51 @@ Status FocusTree::enterGroup(GroupId group) {
 Status FocusTree::exitGroup() {
   trapped_ = false;
   active_group_ = -1;
+  return Status::kOk;
+}
+
+Status FocusTree::rebuild(Subtree subtree) {
+  // Identical order: no-op, keep order_ and focused_ (no ring flash).
+  if (subtree.nodes == order_) return Status::kOk;
+  // Same multiset but different order: reject, keep prior order/focus.
+  if (subtree.nodes.size() == order_.size()) {
+    std::vector<NodeId> a = subtree.nodes;
+    std::vector<NodeId> b = order_;
+    std::sort(a.begin(), a.end());
+    std::sort(b.begin(), b.end());
+    if (a == b) return Status::kOrderChanged;
+    // Same size but different members: not a rebuild of the same subtree.
+    return Status::kOrderChanged;
+  }
+  // Subset: every rebuilt node existed before — adopt surviving order.
+  bool is_subset = true;
+  for (NodeId id : subtree.nodes) {
+    bool found = false;
+    for (NodeId cur : order_) {
+      if (cur == id) {
+        found = true;
+        break;
+      }
+    }
+    if (!found) {
+      is_subset = false;
+      break;
+    }
+  }
+  if (!is_subset) return Status::kOrderChanged;
+  order_ = std::move(subtree.nodes);
+  if (order_.empty()) {
+    focused_ = -1;
+    return Status::kOk;
+  }
+  bool kept = false;
+  for (NodeId id : order_) {
+    if (id == focused_) {
+      kept = true;
+      break;
+    }
+  }
+  if (!kept) focused_ = order_[0];
   return Status::kOk;
 }
 
