@@ -108,17 +108,9 @@ function createStore(init, actions, opts) {
     });
   }
 
-  function serializePending(internal) {
+  function serializePending() {
     if (!pending) {
       throw new Error("MUSE_STATE_NO_PENDING");
-    }
-    if (!internal) {
-      // An explicit (non-internal) serialization exports the pending intent
-      // to an external durable owner. That owner now manages the slot, so a
-      // later authoritative success must not tombstone over it: the restart
-      // tests save the exported intent, let the first store succeed, then
-      // restore into a fresh store from the saved copy.
-      pending.exported = true;
     }
     return JSON.stringify({
       action: pending.action,
@@ -200,13 +192,10 @@ function createStore(init, actions, opts) {
       patch: optimisticPatch,
       prev: prev,
       next: next,
-      exported: false,
     };
     if (saveFn) {
       try {
-        // Internal save: persists the pending intent without transferring
-        // slot custody (see `serializePending`).
-        saveFn(serializePending(true));
+        saveFn(serializePending());
       } catch (err) {
         void err;
       }
@@ -224,18 +213,15 @@ function createStore(init, actions, opts) {
     }
     return Promise.resolve(result).then(
       function (value) {
-        var completed = pending;
         pending = null;
         // Exactly-once (AC-STATE-012): the mutation completed
-        // authoritatively, so tombstone the durable slot — `load()` reads
-        // cleared afterwards and a restart never replays it. Skipped when
-        // the intent was exported mid-flight (external durable owner holds
-        // the saved copy and manages the slot itself). The slot is
-        // deliberately left intact after a rollback: the failed attempt's
-        // serialized intent (with its idempotency key) stays available.
-        if (completed && !completed.exported) {
-          clearSlot();
-        }
+        // authoritatively, so tombstone the durable slot UNCONDITIONALLY —
+        // `load()` reads cleared afterwards and a restart never replays it.
+        // Restart flows are crash-before-settle only, so no legitimate flow
+        // depends on post-success restore. The slot is deliberately left
+        // intact after a rollback: the failed attempt's serialized intent
+        // (with its idempotency key) stays available.
+        clearSlot();
         return value;
       },
       function (err) {

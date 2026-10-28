@@ -29,6 +29,11 @@
 // subsequent failed authoritative result for the same action rolls back
 // atomically. Restart-test patches are constant-sets (idempotent) so
 // re-application is safe.
+// ASSUMPTION (unconditional tombstone; crash-before-settle only): success
+// tombstones the durable slot UNCONDITIONALLY (no `exported` nuance). Restart
+// tests therefore model crash-before-settle ONLY — never resolve success on
+// the pre-restart store in a restart flow; success-then-restore would replay
+// a completed intent and violate exactly-once (AC-STATE-012).
 
 const { describe, it, beforeEach } = require('node:test');
 const assert = require('node:assert/strict');
@@ -193,7 +198,7 @@ describe('T6 — pending intent serializes with action + idempotency key (AC-STA
 });
 
 describe('T6 — kill/restart via save→fresh-store→load→fail still rolls back atomically (AC-STATE-012)', () => {
-  it('restorePending alone re-applies the recorded patch (state correct before any fresh call)', () => {
+  it('restorePending alone re-applies the recorded patch (state correct before any fresh call)', async () => {
     // ASSUMPTION (restore re-applies patch): `restorePending(serialized)` must
     // re-apply the recorded optimistic patch so the fresh store's state is
     // correct immediately after restore, before any fresh `optimistic` call.
@@ -210,20 +215,25 @@ describe('T6 — kill/restart via save→fresh-store→load→fail still rolls b
     );
     const gate = deferred();
     const p1 = s1.dispatch.optimistic('rename', patch, () => gate.promise);
+    // Avoid unhandled rejection: s1 is abandoned (crash) before settle; its
+    // authoritative will FAIL after the restore below, never succeed.
+    p1.catch(() => {});
     const raw = s1.serializePending();
     save1(raw);
-    gate.resolve();
-    return p1.then(() => {
-      const s2 = createStore(
-        () => ({ n: state(1) }),
-        {},
-        { schedule: (fn) => fn(), save: save1, load: load1 },
-      );
-      s2.restorePending(load1());
-      // No fresh `optimistic` call issued: the optimistic value must already
-      // be visible on the fresh store.
-      assert.equal(s2.state.n.value, 99);
-    });
+    // Crash-before-settle: NO gate.resolve() here — s1 never succeeds.
+    const s2 = createStore(
+      () => ({ n: state(1) }),
+      {},
+      { schedule: (fn) => fn(), save: save1, load: load1 },
+    );
+    s2.restorePending(load1());
+    // No fresh `optimistic` call issued: the optimistic value must already
+    // be visible on the fresh store.
+    assert.equal(s2.state.n.value, 99);
+    // Now fail the pre-crash authoritative; s1 must roll back atomically.
+    gate.reject(new Error('pre-crash-fail'));
+    await assert.rejects(() => p1, /pre-crash-fail/);
+    assert.equal(s1.state.n.value, 1);
   });
 
   it('authoritative success clears the durable save slot (no replay of a completed mutation)', async () => {
@@ -265,13 +275,14 @@ describe('T6 — kill/restart via save→fresh-store→load→fail still rolls b
     const before = snapshot(s1.state);
     const gate = deferred();
     const p1 = s1.dispatch.optimistic('rename', patch, () => gate.promise);
+    // Avoid unhandled rejection: s1 crashes before settle; fail it after restore.
+    p1.catch(() => {});
     assert.equal(s1.state.n.value, 99);
     assert.equal(typeof s1.serializePending, 'function');
     const raw = s1.serializePending();
     // Simulate the LIFE-SAVE boundary: persist the pending intent, then die.
+    // Crash-before-settle: NEVER resolve success on s1 in this flow.
     save1(raw);
-    gate.resolve();
-    await p1;
 
     // Fresh store after "restart": base state restored from the snapshot seam.
     const s2 = createStore(
@@ -281,6 +292,13 @@ describe('T6 — kill/restart via save→fresh-store→load→fail still rolls b
     );
     assert.equal(typeof s2.restorePending, 'function');
     s2.restorePending(load1());
+    // Restored intent is live on the fresh store before any fresh call.
+    assert.equal(s2.state.n.value, 99);
+    // Fail the pre-crash authoritative AFTER restore (crash-before-settle);
+    // s1 rolls back atomically and never succeeds.
+    gate.reject(new Error('pre-crash-fail'));
+    await assert.rejects(() => p1, /pre-crash-fail/);
+    assert.deepEqual(snapshot(s1.state), before);
     const counter = countFlushes();
     try {
       await assert.rejects(
