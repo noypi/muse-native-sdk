@@ -55,9 +55,9 @@ fi
 
 # ERE fragments; each keeps its documented literal substring (sk-, muse-secret,
 # xai-, BEGIN PRIVATE KEY) so the gate stays auditable.
-PAT_SK='sk-[A-Za-z0-9][A-Za-z0-9_.-]{7,}'
+PAT_SK='(^|[^A-Za-z0-9_-])sk-[A-Za-z0-9][A-Za-z0-9_.-]{7,}'
 PAT_MUSE='muse-secret'
-PAT_XAI='xai-[A-Za-z0-9][A-Za-z0-9_.-]{7,}'
+PAT_XAI='(^|[^A-Za-z0-9_-])xai-[A-Za-z0-9][A-Za-z0-9_.-]{7,}'
 PAT_PK='BEGIN PRIVATE KEY'
 PATTERN="${PAT_SK}|${PAT_MUSE}|${PAT_XAI}|${PAT_PK}"
 
