@@ -22,6 +22,44 @@ var isFlushing = false;
 var batchDepth = 0;
 var autoFlushQueued = false;
 
+// T5 — `getInvalidatedPaths` test seam (FR-STATE-001 AC-STATE-007/010).
+// Additive bookkeeping only: each distinct job fn gets a stable opaque id
+// ("sched-<n>", never "widget"-prefixed); ids of jobs dequeued by `flush`
+// accumulate until read, `getInvalidatedPaths` returns them sorted then
+// clears. Never throws and never alters schedule/flush/batch semantics.
+var jobIds = new WeakMap();
+var nextJobId = 1;
+var flushedIds = new Set();
+
+function idFor(job) {
+  var id = jobIds.get(job);
+  if (id === undefined) {
+    id = "sched-" + nextJobId;
+    nextJobId += 1;
+    jobIds.set(job, id);
+  }
+  return id;
+}
+
+// Test seam: sorted ids of jobs flushed since the last read, then clears.
+// Returns `string[]`; `[]` when nothing flushed; never throws.
+function getInvalidatedPaths() {
+  try {
+    var out = Array.from(flushedIds);
+    out.sort();
+    flushedIds.clear();
+    return out;
+  } catch (e) {
+    void e;
+    try {
+      flushedIds.clear();
+    } catch (clearErr) {
+      void clearErr;
+    }
+    return [];
+  }
+}
+
 function requestAutoFlush() {
   if (autoFlushQueued) return;
   autoFlushQueued = true;
@@ -46,6 +84,11 @@ function schedule(job) {
   if (queued.has(job)) return;
   queued.add(job);
   queue.push(job);
+  try {
+    idFor(job);
+  } catch (e) {
+    void e;
+  }
   if (batchDepth === 0 && !isFlushing) requestAutoFlush();
 }
 
@@ -78,6 +121,11 @@ function flush() {
       var job = queue.shift();
       queued.delete(job);
       ran += 1;
+      try {
+        flushedIds.add(idFor(job));
+      } catch (e) {
+        void e;
+      }
       try {
         job();
       } catch (err) {
@@ -134,4 +182,4 @@ function batch(fn) {
   }
 }
 
-module.exports = { schedule, flush, batch };
+module.exports = { schedule, flush, batch, getInvalidatedPaths };

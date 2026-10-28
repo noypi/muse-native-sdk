@@ -2,7 +2,7 @@
   "name": "@muse/core",
   "version": "0.0.0",
   "scripts": {
-    "test": "node --test test/instance.test.ts test/state.test.ts test/computed.test.ts test/effects.test.ts test/lifecycle.test.ts test/scope.test.ts test/binding.test.ts",
+    "test": "node --test test/instance.test.ts test/state.test.ts test/computed.test.ts test/effects.test.ts test/lifecycle.test.ts test/scope.test.ts test/binding.test.ts test/atom-batch.test.ts test/store-action.test.ts test/inset-bus.test.ts test/vsync-visibility.test.ts test/optimistic-rollback.test.ts test/store-batch.test.ts test/registry.test.ts test/registry-override.test.ts",
     "test:spring": "node --test test/spring.test.ts",
     "test:instance": "node --test test/instance.test.ts",
     "test:state": "node --test test/state.test.ts",
