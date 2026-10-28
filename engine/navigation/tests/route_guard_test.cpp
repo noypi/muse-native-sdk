@@ -108,6 +108,15 @@ bool check_unknown_route_deny_by_default() {
   return !v.allowed;
 }
 
+bool check_restore_unknown_route_denies() {
+  GuardRequest req;
+  req.routeId = "tampered-unknown-xyz";
+  req.authenticated = true;
+  req.flags = {{"beta", true}, {"entitled_pro", true}};
+  // Restore trust boundary: unknown/tampered routeId must deny on restore.
+  return !reRunOnRestore(req);
+}
+
 }  // namespace
 
 int main() {
@@ -123,6 +132,8 @@ int main() {
               "restore_valid_entitlement_allows");
   EXPECT_TRUE(check_unknown_route_deny_by_default(),
               "unknown_route_deny_by_default");
+  EXPECT_TRUE(check_restore_unknown_route_denies(),
+              "restore_unknown_route_denies");
   if (failures > 0) {
     std::printf("route_guard_test: %d failing\n", failures);
     return 1;

@@ -96,6 +96,14 @@ bool check_unknown_graph_degrades_to_home() {
   return r.stack == want;
 }
 
+bool check_wrong_host_degrades_to_home() {
+  NestedManifest m = makeTabManifest();
+  NestedResult r = resolveNested(m, "evil", {"tab-2", "item3"});
+  // Host allowlist: foreign host must degrade to home stack.
+  const std::vector<std::string> want = {"home"};
+  return r.stack == want;
+}
+
 }  // namespace
 
 int main() {
@@ -109,6 +117,8 @@ int main() {
               "unknown_nested_degrades_to_home");
   EXPECT_TRUE(check_unknown_graph_degrades_to_home(),
               "unknown_graph_degrades_to_home");
+  EXPECT_TRUE(check_wrong_host_degrades_to_home(),
+              "wrong_host_degrades_to_home");
   if (failures > 0) {
     std::printf("nested_deeplink_test: %d failing\n", failures);
     return 1;

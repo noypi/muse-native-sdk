@@ -100,6 +100,16 @@ bool check_reregister_replaces_priority() {
   return before == "t10-rival" && after == "t10-flex";
 }
 
+bool check_equal_priority_lexicographically_smallest_wins() {
+  registerGraph("t10-eq-b", 20);
+  registerGraph("t10-eq-a", 20);
+  std::string first = dispatchBack();
+  std::string second = dispatchBack();  // determinism: same winner twice
+  unregisterGraph("t10-eq-b");
+  unregisterGraph("t10-eq-a");
+  return first == "t10-eq-a" && second == "t10-eq-a";
+}
+
 }  // namespace
 
 int main() {
@@ -117,6 +127,8 @@ int main() {
               "unregister_unknown_id_is_noop");
   EXPECT_TRUE(check_reregister_replaces_priority(),
               "reregister_replaces_priority");
+  EXPECT_TRUE(check_equal_priority_lexicographically_smallest_wins(),
+              "equal_priority_lexicographically_smallest_wins");
   if (failures == 0) {
     std::printf("ALL PASS\n");
   }
