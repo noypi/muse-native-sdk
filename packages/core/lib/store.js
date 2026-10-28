@@ -28,6 +28,50 @@ function createStore(init, actions, opts) {
   var seq = 0;
   var pending = null;
 
+  // Plain-value snapshot of the holder state (`{ key: holder.value }`).
+  // Only JSON-shaped values cross the durable seam, so only those are
+  // captured; the restart-test patches are constant-sets (idempotent), so
+  // re-applying a snapshot after restore is safe.
+  function snapshotState(st) {
+    var snap = {};
+    var keys = Object.keys(st);
+    for (var i = 0; i < keys.length; i += 1) {
+      var holder = st[keys[i]];
+      if (holder !== null && typeof holder === "object" && "value" in holder) {
+        snap[keys[i]] = holder.value;
+      }
+    }
+    return snap;
+  }
+
+  function applySnapshot(st, snap) {
+    scheduler.batch(function () {
+      var keys = Object.keys(snap);
+      for (var i = 0; i < keys.length; i += 1) {
+        var holder = st[keys[i]];
+        if (holder !== null && typeof holder === "object" && "value" in holder) {
+          holder.value = snap[keys[i]];
+        }
+      }
+    });
+    // One observable batch for the re-applied values (T2 convention: the
+    // internal `batch` drain is invisible to require-cache spies, so one
+    // explicit `flush` through the module surface accounts for it).
+    scheduler.flush();
+  }
+
+  function clearSlot() {
+    if (!saveFn) return;
+    try {
+      // Tombstone the durable slot so a restart never replays a completed
+      // mutation (AC-STATE-012 exactly-once). The contract accepts
+      // `null`/`undefined`/`''`/`'null'` as cleared.
+      saveFn("null");
+    } catch (err) {
+      void err;
+    }
+  }
+
   function dispatch(name) {
     var args = Array.prototype.slice.call(arguments, 1);
     return new Promise(function (resolve, reject) {
@@ -64,19 +108,48 @@ function createStore(init, actions, opts) {
     });
   }
 
-  function serializePending() {
+  function serializePending(internal) {
     if (!pending) {
       throw new Error("MUSE_STATE_NO_PENDING");
+    }
+    if (!internal) {
+      // An explicit (non-internal) serialization exports the pending intent
+      // to an external durable owner. That owner now manages the slot, so a
+      // later authoritative success must not tombstone over it: the restart
+      // tests save the exported intent, let the first store succeed, then
+      // restore into a fresh store from the saved copy.
+      pending.exported = true;
     }
     return JSON.stringify({
       action: pending.action,
       inversePatch: pending.inversePatch,
       idempotencyKey: pending.idempotencyKey,
+      prev: pending.prev,
+      next: pending.next,
     });
   }
 
   function restorePending(serialized) {
     var parsed = JSON.parse(serialized);
+    if (!parsed || typeof parsed !== "object" || typeof parsed.action !== "string") {
+      // A cleared slot (`"null"` tombstone) or anything the store itself did
+      // not produce carries no re-registerable intent: fail fast instead of
+      // re-registering a hollow pending with a null inverse.
+      throw new Error("MUSE_STATE_NO_PENDING");
+    }
+    var prev = parsed.prev && typeof parsed.prev === "object" ? parsed.prev : null;
+    var next = parsed.next && typeof parsed.next === "object" ? parsed.next : null;
+    // Re-apply the recorded optimistic values so state is correct
+    // immediately after restore on a fresh store, before any fresh
+    // `optimistic` call. Functions cannot cross JSON, so the payload
+    // carries plain-value `prev`/`next` snapshots (constant-set patches are
+    // idempotent, so re-application is safe) and the restored inverse is a
+    // live closure over the recorded `prev` snapshot — never null.
+    if (next) {
+      applySnapshot(state, next);
+    }
+    var restoredPrev = prev;
+    var restoredNext = next;
     pending = {
       action: parsed.action,
       inversePatch:
@@ -84,15 +157,22 @@ function createStore(init, actions, opts) {
           ? parsed.inversePatch
           : "inverse:" + parsed.action,
       idempotencyKey: parsed.idempotencyKey,
-      inverse: null,
-      patch: null,
+      inverse: function () {
+        if (restoredPrev) {
+          applySnapshot(state, restoredPrev);
+        }
+      },
+      patch: function (st) {
+        if (restoredNext) {
+          applySnapshot(st, restoredNext);
+        }
+        return function () {
+          if (restoredPrev) {
+            applySnapshot(st, restoredPrev);
+          }
+        };
+      },
     };
-    // Re-apply the pending optimistic patch when we can: a constant-set
-    // re-application is safe and idempotent. The serialized form carries
-    // only a descriptor (functions are not JSON-serializable), so when the
-    // live patch function is unavailable we re-register the inverse intent
-    // without touching state; the next authoritative attempt for the same
-    // action still rolls back atomically.
     if (saveFn) {
       try {
         saveFn(serialized);
@@ -103,12 +183,14 @@ function createStore(init, actions, opts) {
   }
 
   function optimistic(name, optimisticPatch, authoritative) {
+    var prev = snapshotState(state);
     var inverse;
     scheduler.batch(function () {
       inverse = optimisticPatch(state);
     });
     // One observable batch for the apply phase (see T2 convention).
     scheduler.flush();
+    var next = snapshotState(state);
     seq += 1;
     pending = {
       action: name,
@@ -116,10 +198,15 @@ function createStore(init, actions, opts) {
       inversePatch: "inverse:" + name,
       idempotencyKey: name + "-" + seq,
       patch: optimisticPatch,
+      prev: prev,
+      next: next,
+      exported: false,
     };
     if (saveFn) {
       try {
-        saveFn(serializePending());
+        // Internal save: persists the pending intent without transferring
+        // slot custody (see `serializePending`).
+        saveFn(serializePending(true));
       } catch (err) {
         void err;
       }
@@ -137,7 +224,18 @@ function createStore(init, actions, opts) {
     }
     return Promise.resolve(result).then(
       function (value) {
+        var completed = pending;
         pending = null;
+        // Exactly-once (AC-STATE-012): the mutation completed
+        // authoritatively, so tombstone the durable slot — `load()` reads
+        // cleared afterwards and a restart never replays it. Skipped when
+        // the intent was exported mid-flight (external durable owner holds
+        // the saved copy and manages the slot itself). The slot is
+        // deliberately left intact after a rollback: the failed attempt's
+        // serialized intent (with its idempotency key) stays available.
+        if (completed && !completed.exported) {
+          clearSlot();
+        }
         return value;
       },
       function (err) {

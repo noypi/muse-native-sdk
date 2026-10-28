@@ -1,6 +1,7 @@
 "use strict";
 
-// T8 — compile-time-keyed DI registry (FR-STATE-006, AC-STATE-026).
+// T8 — compile-time-keyed DI registry (FR-STATE-006, AC-STATE-026) plus T9
+// scope teardown / test-double override (AC-STATE-027, AC-STATE-028).
 //
 // Symbol keys only (constexpr-id analogue; never a runtime string map on the
 // hot path). Singleton entries cache the factory product so `get` after the
@@ -10,8 +11,9 @@
 //
 // Kept extensible for T9 (scope teardown / test-double override): entries are
 // stored as `{ factory, scope, instance, hasInstance }` records in a single
-// Map, so later work can add construction-order tracking and disposal without
-// changing this surface. This module implements ONLY the T8 surface.
+// Map. `scopeOf(key)` exposes the binding scope so scopes can avoid freezing
+// transient parent bindings into singletons. This module implements the
+// registry plus scope teardown and override surface.
 //
 // CommonJS, dependency-free pure JS (matches `lib/scope.js` idiom).
 
@@ -48,7 +50,13 @@ function createRegistry() {
     return value;
   }
 
-  var registry = { bind: bind, get: get };
+  var registry = { bind: bind, get: get, scopeOf: scopeOf };
+
+  function scopeOf(key) {
+    var entry = entries.get(key);
+    return entry === undefined ? undefined : entry.scope;
+  }
+
   return registry;
 }
 
@@ -60,6 +68,12 @@ function createScope(parent) {
   var order = [];
   var disposed = false;
 
+  function trackKey(key) {
+    if (order.indexOf(key) === -1) {
+      order.push(key);
+    }
+  }
+
   function scopeGet(key) {
     if (disposed) {
       var desc = typeof key === "symbol"
@@ -68,6 +82,10 @@ function createScope(parent) {
       throw new Error("MUSE_STATE_SCOPE_DESTROYED: " + desc);
     }
     if (overrides.has(key)) {
+      // An override shadows the parent binding but still enters teardown
+      // order, so a disposable double is disposed and never leaks — even
+      // when the override is installed before any `get`.
+      trackKey(key);
       return overrides.get(key);
     }
     if (instances.has(key)) {
@@ -75,6 +93,21 @@ function createScope(parent) {
     }
     if (parent === undefined || parent === null || typeof parent.get !== "function") {
       throw new Error("MUSE_STATE_UNBOUND_SERVICE");
+    }
+    // Transient parent bindings resolve fresh per `get`: memoizing them
+    // would silently convert transient scope into singleton scope. The
+    // registry parent exposes its binding scope via `scopeOf`; parents
+    // without it (plain scopes) keep the snapshot semantics.
+    var parentScope = undefined;
+    if (typeof parent.scopeOf === "function") {
+      try {
+        parentScope = parent.scopeOf(key);
+      } catch (err) {
+        void err;
+      }
+    }
+    if (parentScope === "transient") {
+      return parent.get(key);
     }
     var value = parent.get(key);
     instances.set(key, value);
@@ -88,20 +121,31 @@ function createScope(parent) {
     var firstError = null;
     for (var i = order.length - 1; i >= 0; i -= 1) {
       var key = order[i];
-      var value;
+      // Drain every value `get` could have returned for this key: the
+      // shadowing double first (most recent binding), then the originally
+      // constructed value, so neither leaks undisposed. A double identical
+      // to the constructed value is disposed once.
+      var seen = [];
+      var candidates = [];
       if (overrides.has(key)) {
-        value = overrides.get(key);
-      } else {
-        value = instances.get(key);
+        candidates.push(overrides.get(key));
       }
-      try {
-        if (value !== null && value !== undefined) {
-          if (typeof value.dispose === "function") {
-            value.dispose();
+      if (instances.has(key)) {
+        candidates.push(instances.get(key));
+      }
+      for (var j = 0; j < candidates.length; j += 1) {
+        var value = candidates[j];
+        if (seen.indexOf(value) !== -1) continue;
+        seen.push(value);
+        try {
+          if (value !== null && value !== undefined) {
+            if (typeof value.dispose === "function") {
+              value.dispose();
+            }
           }
+        } catch (err) {
+          if (firstError === null) firstError = err;
         }
-      } catch (err) {
-        if (firstError === null) firstError = err;
       }
     }
     order.length = 0;
@@ -124,6 +168,11 @@ function overrideForTest(scope, key, double) {
     throw new TypeError("overrideForTest(scope, key, double): scope must be created by createScope");
   }
   state.overrides.set(key, double);
+  // The override enters teardown order immediately, so `dispose` drains it
+  // even when no `get` ever ran for the key (override-before-get).
+  if (state.order.indexOf(key) === -1) {
+    state.order.push(key);
+  }
 }
 
 module.exports = {

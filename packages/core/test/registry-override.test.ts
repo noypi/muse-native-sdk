@@ -125,3 +125,58 @@ describe('T9 — overrideForTest swaps only the scoped binding', () => {
     assert.throws(() => { overrideForTest(scope, 'name-string', {}); }, TypeError);
   });
 });
+
+describe('T9 — override×dispose: overridden bindings do not leak after dispose', () => {
+  it('get then override: dispose drains the originally constructed value (no leak)', () => {
+    // ASSUMPTION: `overrideForTest` enters teardown order; dispose drains the
+    // value `get` would have returned at each construction step, so the
+    // originally constructed disposable is not leaked when an override
+    // shadows it. Review MAJOR: current code prefers the override and leaks
+    // the original.
+    const KEY = Symbol('ovd-after');
+    const order = [];
+    const registry = createRegistry();
+    registry.bind(KEY, () => ({ dispose() { order.push('original'); } }), 'singleton');
+    const scope = createScope(registry);
+    scope.get(KEY);
+    overrideForTest(scope, KEY, { dispose() { order.push('double'); } });
+    scope.dispose();
+    assert.ok(order.includes('original'), 'expected original disposer to run, got: ' + JSON.stringify(order));
+    assert.throws(() => { scope.get(KEY); }, (err) => err.message.startsWith('MUSE_STATE_SCOPE_DESTROYED: '));
+  });
+
+  it('override before get: disposable double is tracked and disposed (no silent skip)', () => {
+    // ASSUMPTION: overriding before any `get` still tracks the key in
+    // teardown order, so a disposable double is disposed. Review MAJOR:
+    // current `scopeGet` returns the override early without pushing the key
+    // to `order`, so the double is silently never disposed.
+    const KEY = Symbol('ovd-before');
+    const order = [];
+    const registry = createRegistry();
+    registry.bind(KEY, () => ({ v: 'real' }), 'singleton');
+    const scope = createScope(registry);
+    const double = { v: 'double', dispose() { order.push('double'); } };
+    overrideForTest(scope, KEY, double);
+    assert.equal(scope.get(KEY), double);
+    scope.dispose();
+    assert.deepEqual(order, ['double']);
+    assert.throws(() => { scope.get(KEY); }, (err) => err.message.startsWith('MUSE_STATE_SCOPE_DESTROYED: '));
+  });
+});
+
+describe('T9 — transient parent binding resolves fresh per scope-get', () => {
+  it('transient binding is not frozen to the first value through the scope', () => {
+    // ASSUMPTION: a scope does not memoize transient parent bindings into
+    // singletons; each `scope.get` resolves fresh. Review MAJOR: current
+    // `scopeGet` caches `parent.get()` in `instances`, freezing transient to
+    // first value. (Plan Interface names only `Scope` parents; the registry
+    // parent here follows contract assumption A1.)
+    const KEY = Symbol('transient-k');
+    const registry = createRegistry();
+    registry.bind(KEY, () => ({}), 'transient');
+    const scope = createScope(registry);
+    const first = scope.get(KEY);
+    const second = scope.get(KEY);
+    assert.notEqual(first, second);
+  });
+});

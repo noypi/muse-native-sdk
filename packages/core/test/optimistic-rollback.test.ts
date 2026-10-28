@@ -193,6 +193,65 @@ describe('T6 — pending intent serializes with action + idempotency key (AC-STA
 });
 
 describe('T6 — kill/restart via save→fresh-store→load→fail still rolls back atomically (AC-STATE-012)', () => {
+  it('restorePending alone re-applies the recorded patch (state correct before any fresh call)', () => {
+    // ASSUMPTION (restore re-applies patch): `restorePending(serialized)` must
+    // re-apply the recorded optimistic patch so the fresh store's state is
+    // correct immediately after restore, before any fresh `optimistic` call.
+    // Review gap: the current restart test only passes because it issues a
+    // fresh `optimistic` call afterwards, masking a hollow `restorePending`.
+    let saved = null;
+    const save1 = (v) => { saved = v; };
+    const load1 = () => saved;
+    const patch = (st) => { st.n.value = 99; return () => { st.n.value = 1; }; };
+    const s1 = createStore(
+      () => ({ n: state(1) }),
+      {},
+      { schedule: (fn) => fn(), save: save1, load: load1 },
+    );
+    const gate = deferred();
+    const p1 = s1.dispatch.optimistic('rename', patch, () => gate.promise);
+    const raw = s1.serializePending();
+    save1(raw);
+    gate.resolve();
+    return p1.then(() => {
+      const s2 = createStore(
+        () => ({ n: state(1) }),
+        {},
+        { schedule: (fn) => fn(), save: save1, load: load1 },
+      );
+      s2.restorePending(load1());
+      // No fresh `optimistic` call issued: the optimistic value must already
+      // be visible on the fresh store.
+      assert.equal(s2.state.n.value, 99);
+    });
+  });
+
+  it('authoritative success clears the durable save slot (no replay of a completed mutation)', async () => {
+    // ASSUMPTION (slot-clearing on success): the success continuation clears
+    // the durable `save` slot through the injected seam, so `load()` reads
+    // empty/cleared after authoritative success and a restart never replays
+    // the completed mutation. Accepts null/empty/"null" tombstones.
+    let saved = null;
+    const save1 = (v) => { saved = v; };
+    const load1 = () => saved;
+    const s = createStore(
+      () => ({ n: state(1) }),
+      {},
+      { schedule: (fn) => fn(), save: save1, load: load1 },
+    );
+    await s.dispatch.optimistic(
+      'rename',
+      (st) => { const prev = st.n.value; st.n.value = 42; return () => { st.n.value = prev; }; },
+      () => Promise.resolve(),
+    );
+    assert.equal(s.state.n.value, 42);
+    const slot = load1();
+    assert.ok(
+      slot === null || slot === undefined || slot === '' || slot === 'null',
+      'expected durable slot to be cleared after success, got: ' + String(slot),
+    );
+  });
+
   it('save, fresh store, restorePending, failed authoritative → deep-equal restore, single rollback flush', async () => {
     let saved = null;
     const save1 = (v) => { saved = v; };
