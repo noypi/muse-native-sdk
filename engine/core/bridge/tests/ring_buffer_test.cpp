@@ -299,6 +299,51 @@ bool check_stream_10k_in_order_zero_alloc() {
   return g_failed_checks == 0;
 }
 
+bool check_sustained_wrap_5k_64B_zero_alloc() {
+  // Sustained-wrap stream: 5k places into a 64-byte ring with the
+  // allocation counter on. Bounded memory (record table does not grow
+  // without bound) + zero per-message heap allocations after setup.
+  constexpr std::size_t kMessages = 5000;
+  constexpr std::size_t kRingBytes = 64;
+  SharedRing ring(kRingBytes);
+  static const char payload[4] = {'w', 'r', 'a', 'p'};
+  Envelope e{5u, 1u, 1u, 4u};
+  g_alloc_count = 0;
+  g_counting = true;
+  bool threw = false;
+  try {
+    for (std::size_t i = 0; i < kMessages; ++i) {
+      std::string_view placed =
+          ring.place(e, std::string_view(payload, sizeof(payload)));
+      if (placed.empty()) {
+        g_counting = false;
+        std::printf("    sustained-wrap message %zu unexpectedly empty\n",
+                    i);
+        return false;
+      }
+    }
+    // Newest message must still be consumable after sustained wrap.
+    std::string_view newest =
+        ring.consume(static_cast<uint64_t>(kMessages - 1));
+    if (newest != std::string_view(payload, sizeof(payload))) {
+      g_counting = false;
+      std::printf("    sustained-wrap newest message mismatch\n");
+      return false;
+    }
+  } catch (...) {
+    threw = true;
+  }
+  g_counting = false;
+  CHECK(!threw);
+  if (threw) return false;
+  CHECK(g_alloc_count == 0);
+  if (g_alloc_count != 0) {
+    std::printf("    %ld heap allocations during sustained-wrap 5k stream\n",
+                g_alloc_count);
+  }
+  return g_failed_checks == 0;
+}
+
 bool check_place_consume_never_throw_extremes() {
   // Boundary tokens/values never throw: token max, empty payload.
   SharedRing ring(64);
@@ -340,6 +385,7 @@ int main() {
   RUN_CASE(check_place_allocation_failure_empty_never_throws);
   RUN_CASE(check_consume_evicted_is_empty);
   RUN_CASE(check_stream_10k_in_order_zero_alloc);
+  RUN_CASE(check_sustained_wrap_5k_64B_zero_alloc);
   RUN_CASE(check_place_consume_never_throw_extremes);
   if (failures > 0) {
     std::printf("ring_buffer_test: %d failing\n", failures);

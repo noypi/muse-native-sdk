@@ -61,6 +61,13 @@ class SharedRing {
   // copy. Never throws: a payload larger than capacity (the
   // deterministic allocation-failure path) returns an empty view and
   // leaves the ring unchanged.
+  //
+  // Precondition: e.payloadLen == payload.size(). Mismatched input is
+  // a caller contract violation (place copies payload.size() bytes
+  // while consume sizes by the stored payloadLen); all tests pin the
+  // equal case. Empty-payload places succeed by design but yield an
+  // empty view — there are no consumable bytes, so an empty view from
+  // a zero-length place must not be read as allocation failure.
   std::string_view place(const Envelope& e, std::string_view payload) {
     // No heap allocation after setup: byte store and record table are
     // pre-allocated; every path below only memcpys/memmos and pushes
@@ -118,7 +125,11 @@ class SharedRing {
 
   // Evicts oldest records until n new bytes fit and the record table
   // has a free reserved slot (so push_back cannot reallocate).
-  // Always retains at least the incoming record itself.
+  // Always retains at least the incoming record itself. The consumed
+  // prefix is compacted periodically (shift + resize down: memmove
+  // only, never allocates) so records_.size() stays bounded under
+  // sustained wrap; without this head_ would grow by one per place
+  // forever and exhaust the setup reserve.
   void evict_for(size_t n) noexcept {
     while (live() > 0 &&
            (used_ + n > capacity_ || live() == records_.capacity())) {
@@ -130,7 +141,26 @@ class SharedRing {
       head_bytes_ = 0;
       used_ = 0;
       records_.clear();
+      return;
     }
+    // Bound the record table with amortized, allocation-free
+    // compaction: reclaim the consumed prefix before push_back could
+    // outgrow the setup reserve.
+    if (head_ >= 256 || records_.size() + 1 > records_.capacity()) {
+      compact_records();
+    }
+  }
+
+  // Shifts live records to the front and drops the consumed prefix.
+  // Memmove + size shrink only: never allocates, never throws
+  // (Record is trivially relocatable: two size_ts + POD Envelope).
+  void compact_records() noexcept {
+    const size_t n = live();
+    for (size_t i = 0; i < n; ++i) {
+      records_[i] = records_[head_ + i];
+    }
+    records_.resize(n);
+    head_ = 0;
   }
 
   // Slides the live byte window back to offset zero; adjusts record

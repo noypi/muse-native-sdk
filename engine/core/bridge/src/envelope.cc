@@ -126,11 +126,12 @@ MismatchOutcome CheckEnvelope(const Envelope& e, uint32_t expectedSchema,
     out.ok = true;
     out.error.clear();
   } catch (...) {
-    // None-throw surface: allocation failure degrades to a typed error.
-    // Schema-id code preserves the A-PRECEDENCE order.
+    // None-throw surface: allocation failure degrades to a neutral
+    // fallback. Deliberately not a field-specific code (e.g. not
+    // "schema-id-mismatch"): the failure carries no field attribution.
     out.ok = false;
     try {
-      out.error = "schema-id-mismatch";
+      out.error = "check-failed";
     } catch (...) {
     }
   }

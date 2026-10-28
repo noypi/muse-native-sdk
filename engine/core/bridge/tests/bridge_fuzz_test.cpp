@@ -10,9 +10,11 @@
 // lack the bytes).
 //
 // Binds to the T4 `Interface:` line in plan.md:
-//   muse::bridge::ConsumeInPlace(const Envelope&, std::string_view
-//     mapped) noexcept -> std::string_view;
-//   mismatch or payloadLen>mapped.size() returns empty view;
+//   muse::bridge::ConsumeInPlace(const Envelope&, std::string_view mapped)
+//     noexcept -> std::string_view;
+//   callers must reject identity mismatch via CheckEnvelope before
+//     calling;
+//   in-function gates: payloadLen>mapped.size() returns empty view;
 //   never throws, never reads OOB, performs zero heap allocation.
 //
 // ASSUMPTIONS:
@@ -139,6 +141,45 @@ bool check_consume_mismatch_returns_empty() {
     CHECK(!CheckEnvelope(wrong_schema, 7u, 2u, 3u).ok);
     CHECK(!CheckEnvelope(wrong_version, 7u, 2u, 3u).ok);
     CHECK(!CheckEnvelope(wrong_abi, 7u, 2u, 3u).ok);
+    Envelope too_long{7u, 2u, 3u, 4096u};
+    CHECK(ConsumeInPlace(too_long, mapped).empty());
+  } catch (...) {
+    threw = true;
+  }
+  CHECK(!threw);
+  return g_failed_checks == 0;
+}
+
+bool check_caller_rejects_mismatch_before_consume() {
+  // Direct mismatched-but-sufficient case (caller pattern): each
+  // identity variant is rejected by CheckEnvelope BEFORE ConsumeInPlace
+  // is reached, while ConsumeInPlace itself only length-gates — a
+  // mismatched envelope with sufficient bytes is NOT rejected
+  // in-function (length gate passes, view returned).
+  static const char kPayload[] = {'a', 'b', 'c', 'd'};
+  std::string_view mapped(kPayload, sizeof(kPayload));
+  Envelope wrong_schema{999u, 2u, 3u, 4u};
+  Envelope wrong_version{7u, 99u, 3u, 4u};
+  Envelope wrong_abi{7u, 2u, 99u, 4u};
+  bool threw = false;
+  try {
+    // Caller gate: each variant rejected with its typed code.
+    auto r_schema = CheckEnvelope(wrong_schema, 7u, 2u, 3u);
+    CHECK(!r_schema.ok);
+    CHECK(r_schema.error == "schema-id-mismatch");
+    auto r_version = CheckEnvelope(wrong_version, 7u, 2u, 3u);
+    CHECK(!r_version.ok);
+    CHECK(r_version.error == "schema-version-mismatch");
+    auto r_abi = CheckEnvelope(wrong_abi, 7u, 2u, 3u);
+    CHECK(!r_abi.ok);
+    CHECK(r_abi.error == "abi-mismatch");
+    // In-function: length gate only — sufficient bytes pass through
+    // even when identity mismatches (caller was responsible for the
+    // rejection above).
+    CHECK(!ConsumeInPlace(wrong_schema, mapped).empty());
+    CHECK(!ConsumeInPlace(wrong_version, mapped).empty());
+    CHECK(!ConsumeInPlace(wrong_abi, mapped).empty());
+    // Length gate still enforced in-function.
     Envelope too_long{7u, 2u, 3u, 4096u};
     CHECK(ConsumeInPlace(too_long, mapped).empty());
   } catch (...) {
@@ -369,6 +410,7 @@ int main() {
   int failures = 0;
   RUN_CASE(check_consume_happy_path_is_subspan);
   RUN_CASE(check_consume_mismatch_returns_empty);
+  RUN_CASE(check_caller_rejects_mismatch_before_consume);
   RUN_CASE(check_consume_payload_len_overflow_empty_no_oob);
   RUN_CASE(check_consume_zero_alloc_no_throw);
   RUN_CASE(check_fuzz_envelope_mutations_typed_errors_only);
