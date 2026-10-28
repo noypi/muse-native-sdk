@@ -386,3 +386,166 @@ test('accessing an unknown tier-3 composite cannot construct a descriptor', () =
     components.NotAComponent({});
   }, TypeError);
 });
+
+// ---------------------------------------------------------------------------
+// T3 build gates: typed prop layer + scripts (FR-M3-003 AC-M3-005,
+// FR-M3-004 AC-M3-008, FR-M3-005 AC-M3-009).
+//
+// ASSUMPTION P3 (type-layer check, mirrors tier1/tier2 ASSUMPTION P2):
+// index.d.ts declares one `<Name>Props` type per tier-3 composite generated
+// from the T1 manifest schemas (token→string, slot→unknown,
+// values→string-literal union), a `Tier3Name` union over all 14 names, and
+// factory declarations for the 14 composites. The check-props.js spawn test
+// below encodes the same manifest↔d.ts contract the T3 gate enforces.
+// ASSUMPTION G3 (gate testability, mirrors tier1 ASSUMPTION G3):
+// scripts/check-tokens.js resolves the scanned library root from LIB_PATH
+// when set; fixtures use tmp-dir copies so production files are never
+// mutated. The gate must scan composites/*.tsx — a smuggled literal there
+// fails the gate naming file:line.
+// ---------------------------------------------------------------------------
+
+const DTS_URL = new URL('../index.d.ts', import.meta.url);
+const PKG_URL = new URL('../package.json', import.meta.url);
+
+function loadDts() {
+  return readFileSync(DTS_URL, 'utf8');
+}
+
+function propsBody(dts, component) {
+  const re = new RegExp(`export\\s+type\\s+${component}Props\\s*=\\s*\\{([^}]*)\\}`, 's');
+  const m = re.exec(dts);
+  return m ? m[1] : null;
+}
+
+test('index.d.ts declares one Props type per tier-3 composite', () => {
+  const dts = loadDts();
+  for (const name of TIER_3) {
+    assert.ok(
+      dts.includes(`${name}Props`),
+      `index.d.ts must declare per-component prop types generated from the manifest (${name}Props missing)`,
+    );
+  }
+});
+
+test('index.d.ts declares the Tier3Name union over all 14 composites', () => {
+  const dts = loadDts();
+  assert.ok(dts.includes('Tier3Name'), 'index.d.ts must declare a Tier3Name union for tier-3');
+  for (const name of TIER_3) {
+    assert.ok(
+      dts.includes(`'${name}'`),
+      `Tier3Name union must include '${name}'`,
+    );
+  }
+});
+
+test('index.d.ts components record covers the Tier3Name union', () => {
+  const dts = loadDts();
+  const m = /export\s+declare\s+const\s+components\s*:\s*Record<([^;]+)>/.exec(dts);
+  assert.ok(m, 'index.d.ts must declare the components record');
+  assert.ok(
+    m[1].includes('Tier3Name'),
+    'components record must cover Tier3Name so the 14 composites are typed factories',
+  );
+});
+
+test('TopAppBar d.ts size union equals the manifest size values list', () => {
+  const manifest = loadManifest();
+  const entry = manifest.components.find((c) => c?.name === 'TopAppBar');
+  assert.ok(entry, 'manifest entry missing: TopAppBar');
+  const body = propsBody(loadDts(), 'TopAppBar');
+  assert.ok(body, 'index.d.ts must declare a TopAppBarProps type');
+  for (const value of entry.props.size.values) {
+    assert.ok(
+      body.includes(`'${value}'`),
+      `TopAppBarProps size union must include '${value}' from the manifest values list`,
+    );
+  }
+});
+
+test('tier-3 d.ts values unions cover every manifest values entry', () => {
+  const manifest = loadManifest();
+  const dts = loadDts();
+  for (const entry of manifest.components.filter((c) => c?.tier === 3)) {
+    const body = propsBody(dts, entry.name);
+    assert.ok(body, `index.d.ts must declare a ${entry.name}Props type`);
+    for (const [propName, schema] of Object.entries(entry.props ?? {})) {
+      if (schema && Array.isArray(schema.values)) {
+        for (const value of schema.values) {
+          assert.ok(
+            body.includes(`'${value}'`),
+            `${entry.name}Props ${propName} union must include '${value}' from the manifest values list`,
+          );
+        }
+      }
+    }
+  }
+});
+
+test('check-props.js exits 0 on the real tree (manifest↔d.ts match incl. tier-3)', () => {
+  const { execFileSync } = require('node:child_process');
+  const { fileURLToPath } = require('node:url');
+  const scriptPath = fileURLToPath(new URL('../scripts/check-props.js', import.meta.url));
+  const out = execFileSync(process.execPath, [scriptPath], { encoding: 'utf8' });
+  assert.ok(out.includes('OK'), 'prop gate must report OK when d.ts matches the manifest incl. tier-3');
+});
+
+test('check-manifest.js exits 0 on the real tree (exact match incl. tier-3)', () => {
+  const { execFileSync } = require('node:child_process');
+  const { fileURLToPath } = require('node:url');
+  const scriptPath = fileURLToPath(new URL('../scripts/check-manifest.js', import.meta.url));
+  const out = execFileSync(process.execPath, [scriptPath], { encoding: 'utf8' });
+  assert.ok(out.includes('OK'), 'manifest gate must report OK on the exact manifest↔export match incl. tier-3');
+});
+
+test('check-tokens.js --scope lib exits 0 on the clean library tree', () => {
+  const { execFileSync } = require('node:child_process');
+  const { fileURLToPath } = require('node:url');
+  const scriptPath = fileURLToPath(new URL('../scripts/check-tokens.js', import.meta.url));
+  const out = execFileSync(process.execPath, [scriptPath, '--scope', 'lib'], {
+    encoding: 'utf8',
+  });
+  assert.ok(out.includes('OK'), 'token gate must report OK on the clean tree');
+});
+
+test('check-tokens.js --scope lib exits 1 naming file:line for a smuggled literal in a .tsx composite', () => {
+  const { execFileSync } = require('node:child_process');
+  const { fileURLToPath } = require('node:url');
+  const fs = require('node:fs');
+  const os = require('node:os');
+  const path = require('node:path');
+  const scriptPath = fileURLToPath(new URL('../scripts/check-tokens.js', import.meta.url));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'muse-lib-'));
+  try {
+    fs.writeFileSync(
+      path.join(dir, 'Smuggled.tsx'),
+      'export const Smuggled = { color: "#ff0000", margin: "8px" };\n',
+    );
+    let err = null;
+    try {
+      execFileSync(process.execPath, [scriptPath, '--scope', 'lib'], {
+        encoding: 'utf8',
+        env: { ...process.env, LIB_PATH: dir },
+      });
+    } catch (e) {
+      err = e;
+    }
+    assert.ok(err, 'token gate must fail when a literal is smuggled into a .tsx composite');
+    assert.equal(err.status, 1, 'token gate must exit 1 on a smuggled literal');
+    assert.ok(
+      /Smuggled\.tsx:\d+/.test(String(err.stdout) + String(err.stderr)),
+      'token gate must list file:line of the smuggled literal',
+    );
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('package.json declares the test:tier3 script running node --test test/tier3.test.ts', () => {
+  const pkg = JSON.parse(readFileSync(PKG_URL, 'utf8'));
+  const script = pkg.scripts && pkg.scripts['test:tier3'];
+  assert.ok(script, 'package.json must declare a test:tier3 script (T3 creates it)');
+  assert.ok(
+    script.includes('test/tier3.test.ts'),
+    'test:tier3 must run node --test test/tier3.test.ts',
+  );
+});
