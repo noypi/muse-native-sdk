@@ -11,10 +11,14 @@
     "test:stages": "node --test test/stages.test.js",
     "test:help": "node --test test/help.test.js",
     "test:options": "node --test test/invalid-option.test.js",
-    "test:buildlog": "node --test test/build-log.test.ts"
+    "test:buildlog": "node --test test/build-log.test.ts",
+    "test:init": "node --test test/init.test.ts",
+    "test:init-template": "node --test test/init-template.test.ts",
+    "test:init-guard": "node --test test/init-guard.test.ts"
   },
   "bin": {
     "muse-native": "./bin/muse-native.js",
-    "muse": "./bin/muse.js"
+    "muse": "./bin/muse.js",
+    "capo": "./bin/capo.js"
   }
 }

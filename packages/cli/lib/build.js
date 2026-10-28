@@ -27,6 +27,14 @@ function splitStageFlag(rest) {
   return { stageName: value, rest: args };
 }
 
+// Every buildable project owns its `muse-native.yaml`: the lookup is the
+// literal join `<target>/muse-native.yaml` and never falls back to a
+// workspace-root (parent-dir) file. Existence is reported by the build
+// failure path, not by the resolver itself.
+function resolveProjectConfig(target) {
+  return path.join(target, 'muse-native.yaml');
+}
+
 function runBuild(appDir, rest) {
   if (!appDir || appDir.startsWith('--')) {
     process.stderr.write('Error: missing <appDir>.\nUsage: muse-native build <appDir>\n');
@@ -47,6 +55,21 @@ function runBuild(appDir, rest) {
     return;
   }
   const resolved = path.resolve(appDir);
+  // T3 (AC-SAMPLE-035): require the target's own `muse-native.yaml`. A
+  // parent-dir (workspace-root) file never substitutes: only
+  // `<target>/muse-native.yaml` satisfies the build.
+  const projectConfigPath = resolveProjectConfig(resolved);
+  let projectStat = null;
+  try {
+    projectStat = fs.statSync(projectConfigPath);
+  } catch (_) {
+    projectStat = null;
+  }
+  if (!projectStat || !projectStat.isFile()) {
+    process.stderr.write(`Error: missing muse-native.yaml for target '${appDir}' at '${projectConfigPath}'\n`);
+    process.exitCode = getExitCode('config');
+    return;
+  }
   // `--stage <name>` runs one stage only; anything else after <appDir>
   // stays flags for config resolution. Unknown stage values fail here,
   // before any stage runs, naming the bad value.
@@ -163,6 +186,7 @@ function runBuild(appDir, rest) {
 }
 
 module.exports = runBuild;
+module.exports.resolveProjectConfig = resolveProjectConfig;
 // T2 (FR-TSX-009): the combined tsc+AOT build-log surface lives in
 // `./build-log.js`; the build flow owns any file writing, so the pure
 // string helpers are exposed here without changing existing behavior.

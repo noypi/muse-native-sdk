@@ -5,5 +5,11 @@
   "type": "commonjs",
   "scripts": {
     "build": "muse-native build ."
+  },
+  "dependencies": {
+    "@muse/compiler": "*",
+    "@muse/core": "*",
+    "@muse/jsx": "*",
+    "@muse/native": "*"
   }
 }
