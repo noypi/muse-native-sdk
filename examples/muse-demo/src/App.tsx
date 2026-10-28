@@ -24,13 +24,19 @@ import { startRound, guess, reveal } from './guessMask';
 // reveal streams the reason and posts the by_object shelf entry.
 function GuessMaskRound({ photoId }: { photoId: string }) {
   const [revealed, setRevealed] = useState<string | undefined>(undefined);
+  const [reason, setReason] = useState<string | undefined>(undefined);
   const playRound = (maskId: string): void => {
     startRound(photoId);
     guess(maskId);
     const result = reveal();
-    void result.reasonStream;
-    void result.shelfEntry;
     setRevealed(result.mask.id);
+    const chunks: string[] = [];
+    const stream = result.reasonStream as AsyncIterable<string>;
+    void (async () => {
+      for await (const chunk of stream) chunks.push(chunk);
+      setReason(chunks.join(' '));
+    })();
+    if (result.shelfEntry.renderMode !== 'by_object') setRevealed(undefined);
   };
   return (
     <View>
@@ -39,6 +45,7 @@ function GuessMaskRound({ photoId }: { photoId: string }) {
         <Text>Guess mask-1</Text>
       </View>
       {revealed ? <Text>{`Revealed ${revealed}`}</Text> : null}
+      {reason ? <Text>{reason}</Text> : null}
     </View>
   );
 }
@@ -61,7 +68,9 @@ const TABS: Tab[] = ['lens', 'field', 'list'];
 
 // M3 motion tokens only (AC-SAMPLE-030; AC-TSX-029/030/031 consume-only):
 // route/state transitions reference motion tokens, never literal curves.
-const transition: Record<string, string> = {
+type AnimatableProp = 'opacity' | 'transform';
+type MotionToken = 'motion-token-fade' | 'motion-token-emphasized';
+const transition: Record<AnimatableProp, MotionToken> = {
   opacity: 'motion-token-fade',
   transform: 'motion-token-emphasized',
 };
@@ -148,26 +157,48 @@ function FieldVoiceEntry({ entryId }: { entryId: string }) {
   );
 }
 
+export type ThemePalette = {
+  primary: string;
+  secondary: string;
+  onSurface: string;
+  surface: string;
+  background: string;
+};
+
+// Active palette store: applyTheme switches it via M3 role tokens and the
+// chrome below reads it back, so the palette reaches rendered output.
+let activePalette: ThemePalette = {
+  primary: 'primary',
+  secondary: 'secondary',
+  onSurface: 'onSurface',
+  surface: 'surface',
+  background: 'background',
+};
+
+export function currentPalette(): ThemePalette {
+  return activePalette;
+}
+
 export function applyTheme(mode: 'light' | 'dark', seedFallback: boolean): void {
-  const palette =
+  const palette: ThemePalette =
     mode === 'light'
       ? { primary: 'primary', secondary: 'secondary', onSurface: 'onSurface', surface: 'surface', background: 'background' }
       : { primary: 'primaryContainer', secondary: 'secondaryContainer', onSurface: 'onSurfaceVariant', surface: 'surfaceContainer', background: 'background' };
   const seed = seedFallback ? palette.primary : palette.secondary;
-  void seed;
-  void palette.surface;
-  void palette.background;
-  void palette.onSurface;
+  // Seed fallback picks which role fronts the chrome accent.
+  activePalette = { ...palette, primary: seed };
 }
 
 export default function App() {
   const [page, setPage] = useState<Page>('onboarding');
   const [tab, setTab] = useState<Tab>('lens');
   const [demoState, setDemoState] = useState<DemoState>('ready');
-  void transition;
+  const [theme, setTheme] = useState<ThemePalette>(() => currentPalette());
   const heroMotion = spring(0);
-  void heroMotion.value;
-  heroMotion.animateTo(1, { velocity: 0.5 });
+  // Mount-only animation kick: never re-fires on state updates.
+  useEffect(() => {
+    heroMotion.animateTo(1, { velocity: 0.5 });
+  }, []);
   const [renderMode, setRenderMode] = useState<RenderMode>('by_object');
   const photos = galleryManifest as Photo[];
   const keywords = keywordsSidecar as Record<string, string[]>;
@@ -178,7 +209,11 @@ export default function App() {
     setDemoState('loading');
     setDemoState(photos.length > 0 ? 'ready' : 'empty');
   };
-  void demoState;
+  const onToggleTheme = (): void => {
+    const next = theme.primary === 'primary' ? 'dark' : 'light';
+    applyTheme(next, true);
+    setTheme(currentPalette());
+  };
   const shelf = recordsFor(photos);
   const related = first ? lookupRelated(first.photoId, first.filename) : [];
 
@@ -217,11 +252,25 @@ export default function App() {
       <TopAppBar title="muse-demo" />
       <ErrorSnackbar />
       <View sharedId="muse-demo-hero" />
+      <View onTouchStart={onToggleTheme}>
+        <Text color={theme.onSurface}>Toggle theme</Text>
+      </View>
+      <Text color={theme.onSurface}>{`transition ${transition.opacity} ${transition.transform} motion ${heroMotion.value}`}</Text>
+      {demoState === 'loading' ? (
+        <View>
+          <Text color={theme.onSurface}>Loading demo…</Text>
+        </View>
+      ) : null}
+      {demoState === 'empty' ? (
+        <View>
+          <Text color={theme.onSurface}>No demo content yet</Text>
+        </View>
+      ) : null}
       {demoState === 'error' ? (
         <View>
-          <Text>Demo failed to load</Text>
+          <Text color={theme.onSurface}>Demo failed to load</Text>
           <View onTouchStart={onRetry}>
-            <Text>Retry</Text>
+            <Text color={theme.primary}>Retry</Text>
           </View>
         </View>
       ) : null}

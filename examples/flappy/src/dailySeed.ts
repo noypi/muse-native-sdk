@@ -9,13 +9,14 @@ const BEST_KEY = 'flappy.best';
 let memoryBest = 0;
 
 function persistBest(value: number): void {
+  // Single writer for the in-memory best: storage failures fall back here.
+  memoryBest = value;
   try {
     // Device-persistence hook: localStorage on web, in-memory fallback.
     const storage = (globalThis as { localStorage?: { setItem(k: string, v: string): void } }).localStorage;
     if (storage) storage.setItem(BEST_KEY, String(value));
-    else memoryBest = value;
   } catch {
-    memoryBest = value;
+    // memoryBest already holds the value; nothing more to do.
   }
 }
 
@@ -52,13 +53,20 @@ export function setBest(n: number): void {
   if (!Number.isInteger(n) || Number.isNaN(n) || n < 0) {
     throw new Error(`setBest: expected a non-negative integer, got ${String(n)}`);
   }
-  const best = Math.max(loadPersistedBest(), Math.floor(n));
-  memoryBest = best;
+  const best = Math.max(loadPersistedBest(), n);
   persistBest(best);
 }
 
 let currentScore = 0;
 let currentSeed = 0;
+
+/** Record the live game score so the share payload reflects the run. */
+export function setScore(n: number): void {
+  if (!Number.isInteger(n) || Number.isNaN(n) || n < 0) {
+    throw new Error(`setScore: expected a non-negative integer, got ${String(n)}`);
+  }
+  currentScore = n;
+}
 
 /** Synchronous one-tap restart; completes < 1s (no sleep on the path). */
 export function restart(): void {
@@ -67,6 +75,10 @@ export function restart(): void {
 }
 
 /** Local share-sheet payload — score + seed, never uploaded. */
-export function sharePayload(): { score: number; seed: number } {
-  return { score: currentScore, seed: currentSeed === 0 ? dailySeed() : currentSeed };
+export function sharePayload(score?: number): { score: number; seed: number } {
+  const live = score === undefined ? currentScore : score;
+  if (!Number.isInteger(live) || Number.isNaN(live) || live < 0) {
+    throw new Error(`sharePayload: expected a non-negative integer score, got ${String(score)}`);
+  }
+  return { score: live, seed: currentSeed === 0 ? dailySeed() : currentSeed };
 }

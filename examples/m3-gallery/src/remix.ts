@@ -54,6 +54,12 @@ export function decodeRemix(link: string): RemixParams {
   const rawId = rest.slice(0, qIndex);
   const query = rest.slice(qIndex + 1);
   const params = new URLSearchParams(query);
+  // Reject trailing garbage / extra params: the link carries exactly one
+  // `seed` param, so injected params cannot ride along the share link.
+  const keys = [...params.keys()];
+  if (keys.length !== 1 || keys[0] !== 'seed') {
+    throw new Error('decodeRemix: malformed gallery link (only the seed query param is accepted)');
+  }
   const seedRaw = params.get('seed');
   if (rawId.length === 0 || seedRaw === null || seedRaw.length === 0) {
     throw new Error('decodeRemix: malformed gallery link (id and seed are required)');
@@ -69,6 +75,5 @@ export function decodeRemix(link: string): RemixParams {
   const remixParams: RemixParams = { id, seed };
   // decode(encode(x)) reproduces the exact remix: seed survives the round-trip
   // through the gallery://story/ scheme via the shared seed carrier.
-  void remixParams.seed;
   return remixParams;
 }

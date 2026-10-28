@@ -44,6 +44,7 @@ const STUB_REASONS: string[] = [
 
 let activePhotoId: string | undefined;
 let activeGuessId: string | undefined;
+let activeHiddenId: string | undefined;
 
 function findMask(maskId: string): Mask {
   const found = STUB_MASKS.find((m) => m.id === maskId);
@@ -59,6 +60,13 @@ export function startRound(photoId: string): void {
   }
   activePhotoId = photoId;
   activeGuessId = undefined;
+  // The hidden mask is fixed per round (deterministic fixture pick), never
+  // the visitor's guess: reveal reports this mask as the truth.
+  const hidden = STUB_MASKS[photoId.length % STUB_MASKS.length];
+  if (!hidden) {
+    throw new Error('startRound: no stub masks available');
+  }
+  activeHiddenId = hidden.id;
 }
 
 export function guess(maskId: string): void {
@@ -90,8 +98,16 @@ export function reveal(): {
   if (!activeGuessId) {
     throw new Error('reveal before guess: call guess(maskId) first');
   }
-  const mask = findMask(activeGuessId);
+  if (!activeHiddenId) {
+    throw new Error('reveal before startRound: call startRound(photoId) first');
+  }
+  // Reveal the hidden mask for this round — not the guess — then consume
+  // the round so stale state cannot leak into the next one.
+  const mask = findMask(activeHiddenId);
   const reasonStream: AsyncIterable<string> = streamReasons();
   const shelfEntry: { renderMode: 'by_object' } = { renderMode: 'by_object' };
+  activePhotoId = undefined;
+  activeGuessId = undefined;
+  activeHiddenId = undefined;
   return { mask, reasonStream, shelfEntry };
 }
