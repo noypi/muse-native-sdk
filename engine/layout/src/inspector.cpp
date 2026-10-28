@@ -11,6 +11,11 @@
 namespace layout {
 namespace {
 
+// Dev-only fixture cap: bounds the per-node allocations below so a huge
+// count cannot OOM the dev process. Normal inputs (small baked fixtures)
+// are unaffected.
+constexpr int kMaxInspectorNodes = 10000;
+
 struct TreeRec {
   NodeGeomList nodes;
   ConstraintVarList constraints;
@@ -35,7 +40,7 @@ RootId createInspectorTree(int nodeCount) {
   (void)nodeCount;
   throw LayoutError::kDisabledInRelease;
 #else
-  if (nodeCount <= 0) {
+  if (nodeCount <= 0 || nodeCount > kMaxInspectorNodes) {
     throw LayoutError::kUnknownWindow;
   }
   TreeRec rec;

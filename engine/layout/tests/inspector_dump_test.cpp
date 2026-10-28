@@ -157,6 +157,21 @@ static bool check_dump_reasons_match_source_nodes() {
   return true;
 }
 
+// Security (LOW, security-review.md): a huge nodeCount must throw instead of
+// OOMing the dev process. Coder caps createInspectorTree at 10000 nodes with
+// LayoutError::kUnknownWindow.
+static bool check_huge_tree_is_rejected() {
+  try {
+    layout::RootId root = layout::createInspectorTree(100000);
+    (void)root;
+  } catch (const layout::LayoutError& e) {
+    return e == layout::LayoutError::kUnknownWindow;
+  } catch (...) {
+    return false;
+  }
+  return false;
+}
+
 #define RUN_CASE(name)                 \
   do {                                 \
     if (!(name)()) {                   \
@@ -178,6 +193,7 @@ int main() {
   RUN_CASE(check_dump_token_records_distinct_cascade_source);
   RUN_CASE(check_dump_reasons_match_source_nodes);
   RUN_CASE(check_unknown_root_is_rejected);
+  RUN_CASE(check_huge_tree_is_rejected);
   RUN_CASE(check_disabled_in_release_error_exists);
   if (failures > 0) {
     std::printf("inspector_dump_test: %d failing\n", failures);
