@@ -10,12 +10,13 @@
 // listener callbacks fire synchronously before connect()/sendDatagram()/
 // migrate() return.
 //
-// Dedupe by stream offset: every sendDatagram carries one stream-0 datagram
-// and is assigned its byte offset in send order. Delivery is keyed by
-// OFFSET (delivered-offset set), never by payload content: identical
-// payloads at different offsets each deliver; the same offset redelivered
-// (flap retransmit) is absorbed and Listener::onDatagram fires once per
-// offset.
+// Dedupe by per-send sequence: every sendDatagram call is assigned the
+// next monotonic sequence number in send order, independent of payload
+// length. Delivery is keyed by SEQUENCE (delivered-sequence set), never
+// by payload content nor by byte offset: identical payloads — including
+// consecutive empty datagrams — each deliver; the same sequence number
+// re-presented (flap retransmit) is absorbed and Listener::onDatagram
+// fires once per sequence number.
 //
 // Error shape: every failure surfaces as onState(WtState::kClosed, reason)
 // with a non-empty reason and never escapes as an exception. Migration
@@ -61,11 +62,13 @@ class WebTransport {
   bool open_ = false;
   std::string url_;
   std::string network_;
-  // Stream-0 offset ledger: set of delivered byte offsets. Keyed by
-  // OFFSET, never by payload content: identical payloads at different
-  // offsets each deliver; the same offset twice delivers once.
-  std::unordered_set<std::uint64_t> delivered_offsets_;
-  std::uint64_t next_offset_ = 0;
+  // Per-send sequence ledger: set of delivered sequence numbers. Keyed
+  // by SEND ORDER, never by payload content nor byte offset: identical
+  // payloads (including consecutive empty datagrams) each own a distinct
+  // sequence number and each deliver; the same sequence number twice
+  // delivers once.
+  std::unordered_set<std::uint64_t> delivered_seqs_;
+  std::uint64_t next_seq_ = 0;
 };
 
 }  // namespace net

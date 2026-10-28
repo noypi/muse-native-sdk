@@ -565,8 +565,9 @@ std::unique_ptr<GraphQLClient::Subscription> GraphQLClient::subscribe(
 void GraphQLClient::enableApq(bool enabled) { apq_ = enabled; }
 
 void GraphQLClient::enableBatching(std::size_t max) {
-  batching_ = (max > 0);
-  batch_max_ = max;
+  // Documented no-op retained for API compatibility: batching is
+  // explicit-async via queue() + flush() and needs no arming.
+  (void)max;
 }
 
 void GraphQLClient::setLastEventId(std::string id) {

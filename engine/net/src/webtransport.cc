@@ -64,9 +64,9 @@ void WebTransport::connect(std::string url) {
       reportClosed("handshake failed");
       return;
     }
-    // Fresh session: reset the stream-0 offset ledger.
-    delivered_offsets_.clear();
-    next_offset_ = 0;
+    // Fresh session: reset the per-send sequence ledger.
+    delivered_seqs_.clear();
+    next_seq_ = 0;
     open_ = true;
     state_ = WtState::kConnected;
     emitState(WtState::kConnected, "");
@@ -91,23 +91,24 @@ void WebTransport::sendDatagram(std::string d) {
     req.body = d;
     try {
       // The flap retransmit rides this path: a redelivered response is
-      // absorbed by the offset ledger below, so send-path failures must
+      // absorbed by the sequence ledger below, so send-path failures must
       // never tear the session down.
       ExecCtx ctx;
       cfg_.transport->execute(req, ctx);
     } catch (...) {
     }
-    // Dedupe by stream OFFSET (delivered-offset set), never by payload
-    // content: each sendDatagram owns its offset (next_offset_); a
-    // redelivery of an already-delivered offset (migration/flap
-    // retransmit) is absorbed, while identical payloads at different
-    // offsets each deliver.
-    const std::uint64_t my_offset = next_offset_;
-    next_offset_ += static_cast<std::uint64_t>(d.size());
-    if (delivered_offsets_.find(my_offset) != delivered_offsets_.end()) {
+    // Dedupe by per-SEND sequence (delivered-sequence set), never by
+    // payload content nor byte offset: each sendDatagram mints the next
+    // monotonic sequence number, so even zero-length datagrams own
+    // distinct keys and each deliver. A re-presentation of an
+    // already-delivered sequence number (migration/flap retransmit) is
+    // absorbed, while identical payloads at different sequence numbers
+    // each deliver.
+    const std::uint64_t my_seq = next_seq_++;
+    if (delivered_seqs_.find(my_seq) != delivered_seqs_.end()) {
       return;
     }
-    delivered_offsets_.insert(my_offset);
+    delivered_seqs_.insert(my_seq);
     try {
       if (listener_.onDatagram) listener_.onDatagram(d);
     } catch (...) {
@@ -123,7 +124,7 @@ void WebTransport::migrate(std::string newNetwork) {
       reportClosed("not connected");
       return;
     }
-    // The offset ledger survives migration untouched: in-flight datagrams
+    // The sequence ledger survives migration untouched: in-flight datagrams
     // are neither lost nor duplicated across the network transition.
     state_ = WtState::kMigrating;
     emitState(WtState::kMigrating, "");

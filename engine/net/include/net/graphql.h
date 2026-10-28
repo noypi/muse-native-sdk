@@ -71,6 +71,10 @@ class GraphQLClient {
   std::unique_ptr<Subscription> subscribe(std::string q, std::string vars);
 
   void enableApq(bool enabled);
+  // Retained for API compatibility; intentionally a no-op. Batching is
+  // explicit-async (queue() + flush()) and needs no arming: query()/
+  // mutate() always execute immediately and flush() serves whatever is
+  // queued, so there is no flag for them to consult.
   void enableBatching(std::size_t max);
 
   // Batching split: buffer one operation for the next flush(). Never
@@ -100,8 +104,6 @@ class GraphQLClient {
 
   std::shared_ptr<ITransport> transport_;
   bool apq_ = false;
-  bool batching_ = false;
-  std::size_t batch_max_ = 0;
   std::vector<Pending> pending_;
   std::string last_event_id_;
 };
