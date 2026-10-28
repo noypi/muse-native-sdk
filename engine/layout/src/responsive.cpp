@@ -133,7 +133,8 @@ LayoutResult measureWrapRow(const Node& n, Constraints c) noexcept {
 LayoutResult measureBaselineBox(const Node& n) noexcept {
   if (!(n.width >= 0.0f) || !(n.height >= 0.0f) ||
       !std::isfinite(n.width) || !std::isfinite(n.height) ||
-      !std::isfinite(n.baseline)) {
+      !std::isfinite(n.baseline) || n.baseline < 0.0f ||
+      n.baseline > n.height) {
     return invalid();
   }
   LayoutResult r;

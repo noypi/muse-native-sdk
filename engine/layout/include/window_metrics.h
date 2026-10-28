@@ -16,6 +16,12 @@ struct WindowLayoutInfo {
 // Per-display metrics consumed on window-bounds changes (FR-LAYOUT-013
 // narrow slice: reflow + per-display metrics only). Non-positive or
 // non-finite density is invalid.
+// NOTE (narrow-slice density semantics): WindowMetrics arrive in dp and the
+// T1 breakpoints are dp thresholds, so density/displayId have no geometric
+// effect on the recompute path in this slice — density is validated (invalid
+// values reject with kInvalidMetrics) and the accepted display is recorded
+// for cross-display identity, but the size class derives solely from the dp
+// bounds. Any future px-to-dp scaling must come with a spec update.
 struct DisplayMetrics {
   float density = 0.0f;
   int displayId = 0;

@@ -1,17 +1,17 @@
 #pragma once
 
+#include "size_class.h"
+
 namespace layout {
 
-// Status travels alongside the result: the T2 `Interface:` line names both
+// Status is the unified layout::Status from size_class.h (kOk,
+// kInvalidMetrics, kUnsupportedProperty, kUnknownLayout, kIgnoredStaleInfo,
+// kRecreationNotAllowed). responsive.h reuses it so any TU can include
+// size_class.h + responsive.h (+ adaptive_layout.h + window_metrics.h)
+// together. The T2 `Interface:` line names both
 // `LayoutResult{size, baseline}` and `Status::kUnsupportedProperty`. The
 // boundary never throws; unsupported combinations report kUnsupportedProperty
 // and malformed inputs report kInvalidMetrics.
-enum class Status {
-  kOk,
-  kUnsupportedProperty,
-  kInvalidMetrics,
-};
-
 struct Constraints {
   float maxWidth = 0.0f;
   float maxHeight = 0.0f;
