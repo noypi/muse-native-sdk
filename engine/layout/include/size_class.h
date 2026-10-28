@@ -21,6 +21,12 @@ enum class Status {
   kInvalidMetrics,
   kUnsupportedProperty,
   kUnknownLayout,
+  // Fold/posture trigger surface (T4): unparseable WindowLayoutInfo is
+  // ignored with the prior size class intact — never a default class.
+  kIgnoredStaleInfo,
+  // In-place resize path (T5): Activity recreation is never performed;
+  // explicit requests are refused with this status.
+  kRecreationNotAllowed,
 };
 
 struct WindowMetrics {
