@@ -191,3 +191,92 @@ describe('muse template and content carry the muse: section', () => {
     assert.ok(text.includes('presets:'), 'root file must declare muse.presets');
   });
 });
+
+// ---------------------------------------------------------------------------
+// BUG-TSX-010 Batch 1 — T1: `muse:` subtree routed out of the flat config
+// parser so init output validates. Hermetic: node:test + node:assert/strict +
+// stdlib (fs/os/path) only. resolveConfig is driven through its public
+// interface against tmp-dir muse-native.yaml files; no env secrets, no
+// network, no live services.
+// Interface (plan verbatim):
+// `resolveConfig(argv: string[], env: Record<string,string>, cwd: string):
+// { config: { name: string, version: string }, winningLayer:
+// Record<string,string> }` — muse: key no longer throws ConfigError
+// unknown-key; scalar validation unchanged.
+// ---------------------------------------------------------------------------
+describe('BUG-TSX-010 T1 — muse: subtree bypasses flat ConfigError gate', () => {
+  const tmpRoots = [];
+  afterEach(() => {
+    while (tmpRoots.length) fs.rmSync(tmpRoots.pop(), { recursive: true, force: true });
+  });
+
+  function mkApp(yamlText) {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'muse-t1-'));
+    tmpRoots.push(dir);
+    fs.writeFileSync(path.join(dir, 'muse-native.yaml'), yamlText);
+    return dir;
+  }
+
+  function resolveIn(dir, argv = ['build'], env = {}) {
+    const { resolveConfig } = require('../lib/config.js');
+    return resolveConfig(argv, env, dir);
+  }
+
+  it('init template file (name/version + muse: block) resolves without ConfigError', () => {
+    const template = fs.readFileSync(path.join(__dirname, '..', 'templates', 'muse-native.yaml'), 'utf8');
+    const dir = mkApp(template);
+    const { config, winningLayer } = resolveIn(dir);
+    assert.deepEqual(config, { name: 'hello-app', version: '0.0.1' });
+    assert.equal(winningLayer.name, 'file');
+    assert.equal(winningLayer.version, 'file');
+  });
+
+  it('nested muse: lines never leak into the scalar config map', () => {
+    const template = fs.readFileSync(path.join(__dirname, '..', 'templates', 'muse-native.yaml'), 'utf8');
+    const dir = mkApp(template);
+    const { config } = resolveIn(dir);
+    assert.deepEqual(Object.keys(config).sort(), ['name', 'version']);
+  });
+
+  it('hand-written name/version-only file resolves identically to the template scalars', () => {
+    const dir = mkApp('name: hello-app\nversion: 0.0.1\n');
+    const { config, winningLayer } = resolveIn(dir);
+    assert.deepEqual(config, { name: 'hello-app', version: '0.0.1' });
+    assert.deepEqual(winningLayer, { name: 'file', version: 'file' });
+  });
+
+  it('unknown scalar key still throws ConfigError fail-closed (never partial)', () => {
+    const dir = mkApp('name: hi\nversion: 0.0.1\nevil: 1\n');
+    assert.throws(() => resolveIn(dir), (err) => {
+      assert.equal(err.name, 'ConfigError');
+      assert.equal(err.key, 'evil');
+      assert.match(err.message, /unknown key/);
+      return true;
+    });
+  });
+
+  it('wrong scalar type (numeric name:) still throws ConfigError naming the type', () => {
+    const dir = mkApp('name: 123\nversion: 0.0.1\n');
+    assert.throws(() => resolveIn(dir), (err) => {
+      assert.equal(err.name, 'ConfigError');
+      assert.equal(err.key, 'name');
+      assert.equal(err.expected, 'string');
+      return true;
+    });
+  });
+
+  it('--muse CLI flag stays rejected: unknown key (structured section, not a scalar key)', () => {
+    const dir = mkApp('name: hi\nversion: 0.0.1\n');
+    assert.throws(() => resolveIn(dir, ['build', '--muse', 'x']), (err) => {
+      assert.equal(err.name, 'ConfigError');
+      assert.equal(err.key, 'muse');
+      return true;
+    });
+  });
+
+  it('MUSE_NATIVE_MUSE env stays ignored: never becomes a config key (ASSUMPTION: env layer is scalar-only)', () => {
+    const dir = mkApp('name: hi\nversion: 0.0.1\n');
+    const { config } = resolveIn(dir, ['build'], { MUSE_NATIVE_MUSE: 'x' });
+    assert.deepEqual(config, { name: 'hi', version: '0.0.1' });
+  });
+});
