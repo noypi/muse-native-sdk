@@ -184,7 +184,9 @@ function createTextInput(deps) {
       }
       if (frame !== undefined && frame !== null && typeof frame === 'object') {
         // Opaque per-frame contract: the offset IS the latest imeBottom.
-        insetOffset = frame.imeBottom;
+        if (typeof frame.imeBottom === 'number') {
+          insetOffset = frame.imeBottom;
+        }
       }
     };
     let unsub = null;
@@ -275,7 +277,8 @@ function createTextInput(deps) {
       // A typed edit replaces the text without span metadata — drop any
       // retained spans so the next rich copy/cut starts clean.
       richSpans = [];
-    }    const [ra, rb] = clampToLength(keptA, keptB, currentText().length);
+    }
+    const [ra, rb] = clampToLength(keptA, keptB, currentText().length);
     try {
       editingEngine.setSelection(ra, rb);
     } catch (_) {

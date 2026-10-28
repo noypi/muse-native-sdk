@@ -178,52 +178,16 @@ export type TextInputProps = {
   onSelectionChange?: (TextSelection) => void;
 };
 
-export type EditingEngine = {
-  setComposingText(s: string): void;
-  commitText(s: string): void;
-  cancelComposition(): void;
-  getText(): string;
-  setSelection(start: number, end: number): void;
-  getSelection(): { start: number; end: number };
-};
-
-export type PlatformClipboard = {
-  readText(): string | Promise<string>;
-  writeText(s: string): void | Promise<void>;
-  hasText(): boolean;
-};
-
-export type InsetFrames = {
-  current(): { imeBottom: number };
-  subscribe(fn: (frame: { imeBottom: number }) => void): () => void;
-};
-
-export type TwoWayBinding = {
-  value: string;
-  set?(value: string): void;
-};
-
-export type TextInputHandle = {
-  setComposingText(s: string): void;
-  commitText(s: string): void;
-  cancelComposition(): void;
-  setSelection(start: number, end: number): void;
-  getSelection(): { start: number; end: number };
-  cut(): void;
-  copy(): void;
-  paste(): void | Promise<void>;
-  selectAll(): void;
-  value: string;
-  selection: { start: number; end: number };
-  dispose(): void;
-};
-
-export declare function createTextInput(deps: {
-  editingEngine: EditingEngine;
-  clipboard: PlatformClipboard;
-  insets: InsetFrames;
-  binding?: TwoWayBinding;
-}): TextInputHandle;
+export type {
+  EditingEngine,
+  PlatformClipboard,
+  RichTextPayload,
+  InsetFrames,
+  TwoWayBinding,
+  TextInputDeps,
+  TextInputHandle,
+} from './textinput';
+export { createTextInput } from './textinput';
 
 export type Tier2Props =
   | ButtonProps
@@ -241,7 +205,8 @@ export type Tier2Props =
   | CircularProgressProps
   | ListItemProps
   | AvatarProps
-  | TooltipProps;
+  | TooltipProps
+  | TextInputProps;
 
 export declare function Button(props?: ButtonProps): NativeDescriptor;
 export declare function IconButton(props?: IconButtonProps): NativeDescriptor;
