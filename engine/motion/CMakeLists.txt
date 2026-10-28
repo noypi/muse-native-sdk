@@ -19,10 +19,14 @@ add_library(motion
   src/trace.cpp
   src/determinism.cpp
   src/asset.cpp
+  src/asset_prepare.cpp
+  src/asset_scale.cpp
   src/svg_import.cpp
 )
 target_include_directories(motion PUBLIC include)
 target_compile_options(motion PRIVATE -Wall -Wextra -Wpedantic)
+find_package(Threads REQUIRED)
+target_link_libraries(motion PUBLIC Threads::Threads)
 
 add_executable(spring_solver_test tests/spring_solver_test.cpp)
 target_link_libraries(spring_solver_test PRIVATE motion)
@@ -116,3 +120,18 @@ add_executable(asset_control_test tests/asset_control_test.cpp)
 target_link_libraries(asset_control_test PRIVATE motion)
 target_compile_options(asset_control_test PRIVATE -Wall -Wextra -Wpedantic)
 add_test(NAME asset_control_test COMMAND asset_control_test)
+
+add_executable(asset_seek_test tests/asset_seek_test.cpp)
+target_link_libraries(asset_seek_test PRIVATE motion)
+target_compile_options(asset_seek_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME asset_seek_test COMMAND asset_seek_test)
+
+add_executable(asset_scale_test tests/asset_scale_test.cpp)
+target_link_libraries(asset_scale_test PRIVATE motion)
+target_compile_options(asset_scale_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME asset_scale_test COMMAND asset_scale_test)
+
+add_executable(asset_prepare_thread_test tests/asset_prepare_thread_test.cpp)
+target_link_libraries(asset_prepare_thread_test PRIVATE motion)
+target_compile_options(asset_prepare_thread_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME asset_prepare_thread_test COMMAND asset_prepare_thread_test)
