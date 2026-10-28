@@ -115,7 +115,7 @@ test('adding an unimplemented manifest entry exits non-zero naming the orphan', 
 // TC-M3-008: manifest is the single source for prop schemas
 // ---------------------------------------------------------------------------
 
-const VALID_PROP_TYPES = new Set(['string', 'boolean', 'number', 'token', 'slot']);
+const VALID_PROP_TYPES = new Set(['string', 'boolean', 'number', 'token', 'slot', 'object', 'function']);
 
 test('every manifest prop schema uses a valid single-source type', () => {
   const manifest = JSON.parse(readFileSync(MANIFEST_PATH, 'utf8'));

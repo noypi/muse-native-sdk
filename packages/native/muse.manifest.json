@@ -262,6 +262,18 @@
         "text": { "type": "string", "required": true },
         "anchor": { "type": "slot" }
       }
+    },
+    {
+      "name": "TextInput",
+      "tier": 2,
+      "native": "TextFieldEditCore",
+      "props": {
+        "value": { "type": "string" },
+        "selection": { "type": "object" },
+        "composing": { "type": "string" },
+        "contentType": { "type": "string", "values": ["plain", "rich"] },
+        "onSelectionChange": { "type": "function" }
+      }
     }
   ]
 }

@@ -10,6 +10,7 @@
     "test:tier1": "node --test test/tier1.test.ts",
     "test:tier2": "node --test test/tier2.test.ts",
     "test:tokens": "node --test test/tokens.test.ts",
-    "test:theme": "node --test test/theme.test.ts"
+    "test:theme": "node --test test/theme.test.ts",
+    "test:textinput": "node --test test/textinput-composition.test.ts test/textinput-selection.test.ts test/textinput-insets.test.ts test/textinput-clipboard.test.ts"
   }
 }
