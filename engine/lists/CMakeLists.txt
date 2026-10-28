@@ -5,7 +5,7 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-add_library(lists STATIC src/stable_key.cpp src/myers_diff.cpp src/scroll_physics.cpp src/scroll_signal.cpp src/refresh_rate.cpp src/position_persist.cpp src/snap_refresh.cpp)
+add_library(lists STATIC src/stable_key.cpp src/myers_diff.cpp src/scroll_physics.cpp src/scroll_signal.cpp src/refresh_rate.cpp src/position_persist.cpp src/snap_refresh.cpp src/item_animator.cpp src/drag_reorder.cpp src/swipe_dismiss.cpp src/selection_mode.cpp src/collection_contract.cpp src/letter_jump.cpp src/sticky_header.cpp src/slot_state.cpp src/collection_shape.cpp src/collection_semantics.cpp src/collection_item_info.cpp src/collection_announce.cpp src/collection_order.cpp)
 target_include_directories(lists PUBLIC include)
 target_compile_options(lists PRIVATE -Wall -Wextra -Wpedantic -Werror)
 
@@ -54,3 +54,94 @@ target_include_directories(diff_benchmark_test PRIVATE include)
 target_compile_options(diff_benchmark_test PRIVATE -Wall -Wextra -Wpedantic -Werror)
 
 add_test(NAME diff_benchmark_test COMMAND diff_benchmark_test)
+
+add_executable(item_animator_test tests/item_animator_test.cpp)
+target_link_libraries(item_animator_test PRIVATE lists)
+target_include_directories(item_animator_test PRIVATE include)
+target_compile_options(item_animator_test PRIVATE -Wall -Wextra -Wpedantic -Werror)
+
+add_test(NAME item_animator_test COMMAND item_animator_test)
+
+add_executable(drag_reorder_test tests/drag_reorder_test.cpp)
+target_link_libraries(drag_reorder_test PRIVATE lists)
+target_include_directories(drag_reorder_test PRIVATE include)
+target_compile_options(drag_reorder_test PRIVATE -Wall -Wextra -Wpedantic -Werror)
+
+add_test(NAME drag_reorder_test COMMAND drag_reorder_test)
+
+add_executable(swipe_dismiss_test tests/swipe_dismiss_test.cpp)
+target_link_libraries(swipe_dismiss_test PRIVATE lists)
+target_include_directories(swipe_dismiss_test PRIVATE include)
+target_compile_options(swipe_dismiss_test PRIVATE -Wall -Wextra -Wpedantic -Werror)
+
+add_test(NAME swipe_dismiss_test COMMAND swipe_dismiss_test)
+
+add_executable(selection_mode_test tests/selection_mode_test.cpp)
+target_link_libraries(selection_mode_test PRIVATE lists)
+target_include_directories(selection_mode_test PRIVATE include)
+target_compile_options(selection_mode_test PRIVATE -Wall -Wextra -Wpedantic -Werror)
+
+add_test(NAME selection_mode_test COMMAND selection_mode_test)
+
+add_executable(collection_contract_test tests/collection_contract_test.cpp)
+target_link_libraries(collection_contract_test PRIVATE lists)
+target_include_directories(collection_contract_test PRIVATE include)
+target_compile_options(collection_contract_test PRIVATE -Wall -Wextra -Wpedantic -Werror)
+
+add_test(NAME collection_contract_test COMMAND collection_contract_test)
+
+add_executable(letter_jump_test tests/letter_jump_test.cpp)
+target_link_libraries(letter_jump_test PRIVATE lists)
+target_include_directories(letter_jump_test PRIVATE include)
+target_compile_options(letter_jump_test PRIVATE -Wall -Wextra -Wpedantic -Werror)
+
+add_test(NAME letter_jump_test COMMAND letter_jump_test)
+
+add_executable(sticky_header_test tests/sticky_header_test.cpp)
+target_link_libraries(sticky_header_test PRIVATE lists)
+target_include_directories(sticky_header_test PRIVATE include)
+target_compile_options(sticky_header_test PRIVATE -Wall -Wextra -Wpedantic -Werror)
+
+add_test(NAME sticky_header_test COMMAND sticky_header_test)
+
+add_executable(slot_state_test tests/slot_state_test.cpp)
+target_link_libraries(slot_state_test PRIVATE lists)
+target_include_directories(slot_state_test PRIVATE include)
+target_compile_options(slot_state_test PRIVATE -Wall -Wextra -Wpedantic -Werror)
+
+add_test(NAME slot_state_test COMMAND slot_state_test)
+
+add_executable(collection_shape_test tests/collection_shape_test.cpp)
+target_link_libraries(collection_shape_test PRIVATE lists)
+target_include_directories(collection_shape_test PRIVATE include)
+target_compile_options(collection_shape_test PRIVATE -Wall -Wextra -Wpedantic -Werror)
+
+add_test(NAME collection_shape_test COMMAND collection_shape_test)
+
+add_executable(collection_scroll_action_test tests/collection_scroll_action_test.cpp)
+target_link_libraries(collection_scroll_action_test PRIVATE lists)
+target_include_directories(collection_scroll_action_test PRIVATE include)
+target_compile_options(collection_scroll_action_test PRIVATE -Wall -Wextra -Wpedantic -Werror)
+
+add_test(NAME collection_scroll_action_test COMMAND collection_scroll_action_test)
+
+add_executable(collection_item_info_test tests/collection_item_info_test.cpp)
+target_link_libraries(collection_item_info_test PRIVATE lists)
+target_include_directories(collection_item_info_test PRIVATE include)
+target_compile_options(collection_item_info_test PRIVATE -Wall -Wextra -Wpedantic -Werror)
+
+add_test(NAME collection_item_info_test COMMAND collection_item_info_test)
+
+add_executable(collection_announce_test tests/collection_announce_test.cpp)
+target_link_libraries(collection_announce_test PRIVATE lists)
+target_include_directories(collection_announce_test PRIVATE include)
+target_compile_options(collection_announce_test PRIVATE -Wall -Wextra -Wpedantic -Werror)
+
+add_test(NAME collection_announce_test COMMAND collection_announce_test)
+
+add_executable(collection_order_test tests/collection_order_test.cpp)
+target_link_libraries(collection_order_test PRIVATE lists)
+target_include_directories(collection_order_test PRIVATE include)
+target_compile_options(collection_order_test PRIVATE -Wall -Wextra -Wpedantic -Werror)
+
+add_test(NAME collection_order_test COMMAND collection_order_test)
