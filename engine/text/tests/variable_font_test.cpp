@@ -226,6 +226,20 @@ static bool check_empty_input_ok_empty() {
   }
 }
 
+static bool check_null_vars_with_count_invalid_input() {
+  try {
+    muse::text::FontHandle font{3};
+    muse::text::TextStyle style{};
+    auto result = muse::text::shapeRunWithVariations(
+        reinterpret_cast<const uint8_t*>(kText.data()), kText.size(), font,
+        style, nullptr, 2);
+    if (result.ok()) return false;
+    return result.status() == muse::text::Status::kInvalidInput;
+  } catch (...) {
+    return false;
+  }
+}
+
 static bool check_null_bytes_does_not_throw() {
   try {
     muse::text::FontHandle font{3};
@@ -262,6 +276,7 @@ int main() {
   RUN_CASE(check_malformed_utf8_invalid_input);
   RUN_CASE(check_empty_input_ok_empty);
   RUN_CASE(check_null_bytes_does_not_throw);
+  RUN_CASE(check_null_vars_with_count_invalid_input);
   if (failures > 0) {
     std::printf("variable_font_test: %d failing\n", failures);
     return 1;

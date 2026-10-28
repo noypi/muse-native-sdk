@@ -215,6 +215,27 @@ static bool check_malformed_line_rejected() {
   }
 }
 
+static bool check_parse_hex_numeric_boundaries() {
+  try {
+    KeepRange r{};
+    // >6 hex digits rejected (fail-closed: never grant coverage).
+    if (parse_keep_line("U+1234567", &r)) return false;
+    if (parse_keep_line("U+0041-U+1234567", &r)) return false;
+    // >0x10FFFF rejected (max valid codepoint is U+10FFFF).
+    if (parse_keep_line("U+110000", &r)) return false;
+    if (parse_keep_line("U+0041-U+110000", &r)) return false;
+    // hi<lo rejected (fail-closed: reversed range grants nothing).
+    if (parse_keep_line("U+1F3FF-U+1F3FB", &r)) return false;
+    if (parse_keep_line("U+0042-U+0041", &r)) return false;
+    // Valid boundaries still accepted (not over-strict).
+    if (!parse_keep_line("U+10FFFF", &r) || r.lo != 0x10FFFFu) return false;
+    if (!parse_keep_line("U+0041-U+0041", &r)) return false;
+    return r.lo == 0x41u && r.hi == 0x41u;
+  } catch (...) {
+    return false;
+  }
+};
+
 static bool check_guard_entry_present() {
   try {
     // The build-tool guard entry the coder owns. Path is relative to this
@@ -245,6 +266,7 @@ int main() {
   RUN_CASE(check_regional_indicators_kept);
   RUN_CASE(check_keycap_kept);
   RUN_CASE(check_malformed_line_rejected);
+  RUN_CASE(check_parse_hex_numeric_boundaries);
   RUN_CASE(check_guard_entry_present);
   if (failures > 0) {
     std::printf("font_subset_guard_test: %d failing\n", failures);
