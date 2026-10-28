@@ -16,6 +16,11 @@ function localTscBin() {
   try {
     return require.resolve('typescript/bin/tsc');
   } catch {
+    // Fall through to the lib entry point below.
+  }
+  try {
+    return require.resolve('typescript/lib/tsc.js');
+  } catch {
     return path.join(
       __dirname,
       '..',
@@ -59,9 +64,13 @@ function main() {
     process.exit(0);
   }
   const project = path.join(__dirname, '..', 'tsconfig.json');
-  const res = spawnSync(process.execPath, [tscBin, '--noEmit', '-p', project], {
-    stdio: 'inherit',
-  });
+  const args = ['--noEmit', '-p', project];
+  const res =
+    process.platform === 'win32' && tscBin.endsWith('.cmd')
+      ? spawnSync(tscBin, args, { stdio: 'inherit', shell: true })
+      : spawnSync(process.execPath, [tscBin, ...args], {
+          stdio: 'inherit',
+        });
   if (res.error) {
     console.error(`check:types failed to launch local tsc at '${tscBin}': ${res.error.message}`);
     process.exit(1);
