@@ -23,7 +23,8 @@ struct TextNode {
 };
 
 // Remeasures every node whose stored resolvedScale differs from
-// NonlinearScale(newFontScale), plus every node flagged dirty. Each
+// NonlinearScale(newFontScale) by more than the near-flat epsilon,
+// plus every node flagged dirty. Each
 // remeasured node gets resolvedScale updated to the new scale and dirty
 // cleared; text/sizePx/styleGen are preserved. Returns the remeasure count.
 // density is accepted for the cache-key width derivation and reserved for

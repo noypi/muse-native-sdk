@@ -11,6 +11,12 @@ add_library(muse_text STATIC
   src/layout_cache.cpp
   src/bidi.cpp
   src/emoji.cpp
+  src/stylus.cpp
+  src/rich_buffer.cpp
+  src/code_mode.cpp
+  src/font_scale.cpp
+  src/scale_layout.cpp
+  src/scale_config.cpp
 )
 target_include_directories(muse_text PUBLIC include)
 target_compile_options(muse_text PRIVATE -Wall -Wextra -Wpedantic)
@@ -75,6 +81,30 @@ add_executable(font_pipeline_test tests/font_pipeline_test.cpp)
 target_link_libraries(font_pipeline_test PRIVATE muse_text)
 target_compile_options(font_pipeline_test PRIVATE -Wall -Wextra -Wpedantic)
 
+add_executable(stylus_samples_test tests/stylus_samples_test.cpp)
+target_link_libraries(stylus_samples_test PRIVATE muse_text)
+target_compile_options(stylus_samples_test PRIVATE -Wall -Wextra -Wpedantic)
+
+add_executable(rich_buffer_test tests/rich_buffer_test.cpp)
+target_link_libraries(rich_buffer_test PRIVATE muse_text)
+target_compile_options(rich_buffer_test PRIVATE -Wall -Wextra -Wpedantic)
+
+add_executable(nonlinear_scale_test tests/nonlinear_scale_test.cpp)
+target_link_libraries(nonlinear_scale_test PRIVATE muse_text)
+target_compile_options(nonlinear_scale_test PRIVATE -Wall -Wextra -Wpedantic)
+
+add_executable(scale_remeasure_test tests/scale_remeasure_test.cpp)
+target_link_libraries(scale_remeasure_test PRIVATE muse_text)
+target_compile_options(scale_remeasure_test PRIVATE -Wall -Wextra -Wpedantic)
+
+add_executable(scale_config_test tests/scale_config_test.cpp)
+target_link_libraries(scale_config_test PRIVATE muse_text)
+target_compile_options(scale_config_test PRIVATE -Wall -Wextra -Wpedantic)
+
+add_executable(scale_churn_test tests/scale_churn_test.cpp)
+target_link_libraries(scale_churn_test PRIVATE muse_text)
+target_compile_options(scale_churn_test PRIVATE -Wall -Wextra -Wpedantic)
+
 add_executable(pipeline_acceptance acceptance/pipeline_acceptance.cpp)
 target_link_libraries(pipeline_acceptance PRIVATE muse_text)
 target_compile_options(pipeline_acceptance PRIVATE -Wall -Wextra -Wpedantic)
@@ -96,4 +126,10 @@ add_test(NAME variable_font_test COMMAND variable_font_test)
 add_test(NAME font_subset_guard_test COMMAND font_subset_guard_test)
 add_test(NAME golden_harness_test COMMAND golden_harness_test)
 add_test(NAME font_pipeline_test COMMAND font_pipeline_test)
+add_test(NAME stylus_samples_test COMMAND stylus_samples_test)
+add_test(NAME rich_buffer_test COMMAND rich_buffer_test)
+add_test(NAME nonlinear_scale_test COMMAND nonlinear_scale_test)
+add_test(NAME scale_remeasure_test COMMAND scale_remeasure_test)
+add_test(NAME scale_config_test COMMAND scale_config_test)
+add_test(NAME scale_churn_test COMMAND scale_churn_test)
 add_test(NAME pipeline_acceptance COMMAND pipeline_acceptance)
