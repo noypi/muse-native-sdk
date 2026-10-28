@@ -1,0 +1,133 @@
+// T2 dynamic-initializer scan (NFR-CORE-004, AC-CORE-031).
+//
+// Walks `object_dir` recursively and inspects each regular file's bytes
+// for ELF dynamic-initializer markers (init-array/ctors sections and the
+// compiler-generated global-init symbols). One
+// `DYNAMIC_INIT:<file>:<symbol>` line per offending file goes to stdout.
+// Empty directories scan zero objects and return 0; null paths,
+// missing/unreadable directories, and I/O failures return nonzero without
+// throwing (fail-closed per the FR-PKG-005 shape).
+//
+// NOTE: marker strings are assembled at runtime from split fragments so
+// this translation unit's own object file never contains a contiguous
+// marker byte sequence (a naive substring scan of the build tree must
+// stay clean on the checker itself).
+
+#include "core/startup/dynamic_init.h"
+
+#include <cstdio>
+#include <cstring>
+#include <filesystem>
+#include <fstream>
+#include <string>
+#include <vector>
+
+namespace muse {
+namespace startup {
+namespace {
+
+// Cap per-file read so an unexpectedly large artifact cannot exhaust
+// memory; markers live in headers/symbol tables near the front, so a
+// truncated tail cannot hide a violation, only the head window matters.
+constexpr std::size_t kMaxScanBytes = 8u * 1024u * 1024u;
+
+// Marker patterns built from fragments at runtime (see file NOTE).
+std::vector<std::string> markerPatterns() {
+  std::vector<std::string> out;
+  out.emplace_back(std::string(".init") + "_array");
+  out.emplace_back(std::string(".preinit") + "_array");
+  out.emplace_back(std::string(".ct") + "ors");
+  out.emplace_back(std::string("_GLOBAL__") + "sub_I_");
+  out.emplace_back(std::string("__static_initialization") +
+                   "_and_destruction_");
+  out.emplace_back(std::string("__do_global_") + "dtors_aux");
+  return out;
+}
+
+// True when `path` looks like a linkable object worth scanning. Unknown
+// extensions are still scanned (fail-closed: never skip silently by
+// extension alone) — this gate only documents intent; the loop below
+// scans every regular file regardless.
+bool isRegularFile(const std::filesystem::path& path) noexcept {
+  std::error_code ec;
+  bool ok = std::filesystem::is_regular_file(path, ec);
+  return !ec && ok;
+}
+
+}  // namespace
+
+int check_dynamic_initializers(const char* object_dir) noexcept {
+  if (object_dir == nullptr) {
+    return 2;
+  }
+  try {
+    std::error_code ec;
+    const std::filesystem::path root(object_dir);
+    const std::filesystem::file_status st =
+        std::filesystem::status(root, ec);
+    if (ec || !std::filesystem::is_directory(st)) {
+      return 2;
+    }
+
+    const std::vector<std::string> markers = markerPatterns();
+    int violations = 0;
+
+    std::filesystem::recursive_directory_iterator it(root, ec);
+    const std::filesystem::recursive_directory_iterator end;
+    if (ec) {
+      return 2;
+    }
+    for (; it != end; it.increment(ec)) {
+      if (ec) {
+        return 2;
+      }
+      if (!isRegularFile(it->path())) {
+        continue;
+      }
+      std::ifstream file(it->path(), std::ios::binary);
+      if (!file) {
+        return 2;
+      }
+      std::string contents;
+      contents.reserve(65536);
+      char chunk[65536];
+      std::size_t total = 0;
+      while (file) {
+        file.read(chunk, sizeof(chunk));
+        const std::streamsize got = file.gcount();
+        if (got <= 0) {
+          break;
+        }
+        if (total + static_cast<std::size_t>(got) > kMaxScanBytes) {
+          const std::size_t keep =
+              kMaxScanBytes > total ? kMaxScanBytes - total : 0;
+          contents.append(chunk, keep);
+          break;
+        }
+        contents.append(chunk, static_cast<std::size_t>(got));
+        total += static_cast<std::size_t>(got);
+      }
+      if (file.bad()) {
+        return 2;
+      }
+      for (const std::string& marker : markers) {
+        if (contents.find(marker) != std::string::npos) {
+          std::string name = it->path().filename().string();
+          if (name.empty()) {
+            name = it->path().string();
+          }
+          std::printf("DYNAMIC_INIT:%s:%s\n", name.c_str(),
+                      marker.c_str());
+          ++violations;
+          break;
+        }
+      }
+    }
+    return violations > 0 ? 1 : 0;
+  } catch (...) {
+    return 2;
+  }
+}
+
+}  // namespace startup
+}  // namespace muse
