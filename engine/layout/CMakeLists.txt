@@ -12,7 +12,9 @@ add_library(layout
   src/sliver.cpp
   src/masonry.cpp
   src/form_factor.cpp
+  src/hinge_split.cpp
   src/fold_signal.cpp
+  src/tabletop.cpp
   src/property.cpp
   src/batch.cpp
 )
@@ -70,3 +72,13 @@ add_test(NAME fold_signal_test COMMAND fold_signal_test)
 add_executable(m3_matrix_check tests/m3_matrix_check.cpp)
 target_compile_options(m3_matrix_check PRIVATE -Wall -Wextra -Wpedantic -Werror)
 add_test(NAME m3_matrix_check COMMAND m3_matrix_check ${CMAKE_CURRENT_SOURCE_DIR}/m3_matrix.json)
+
+add_executable(hinge_split_test tests/hinge_split_test.cpp)
+target_link_libraries(hinge_split_test PRIVATE layout)
+target_compile_options(hinge_split_test PRIVATE -Wall -Wextra -Wpedantic -Werror)
+add_test(NAME hinge_split_test COMMAND hinge_split_test)
+
+add_executable(tabletop_test tests/tabletop_test.cpp)
+target_link_libraries(tabletop_test PRIVATE layout)
+target_compile_options(tabletop_test PRIVATE -Wall -Wextra -Wpedantic -Werror)
+add_test(NAME tabletop_test COMMAND tabletop_test)
