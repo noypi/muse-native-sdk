@@ -70,6 +70,11 @@ target_link_libraries(restore_test PRIVATE navigation)
 target_compile_options(restore_test PRIVATE -Wall -Wextra -Wpedantic)
 add_test(NAME restore_test COMMAND restore_test)
 
+add_executable(process_death_proxy_test tests/process_death_proxy_test.cpp)
+target_link_libraries(process_death_proxy_test PRIVATE navigation)
+target_compile_options(process_death_proxy_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME process_death_proxy_test COMMAND process_death_proxy_test)
+
 add_executable(router_bridge_test tests/router_bridge_test.cpp)
 target_link_libraries(router_bridge_test PRIVATE navigation)
 target_compile_options(router_bridge_test PRIVATE -Wall -Wextra -Wpedantic)

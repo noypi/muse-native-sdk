@@ -2,6 +2,8 @@
 
 #include <vector>
 
+#include "navigation/state_schema.h"
+
 SnapshotResult captureSnapshot(const NavGraph& graph) noexcept {
   try {
     std::string blob = graph.serialize();
@@ -385,6 +387,85 @@ SnapshotResult truncateSnapshot(const std::string& blob, size_t maxBytes,
     r.blob.clear();
     r.error = SnapshotError::CORRUPT;
     r.truncated = false;
+    return r;
+  }
+}
+
+namespace {
+
+// Invokes a commit-gate hook for one route. A null/empty hook allows the
+// route (pre-gate behavior); a throwing hook denies it so validation is never
+// bypassed (NFR-NAV-002). Never throws.
+bool SafeGate(const std::function<bool(const std::string&)>& hook,
+              const std::string& route) noexcept {
+  if (!hook) return true;
+  try {
+    return hook(route);
+  } catch (...) {
+    return false;
+  }
+}
+
+}  // namespace
+
+RestoreResult commitRestore(const std::string& blob, ValidateFn validate,
+                            GuardFn guard) noexcept {
+  try {
+    RestoreResult corrupt;
+    corrupt.committed = false;
+    corrupt.error = RestoreError::CORRUPT;
+    if (blob.empty()) return corrupt;
+    // Step 1: decode via T4 (schema migration + unknown-route→home degrade).
+    DecodeResult d = decodeState(blob);
+    if (!d.ok) return corrupt;
+    if (d.error != DecodeError::NONE || d.fellBackToHome) {
+      // Unknown/removed route degrades to a home commit, never a crash.
+      // (BAD_VERSION with !ok is already returned as CORRUPT above.)
+      if (d.fellBackToHome) {
+        RestoreResult r;
+        r.committed = true;
+        r.error = RestoreError::UNKNOWN_ROUTE_HOME;
+        return r;
+      }
+      return corrupt;
+    }
+    // Step 2: per-route sibling validation (FR-NAV-006 hook, called not
+    // copied). The hook sees the structural routes only: strip the optional
+    // `;content=` section first so content payloads never inject route ids.
+    std::string structural = d.snapshot.graphBlob;
+    std::string::size_type cpos = structural.find(";content=");
+    if (cpos != std::string::npos) structural = structural.substr(0, cpos);
+    std::vector<std::string> ids = RouteIdsInBlob(structural);
+    for (const auto& route : ids) {
+      if (!SafeGate(validate, route)) {
+        RestoreResult r;
+        r.committed = false;
+        r.error = RestoreError::VALIDATION_REJECTED;
+        return r;
+      }
+    }
+    // Step 3: per-route guard re-run (FR-NAV-003 hook).
+    for (const auto& route : ids) {
+      if (!SafeGate(guard, route)) {
+        RestoreResult r;
+        r.committed = false;
+        r.error = RestoreError::GUARD_DENIED;
+        return r;
+      }
+    }
+    // Step 4: commit as one transaction. The route table is rebuilt from the
+    // blob's own structural routes, so the scratch restore accepts exactly
+    // the validated set; any failure here means the blob cannot commit.
+    NavGraph scratch(ids);
+    if (!scratch.restore(structural).ok) return corrupt;
+    RestoreResult r;
+    r.committed = true;
+    r.error = RestoreError::NONE;
+    return r;
+  } catch (...) {
+    RestoreResult r;
+    r.committed = false;
+    r.error = RestoreError::CORRUPT;
     return r;
   }
 }

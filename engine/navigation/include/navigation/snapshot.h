@@ -28,6 +28,27 @@ using FocusProvider = std::function<std::string(const std::string& routeId)>;
 using TelemetrySink =
     std::function<void(const std::string& event, const std::string& detail)>;
 
+// Injectable sibling hooks for the restore commit gate (T5). ValidateFn is
+// the FR-NAV-006 destination validator (false = reject); GuardFn is the
+// FR-NAV-003 guard re-run (false = deny). std::function form so lambdas and
+// function pointers bind at call sites (same pattern as T2 providers). A
+// null/empty hook allows every route, preserving pre-gate behavior.
+using ValidateFn = std::function<bool(const std::string& routeId)>;
+using GuardFn = std::function<bool(const std::string& routeId)>;
+
+enum class RestoreError {
+  NONE,
+  VALIDATION_REJECTED,
+  GUARD_DENIED,
+  UNKNOWN_ROUTE_HOME,
+  CORRUPT,
+};
+
+struct RestoreResult {
+  bool committed = false;
+  RestoreError error = RestoreError::CORRUPT;
+};
+
 // Captures the full nested/tab/modal snapshot of `graph` into a versioned
 // blob. The blob is the `NavGraph::serialize()` canonical envelope
 // (`NAV1;v=1;...`); future content sections (T2 scroll/focus) are appended
@@ -59,3 +80,13 @@ SnapshotResult captureSnapshotWithContent(const NavGraph& graph,
 // malformed/empty or even the home root exceeds budget. Never throws.
 SnapshotResult truncateSnapshot(const std::string& blob, size_t maxBytes,
                                 TelemetrySink sink) noexcept;
+
+// Restore commit gate (AC-NAV-003/006/014, NFR-NAV-002). Decodes `blob` via
+// T4 `decodeState`, re-runs the sibling FR-NAV-006 validator per route, then
+// re-runs the FR-NAV-003 guards per route, and commits via `NavGraph::restore`
+// as one transaction. Validation/guard failure commits nothing
+// (VALIDATION_REJECTED/GUARD_DENIED); an unknown route commits home
+// (UNKNOWN_ROUTE_HOME), never a crash; corrupt/empty input commits nothing
+// (CORRUPT). Null/empty hooks allow every route. Never throws.
+RestoreResult commitRestore(const std::string& blob, ValidateFn validate,
+                            GuardFn guard) noexcept;
