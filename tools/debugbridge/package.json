@@ -1,0 +1,9 @@
+{
+  "name": "@muse/debugbridge",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "test": "node --test test/cdp.test.js",
+    "test:cdp": "node --test test/cdp.test.js"
+  }
+}
