@@ -7,6 +7,7 @@
 // injected NetInfo values; the security config is an in-process fake.
 // Binds ONLY to the T6 `Interface:` line; never to implementation.
 #include <cstdio>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -31,6 +32,17 @@ class FakeSecurityConfig : public muse::net::INetworkSecurityConfig {
 
  private:
   std::vector<std::string> allowed_;
+};
+
+// Throwing security config: every consultation throws. The monitor must fail
+// closed (http → false, never throws); non-http schemes must bypass without
+// consulting the config at all — AC-NET-026.
+class ThrowingSecurityConfig : public muse::net::INetworkSecurityConfig {
+ public:
+  bool cleartextPermitted(const std::string& domain) const override {
+    (void)domain;
+    throw std::runtime_error("config backend fault");
+  }
 };
 
 muse::net::NetInfo makeInfo(muse::net::NetState state, bool metered,
@@ -163,6 +175,30 @@ static bool check_cleartext_empty_allowlist_blocks_all() {
   return !monitor.isCleartextAllowed(makeOrigin("http", "any.test"), config);
 }
 
+// Named case: non-http scheme bypasses cleartext policy without consulting
+// the config (https allowed even when the config would throw) — AC-NET-026.
+static bool check_https_scheme_bypasses_config_without_consulting() {
+  muse::net::ConnectivityMonitor monitor;
+  ThrowingSecurityConfig config;
+  try {
+    return monitor.isCleartextAllowed(makeOrigin("https", "any.test"), config);
+  } catch (...) {
+    return false;
+  }
+}
+
+// Named case: a throwing security config fails closed (http → false, no
+// throw, no leak) — AC-NET-026.
+static bool check_throwing_config_fails_closed_denied() {
+  muse::net::ConnectivityMonitor monitor;
+  ThrowingSecurityConfig config;
+  try {
+    return !monitor.isCleartextAllowed(makeOrigin("http", "any.test"), config);
+  } catch (...) {
+    return false;
+  }
+}
+
 }  // namespace
 
 #define RUN_CASE(name)                           \
@@ -188,6 +224,8 @@ int main() {
   RUN_CASE(check_cleartext_denied_domain_blocked);
   RUN_CASE(check_cleartext_allowed_domain_passes);
   RUN_CASE(check_cleartext_empty_allowlist_blocks_all);
+  RUN_CASE(check_https_scheme_bypasses_config_without_consulting);
+  RUN_CASE(check_throwing_config_fails_closed_denied);
   if (failures > 0) {
     std::printf("connectivity_state_test: %d failing\n", failures);
     return 1;

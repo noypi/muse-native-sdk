@@ -12,6 +12,7 @@
 // seam is a T1 production file; these tests treat it as consumed.
 #include <cstdio>
 #include <memory>
+#include <stdexcept>
 #include <string>
 
 #include "net/transport.h"
@@ -113,6 +114,20 @@ muse::net::Request ipv6Req(const std::string& url) {
   r.url = url;
   return r;
 }
+
+// Throwing TLS policy: every gate consultation throws. Production must fail
+// closed (kPolicyDenied, never throws, inner untouched) — AC-NET-011.
+class ThrowingTlsPolicy : public muse::net::ITlsPolicy {
+ public:
+  bool isPinned(const muse::net::Origin& o) const override {
+    (void)o;
+    throw std::runtime_error("pin backend fault");
+  }
+  bool isCleartextAllowed(const muse::net::Origin& o) const override {
+    (void)o;
+    throw std::runtime_error("cleartext backend fault");
+  }
+};
 
 }  // namespace
 
@@ -251,6 +266,66 @@ static bool check_ipv6_literal_with_port_stripped() {
   return innerDelegations > 0;
 }
 
+// Throwing ITlsPolicy fails closed: every gate path returns kPolicyDenied,
+// never throws, inner untouched (both transports, both schemes) — AC-NET-011.
+static bool check_throwing_tls_policy_fails_closed_policy_denied() {
+  ThrowingTlsPolicy tls;
+  muse::net::ExecCtx ctx;
+  for (auto kind :
+       {muse::net::TransportKind::kDefault, muse::net::TransportKind::kCronet}) {
+    for (bool useHttp : {false, true}) {
+      innerDelegations = 0;
+      CountingSocketFactory factory;
+      muse::net::AppNetConfig cfg;
+      cfg.transport = kind;
+      auto t = muse::net::CreateTransport(cfg, tls, &factory);
+      muse::net::Response r;
+      try {
+        r = t->execute(useHttp ? httpReq() : httpsReq(), ctx);
+      } catch (...) {
+        return false;
+      }
+      if (!expectDeniedBeforeSocketUse(r, factory)) return false;
+    }
+  }
+  return true;
+}
+
+// Credentialed/non-default-port URL keys the policy on the host alone:
+// "https://user:pass@host:8443/" consults "host" (userinfo/port stripped),
+// while "https://host@evil/" consults "evil" (rightmost '@' wins) — AC-NET-011.
+static bool check_credentialed_url_keys_policy_on_host_alone() {
+  {
+    innerDelegations = 0;
+    CountingSocketFactory factory;
+    RecordingTlsPolicy tls;
+    muse::net::AppNetConfig cfg;
+    cfg.transport = muse::net::TransportKind::kDefault;
+    auto t = muse::net::CreateTransport(cfg, tls, &factory);
+    muse::net::ExecCtx ctx;
+    muse::net::Response r = t->execute(
+        ipv6Req("https://user:pass@api.test.invalid:8443/items"), ctx);
+    if (tls.lastPinnedHost != "api.test.invalid") return false;
+    if (!expectAllowedViaInner(r, factory)) return false;
+    if (innerDelegations == 0) return false;
+  }
+  {
+    innerDelegations = 0;
+    CountingSocketFactory factory;
+    RecordingTlsPolicy tls;
+    muse::net::AppNetConfig cfg;
+    cfg.transport = muse::net::TransportKind::kCronet;
+    auto t = muse::net::CreateTransport(cfg, tls, &factory);
+    muse::net::ExecCtx ctx;
+    muse::net::Response r = t->execute(
+        ipv6Req("https://api.test.invalid@evil.test/items"), ctx);
+    if (tls.lastPinnedHost != "evil.test") return false;
+    if (!expectAllowedViaInner(r, factory)) return false;
+    if (innerDelegations == 0) return false;
+  }
+  return true;
+}
+
 #define RUN_CASE(name)                           \
   do {                                           \
     if (!(name)()) {                             \
@@ -270,6 +345,8 @@ int main() {
   RUN_CASE(check_selection_yields_requested_kind);
   RUN_CASE(check_ipv6_bare_literal_kept_whole);
   RUN_CASE(check_ipv6_literal_with_port_stripped);
+  RUN_CASE(check_throwing_tls_policy_fails_closed_policy_denied);
+  RUN_CASE(check_credentialed_url_keys_policy_on_host_alone);
   RUN_CASE(check_malformed_url_fails_closed_never_throws);
   if (failures > 0) {
     std::printf("transport_policy_test: %d failing\n", failures);
