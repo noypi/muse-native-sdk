@@ -180,6 +180,28 @@ describe('TC-LIFECYCLE-005 activity bridge — saveSnapshot / relaunch round tri
   });
 });
 
+describe('TC-LIFECYCLE-005 activity bridge — oversize payload survives relaunch through the real bridge', () => {
+  it('600000-char text slot saved via bridge A restores byte-identical via fresh bridge B over the same store', () => {
+    // Regression for review BLOCKER: spilled scopes must survive process death
+    // through the production bridge (store envelope carries the spill map, so
+    // a fresh bridge over the same store can rehydrate). Pre-fix this returned
+    // {restored:false, payload:null} (SAVED_STATE_SPILL_MISSING internally).
+    const store = createMemoryStore();
+    const first = createActivityBridge(createHub().hub, store);
+    const bigText = 'x'.repeat(600000);
+    const payload = { screen: { tab: 'notes', text: bigText } };
+    first.saveSnapshot(payload);
+
+    // Process-kill simulation: fresh bridge instance, same store.
+    const second = createActivityBridge(createHub().hub, store);
+    const result = second.relaunch();
+    assert.equal(result.restored, true);
+    assert.deepEqual(result.payload, payload);
+    assert.equal(result.payload.screen.text, bigText);
+    assert.equal(result.payload.screen.text.length, 600000);
+  });
+});
+
 describe('TC-LIFECYCLE-005 activity bridge — relaunch without a usable snapshot', () => {
   it('empty store relaunches unrestored without throwing', () => {
     const bridge = createActivityBridge(createHub().hub, createMemoryStore());

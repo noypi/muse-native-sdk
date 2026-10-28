@@ -9,9 +9,13 @@ function isPlainRecord(value) {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+function cloneJson(value) {
+  return JSON.parse(JSON.stringify(value));
+}
+
 function wrapSnapshot(payload, version) {
   const envelopeVersion = typeof version === 'undefined' ? SNAPSHOT_VERSION : version;
-  return { version: envelopeVersion, payload };
+  return { version: envelopeVersion, payload: cloneJson(payload) };
 }
 
 function unwrapSnapshot(raw, migrations) {
@@ -28,7 +32,7 @@ function unwrapSnapshot(raw, migrations) {
       return { status: 'discarded', payload: null };
     }
     if (version === SNAPSHOT_VERSION) {
-      return { status: 'current', payload };
+      return { status: 'current', payload: cloneJson(payload) };
     }
     if (version > SNAPSHOT_VERSION) {
       return { status: 'discarded', payload: null };

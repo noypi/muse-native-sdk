@@ -76,13 +76,21 @@ function createMemoryStorage() {
     read(key) {
       return map.get(key);
     },
+    remove(key) {
+      map.delete(key);
+    },
   };
+}
+
+function isPlainRecord(value) {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function createActivityBridge(hub, store) {
   const seenKeys = new Set();
   let lastState = INITIAL_STATE;
-  const guard = createSizeGuard(createMemoryStorage());
+  const storage = createMemoryStorage();
+  const guard = createSizeGuard(storage);
 
   function onActivityEvent(event, idempotencyKey) {
     checkKey(idempotencyKey);
@@ -99,7 +107,18 @@ function createActivityBridge(hub, store) {
 
   function saveSnapshot(payload) {
     const packed = guard.pack(payload);
-    store.save(wrapSnapshot(packed));
+    // Spilled scope values live in the guard's per-instance storage, which is
+    // wiped by process death. Persist a copy inside the store envelope so a
+    // fresh bridge over the same store can rehydrate and restore byte-identical.
+    const spill = {};
+    const spilled = Array.isArray(packed.spilled) ? packed.spilled : [];
+    for (const scope of spilled) {
+      const raw = storage.read(scope);
+      if (typeof raw !== 'undefined') {
+        spill[scope] = raw;
+      }
+    }
+    store.save(wrapSnapshot({ ...packed, spill }));
   }
 
   function relaunch() {
@@ -127,8 +146,17 @@ function createActivityBridge(hub, store) {
       // already the usable payload.
       return { restored: true, payload: unwrapped.payload };
     }
+    // Rehydrate the guard's storage from the envelope so spilled scopes
+    // survive process death (fresh bridge instance, same store).
+    const packedPayload = unwrapped.payload;
+    if (isPlainRecord(packedPayload.spill)) {
+      for (const key of Object.keys(packedPayload.spill)) {
+        storage.write(key, packedPayload.spill[key]);
+      }
+    }
     try {
-      return { restored: true, payload: guard.unpack(unwrapped.payload) };
+      const { bundle, spilled } = packedPayload;
+      return { restored: true, payload: guard.unpack({ bundle, spilled }) };
     } catch (_err) {
       return unrestored;
     }

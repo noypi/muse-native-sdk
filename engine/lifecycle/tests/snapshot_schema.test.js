@@ -47,6 +47,29 @@ describe('TC-LIFECYCLE-010 snapshot schema — wrapSnapshot', () => {
     wrapSnapshot(payload);
     assert.deepEqual(payload, before);
   });
+
+  it('mutating the input after wrap does not affect the envelope (wrap copies)', () => {
+    // Regression for review MINOR: wrapSnapshot must deep-copy the payload;
+    // pre-fix `wrap(p); p.a = 999` leaked into `raw.payload.a`.
+    const payload = { a: 1, nested: { x: 1 } };
+    const raw = wrapSnapshot(payload);
+    payload.a = 999;
+    payload.nested.x = 999;
+    assert.deepEqual(raw, { version: 2, payload: { a: 1, nested: { x: 1 } } });
+  });
+
+  it('mutating the unwrapped current payload does not affect the held envelope (unwrap copies)', () => {
+    // Regression for review MINOR: the `current` path must return a copy;
+    // pre-fix mutating the object returned by unwrap/relaunch corrupted the
+    // held raw so a second unwrap saw the changed value.
+    const raw = wrapSnapshot({ a: 1, nested: { x: 1 } });
+    const first = unwrapSnapshot(raw);
+    assert.equal(first.status, 'current');
+    first.payload.a = 999;
+    first.payload.nested.x = 999;
+    assert.deepEqual(raw, { version: 2, payload: { a: 1, nested: { x: 1 } } });
+    assert.deepEqual(unwrapSnapshot(raw), { status: 'current', payload: { a: 1, nested: { x: 1 } } });
+  });
 });
 
 describe('TC-LIFECYCLE-010 snapshot schema — current version unwraps as current', () => {
