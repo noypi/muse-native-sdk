@@ -54,3 +54,17 @@ add_executable(cold_link_perf_test tests/cold_link_perf_test.cpp)
 target_link_libraries(cold_link_perf_test PRIVATE navigation)
 target_compile_options(cold_link_perf_test PRIVATE -Wall -Wextra -Wpedantic)
 add_test(NAME cold_link_perf_test COMMAND cold_link_perf_test)
+
+# FR-NAV-006 T2 (NAV-APPLINKS codegen invocation — documentation only, no new
+# engine target added here):
+#   Generate: python3 ../../toolchain/applinks/codegen.py
+#               --manifest <manifest.json> --out <out-dir>
+#             (emits intent-filters.xml + assetlinks.json from the single-source
+#             route manifest described by applinks_manifest.schema.json).
+#   Drift gate (TC-NAV-013, fails the build on hand-edited outputs):
+#             python3 ../../toolchain/applinks/codegen.py
+#               --manifest <manifest.json> --out <out-dir> --check
+#             exits 0 on match, 2 on drift with a unified diff on stdout.
+#   CI owner of the drift gate is `./gradlew :toolchain:appLinksCodegen`;
+#   the hermetic `codegen.py --check` invocation above exercises the same
+#   behavior without a Gradle daemon.

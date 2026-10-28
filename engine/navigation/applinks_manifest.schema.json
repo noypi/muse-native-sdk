@@ -1,0 +1,116 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.com/navigation/applinks_manifest.schema.json",
+  "title": "NAV-APPLINKS route manifest (FR-NAV-006 / AC-NAV-013)",
+  "description": "Single-source route manifest for Android App Links. Validated by loadManifest(path): RouteManifest | ManifestError{reason: UNKNOWN_HOST | BAD_PATTERN | MISSING_FINGERPRINT, detail}. Semantic checks enforced by the loader (T3): every routes[].host must appear in hosts[] (else UNKNOWN_HOST), every routes[].pathPattern must compile as an ECMAScript regex (else BAD_PATTERN), sha256CertFingerprints must be non-empty (else MISSING_FINGERPRINT with detail naming the offending field path, e.g. 'sha256CertFingerprints'). autoVerify defaults to true when omitted. Route-descriptor field names (host, routeId, query, QueryParam{name, type, required}) reuse include/navigation/trie.h.",
+  "type": "object",
+  "required": ["hosts", "schemes", "routes", "packageName", "sha256CertFingerprints"],
+  "additionalProperties": false,
+  "properties": {
+    "hosts": {
+      "description": "Allowlisted App Links hosts. Every routes[].host must equal one entry (else UNKNOWN_HOST).",
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "pattern": "^[^\\s/]+\\.[^\\s/]+$"
+      }
+    },
+    "schemes": {
+      "description": "Allowlisted URI schemes. Must include 'https'; custom schemes are allowlisted explicitly here.",
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "pattern": "^[a-zA-Z][a-zA-Z0-9+.-]*$"
+      }
+    },
+    "routes": {
+      "description": "One entry per deep-link route. Field names mirror trie.h RouteEntry/QueryParam.",
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["host", "pathPattern", "routeId", "query"],
+        "additionalProperties": false,
+        "properties": {
+          "host": {
+            "description": "Owning host; must appear in top-level hosts[] (else UNKNOWN_HOST, detail carries 'routes[<i>].host').",
+            "type": "string",
+            "minLength": 1
+          },
+          "pathPattern": {
+            "description": "ECMAScript regex matched against the URI path. Must compile (else BAD_PATTERN, detail carries 'routes[<i>].pathPattern'). Must start with '/'.",
+            "type": "string",
+            "minLength": 1,
+            "pattern": "^/.*"
+          },
+          "routeId": {
+            "description": "Route identifier (trie.h RouteEntry.routeId).",
+            "type": "string",
+            "minLength": 1
+          },
+          "query": {
+            "description": "Typed query-param schema for this route (trie.h RouteEntry.query).",
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["name", "type"],
+              "additionalProperties": false,
+              "properties": {
+                "name": {
+                  "description": "Query param name (trie.h QueryParam.name).",
+                  "type": "string",
+                  "minLength": 1
+                },
+                "type": {
+                  "description": "Param type (trie.h ParamType: int/double/bool/string).",
+                  "type": "string",
+                  "enum": ["int", "double", "bool", "string"]
+                },
+                "required": {
+                  "description": "Missing required param rejects ingress URI with BAD_PARAM (trie.h QueryParam.required).",
+                  "type": "boolean",
+                  "default": false
+                },
+                "enum": {
+                  "description": "Optional allowlist of accepted string values for this param.",
+                  "type": "array",
+                  "items": { "type": "string" }
+                },
+                "default": {
+                  "description": "Optional default value used when the param is absent and not required.",
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "packageName": {
+      "description": "Android application package name (e.g. com.example.app).",
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[a-zA-Z][a-zA-Z0-9_]*(\\.[a-zA-Z][a-zA-Z0-9_]*)+$"
+    },
+    "sha256CertFingerprints": {
+      "description": "SHA-256 signing-cert fingerprints for assetlinks.json. Must be non-empty (else MISSING_FINGERPRINT, detail carries 'sha256CertFingerprints').",
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "pattern": "^([0-9A-Fa-f]{2}:)+[0-9A-Fa-f]{2}$"
+      }
+    },
+    "autoVerify": {
+      "description": "Drives android:autoVerify on generated intent-filters. Defaults to true when omitted.",
+      "type": "boolean",
+      "default": true
+    }
+  },
+  "$comment": "Error shape: ManifestError{reason: UNKNOWN_HOST | BAD_PATTERN | MISSING_FINGERPRINT, detail: string} where detail carries the offending field path (e.g. 'routes[0].host', 'routes[0].pathPattern', 'sha256CertFingerprints'). loadManifest is pure parse+validate with no I/O beyond read and no network."
+}
