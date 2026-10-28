@@ -35,15 +35,22 @@ SharedRing::~SharedRing() = default;
 std::string_view SharedRing::place(const Envelope& e,
                                    std::string_view payload) {
   // Evict oldest records until the new payload fits (ring wrap-around).
-  // Always retain at least the incoming record itself.
-  while (!payloads_.empty() && used_ + payload.size() > capacity_) {
-    used_ -= payloads_.front().size();
-    payloads_.pop_front();
-    envelopes_.pop_front();
-    ++base_;
+  // Always retain at least the incoming record itself. Allocation failure
+  // yields the documented empty-view signal instead of escaping.
+  try {
+    while (!payloads_.empty() && used_ + payload.size() > capacity_) {
+      used_ -= payloads_.front().size();
+      payloads_.pop_front();
+      envelopes_.pop_front();
+      ++base_;
+    }
+    envelopes_.push_back(e);
+    payloads_.emplace_back(payload.data(), payload.size());
+  } catch (...) {
+    // Roll back a half-pushed envelope so the two deques stay paired.
+    while (envelopes_.size() > payloads_.size()) envelopes_.pop_back();
+    return std::string_view{};
   }
-  envelopes_.push_back(e);
-  payloads_.emplace_back(payload.data(), payload.size());
   used_ += payloads_.back().size();
   const std::string& stored = payloads_.back();
   return std::string_view(stored.data(), stored.size());

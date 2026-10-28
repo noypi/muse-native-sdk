@@ -101,6 +101,7 @@ class GraphQLClient {
   Result executeSingle(const std::string& query, const std::string& vars);
   std::vector<Result> flushBatch();
   static std::string queryError(const std::string& query);
+  static std::string varsError(const std::string& vars);
 
   std::shared_ptr<ITransport> transport_;
   bool apq_ = false;

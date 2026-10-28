@@ -61,6 +61,8 @@ class SharedRing {
   SharedRing& operator=(const SharedRing&) = delete;
 
   std::string_view place(const Envelope& e, std::string_view payload);
+  // place() never throws: allocation failure returns an empty view and
+  // leaves the ring paired (no half-pushed record).
   std::string_view consume(uint64_t token) noexcept;
   std::string_view consume(uint64_t token) const noexcept;
 

@@ -320,6 +320,160 @@ bool check_oversized_input_is_structured_error_never_throws() {
   return !r.error.empty();
 }
 
+bool check_oversized_vars_is_structured_error_never_throws() {
+  // The 1 MiB cap applies to `vars` as well as `query`: a 1 MiB vars
+  // string is rejected as a structured error before any transport call,
+  // never thrown.
+  auto f = std::make_shared<FakeLink>(
+      std::vector<Response>{make_ok("")});
+  GraphQLClient c(f);
+  GraphQLClient::Result r{"", ""};
+  try {
+    r = c.query("{ user }", std::string(1 << 20, 'v'));  // 1 MiB vars
+  } catch (...) {
+    return false;
+  }
+  if (r.error.empty()) return false;
+  return f->calls() == 0;
+}
+
+bool check_subscribe_with_oversized_vars_reports_terminal_error() {
+  // subscribe() with vars over the 1 MiB cap never throws: it returns a
+  // terminal-error subscription whose next() reports the error and ends
+  // the stream, with no transport call issued.
+  auto f = std::make_shared<FakeLink>(
+      std::vector<Response>{make_ok("")});
+  GraphQLClient c(f);
+  std::unique_ptr<GraphQLClient::Subscription> s;
+  try {
+    s = c.subscribe("subscription { ticks }",
+                    std::string(1 << 20, 'v'));  // 1 MiB vars
+  } catch (...) {
+    return false;
+  }
+  if (!s) return false;
+  GraphQLClient::Result r{"", ""};
+  bool more = true;
+  try {
+    more = s->next(&r);
+  } catch (...) {
+    return false;
+  }
+  return !more && !r.error.empty() && f->calls() == 0;
+}
+
+bool check_resume_with_hostile_overlong_id_in_replay_never_throws() {
+  // Stored resume "5"; the replay carries a 30-digit hostile id that
+  // would overflow `long long` in a naive digit loop. The guard rejects
+  // the overlong id (fail closed, no UB), the scan stops at it as
+  // non-covered, and the full replay delivers — no throw, no trap.
+  const std::string hostile(30, '9');
+  auto f = std::make_shared<FakeLink>(std::vector<Response>{make_ok(
+      sse_stream({{"next", "u1", hostile}, {"next", "u2", "7"}}))});
+  GraphQLClient c(f);
+  try {
+    c.setLastEventId("5");
+  } catch (...) {
+    return false;
+  }
+  std::unique_ptr<GraphQLClient::Subscription> s;
+  try {
+    s = c.subscribe("subscription { ticks }", "{}");
+  } catch (...) {
+    return false;
+  }
+  if (!s) return false;
+  std::vector<std::string> got;
+  for (int i = 0; i < 2; ++i) {
+    GraphQLClient::Result r{"", ""};
+    try {
+      if (!s->next(&r)) return false;
+    } catch (...) {
+      return false;
+    }
+    if (!r.error.empty()) return false;
+    got.push_back(r.data);
+  }
+  GraphQLClient::Result tail{"", ""};
+  if (s->next(&tail)) return false;
+  return got == std::vector<std::string>{"u1", "u2"};
+}
+
+bool check_resume_with_hostile_overlong_stored_id_never_throws() {
+  // The stored id itself is hostile (30 digits): it is treated as
+  // non-numeric (fail closed), so the scan falls back to string
+  // equality only — no arithmetic, no UB, no throw — and the unmatched
+  // replay delivers in full.
+  const std::string hostile(30, '9');
+  auto f = std::make_shared<FakeLink>(std::vector<Response>{make_ok(
+      sse_stream({{"next", "u1", "1"}, {"next", "u2", "2"}}))});
+  GraphQLClient c(f);
+  try {
+    c.setLastEventId(hostile);
+  } catch (...) {
+    return false;
+  }
+  std::unique_ptr<GraphQLClient::Subscription> s;
+  try {
+    s = c.subscribe("subscription { ticks }", "{}");
+  } catch (...) {
+    return false;
+  }
+  if (!s) return false;
+  std::vector<std::string> got;
+  for (int i = 0; i < 2; ++i) {
+    GraphQLClient::Result r{"", ""};
+    try {
+      if (!s->next(&r)) return false;
+    } catch (...) {
+      return false;
+    }
+    if (!r.error.empty()) return false;
+    got.push_back(r.data);
+  }
+  GraphQLClient::Result tail{"", ""};
+  if (s->next(&tail)) return false;
+  return got == std::vector<std::string>{"u1", "u2"};
+}
+
+bool check_resume_stops_at_first_non_covered_id_no_silent_loss() {
+  // Stored "5"; replay ids [3,9,2]: id 3 is numerically covered, so the
+  // leading prefix (just id 3) is dropped; id 9 is neither equal nor
+  // covered, so the scan stops there — events 9 and 2 both deliver and
+  // event 9 is never silently lost beyond the covered prefix.
+  auto f = std::make_shared<FakeLink>(std::vector<Response>{make_ok(
+      sse_stream({{"next", "u3", "3"},
+                  {"next", "u9", "9"},
+                  {"next", "u2", "2"}}))});
+  GraphQLClient c(f);
+  try {
+    c.setLastEventId("5");
+  } catch (...) {
+    return false;
+  }
+  std::unique_ptr<GraphQLClient::Subscription> s;
+  try {
+    s = c.subscribe("subscription { ticks }", "{}");
+  } catch (...) {
+    return false;
+  }
+  if (!s) return false;
+  std::vector<std::string> got;
+  for (int i = 0; i < 2; ++i) {
+    GraphQLClient::Result r{"", ""};
+    try {
+      if (!s->next(&r)) return false;
+    } catch (...) {
+      return false;
+    }
+    if (!r.error.empty()) return false;
+    got.push_back(r.data);
+  }
+  GraphQLClient::Result tail{"", ""};
+  if (s->next(&tail)) return false;
+  return got == std::vector<std::string>{"u9", "u2"};
+}
+
 // ---- APQ cases ----------------------------------------------------------------
 
 bool check_apq_sends_hash_first_then_full_on_not_found() {
@@ -636,6 +790,11 @@ int main() {
   RUN_CASE(check_transport_failure_surfaces_as_error_never_throws);
   RUN_CASE(check_empty_query_is_structured_error_never_throws);
   RUN_CASE(check_oversized_input_is_structured_error_never_throws);
+  RUN_CASE(check_oversized_vars_is_structured_error_never_throws);
+  RUN_CASE(check_subscribe_with_oversized_vars_reports_terminal_error);
+  RUN_CASE(check_resume_with_hostile_overlong_id_in_replay_never_throws);
+  RUN_CASE(check_resume_with_hostile_overlong_stored_id_never_throws);
+  RUN_CASE(check_resume_stops_at_first_non_covered_id_no_silent_loss);
   RUN_CASE(check_apq_sends_hash_first_then_full_on_not_found);
   RUN_CASE(check_apq_hash_hit_needs_no_second_call);
   RUN_CASE(check_batching_coalesces_two_queries_into_one_call);

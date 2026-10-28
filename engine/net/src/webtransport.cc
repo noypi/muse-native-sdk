@@ -109,6 +109,12 @@ void WebTransport::sendDatagram(std::string d) {
       return;
     }
     delivered_seqs_.insert(my_seq);
+    // Bound the ledger: evict the oldest sequence once past the retention
+    // window. Sequences are minted monotonically, so the oldest retained
+    // is (my_seq + 1 - size); evicting it keeps size <= kMaxRetainedSeqs.
+    if (delivered_seqs_.size() > kMaxRetainedSeqs) {
+      delivered_seqs_.erase(my_seq + 1 - delivered_seqs_.size());
+    }
     try {
       if (listener_.onDatagram) listener_.onDatagram(d);
     } catch (...) {

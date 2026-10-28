@@ -22,6 +22,7 @@
 // with a non-empty reason and never escapes as an exception. Migration
 // emits kMigrating then kConnected, in order.
 
+#include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -66,7 +67,11 @@ class WebTransport {
   // by SEND ORDER, never by payload content nor byte offset: identical
   // payloads (including consecutive empty datagrams) each own a distinct
   // sequence number and each deliver; the same sequence number twice
-  // delivers once.
+  // delivers once. Bounded retention window: only the most recent
+  // kMaxRetainedSeqs sequences are kept; older entries are evicted as new
+  // sends arrive (duplicates only arrive via flap retransmit of recent
+  // sends, so evicting the distant past cannot re-deliver).
+  static constexpr std::size_t kMaxRetainedSeqs = 4096;
   std::unordered_set<std::uint64_t> delivered_seqs_;
   std::uint64_t next_seq_ = 0;
 };

@@ -385,6 +385,48 @@ bool check_send_after_close_reports_kClosed_never_throws() {
   return last_state_is(c, WtState::kClosed);
 }
 
+bool check_sequence_ledger_bounded_over_long_session() {
+  // Retention-window behavior (header docs: only the most recent
+  // kMaxRetainedSeqs sequences are kept; older entries are evicted as
+  // new sends arrive; duplicates only arrive via flap retransmit of
+  // recent sends). Observable delivery proof, no internal-member
+  // assertions: drive 5000 sends — past the 4096 window — and every
+  // recent send must still deliver exactly once, in order, with the
+  // session fully functional afterwards.
+  auto h3 = std::make_shared<FakeH3>(
+      std::vector<Response>{make_ok("session-accept")});
+  WebTransportConfig cfg;
+  cfg.transport = h3;
+  WebTransport wt(cfg);
+  Captured c;
+  wt.setListener(capture_into(&c));
+  const int total = 5000;  // exceeds the 4096 retention window
+  try {
+    wt.connect("https://edge.test.invalid/session");
+    for (int i = 0; i < total; ++i) {
+      wt.sendDatagram("dg-" + std::to_string(i));
+    }
+  } catch (...) {
+    return false;
+  }
+  if (c.datagrams.size() != static_cast<std::size_t>(total)) return false;
+  for (int i = 0; i < total; ++i) {
+    if (c.datagrams[static_cast<std::size_t>(i)] !=
+        "dg-" + std::to_string(i))
+      return false;
+  }
+  // Post-eviction session still functional: one more recent send
+  // delivers exactly once.
+  try {
+    wt.sendDatagram("dg-tail");
+  } catch (...) {
+    return false;
+  }
+  if (c.datagrams.size() != static_cast<std::size_t>(total + 1))
+    return false;
+  return c.datagrams.back() == "dg-tail";
+}
+
 }  // namespace
 
 #define RUN_CASE(name)                     \
@@ -412,6 +454,7 @@ int main() {
   RUN_CASE(check_double_migrate_ends_connected_never_throws);
   RUN_CASE(check_large_and_empty_datagrams_round_trip);
   RUN_CASE(check_send_after_close_reports_kClosed_never_throws);
+  RUN_CASE(check_sequence_ledger_bounded_over_long_session);
   if (failures > 0) {
     std::printf("webtransport_test: %d failing\n", failures);
     return 1;

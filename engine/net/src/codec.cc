@@ -523,6 +523,7 @@ bool CanonicalizeJson(std::string_view in, std::string* out,
 }
 
 std::string Frame(CodecId id, const std::string& canonical) {
+  if (id == CodecId::kJson) return canonical;  // kJson has no magic prefix.
   const char* magic = MagicFor(id);
   std::string wire;
   wire.append(magic, 4);
@@ -532,6 +533,7 @@ std::string Frame(CodecId id, const std::string& canonical) {
 
 bool Unframe(CodecId id, std::string_view bytes, std::string_view* body,
              std::string* error) {
+  if (id == CodecId::kJson) { if (body) *body = bytes; return true; }
   const char* magic = MagicFor(id);
   if (bytes.size() < 4 || bytes.substr(0, 4) != std::string_view(magic, 4)) {
     if (error) *error = "bad-magic";

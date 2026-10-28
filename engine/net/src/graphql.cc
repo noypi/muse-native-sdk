@@ -3,6 +3,7 @@
 #include <array>
 #include <cstdint>
 #include <cstdio>
+#include <limits>
 #include <utility>
 
 #include "net/sse.h"
@@ -252,10 +253,15 @@ uint64_t Fnv1a64(const std::string& s) {
 
 bool ParseWholeNumber(const std::string& s, long long* out) {
   if (s.empty()) return false;
+  // Fail closed on overlong digit strings: 18 digits always fit in
+  // long long, so anything longer is rejected before arithmetic (UB-safe).
+  if (s.size() > 18) return false;
   long long v = 0;
   for (char c : s) {
     if (c < '0' || c > '9') return false;
-    v = v * 10 + (c - '0');
+    const int digit = c - '0';
+    if (v > (std::numeric_limits<long long>::max() - digit) / 10) return false;
+    v = v * 10 + digit;
   }
   *out = v;
   return true;
@@ -308,12 +314,22 @@ std::string GraphQLClient::queryError(const std::string& query) {
   return "";
 }
 
+std::string GraphQLClient::varsError(const std::string& vars) {
+  if (vars.size() >= kMaxQueryBytes) return "graphql: vars too large";
+  return "";
+}
+
 GraphQLClient::Result GraphQLClient::executeSingle(const std::string& query,
                                     const std::string& vars) {
   Result r;
   const std::string invalid = queryError(query);
   if (!invalid.empty()) {
     r.error = invalid;
+    return r;
+  }
+  const std::string invalid_vars = varsError(vars);
+  if (!invalid_vars.empty()) {
+    r.error = invalid_vars;
     return r;
   }
   if (transport_ == nullptr) {
@@ -489,7 +505,7 @@ std::unique_ptr<GraphQLClient::Subscription> GraphQLClient::subscribe(
     std::string q, std::string vars) {
   try {
     if (transport_ == nullptr || q.empty() ||
-        q.size() >= kMaxQueryBytes) {
+        q.size() >= kMaxQueryBytes || vars.size() >= kMaxQueryBytes) {
       return std::unique_ptr<Subscription>(new Subscription(
           {},
           {},
@@ -533,15 +549,19 @@ std::unique_ptr<GraphQLClient::Subscription> GraphQLClient::subscribe(
           found = true;
           break;
         }
-        if (resume_numeric && !id.empty()) {
-          long long seen = 0;
-          if (ParseWholeNumber(id, &seen) && seen <= resume) {
-            drop_until = i + 1;
-            found = true;
-          }
+        if (id.empty()) continue;
+        if (!resume_numeric) continue;  // non-numeric resume: scan on for equality.
+        long long seen = 0;
+        if (ParseWholeNumber(id, &seen) && seen <= resume) {
+          drop_until = i + 1;
+          found = true;
+          continue;
         }
+        break;  // first non-covered id ends the leading prefix.
       }
-      // Numeric-prefix drop must not swallow events that follow the
+      // The scan above stops at the first id that is neither equal
+      // nor numerically covered, so events after the covered prefix
+      // always deliver (no silent loss beyond the leading prefix).
       // covered prefix: keep scanning — the loop above already extends
       // drop_until only across the leading covered prefix since a
       // non-covered id (seen > resume or non-numeric, non-equal) simply
