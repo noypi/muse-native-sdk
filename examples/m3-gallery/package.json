@@ -4,5 +4,8 @@
   "private": true,
   "scripts": {
     "test:stories": "node --test test/story-coverage.test.ts"
+  },
+  "dependencies": {
+    "@muse/native": "0.0.0"
   }
 }

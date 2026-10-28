@@ -1,0 +1,9 @@
+{
+  "name": "@muse/game-engine-sample",
+  "version": "1.0.0",
+  "main": "src/index.js",
+  "types": "src/index.d.ts",
+  "scripts": {
+    "test": "node --test test/*.test.js 2>/dev/null || test ! -d test"
+  }
+}

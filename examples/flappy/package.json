@@ -1,0 +1,9 @@
+{
+  "name": "@muse/flappy",
+  "version": "0.0.0",
+  "private": true,
+  "dependencies": {
+    "@muse/game-engine-sample": "1.0.0",
+    "@muse/native": "0.0.0"
+  }
+}

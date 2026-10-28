@@ -1,8 +1,6 @@
-import { View, Text } from '@muse/native';
+import { View, Text, manifest } from '@muse/native';
 import { ButtonScreen } from "./screens/ButtonScreen";
 import { buildStories } from "./stories";
-
-const manifest = require('../../../packages/native/muse.manifest.json');
 
 export default function App() {
   const stories = buildStories(manifest);

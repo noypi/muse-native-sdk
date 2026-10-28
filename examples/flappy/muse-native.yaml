@@ -1,0 +1,6 @@
+# Per-project config for the flappy sample (Q-SAMPLE-001 option C).
+# This file names the flappy build target; the build resolves it as
+# <target>/muse-native.yaml with no workspace-root fallback.
+# Gameplay lands in T6; this scaffold keeps the target buildable.
+name: flappy
+version: 0.0.0
