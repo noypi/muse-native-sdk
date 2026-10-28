@@ -1,0 +1,6 @@
+# mapping.txt placeholder fixture — AC-BUILD-014 (T10)
+# Non-empty placeholder proving the dist/mapping.txt artifact path exists.
+# Real release builds replace this with the R8 mapping output.
+placeholder-mapping v1
+com.muse.Foo -> a:
+    void bar() -> b
