@@ -183,10 +183,10 @@ describe('TC-TSX-022/023 Batch 3 — T7 build emits IR + binary tree', () => {
     assert.ok(readme.includes('tree.mui.bin'), 'README must name tree.mui.bin');
   });
 
-  it('build of a missing dir exits 1 with an error on stderr', () => {
+  it('build of a missing dir exits 2 with an error on stderr', () => {
     const missing = path.join(mkTmp('muse-build-'), 'no-such-app');
     const r = runCli(['build', missing]);
-    assert.equal(r.status, 1, `build of a missing dir must exit 1, got ${r.status}`);
+    assert.equal(r.status, 2, `build of a missing dir must exit 2, got ${r.status}`);
     assert.ok(r.stderr.length > 0, 'must print an error to stderr');
   });
 
@@ -551,7 +551,7 @@ describe('Security pin — hostile appDir stays contained', () => {
     const parent = mkTmp('muse-trav-');
     const hostile = path.join(parent, 'app', '..', 'no-such-app');
     const rb = runCli(['build', hostile]);
-    assert.equal(rb.status, 1, `build of hostile missing dir must exit 1, got ${rb.status}`);
+    assert.equal(rb.status, 2, `build of hostile missing dir must exit 2, got ${rb.status}`);
     assert.ok(rb.stderr.length > 0, 'build must print an error to stderr');
     const rd = runCli(['dev', hostile]);
     assert.equal(rd.status, 1, `dev of hostile missing dir must exit 1, got ${rd.status}`);
