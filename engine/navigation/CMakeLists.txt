@@ -7,6 +7,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 add_library(navigation
   src/graph.cpp
+  src/snapshot.cpp
   src/state_schema.cpp
   src/trie.cpp
   src/predictive_back.cpp
@@ -48,6 +49,16 @@ add_executable(state_schema_test tests/state_schema_test.cpp)
 target_link_libraries(state_schema_test PRIVATE navigation)
 target_compile_options(state_schema_test PRIVATE -Wall -Wextra -Wpedantic)
 add_test(NAME state_schema_test COMMAND state_schema_test)
+
+add_executable(snapshot_capture_test tests/snapshot_capture_test.cpp)
+target_link_libraries(snapshot_capture_test PRIVATE navigation)
+target_compile_options(snapshot_capture_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME snapshot_capture_test COMMAND snapshot_capture_test)
+
+add_executable(snapshot_scroll_focus_test tests/snapshot_scroll_focus_test.cpp)
+target_link_libraries(snapshot_scroll_focus_test PRIVATE navigation)
+target_compile_options(snapshot_scroll_focus_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME snapshot_scroll_focus_test COMMAND snapshot_scroll_focus_test)
 
 add_executable(router_bridge_test tests/router_bridge_test.cpp)
 target_link_libraries(router_bridge_test PRIVATE navigation)
