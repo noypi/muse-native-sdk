@@ -34,3 +34,9 @@ target_link_libraries(task_cancellation_test PRIVATE core_thread)
 target_compile_options(task_cancellation_test PRIVATE -Wall -Wextra -Wpedantic)
 
 add_test(NAME task_cancellation_test COMMAND task_cancellation_test)
+
+add_executable(thread_stress_test tests/thread_stress_test.cpp)
+target_link_libraries(thread_stress_test PRIVATE core_thread)
+target_compile_options(thread_stress_test PRIVATE -Wall -Wextra -Wpedantic)
+
+add_test(NAME thread_stress_test COMMAND thread_stress_test --calls=100000)
