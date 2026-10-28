@@ -127,6 +127,36 @@ describe('validateMuseSection', () => {
     assert.equal(err.file, 'muse-native.yaml');
     assert.match(err.expected, /muse-spark-1\.3/);
   });
+
+  it('throws ConfigError (never ok) on a null allowList — fail-closed build validation', () => {
+    const { validateMuseSection } = loadImpl();
+    let result;
+    let err;
+    try {
+      result = validateMuseSection(validYaml(), null);
+    } catch (e) {
+      err = e;
+    }
+    assert.ok(err, 'null allowList must throw, never return ok');
+    assert.equal(err.name, 'ConfigError');
+    assert.equal(err.file, 'muse-native.yaml');
+    assert.ok(result === undefined, 'must never return { ok: true } on a null allowList');
+  });
+
+  it('throws ConfigError (never ok) on an undefined allowList — fail-closed build validation', () => {
+    const { validateMuseSection } = loadImpl();
+    let result;
+    let err;
+    try {
+      result = validateMuseSection(validYaml(), undefined);
+    } catch (e) {
+      err = e;
+    }
+    assert.ok(err, 'undefined allowList must throw, never return ok');
+    assert.equal(err.name, 'ConfigError');
+    assert.equal(err.file, 'muse-native.yaml');
+    assert.ok(result === undefined, 'must never return { ok: true } on an undefined allowList');
+  });
 });
 
 describe('muse template and content carry the muse: section', () => {

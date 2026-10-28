@@ -256,6 +256,92 @@ describe('dispatch key custody and upstream errors', () => {
   });
 });
 
+describe('dispatch security-review coverage (Stage 4)', () => {
+  it('auth error carries no key material even when injectKey throws a distinctive sentinel', async () => {
+    const { dispatch } = loadImpl();
+    const upstream = okUpstream({});
+    const sentinel = 'SENTINEL-NO-KEY-MATERIAL-not-real-7f3a';
+    const err = await assertProxyError(
+      dispatch(
+        { route: 'segment', params: { mask_encoding: 'polygon' } },
+        { injectKey: () => { throw new Error(sentinel); }, upstream },
+      ),
+      'auth',
+      'segment',
+    );
+    assert.equal(err.retryable, false);
+    assert.equal(upstream.calls.length, 0);
+    const serialized = JSON.stringify({ name: err.name, code: err.code, route: err.route, message: err.message, retryable: err.retryable });
+    assert.ok(!serialized.includes(sentinel), 'auth error must not echo the injectKey failure text');
+    assert.ok(!serialized.includes('test-key-not-real'), 'auth error must not carry key material');
+    assert.ok(!/sk-[A-Za-z0-9]/.test(serialized), 'auth error must not carry a key-shaped substring');
+  });
+
+  it('rejects a __proto__ param key pre-upstream with zero upstream calls and no prototype pollution', async () => {
+    const { dispatch } = loadImpl();
+    const upstream = okUpstream({});
+    const params = JSON.parse('{"__proto__":{"polluted":"yes"},"mask_encoding":"polygon"}');
+    const err = await assertProxyError(
+      dispatch({ route: 'segment', params }, ctxWith(upstream)),
+      'unlisted-param',
+      'segment',
+    );
+    assert.equal(err.retryable, false);
+    assert.equal(upstream.calls.length, 0);
+    assert.equal({}.polluted, undefined, 'Object.prototype must not be polluted');
+  });
+
+  it('rejects a constructor param key pre-upstream with zero upstream calls', async () => {
+    const { dispatch } = loadImpl();
+    const upstream = okUpstream({});
+    const params = JSON.parse('{"constructor":"evil","mask_encoding":"polygon"}');
+    const err = await assertProxyError(
+      dispatch({ route: 'segment', params }, ctxWith(upstream)),
+      'unlisted-param',
+      'segment',
+    );
+    assert.equal(err.retryable, false);
+    assert.equal(upstream.calls.length, 0);
+  });
+
+  it('rejects a __proto__ route pre-upstream with zero upstream calls', async () => {
+    const { dispatch } = loadImpl();
+    const upstream = okUpstream({});
+    const err = await assertProxyError(
+      dispatch({ route: '__proto__', params: {} }, ctxWith(upstream)),
+      'unknown-route',
+      '__proto__',
+    );
+    assert.equal(err.retryable, false);
+    assert.equal(upstream.calls.length, 0);
+  });
+
+  it('never echoes targetId in the response while forwarding it upstream (commit-time binding only)', async () => {
+    const { dispatch } = loadImpl();
+    const upstream = okUpstream({ ok: true });
+    const res = await dispatch(
+      { route: 'reason', params: { reasoning_effort: 'high' }, turnId: 't-1', targetId: 'target-abc-123' },
+      ctxWith(upstream),
+    );
+    assert.equal(res.status, 200);
+    assert.ok(!('targetId' in res), 'response must never carry targetId');
+    assert.equal(res.turnId, 't-1', 'turnId passthrough is unaffected');
+    assert.equal(upstream.calls.length, 1);
+    assert.equal(upstream.calls[0].body.targetId, 'target-abc-123', 'targetId is forwarded upstream opaquely');
+  });
+
+  it('never echoes targetId when the request carries no turnId', async () => {
+    const { dispatch } = loadImpl();
+    const upstream = okUpstream({ ok: true });
+    const res = await dispatch(
+      { route: 'segment', params: { mask_encoding: 'polygon' }, targetId: 'target-xyz-789' },
+      ctxWith(upstream),
+    );
+    assert.ok(!('targetId' in res), 'response must never carry targetId');
+    assert.equal(upstream.calls[0].body.targetId, 'target-xyz-789');
+  });
+});
+
 describe('dispatch streaming passthrough', () => {
   it('passes reason SSE chunks through opaquely in order (ASSUMPTION: chunks array passthrough)', async () => {
     const { dispatch } = loadImpl();
