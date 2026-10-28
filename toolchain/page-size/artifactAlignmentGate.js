@@ -13,7 +13,10 @@ function parseEntry(entry) {
 }
 
 function checkArtifactAlignment(artifact) {
-  const input = artifact && typeof artifact === 'object' ? artifact : {};
+  if (!artifact || typeof artifact !== 'object') {
+    return { ok: false, violations: ['missing artifact descriptor: cannot verify final-artifact alignment'] };
+  }
+  const input = artifact;
   const violations = [];
   const baseApk = Array.isArray(input.baseApk) ? input.baseApk : [];
   for (const entry of baseApk) {

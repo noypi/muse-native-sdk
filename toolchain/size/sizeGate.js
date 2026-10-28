@@ -12,6 +12,14 @@ function checkSizes(artifacts, budgets) {
   const byName = new Map(limits.map((b) => [b.name, b.bytes]));
   const overruns = [];
   for (const artifact of list) {
+    const name = artifact && typeof artifact === 'object' && artifact.name !== undefined ? artifact.name : String(artifact);
+    const bytes = artifact && typeof artifact === 'object' ? artifact.bytes : undefined;
+    if (typeof bytes !== 'number' || !Number.isFinite(bytes) || bytes < 0) {
+      overruns.push(
+        `${name}: invalid size (${String(bytes)} bytes); treated as overrun`
+      );
+      continue;
+    }
     if (!byName.has(artifact.name)) {
       overruns.push(
         `${artifact.name}: no budget (unbudgeted, ${artifact.bytes} bytes)`
@@ -19,6 +27,12 @@ function checkSizes(artifacts, budgets) {
       continue;
     }
     const budget = byName.get(artifact.name);
+    if (typeof budget !== 'number' || !Number.isFinite(budget) || budget < 0) {
+      overruns.push(
+        `${name}: invalid budget (${String(budget)} bytes); treated as overrun`
+      );
+      continue;
+    }
     if (artifact.bytes > budget) {
       const delta = artifact.bytes - budget;
       overruns.push(

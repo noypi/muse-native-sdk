@@ -94,3 +94,17 @@ describe('checkArtifactAlignment', () => {
     );
   });
 });
+
+describe('checkArtifactAlignment — missing descriptor fails closed (Stage 4 security pin, T3 MEDIUM fix)', () => {
+  it('undefined and non-object descriptors fail closed naming the missing descriptor', () => {
+    const { checkArtifactAlignment } = loadImpl();
+    for (const bad of [undefined, 'x']) {
+      const result = checkArtifactAlignment(bad);
+      assert.equal(result.ok, false, `expected ok:false for ${String(bad)}`);
+      assert.ok(
+        result.violations.some((v) => v.includes('missing artifact descriptor')),
+        `violations must name the missing descriptor, got: ${JSON.stringify(result.violations)}`
+      );
+    }
+  });
+});

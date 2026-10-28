@@ -136,3 +136,31 @@ describe('T12 — unresolved flavor values fail (AC-BUILD-069)', () => {
     assert.ok(result.violations.length > 0, 'must report at least one violation');
   });
 });
+
+describe('T12 — secret-value redaction (Stage 4 security pin, T12 LOW fix)', () => {
+  it('non-key-shaped committed values are redacted while key-shaped names still name the key', () => {
+    // Obviously-fake value only — never a real secret (GR-05 R5.3).
+    const { verifyEnvInjection } = loadImpl();
+    const redacted = verifyEnvInjection({
+      name: 'production',
+      values: PROD_VALUES,
+      committedSecrets: ['sk-live-REAL-not-a-secret'],
+    });
+    assert.equal(redacted.ok, false);
+    assert.ok(redacted.violations.length > 0, 'must report at least one violation');
+    assert.ok(
+      redacted.violations.every((v) => !v.includes('sk-live-REAL-not-a-secret')),
+      `violations must NOT contain the secret value, got: ${JSON.stringify(redacted.violations)}`
+    );
+    const named = verifyEnvInjection({
+      name: 'production',
+      values: PROD_VALUES,
+      committedSecrets: ['PROD_API_KEY'],
+    });
+    assert.equal(named.ok, false);
+    assert.ok(
+      named.violations.some((v) => v.includes('PROD_API_KEY')),
+      `a violation must still name the key-shaped entry, got: ${JSON.stringify(named.violations)}`
+    );
+  });
+});

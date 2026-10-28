@@ -22,7 +22,11 @@ function verifyEnvInjection(flavor) {
     const committed = flavor.committedSecrets;
     if (Array.isArray(committed)) {
       for (const secret of committed) {
-        violations.push(`committed production secret: '${String(secret)}'`);
+        if (typeof secret === 'string' && /^[A-Z][A-Z0-9_]*$/.test(secret)) {
+          violations.push(`committed production secret: '${secret}'`);
+        } else {
+          violations.push('committed production secret present (redacted, non-key-shaped entry)');
+        }
       }
     } else if (committed !== undefined) {
       violations.push(`invalid committedSecrets: '${String(committed)}'`);
