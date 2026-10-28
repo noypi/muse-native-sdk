@@ -37,6 +37,7 @@ WORKFLOW = os.path.join(REPO_ROOT, ".github", "workflows", "device-lab.yml")
 AVD_NAME = "device-lab-api29"
 CTEST_SELECTOR = "ctest --test-dir engine/runtime/build"
 CMAKE_CONFIGURE = "cmake -S engine/runtime -B engine/runtime/build"
+CMAKE_BUILD = "cmake --build engine/runtime/build"
 SUITE_ORDER = ("ime-smoke", "ime-inset", "touch-smoke", "config-change")
 SUITE_RUN_RE = re.compile(r"device-lab/run\.sh\s+([^\s&|;'\"]+)")
 
@@ -127,6 +128,12 @@ def is_ctest_step(step):
     """The hermetic gate step runs the pinned ctest selector."""
     run = step.get("run", "")
     return isinstance(run, str) and CTEST_SELECTOR in run
+
+
+def is_build_step(step):
+    """A build step compiles the configured host tree."""
+    run = step.get("run", "")
+    return isinstance(run, str) and CMAKE_BUILD in run
 
 
 def suite_name_of(step):
@@ -287,6 +294,56 @@ class TestHermeticGateFirst(unittest.TestCase):
             "workflow must configure the host build dir via `%s`"
             % CMAKE_CONFIGURE,
         )
+
+    def test_cmake_build_step_present(self):
+        text = read_workflow(self)
+        self.assertIn(
+            CMAKE_BUILD,
+            text,
+            "workflow must build the host tree via `%s`" % CMAKE_BUILD,
+        )
+        data = parse_workflow(self, text)
+        steps = workflow_steps(self, data)
+        index = find_step_index(steps, is_build_step)
+        self.assertIsNotNone(
+            index,
+            "workflow must run `%s` as its own step" % CMAKE_BUILD,
+        )
+
+    def test_build_ordered_configure_build_ctest_before_suites(self):
+        text = read_workflow(self)
+        data = parse_workflow(self, text)
+        steps = workflow_steps(self, data)
+        configure = text.find(CMAKE_CONFIGURE)
+        self.assertNotEqual(
+            configure, -1, "workflow has no cmake configure step"
+        )
+        build = find_step_index(steps, is_build_step)
+        gate = find_step_index(steps, is_ctest_step)
+        self.assertIsNotNone(build, "workflow has no cmake build step")
+        self.assertIsNotNone(gate, "workflow has no ctest gate step")
+        configure_step = find_step_index(
+            steps,
+            lambda step: isinstance(step.get("run", ""), str)
+            and CMAKE_CONFIGURE in step.get("run", ""),
+        )
+        self.assertIsNotNone(configure_step, "workflow has no configure step")
+        self.assertLess(
+            configure_step,
+            build,
+            "cmake build step must run after the configure step",
+        )
+        self.assertLess(
+            build,
+            gate,
+            "ctest gate must run after the cmake build step",
+        )
+        for suite_index in find_all_step_indices(steps, is_suite_step):
+            self.assertLess(
+                gate,
+                suite_index,
+                "ctest gate must run before every suite step",
+            )
 
     def test_ctest_before_every_suite_step(self):
         data = parse_workflow(self, read_workflow(self))
@@ -471,6 +528,39 @@ class TestFailClosed(unittest.TestCase):
             masking_markers_in_text(tainted),
             [],
             "scratch copy with `|| true` must be flagged",
+        )
+
+    def test_negative_double_pipe_colon_copy_is_flagged(self):
+        text = read_workflow(self)
+        tainted = text.replace(
+            "run: device-lab/run.sh ime-smoke",
+            "run: device-lab/run.sh ime-smoke || :",
+            1,
+        )
+        self.assertNotEqual(
+            tainted, text, "scratch copy must differ from the workflow"
+        )
+        self.assertNotEqual(
+            masking_markers_in_text(tainted),
+            [],
+            "scratch copy with `|| :` must be flagged",
+        )
+
+    def test_negative_always_conditional_copy_is_flagged(self):
+        text = read_workflow(self)
+        tainted = text.replace(
+            "run: device-lab/run.sh ime-smoke",
+            "run: device-lab/run.sh ime-smoke\n        if: always()",
+            1,
+        )
+        self.assertNotEqual(
+            tainted, text, "scratch copy must differ from the workflow"
+        )
+        steps = workflow_steps(self, parse_workflow(self, tainted))
+        self.assertNotEqual(
+            bypass_conditionals_in_steps(steps),
+            [],
+            "scratch copy with `if: always()` must be flagged",
         )
 
 
