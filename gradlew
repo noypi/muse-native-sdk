@@ -124,6 +124,12 @@ print('profile active:', mod.is_profile_active(os.environ.get('BUILD_DIR', 'buil
   :engine:core:allocator)
     cd "$ROOT" && python3 -m unittest tests.test_core_allocator
     ;;
+  :engine:core:pluginAbi)
+    cd "$ROOT" && python3 -m unittest tests.test_core_plugin_abi
+    ;;
+  :engine:core:exceptionPolicy)
+    cd "$ROOT" && python3 -m unittest tests.test_core_exception_policy
+    ;;
   *)
     echo "gradlew: unknown task '$TASK'" >&2
     exit 1
