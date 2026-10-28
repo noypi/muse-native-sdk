@@ -252,5 +252,102 @@ class FrameGuardShedLogTest(unittest.TestCase):
             self.assertIn("over-budget:", event.reason)
 
 
+class ExpensiveFrameHarnessTest(unittest.TestCase):
+    """Batch 3 (T3) — expensive-frame harness proving the frame stays in budget.
+
+    Covers NFR-PERFORMANCE-011 AC-PERFORMANCE-028 (TC-PERFORMANCE-028,
+    missing) and NFR-PERFORMANCE-005 AC-PERFORMANCE-005 (TC-PERFORMANCE-005,
+    missing) per specs-performance.md v3.2: under injected expensive load
+    the guard sheds only sheddable work and holds the visible frame within
+    budget.
+
+    Public boundary under test (plan Checklist T3, verbatim)::
+
+        run_expensive_frame(sheddable_cost_ms: float, mandatory_cost_ms: float, budget_ms: float) -> GuardReport(frame_ms: float, within_budget: bool, shed_count: int, mandatory_lost: bool); raises FrameGuardError(frame, reason) carrying .frame/.reason on negative inputs or non-positive budget (fail closed, mirroring FrameError in benchmark/frame/run.py).
+
+    Hermetic: stdlib unittest only, seeded constants, no clock, no device,
+    no display. Expected state before implementation: RED —
+    ``benchmark/frame_guard/run.py`` does not exist, so every test fails
+    (ModuleNotFoundError).
+    """
+
+    # Seeded constants (hermetic, no device).
+    SHEDDABLE_COST_MS = 12.0
+    MANDATORY_COST_MS = 3.0
+    BUDGET_MS = 8.0
+
+    def import_harness(self):
+        """Import the harness through its public boundary."""
+        from benchmark.frame_guard.run import FrameGuardError, run_expensive_frame
+        return FrameGuardError, run_expensive_frame
+
+    def test_expensive_frame_stays_within_budget(self):
+        _, run_expensive_frame = self.import_harness()
+        report = run_expensive_frame(
+            self.SHEDDABLE_COST_MS, self.MANDATORY_COST_MS, self.BUDGET_MS
+        )
+        self.assertTrue(report.within_budget)
+        self.assertLessEqual(report.frame_ms, self.BUDGET_MS)
+
+    def test_expensive_frame_keeps_mandatory(self):
+        _, run_expensive_frame = self.import_harness()
+        report = run_expensive_frame(
+            self.SHEDDABLE_COST_MS, self.MANDATORY_COST_MS, self.BUDGET_MS
+        )
+        self.assertFalse(report.mandatory_lost)
+
+    def test_expensive_frame_sheds_at_least_one(self):
+        _, run_expensive_frame = self.import_harness()
+        report = run_expensive_frame(
+            self.SHEDDABLE_COST_MS, self.MANDATORY_COST_MS, self.BUDGET_MS
+        )
+        self.assertGreaterEqual(report.shed_count, 1)
+
+    def test_total_under_budget_sheds_nothing(self):
+        # ASSUMPTION: total cost (sheddable + mandatory) within budget
+        # keeps everything; seeded constant 2.0 + 3.0 = 5.0 <= 8.0.
+        _, run_expensive_frame = self.import_harness()
+        report = run_expensive_frame(2.0, 3.0, self.BUDGET_MS)
+        self.assertEqual(report.shed_count, 0)
+        self.assertTrue(report.within_budget)
+        self.assertFalse(report.mandatory_lost)
+
+
+class FrameGuardHarnessValidationTest(unittest.TestCase):
+    """Batch 3 (T3) — fail-closed validation mirroring FrameError."""
+
+    def import_harness(self):
+        from benchmark.frame_guard.run import FrameGuardError, run_expensive_frame
+        return FrameGuardError, run_expensive_frame
+
+    def test_negative_sheddable_raises_frame_guard_error(self):
+        FrameGuardError, run_expensive_frame = self.import_harness()
+        with self.assertRaises(FrameGuardError):
+            run_expensive_frame(-1.0, 3.0, 8.0)
+
+    def test_negative_mandatory_raises_frame_guard_error(self):
+        FrameGuardError, run_expensive_frame = self.import_harness()
+        with self.assertRaises(FrameGuardError):
+            run_expensive_frame(12.0, -1.0, 8.0)
+
+    def test_non_positive_budget_raises_frame_guard_error(self):
+        FrameGuardError, run_expensive_frame = self.import_harness()
+        with self.assertRaises(FrameGuardError):
+            run_expensive_frame(12.0, 3.0, 0.0)
+        with self.assertRaises(FrameGuardError):
+            run_expensive_frame(12.0, 3.0, -8.0)
+
+    def test_error_carries_frame_and_reason(self):
+        _, run_expensive_frame = self.import_harness()
+        from benchmark.frame_guard.run import FrameGuardError
+        try:
+            run_expensive_frame(-1.0, 3.0, 8.0)
+        except FrameGuardError as exc:
+            self.assertTrue(exc.reason)
+            self.assertIsNotNone(exc.frame)
+        else:
+            self.fail("FrameGuardError not raised")
+
+
 if __name__ == "__main__":
     unittest.main()
