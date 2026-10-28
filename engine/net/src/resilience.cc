@@ -1,7 +1,11 @@
 #include "net/resilience.h"
 
+#include <cctype>
+#include <cstdint>
 #include <string>
 #include <unordered_map>
+#include <utility>
+#include <vector>
 
 namespace muse {
 namespace net {
@@ -15,15 +19,83 @@ bool IsSuccessResp(const Response& r) {
   return s >= 200 && s < 300;
 }
 
-// Coalescing key: method + URL only. Headers/body are deliberately excluded
-// so retries with rotated credentials still collapse; hostile bytes (CRLF,
-// oversized bodies) stay inert inside the key string.
-std::string CacheKey(const Request& r) {
+// Coalescing key: method + NUL + url + NUL + hex(FNV-1a64(normalized auth
+// material)). Auth material folds in ONLY the first Authorization value and
+// the first Cookie value (header name matched case-insensitively, value
+// trimmed then compared exact/opaque). Absent and present-but-empty hash
+// distinctly (presence flag), so `Authorization: <empty>` never aliases an
+// anonymous request. All other headers/body are excluded; hostile bytes stay
+// inert inside the key string.
+uint64_t Fnv1a64(const std::string& s) {
+  uint64_t h = 14695981039346656037ULL;
+  for (unsigned char c : s) {
+    h ^= static_cast<uint64_t>(c);
+    h *= 1099511628211ULL;
+  }
+  return h;
+}
+
+std::string HexU64(uint64_t v) {
+  static const char* kHex = "0123456789abcdef";
+  std::string out(16, '0');
+  for (int i = 15; i >= 0; --i) {
+    out[static_cast<size_t>(i)] = kHex[v & 0xF];
+    v >>= 4;
+  }
+  return out;
+}
+
+bool NameEqCi(const std::string& a, const std::string& b) {
+  if (a.size() != b.size()) return false;
+  for (std::size_t i = 0; i < a.size(); ++i) {
+    unsigned char ca = static_cast<unsigned char>(a[i]);
+    unsigned char cb = static_cast<unsigned char>(b[i]);
+    if (std::tolower(ca) != std::tolower(cb)) return false;
+  }
+  return true;
+}
+
+std::string TrimVal(const std::string& s) {
+  std::size_t b = 0;
+  while (b < s.size() &&
+         (s[b] == ' ' || s[b] == '\t' || s[b] == '\r' || s[b] == '\n'))
+    ++b;
+  std::size_t e = s.size();
+  while (e > b && (s[e - 1] == ' ' || s[e - 1] == '\t' ||
+                   s[e - 1] == '\r' || s[e - 1] == '\n'))
+    --e;
+  return s.substr(b, e - b);
+}
+
+// First value for a header name (case-insensitive); reports presence
+// separately so absent vs present-but-empty stay distinct.
+std::pair<bool, std::string> FirstAuthValue(
+    const std::vector<std::pair<std::string, std::string>>& headers,
+    const std::string& name) {
+  for (const auto& h : headers) {
+    if (NameEqCi(h.first, name)) return {true, TrimVal(h.second)};
+  }
+  return {false, std::string()};
+}
+
+std::string CoalescerKey(const Request& r) {
+  auto auth = FirstAuthValue(r.headers, "authorization");
+  auto cookie = FirstAuthValue(r.headers, "cookie");
+  // Normalized auth material: presence flags keep absent/empty/present
+  // distinct; values compared exact/opaque after trimming.
+  std::string material;
+  material.push_back(auth.first ? '\x01' : '\x00');
+  material.append(auth.second);
+  material.push_back('\x01');
+  material.push_back(cookie.first ? '\x01' : '\x00');
+  material.append(cookie.second);
   std::string key;
-  key.reserve(r.method.size() + 1 + r.url.size());
+  key.reserve(r.method.size() + 1 + r.url.size() + 1 + 16);
   key.append(r.method);
   key.push_back('\x00');
   key.append(r.url);
+  key.push_back('\x00');
+  key.append(HexU64(Fnv1a64(material)));
   return key;
 }
 
@@ -63,10 +135,28 @@ void ObserveSample(const BandwidthSample& s) {
   }
 }
 
+RequestCoalescer::RequestCoalescer(size_t maxEntries)
+    : maxEntries_(maxEntries) {}
+
+void RequestCoalescer::clear() {
+  try {
+    cache_.clear();
+  } catch (...) {
+  }
+}
+
+size_t RequestCoalescer::size() const {
+  try {
+    return cache_.size();
+  } catch (...) {
+    return 0;
+  }
+}
+
 Response RequestCoalescer::get(const Request& r, std::function<Response()> fetch) {
   try {
     // Cheap hit path: serve remembered successes without invoking fetch.
-    std::string key = CacheKey(r);
+    std::string key = CoalescerKey(r);
     auto it = cache_.find(key);
     if (it != cache_.end()) return it->second;
     Response resp;
@@ -80,6 +170,9 @@ Response RequestCoalescer::get(const Request& r, std::function<Response()> fetch
     }
     if (IsSuccessResp(resp)) {
       try {
+        // Fail closed on overflow: at capacity → bypass caching
+        // (direct fetch, no store, no eviction).
+        if (cache_.size() >= maxEntries_) return resp;
         cache_[key] = resp;
       } catch (...) {
       }

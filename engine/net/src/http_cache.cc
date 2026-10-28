@@ -203,14 +203,40 @@ ResponseOrRevalidate Revalidate(const Request& req, const CachedEntry& hit) {
 
 }  // namespace
 
+MemoryCacheStore::MemoryCacheStore(size_t capacityEntries,
+                                     size_t maxBodyBytes)
+    : capacityEntries_(capacityEntries), maxBodyBytes_(maxBodyBytes) {}
+
 void MemoryCacheStore::put(const std::string& key, const CachedEntry& e) {
-  map_[key] = e;
+  try {
+    // Fail closed: at capacity → no-op (existing entries untouched, no
+    // eviction); oversized body → no-op.
+    if (map_.size() >= capacityEntries_) return;
+    if (e.response.body.size() > maxBodyBytes_) return;
+    map_[key] = e;
+  } catch (...) {
+  }
 }
 
 std::optional<CachedEntry> MemoryCacheStore::get(const std::string& key) {
   auto it = map_.find(key);
   if (it == map_.end()) return std::nullopt;
   return it->second;
+}
+
+void MemoryCacheStore::clear() {
+  try {
+    map_.clear();
+  } catch (...) {
+  }
+}
+
+size_t MemoryCacheStore::size() const {
+  try {
+    return map_.size();
+  } catch (...) {
+    return 0;
+  }
 }
 
 HttpCache::HttpCache(std::shared_ptr<ICacheStore> s) : store_(std::move(s)) {}
@@ -237,6 +263,25 @@ ResponseOrRevalidate HttpCache::handle(const Request& req,
     if (f != Freshness::kFresh) return Revalidate(req, *hit);
     // Malformed max-age is stale, never fresh (contract A-SAFE).
     if (MaxAgeMalformed(stored)) return Revalidate(req, *hit);
+    // Credentialed veto (Stage-4): a request carrying non-empty
+    // Authorization/Cookie material is never served fresh unless the stored
+    // response carries `Cache-Control: public` or `s-maxage` (exact token;
+    // Vary: Authorization does NOT substitute). Mirrors IsHttpCacheable.
+    {
+      bool credentialed = false;
+      for (const auto& h : req.headers) {
+        if ((NameEq(h.first, "authorization") ||
+             NameEq(h.first, "cookie")) &&
+            !Trim(h.second).empty()) {
+          credentialed = true;
+          break;
+        }
+      }
+      if (credentialed && !HasDirective(stored, "public") &&
+          !HasDirective(stored, "s-maxage")) {
+        return Revalidate(req, *hit);
+      }
+    }
     // Fresh hit: serve the stored response verbatim (Age travels with the
     // stored headers) with zero transport calls.
     ResponseOrRevalidate out;

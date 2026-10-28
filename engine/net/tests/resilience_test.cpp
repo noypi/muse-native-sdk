@@ -147,25 +147,89 @@ bool check_coalescer_does_not_cache_failures() {  RequestCoalescer coal;
   return fetches == 2 && second.body == "recovered";
 }
 
-bool check_coalescer_key_is_url_only_ignores_authorization() {
-  // T7 contract pin (review MINOR): the coalescer key is URL-only per the
-  // adjudicated T7 contract — two sequential same-URL GETs with different
-  // Authorization headers collapse to one fetch and the second caller
-  // receives the first caller's body (rotated credentials do NOT re-fetch).
+bool check_coalescer_isolates_distinct_authorization() {
+  // Stage-4 security adjudication: the coalescer key folds in normalized
+  // auth material (first Authorization + Cookie values). Different
+  // Authorization values MUST NOT collapse: 2 fetches, bodies differ.
+  RequestCoalescer coal;
+  int fetches = 0;
+  Request first = make_get();
+  first.headers.emplace_back("Authorization", "Bearer user-A-not-real");
+  Request second = make_get();
+  second.headers.emplace_back("Authorization", "Bearer user-B-not-real");
+  Response a = coal.get(first, [&]() -> Response {
+    ++fetches;
+    return make_ok("body-for-A");
+  });
+  Response b = coal.get(second, [&]() -> Response {
+    ++fetches;
+    return make_ok("body-for-B");
+  });
+  return fetches == 2 && a.body == "body-for-A" && b.body == "body-for-B" &&
+         a.body != b.body;
+}
+
+bool check_coalescer_collapses_same_authorization() {
+  // Same auth material collapses: same Authorization twice → 1 fetch.
   RequestCoalescer coal;
   int fetches = 0;
   auto fetch = [&]() -> Response {
     ++fetches;
-    return make_ok("first-principal");
+    return make_ok("shared-auth");
   };
   Request first = make_get();
-  first.headers.emplace_back("Authorization", "Bearer test-api-key-not-real");
-  Request rotated = make_get();
-  rotated.headers.emplace_back("Authorization", "Bearer rotated-dummy-key");
+  first.headers.emplace_back("Authorization", "Bearer same-not-real");
+  Request second = make_get();
+  second.headers.emplace_back("Authorization", "Bearer same-not-real");
   Response a = coal.get(first, fetch);
-  Response b = coal.get(rotated, fetch);
-  return fetches == 1 && a.body == "first-principal" &&
-         b.body == "first-principal";
+  Response b = coal.get(second, fetch);
+  return fetches == 1 && a.body == "shared-auth" && b.body == "shared-auth";
+}
+
+bool check_coalescer_clear_empties_cache() {
+  RequestCoalescer coal;
+  int fetches = 0;
+  auto fetch = [&]() -> Response {
+    ++fetches;
+    return make_ok("v");
+  };
+  coal.get(make_get(), fetch);
+  if (fetches != 1) return false;
+  if (coal.size() != 1) return false;
+  coal.clear();
+  if (coal.size() != 0) return false;
+  Response again = coal.get(make_get(), fetch);
+  return fetches == 2 && again.body == "v" && coal.size() == 1;
+}
+
+bool check_coalescer_cap_fail_closed() {
+  // Overflow fails closed: size >= maxEntries → bypass caching
+  // (direct fetch, no store). Capacity 1: A cached, B bypasses, A still hit.
+  RequestCoalescer coal(1);
+  int fetches = 0;
+  Response a1 = coal.get(make_get("https://api.test.invalid/a"), [&]() -> Response {
+    ++fetches;
+    return make_ok("A");
+  });
+  if (fetches != 1 || coal.size() != 1) return false;
+  Response b1 = coal.get(make_get("https://api.test.invalid/b"), [&]() -> Response {
+    ++fetches;
+    return make_ok("B");
+  });
+  if (fetches != 2 || b1.body != "B") return false;
+  if (coal.size() > 1) return false;  // B must not grow the cache past cap
+  Response b2 = coal.get(make_get("https://api.test.invalid/b"), [&]() -> Response {
+    ++fetches;
+    return make_ok("B2");
+  });
+  // Bypassed B was never stored → re-fetch (fail-closed, no stale serve).
+  if (fetches != 3 || b2.body != "B2") return false;
+  Response a2 = coal.get(make_get("https://api.test.invalid/a"), [&]() -> Response {
+    ++fetches;
+    return make_ok("A-new");
+  });
+  // A is still the cached entry → served without a new fetch.
+  return fetches == 3 && a2.body == "A" && a1.body == "A";
 }
 
 bool check_breaker_starts_closed_and_allows() {
@@ -301,7 +365,10 @@ int main() {
   RUN_CASE(check_coalescer_distinct_urls_fetch_independently);
   RUN_CASE(check_coalescer_distinct_methods_are_not_merged);
   RUN_CASE(check_coalescer_does_not_cache_failures);
-  RUN_CASE(check_coalescer_key_is_url_only_ignores_authorization);
+  RUN_CASE(check_coalescer_isolates_distinct_authorization);
+  RUN_CASE(check_coalescer_collapses_same_authorization);
+  RUN_CASE(check_coalescer_clear_empties_cache);
+  RUN_CASE(check_coalescer_cap_fail_closed);
   RUN_CASE(check_breaker_starts_closed_and_allows);
   RUN_CASE(check_breaker_opens_after_threshold_consecutive_failures);
   RUN_CASE(check_open_breaker_short_circuits_without_probe);

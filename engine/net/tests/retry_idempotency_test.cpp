@@ -231,6 +231,41 @@ bool check_max_attempts_caps_retries() {
   return calls == 1 && clk.sleepCalls() == 0;
 }
 
+bool check_backoff_capped_at_30s() {
+  // Stage-4 adjudication: backoff sleeps are capped at 30000ms.
+  FakeClock clk;
+  RetryPolicy p;
+  p.maxAttempts = 10;
+  p.base = std::chrono::milliseconds(1000);
+  p.jitter = 0.0;
+  auto attempt = [&](const Request&) -> Response { return make_status(503); };
+  ExecuteWithRetry(make_req("GET"), p, attempt, clk);
+  const auto& s = clk.sleeps();
+  if (s.size() != 9) return false;
+  for (const auto& d : s) {
+    if (d.count() > 30000 || d.count() <= 0) return false;
+  }
+  return true;
+}
+
+bool check_backoff_large_attempts_no_overflow() {
+  // maxAttempts=40 vs persistent 503: 39 sleeps, every one within
+  // (0, 30000ms] — no shift-overflow, no negative/wrapped durations.
+  FakeClock clk;
+  RetryPolicy p;
+  p.maxAttempts = 40;
+  p.base = std::chrono::milliseconds(100);
+  p.jitter = 0.0;
+  auto attempt = [&](const Request&) -> Response { return make_status(503); };
+  ExecuteWithRetry(make_req("GET"), p, attempt, clk);
+  const auto& s = clk.sleeps();
+  if (s.size() != 39) return false;
+  for (const auto& d : s) {
+    if (d.count() > 30000 || d.count() <= 0) return false;
+  }
+  return true;
+}
+
 bool check_hostile_header_values_never_throw() {
   FakeClock clk;
   Request r = make_req("POST");
@@ -281,6 +316,8 @@ int main() {
   RUN_CASE(check_success_first_try_makes_no_sleep);
   RUN_CASE(check_transport_error_retried_for_idempotent);
   RUN_CASE(check_max_attempts_caps_retries);
+  RUN_CASE(check_backoff_capped_at_30s);
+  RUN_CASE(check_backoff_large_attempts_no_overflow);
   RUN_CASE(check_hostile_header_values_never_throw);
   if (failures > 0) {
     std::printf("retry_idempotency_test: %d failing\n", failures);

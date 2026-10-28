@@ -41,10 +41,13 @@ void ObserveSample(const BandwidthSample& s);
 
 class RequestCoalescer {
  public:
-  RequestCoalescer() = default;
+  explicit RequestCoalescer(size_t maxEntries = 128);
   Response get(const Request& r, std::function<Response()> fetch);
+  void clear();
+  size_t size() const;
 
  private:
+  size_t maxEntries_ = 128;
   std::unordered_map<std::string, Response> cache_;
 };
 

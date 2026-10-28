@@ -53,14 +53,21 @@ class ICacheStore {
   virtual std::optional<CachedEntry> get(const std::string& key) = 0;
 };
 
-// In-memory ICacheStore (contract A-STORE).
+// In-memory ICacheStore (contract A-STORE): bounded, fail-closed. put() is
+// a no-op when size() >= capacityEntries OR the entry body exceeds
+// maxBodyBytes; clear()/size() never throw.
 class MemoryCacheStore : public ICacheStore {
  public:
-  MemoryCacheStore() = default;
+  explicit MemoryCacheStore(size_t capacityEntries = 256,
+                            size_t maxBodyBytes = 1048576);
   void put(const std::string& key, const CachedEntry& e) override;
   std::optional<CachedEntry> get(const std::string& key) override;
+  void clear();
+  size_t size() const;
 
  private:
+  size_t capacityEntries_ = 256;
+  size_t maxBodyBytes_ = 1048576;
   std::unordered_map<std::string, CachedEntry> map_;
 };
 

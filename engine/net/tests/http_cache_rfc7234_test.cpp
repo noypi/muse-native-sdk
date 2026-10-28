@@ -328,6 +328,62 @@ bool check_vary_star_revalidates_on_handle() {
   return !out.fromCache;
 }
 
+// ---- handle(): credential veto (Stage-4 security adjudication) ----------------
+// handle() consults the same credential veto as IsHttpCacheable before
+// serving a fresh hit: a request carrying a non-empty Authorization/Cookie
+// header is never served from cache unless the stored response carries
+// `Cache-Control: public` or `s-maxage`.
+
+bool check_handle_vetoes_credentialed_hit_without_public() {
+  auto store = std::make_shared<MemoryCacheStore>();
+  HttpCache cache(store);
+  CachedEntry e = make_entry(make_resp(
+      200, {{"Cache-Control", "max-age=60"}}, "private-body"));
+  Request req = make_req("GET", "https://api.test.invalid/v1/me",
+                         {{"Authorization", "Bearer test-api-key-not-real"}});
+  auto out = cache.handle(req, &e, Freshness::kFresh);
+  return !out.fromCache;
+}
+
+// ---- MemoryCacheStore caps (Stage-4 security adjudication) -------------------
+// `MemoryCacheStore(size_t capacityEntries = 256, size_t maxBodyBytes =
+// 1048576)`; put() is a no-op when size() >= capacity OR the entry body
+// exceeds maxBodyBytes. clear() empties; size() reports entry count.
+
+bool check_store_cap_fail_closed() {
+  MemoryCacheStore store(1, 1048576);
+  CachedEntry e1 =
+      make_entry(make_resp(200, {{"ETag", "\"v1\""}}, "one"));
+  CachedEntry e2 =
+      make_entry(make_resp(200, {{"ETag", "\"v2\""}}, "two"));
+  store.put("k1", e1);
+  if (store.size() != 1) return false;
+  store.put("k2", e2);  // at capacity → no-op, fail closed
+  if (store.size() != 1) return false;
+  auto got1 = store.get("k1");
+  if (!got1.has_value() || got1->response.body != "one") return false;
+  return !store.get("k2").has_value();
+}
+
+bool check_store_body_cap_rejects_large() {
+  MemoryCacheStore store(256, 4);
+  CachedEntry big =
+      make_entry(make_resp(200, {{"ETag", "\"v1\""}}, "way-too-big"));
+  store.put("big", big);  // body (11 B) > maxBodyBytes (4) → no-op
+  if (store.size() != 0) return false;
+  return !store.get("big").has_value();
+}
+
+bool check_store_clear_empties() {
+  MemoryCacheStore store;
+  store.put("k1",
+            make_entry(make_resp(200, {{"ETag", "\"v1\""}}, "one")));
+  if (store.size() != 1) return false;
+  store.clear();
+  if (store.size() != 0) return false;
+  return !store.get("k1").has_value();
+}
+
 // ---- robustness / security --------------------------------------------------
 
 bool check_malformed_max_age_treated_as_stale_never_throws() {
@@ -391,6 +447,10 @@ int main() {
   RUN_CASE(check_vary_multi_field_match_is_served);
   RUN_CASE(check_vary_multi_field_mismatch_revalidates);
   RUN_CASE(check_vary_star_revalidates_on_handle);
+  RUN_CASE(check_handle_vetoes_credentialed_hit_without_public);
+  RUN_CASE(check_store_cap_fail_closed);
+  RUN_CASE(check_store_body_cap_rejects_large);
+  RUN_CASE(check_store_clear_empties);
   RUN_CASE(check_malformed_max_age_treated_as_stale_never_throws);
   RUN_CASE(check_hostile_header_values_never_throw);
   if (failures > 0) {

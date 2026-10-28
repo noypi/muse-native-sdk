@@ -42,11 +42,15 @@ bool IsSuccess(const Response& r) {
   return s >= 200 && s < 300;
 }
 
-// Exponential backoff with jitter: base * 2^retryIndex, scaled by a
-// uniform factor in [1 - jitter, 1 + jitter] (jitter <= 0 means exact).
-// Floored at 1ms so every retry sleeps a positive, non-decreasing span.
+// Exponential backoff with jitter: base * 2^retryIndex computed in 64-bit
+// with saturation (shift clamped at 30 so large attempt counts never
+// overflow), capped at 30000ms per sleep. Floored at 1ms so every retry
+// sleeps a positive span.
 std::chrono::milliseconds BackoffFor(const RetryPolicy& p, int retryIndex) {
-  double ms = static_cast<double>(p.base.count()) * (1 << retryIndex);
+  int n = retryIndex < 0 ? 0 : retryIndex;
+  if (n > 30) n = 30;
+  double ms =
+      static_cast<double>(p.base.count()) * static_cast<double>(1LL << n);
   if (ms < 1.0) ms = 1.0;
   double j = p.jitter;
   if (j < 0.0) j = 0.0;
@@ -56,6 +60,7 @@ std::chrono::milliseconds BackoffFor(const RetryPolicy& p, int retryIndex) {
     ms *= (1.0 + dist(rng));
     if (ms < 1.0) ms = 1.0;
   }
+  if (ms > 30000.0) ms = 30000.0;
   return std::chrono::milliseconds(static_cast<long long>(ms));
 }
 

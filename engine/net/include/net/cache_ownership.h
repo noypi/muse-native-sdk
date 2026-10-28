@@ -91,6 +91,28 @@ inline bool IsSwrToken(const std::string& token) {
   return token.rfind("stale-while-revalidate", 0) == 0;
 }
 
+inline bool IsPublicGrantToken(const std::string& token) {
+  // Exact directive-name compare after stripping `=value` parameters
+  // (mirrors IsNoStoreToken): `public` / `s-maxage=...` grant, `publicx`
+  // does not. Tokens arrive lowercased from HasCacheDirective.
+  std::string::size_type eq = token.find('=');
+  std::string name = Trim(token.substr(0, eq));
+  return name == "public" || name == "s-maxage";
+}
+
+// True when the request carries credential material: any non-empty
+// (post-trim) Authorization or Cookie header value. Header name matched
+// case-insensitively; empty value counts as absent, not credentialed.
+inline bool HasCredentials(
+    const std::vector<std::pair<std::string, std::string>>& headers) {
+  for (const auto& h : headers) {
+    std::string name = AsciiLower(Trim(h.first));
+    if (name != "authorization" && name != "cookie") continue;
+    if (!Trim(h.second).empty()) return true;
+  }
+  return false;
+}
+
 }  // namespace detail
 
 inline bool IsHttpCacheable(const Request& r, const Response& resp) {
@@ -134,6 +156,15 @@ inline bool IsHttpCacheable(const Request& r, const Response& resp) {
         if (comma == std::string::npos) break;
         pos = comma + 1;
       }
+    }
+    // Credentialed veto: a request carrying non-empty Authorization/Cookie
+    // material is never HTTP-cacheable unless the stored response carries
+    // an explicit `Cache-Control: public` or `s-maxage` grant (exact token
+    // via HasCacheDirective; `Vary: Authorization` does NOT substitute).
+    if (detail::HasCredentials(r.headers) &&
+        !detail::HasCacheDirective(resp.headers,
+                                   detail::IsPublicGrantToken)) {
+      return false;
     }
     return true;
   } catch (...) {

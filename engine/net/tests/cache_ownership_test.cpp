@@ -205,6 +205,53 @@ bool check_no_store_suffixed_token_is_cacheable() {
   return muse::net::IsHttpCacheable(q, s) == true;
 }
 
+// ---- credentialed gate (Stage-4 security adjudication) -----------------------
+// A non-empty Authorization/Cookie request header is a credential veto:
+// IsHttpCacheable returns false unless the stored response carries
+// `Cache-Control: public` or `s-maxage` (exact token via HasDirective).
+// `Vary: Authorization` alone does NOT substitute for the explicit grant.
+
+bool check_auth_without_public_is_not_cacheable() {
+  Request q = make_req("GET", "https://api.test.invalid/v1/me",
+                       {{"Authorization", "Bearer test-api-key-not-real"}});
+  Response s = make_resp(200, {{"Cache-Control", "max-age=60"}}, "me");
+  return muse::net::IsHttpCacheable(q, s) == false;
+}
+
+bool check_auth_with_public_is_cacheable() {
+  Request q = make_req("GET", "https://api.test.invalid/v1/me",
+                       {{"Authorization", "Bearer test-api-key-not-real"}});
+  Response s = make_resp(
+      200, {{"Cache-Control", "public, max-age=60"}}, "me");
+  return muse::net::IsHttpCacheable(q, s) == true;
+}
+
+bool check_cookie_without_smaxage_is_not_cacheable() {
+  Request q = make_req("GET", "https://api.test.invalid/v1/me",
+                       {{"Cookie", "session=dummy-not-real"}});
+  Response s = make_resp(200, {{"Cache-Control", "max-age=60"}}, "me");
+  return muse::net::IsHttpCacheable(q, s) == false;
+}
+
+bool check_cookie_with_smaxage_is_cacheable() {
+  Request q = make_req("GET", "https://api.test.invalid/v1/me",
+                       {{"Cookie", "session=dummy-not-real"}});
+  Response s = make_resp(
+      200, {{"Cache-Control", "max-age=60, s-maxage=60"}}, "me");
+  return muse::net::IsHttpCacheable(q, s) == true;
+}
+
+bool check_auth_with_vary_alone_still_not_cacheable() {
+  // Vary: Authorization proves variance was considered, but it is NOT an
+  // explicit shareability grant — still false without public/s-maxage.
+  Request q = make_req("GET", "https://api.test.invalid/v1/me",
+                       {{"Authorization", "Bearer test-api-key-not-real"}});
+  Response s = make_resp(
+      200,
+      {{"Cache-Control", "max-age=60"}, {"Vary", "Authorization"}}, "me");
+  return muse::net::IsHttpCacheable(q, s) == false;
+}
+
 // ---- negative boundary (runtime face of the compile-time gate) --------------
 
 bool check_no_swr_api_exists_on_http_cache() {
@@ -266,6 +313,11 @@ int main() {
   RUN_CASE(check_response_no_store_is_not_cacheable);
   RUN_CASE(check_request_no_store_is_not_cacheable);
   RUN_CASE(check_error_status_is_not_cacheable);
+  RUN_CASE(check_auth_without_public_is_not_cacheable);
+  RUN_CASE(check_auth_with_public_is_cacheable);
+  RUN_CASE(check_cookie_without_smaxage_is_not_cacheable);
+  RUN_CASE(check_cookie_with_smaxage_is_cacheable);
+  RUN_CASE(check_auth_with_vary_alone_still_not_cacheable);
   RUN_CASE(check_vary_star_is_not_cacheable);
   RUN_CASE(check_vary_multi_value_with_star_is_not_cacheable);
   RUN_CASE(check_vary_whitespace_star_is_not_cacheable);
