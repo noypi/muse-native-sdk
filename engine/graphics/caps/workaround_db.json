@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "owner": "graphics-caps",
+  "entries": [
+    {
+      "vendor": "arm",
+      "driver_version": "r42p0",
+      "gpu_id": "mali-g710",
+      "feature": "dynamic_rendering",
+      "workaround_flag": "disable_dr",
+      "engine_version": "1"
+    }
+  ]
+}
