@@ -57,4 +57,13 @@ class SystemFontEnumerator {
 // cover the query. Never throws.
 StatusOr<std::vector<FontHandle>> discoverFonts(const FontQuery& q);
 
+// FR-TEXT-003 / AC-TEXT-005: NDK per-script/per-locale fallback resolver.
+// Returns the NDK-matcher-chosen face handle for the script+locale pair;
+// error Status::kMissingGlyph iff no supported-locale face covers the
+// script. Pure C++, zero JNI on the call path (Java touches only the
+// enumeration boundary). Null/empty locale means default-locale treatment:
+// resolves or yields kMissingGlyph, never throws. Never throws.
+StatusOr<FontHandle> resolveFallbackForScript(std::uint32_t script_tag,
+                                              const char* bcp47_locale) noexcept;
+
 }  // namespace muse::text

@@ -6,7 +6,7 @@ set -eu
 set -o pipefail 2>/dev/null || true
 
 usage() {
-  echo "usage: $0 jni_free_path_test|system_fonts_test|layout_cache_test|harfbuzz_parity_test|script_coverage_test|emoji_test|pipeline_acceptance" >&2
+  echo "usage: $0 jni_free_path_test|system_fonts_test|layout_cache_test|harfbuzz_parity_test|script_coverage_test|emoji_test|font_fallback_test|uax_conformance_test|pipeline_acceptance" >&2
 }
 
 if [ "$#" -ne 1 ]; then
@@ -15,7 +15,7 @@ if [ "$#" -ne 1 ]; then
 fi
 
 case "$1" in
-  jni_free_path_test|system_fonts_test|layout_cache_test|harfbuzz_parity_test|script_coverage_test|emoji_test|pipeline_acceptance)
+  jni_free_path_test|system_fonts_test|layout_cache_test|harfbuzz_parity_test|script_coverage_test|emoji_test|font_fallback_test|uax_conformance_test|pipeline_acceptance)
     ;;
   *)
     usage

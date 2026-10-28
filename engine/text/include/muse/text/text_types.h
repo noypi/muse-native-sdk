@@ -36,6 +36,9 @@ enum class Status {
   // FR-TEXT-001 / AC-TEXT-002: malformed input for bidi/line-break (T5).
   kInvalidInput = 3,
   kUnsupportedSequence = 4,
+  // FR-TEXT-003 / AC-TEXT-005: no supported-locale face covers the script
+  // (resolveFallbackForScript fallback miss). No payload, no internals.
+  kMissingGlyph = 5,
 };
 
 // Minimal StatusOr: ok()/status()/operator* surface the contract needs.
