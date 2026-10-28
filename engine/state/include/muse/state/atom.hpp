@@ -18,6 +18,7 @@ using ObserverId = std::uint32_t;
 enum class Status {
   kOk = 0,
   kNotFound = 1,
+  kNonIdempotent = 2,
 };
 
 // Origin of a write. JS and Tier-2 native origins funnel through the same
