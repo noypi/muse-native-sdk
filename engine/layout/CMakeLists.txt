@@ -17,6 +17,7 @@ add_library(layout
   src/tabletop.cpp
   src/property.cpp
   src/batch.cpp
+  src/insets.cpp
 )
 target_include_directories(layout PUBLIC include)
 target_compile_options(layout PRIVATE -Wall -Wextra -Wpedantic -Werror)
@@ -82,3 +83,13 @@ add_executable(tabletop_test tests/tabletop_test.cpp)
 target_link_libraries(tabletop_test PRIVATE layout)
 target_compile_options(tabletop_test PRIVATE -Wall -Wextra -Wpedantic -Werror)
 add_test(NAME tabletop_test COMMAND tabletop_test)
+
+add_executable(inset_signal_test tests/inset_signal_test.cpp)
+target_link_libraries(inset_signal_test PRIVATE layout)
+target_compile_options(inset_signal_test PRIVATE -Wall -Wextra -Wpedantic -Werror)
+add_test(NAME inset_signal_test COMMAND inset_signal_test)
+
+add_executable(ime_animation_test tests/ime_animation_test.cpp)
+target_link_libraries(ime_animation_test PRIVATE layout)
+target_compile_options(ime_animation_test PRIVATE -Wall -Wextra -Wpedantic -Werror)
+add_test(NAME ime_animation_test COMMAND ime_animation_test)
