@@ -290,7 +290,7 @@ function TopAppBar(props) {
     props: next,
     content: [
       Surface({ tone: 'surface' }),
-      Text({ variant: TOP_APP_BAR_TITLE_VARIANT[size] || TOP_APP_BAR_TITLE_VARIANT.small, color: 'on-surface' }),
+      Text({ variant: Object.prototype.hasOwnProperty.call(TOP_APP_BAR_TITLE_VARIANT, size) ? TOP_APP_BAR_TITLE_VARIANT[size] : TOP_APP_BAR_TITLE_VARIANT.small, color: 'on-surface' }),
       Icon({ name: 'menu', color: 'on-surface' }),
       Divider({ orientation: 'horizontal', color: 'outline' }),
     ],

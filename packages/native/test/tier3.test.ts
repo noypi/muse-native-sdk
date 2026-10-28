@@ -746,3 +746,71 @@ test('check-composites.js exits 1 naming file:line for a smuggled native registr
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+// ---------------------------------------------------------------------------
+// Stage 4 follow-up part 2 (hasOwnProperty allowlist hardening): TopAppBar
+// size lookup falls back to 'title-large' for non-allowlisted keys.
+// Finds the nested Text variant via directNestedTypes-adjacent traversal
+// (first Text descriptor under sibling keys beside `props`).
+// ---------------------------------------------------------------------------
+
+function topAppBarTitleVariant(descriptor) {
+  const visit = (node) => {
+    if (Array.isArray(node)) {
+      for (const item of node) {
+        const found = visit(item);
+        if (found !== undefined) return found;
+      }
+      return undefined;
+    }
+    if (node !== null && typeof node === 'object') {
+      if (node.type === 'Text' && node.props !== null && typeof node.props === 'object') {
+        return node.props.variant;
+      }
+      for (const value of Object.values(node)) {
+        const found = visit(value);
+        if (found !== undefined) return found;
+      }
+    }
+    return undefined;
+  };
+  for (const [key, value] of Object.entries(descriptor)) {
+    if (key === 'props') continue;
+    const found = visit(value);
+    if (found !== undefined) return found;
+  }
+  return undefined;
+}
+
+test('TopAppBar size "__proto__" falls back to the title-large string variant', () => {
+  const descriptor = components.TopAppBar({ size: '__proto__', title: 'Title' });
+  const variant = topAppBarTitleVariant(descriptor);
+  assert.equal(variant, 'title-large');
+  assert.equal(typeof variant, 'string');
+});
+
+test('TopAppBar size "giant" falls back to the title-large string variant', () => {
+  const descriptor = components.TopAppBar({ size: 'giant', title: 'Title' });
+  const variant = topAppBarTitleVariant(descriptor);
+  assert.equal(variant, 'title-large');
+  assert.equal(typeof variant, 'string');
+});
+
+test('TopAppBar title variant is always a string in the documented set', () => {
+  const allowed = new Set(['title-large', 'headline-small', 'headline-medium']);
+  for (const size of ['small', 'medium', 'large', '__proto__', 'constructor', 'giant', '']) {
+    const descriptor = components.TopAppBar({ size, title: 'Title' });
+    const variant = topAppBarTitleVariant(descriptor);
+    assert.equal(typeof variant, 'string', `size "${size}" variant must be a string`);
+    assert.ok(allowed.has(variant), `size "${size}" variant "${variant}" must be in the documented set`);
+  }
+});
+
+test('TopAppBar prototype lookups leave Object.prototype unpolluted', () => {
+  components.TopAppBar({ size: '__proto__', title: 'Title' });
+  components.TopAppBar({ size: 'constructor', title: 'Title' });
+  components.TopAppBar({ size: 'giant', title: 'Title' });
+  assert.equal(Object.prototype.titleLarge, undefined);
+  assert.equal({}.titleLarge, undefined);
+  assert.equal(Object.prototype.variant, undefined);
+});
