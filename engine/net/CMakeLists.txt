@@ -10,6 +10,7 @@ add_library(net
   src/http_cache.cc
   src/retry.cc
   src/resilience.cc
+  src/websocket.cc
 )
 target_include_directories(net PUBLIC include)
 target_compile_options(net PRIVATE -Wall -Wextra -Wpedantic)
@@ -26,7 +27,9 @@ foreach(TEST_SRC
     tests/http_cache_rfc7234_test.cpp
     tests/cache_ownership_test.cpp
     tests/retry_idempotency_test.cpp
-    tests/resilience_test.cpp)
+    tests/resilience_test.cpp
+    tests/websocket_test.cpp
+    tests/rtc_harness_test.cpp)
   get_filename_component(TEST_NAME ${TEST_SRC} NAME_WE)
   add_executable(${TEST_NAME} ${TEST_SRC})
   target_link_libraries(${TEST_NAME} PRIVATE net)

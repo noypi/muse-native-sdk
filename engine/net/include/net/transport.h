@@ -54,6 +54,14 @@ class HttpClient {
   std::vector<Interceptor> interceptors_;
 };
 
+// Injected clock seam (plan T1 Interface line, verbatim). Scripted time
+// only: tests substitute an in-process fake with manual advance; production
+// passes a wall-clock adapter. Never sleeps.
+struct IClock {
+  virtual ~IClock() = default;
+  virtual std::uint64_t nowMs() const = 0;
+};
+
 // T3 dispatch-budget unit probe (FR-NET-004 / AC-NET-007 unit half).
 // RecordDispatchNanos is a pure observation hook: it never throws, never
 // blocks, never performs I/O. WithinBudget is true iff ns < 1,000,000.
