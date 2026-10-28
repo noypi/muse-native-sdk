@@ -1,7 +1,9 @@
 #pragma once
 
 #include <cstdint>
+#include <string>
 #include <string_view>
+#include <vector>
 
 #include "net/data_layer.h"
 
@@ -19,6 +21,12 @@ enum class OpenResult {
 // and are not redefined.
 struct ISqlBackend {
   virtual bool exec(std::string_view sql) = 0;
+  virtual bool query(std::string_view sql,
+                     std::vector<std::vector<std::string>>* out) {
+    (void)sql;
+    (void)out;
+    return false;
+  }
   virtual uint64_t userVersion() const = 0;
   virtual void setUserVersion(uint64_t v) = 0;
   virtual ~ISqlBackend() = default;

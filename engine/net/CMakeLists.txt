@@ -11,6 +11,8 @@ add_library(net
   src/stores.cc
   src/reactive_query.cc
   src/outbox.cc
+  src/migration.cc
+  src/durability.cc
 )
 target_include_directories(net PUBLIC include)
 target_compile_options(net PRIVATE -Wall -Wextra -Wpedantic)
