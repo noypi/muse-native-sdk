@@ -11,6 +11,7 @@ add_library(startup
   src/bootstrap.cc
   src/dynamic_init.cc
   src/pool_warmup.cc
+  src/trace.cc
 )
 target_include_directories(startup PUBLIC include)
 target_compile_options(startup PRIVATE -Wall -Wextra -Wpedantic)
