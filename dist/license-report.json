@@ -1,0 +1,21 @@
+{
+  "generatedAt": "2026-10-28T03:54:53.585Z",
+  "packages": [
+    {
+      "name": "left-pad",
+      "version": "1.3.0",
+      "license": "MIT"
+    },
+    {
+      "name": "semver",
+      "version": "7.5.4",
+      "license": "ISC"
+    },
+    {
+      "name": "debug",
+      "version": "4.3.4",
+      "license": "MIT"
+    }
+  ],
+  "blocked": []
+}
