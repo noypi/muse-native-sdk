@@ -9,6 +9,8 @@ add_library(net
   src/data_layer.cc
   src/sqlite_store.cc
   src/stores.cc
+  src/reactive_query.cc
+  src/outbox.cc
 )
 target_include_directories(net PUBLIC include)
 target_compile_options(net PRIVATE -Wall -Wextra -Wpedantic)
