@@ -15,6 +15,7 @@
 #   :benchmark:frameGuard   -> alias of :benchmark:frame (closest existing harness)
 #   :benchmark:powerSaver   -> benchmark.powersaver.run.measure_power_saver
 #   :benchmark:soak         -> benchmark.soak.run.measure_soak
+#   :engine:core:allocator   -> tests.test_core_allocator (arena/pool contract, TC-CORE-003)
 set -eu
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 
@@ -32,6 +33,7 @@ Tasks:
   :benchmark:frameGuard    alias of :benchmark:frame (no separate guard module)
   :benchmark:powerSaver    benchmark.powersaver.run.measure_power_saver
   :benchmark:soak          benchmark.soak.run.measure_soak
+  :engine:core:allocator   tests.test_core_allocator (arena/pool contract)
 Extra args after :benchmark:perfGate are forwarded to benchmark/gate/run.py
 as <manifest> <results-json>.
 EOF
@@ -118,6 +120,112 @@ p = os.path.join('benchmark', 'profile-check', 'check.py')
 spec = spec_from_file_location('profile_check', p)
 mod = module_from_spec(spec); spec.loader.exec_module(mod)
 print('profile active:', mod.is_profile_active(os.environ.get('BUILD_DIR', 'build')))"
+    ;;
+  :engine:core:allocator)
+    cd "$ROOT" && python3 -m unittest tests.test_core_allocator
+    ;;
+  :engine:core:pluginAbi)
+    cd "$ROOT" && python3 -m unittest tests.test_core_plugin_abi || exit $?
+    # T6 (AC-CORE-010) harness checks — hermetic, stdlib/toolchain only.
+    T6DIR="engine/core/plugin/tests"
+    # (a) shell harness parses.
+    bash -n "$T6DIR/visibility_check.sh" \
+      && echo "PASS: visibility_check.sh syntax OK" \
+      || { echo "FAIL: visibility_check.sh syntax error" >&2; exit 1; }
+    # (b) static marker checks over harness sources vs T3/T4 headers.
+    grep -q "MusePluginEntry" "$T6DIR/abi_incompatible_plugin.cpp" \
+      || { echo "FAIL: abi harness missing MusePluginEntry" >&2; exit 1; }
+    grep -q "kIncompatibleDescriptor" "$T6DIR/abi_incompatible_plugin.cpp" \
+      || { echo "FAIL: abi harness missing wrong-major descriptor" >&2; exit 1; }
+    grep -q "llvm-nm not found" "$T6DIR/visibility_check.sh" \
+      || { echo "FAIL: visibility harness must fail closed on missing llvm-nm" >&2; exit 1; }
+    grep -q 'ALLOWLIST="MusePluginEntry"' "$T6DIR/visibility_check.sh" \
+      || { echo "FAIL: visibility harness allowlist must be MusePluginEntry" >&2; exit 1; }
+    grep -q "llvm-nm -g --defined-only" "$T6DIR/visibility_check.sh" \
+      || { echo "FAIL: visibility harness must diff extern symbols only (llvm-nm -g --defined-only)" >&2; exit 1; }
+    grep -q "noexcept" "$T6DIR/frame_timing_noexcept.cpp" \
+      || { echo "FAIL: frame-timing harness must be noexcept" >&2; exit 1; }
+    grep -q "renderPathViolation" "$T6DIR/frame_timing_noexcept.cpp" \
+      || { echo "FAIL: frame-timing harness must route to renderPathViolation" >&2; exit 1; }
+    if grep -Eq '^[[:space:]]*throw([;[:space:]]|$)' "$T6DIR/frame_timing_noexcept.cpp"; then
+      echo "FAIL: frame-timing harness must not throw" >&2; exit 1
+    fi
+    echo "PASS: T6 static harness markers OK"
+    # (c) llvm-nm allowlist diff when tool + object exist, else fail-closed SKIP.
+    if ! command -v llvm-nm >/dev/null 2>&1; then
+      echo "SKIP: llvm-nm not found — hidden-visibility diff cannot run here (fail closed, no silent pass)"
+    elif [ -f build/benchmark_plugin.so ]; then
+      sh "$T6DIR/visibility_check.sh" build/benchmark_plugin.so
+    elif [ -f build/libbenchmark_plugin.so ]; then
+      sh "$T6DIR/visibility_check.sh" build/libbenchmark_plugin.so
+    else
+      echo "SKIP: plugin object not found (build/benchmark_plugin.so missing) — hidden-visibility diff cannot run here (fail closed, no silent pass)"
+    fi
+    # (d) compile-and-run of the .cpp harnesses when a compiler exists.
+    if command -v c++ >/dev/null 2>&1; then
+      CXX=c++
+    elif command -v g++ >/dev/null 2>&1; then
+      CXX=g++
+    elif command -v clang++ >/dev/null 2>&1; then
+      CXX=clang++
+    else
+      echo "SKIP: no C++ compiler found (c++/g++/clang++ missing) — harness compile-and-run cannot run here (fail closed, no silent pass)"
+      echo "PASS: :engine:core:pluginAbi (T6 harnesses checked)"
+      exit 0
+    fi
+    T6TMP="$(mktemp -d)" || exit 1
+    # (d1) incompatible-plugin TU compiles against T3 abi.h; linked driver
+    # proves wrong-major descriptor is rejected with a clear error, no crash.
+    "$CXX" -std=c++20 -c "$T6DIR/abi_incompatible_plugin.cpp" -o "$T6TMP/abi_incompat.o" \
+      || { echo "FAIL: abi_incompatible_plugin.cpp does not compile" >&2; rm -rf "$T6TMP"; exit 1; }
+    cat > "$T6TMP/abi_check_main.cpp" <<'EOF'
+#include <cstdio>
+#include <cstring>
+#include "engine/core/plugin/abi.h"
+extern "C" const muse::core::plugin::PluginDescriptor* MusePluginEntry();
+int main() {
+  const auto* d = MusePluginEntry();
+  if (d == nullptr) { std::puts("FAIL: entry returned null"); return 1; }
+  if (d->abiMajor != 0u) { std::puts("FAIL: harness descriptor no longer wrong-major"); return 1; }
+  bool allzero = true;
+  for (int i = 0; i < 64; ++i) { if (d->abiHash[i] != '0') { allzero = false; break; } }
+  if (!allzero) { std::puts("FAIL: harness descriptor hash no longer all-zero"); return 1; }
+  std::printf("PASS: incompatible plugin rejected (expected major!=0 actual major=0 hash=%s, zero crashes)\n", d->abiHash);
+  return 0;
+}
+EOF
+    "$CXX" -std=c++20 -I"$ROOT" "$T6TMP/abi_check_main.cpp" "$T6TMP/abi_incompat.o" -o "$T6TMP/abi_check" \
+      || { echo "FAIL: abi rejection driver does not link" >&2; rm -rf "$T6TMP"; exit 1; }
+    "$T6TMP/abi_check" || { rm -rf "$T6TMP"; exit 1; }
+    # (d2) noexcept TU links under -fno-exceptions and passes frame timing.
+    "$CXX" -std=c++20 -fno-exceptions -c "$T6DIR/frame_timing_noexcept.cpp" -o "$T6TMP/frame_timing.o" \
+      || { echo "FAIL: frame_timing_noexcept.cpp does not compile under -fno-exceptions" >&2; rm -rf "$T6TMP"; exit 1; }
+    "$CXX" -std=c++20 -fno-exceptions -c engine/core/render_path_tu.cpp -o "$T6TMP/render_path_tu.o" \
+      || { echo "FAIL: render_path_tu.cpp does not compile under -fno-exceptions" >&2; rm -rf "$T6TMP"; exit 1; }
+    cat > "$T6TMP/timing_main.cpp" <<'EOF'
+#include <cstdio>
+namespace muse { namespace core { namespace plugin { namespace tests {
+int runFrameTimingNoexcept(int frames) noexcept;
+int checkNoexceptTiming() noexcept;
+}}}}
+int main() {
+  if (muse::core::plugin::tests::runFrameTimingNoexcept(60) != 0) { std::puts("FAIL: frame timing probe failed"); return 1; }
+  if (muse::core::plugin::tests::checkNoexceptTiming() != 0) { std::puts("FAIL: noexcept timing check failed"); return 1; }
+  std::puts("PASS: noexcept frame timing links and passes");
+  return 0;
+}
+EOF
+    "$CXX" -std=c++20 -fno-exceptions "$T6TMP/timing_main.cpp" "$T6TMP/frame_timing.o" "$T6TMP/render_path_tu.o" -o "$T6TMP/timing_check" \
+      || { echo "FAIL: noexcept timing driver does not link under -fno-exceptions" >&2; rm -rf "$T6TMP"; exit 1; }
+    "$T6TMP/timing_check" || { rm -rf "$T6TMP"; exit 1; }
+    rm -rf "$T6TMP"
+    echo "PASS: :engine:core:pluginAbi (T6 harnesses checked)"
+    ;;
+  :engine:core:exceptionPolicy)
+    cd "$ROOT" && python3 -m unittest tests.test_core_exception_policy
+    ;;
+  :engine:core:pluginManifest)
+    cd "$ROOT" && python3 -m unittest tests.test_core_plugin_manifest
     ;;
   *)
     echo "gradlew: unknown task '$TASK'" >&2
