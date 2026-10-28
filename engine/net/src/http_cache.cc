@@ -219,9 +219,13 @@ void MemoryCacheStore::put(const std::string& key, const CachedEntry& e) {
 }
 
 std::optional<CachedEntry> MemoryCacheStore::get(const std::string& key) {
-  auto it = map_.find(key);
-  if (it == map_.end()) return std::nullopt;
-  return it->second;
+  try {
+    auto it = map_.find(key);
+    if (it == map_.end()) return std::nullopt;
+    return it->second;
+  } catch (...) {
+    return std::nullopt;
+  }
 }
 
 void MemoryCacheStore::clear() {
@@ -270,8 +274,8 @@ ResponseOrRevalidate HttpCache::handle(const Request& req,
     {
       bool credentialed = false;
       for (const auto& h : req.headers) {
-        if ((NameEq(h.first, "authorization") ||
-             NameEq(h.first, "cookie")) &&
+        if ((NameEq(Trim(h.first), "authorization") ||
+             NameEq(Trim(h.first), "cookie")) &&
             !Trim(h.second).empty()) {
           credentialed = true;
           break;

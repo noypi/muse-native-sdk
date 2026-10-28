@@ -67,15 +67,29 @@ std::string TrimVal(const std::string& s) {
   return s.substr(b, e - b);
 }
 
-// First value for a header name (case-insensitive); reports presence
+// First value for a header name (case-insensitive, name trimmed to match
+// HasCredentials in cache_ownership.h); reports presence
 // separately so absent vs present-but-empty stay distinct.
 std::pair<bool, std::string> FirstAuthValue(
     const std::vector<std::pair<std::string, std::string>>& headers,
     const std::string& name) {
   for (const auto& h : headers) {
-    if (NameEqCi(h.first, name)) return {true, TrimVal(h.second)};
+    if (NameEqCi(TrimVal(h.first), name)) return {true, TrimVal(h.second)};
   }
   return {false, std::string()};
+}
+
+// Length-prefixed framing for one credential field: "present:length:value;".
+// The explicit length makes framing injective — credential bytes (including
+// 0x00/0x01) can never alias framing, unlike separator-joined concatenation.
+std::string FrameField(bool present, const std::string& v) {
+  std::string out;
+  out.push_back(present ? '\x01' : '\x00');
+  out.append(std::to_string(v.size()));
+  out.push_back(':');
+  out.append(v);
+  out.push_back(';');
+  return out;
 }
 
 std::string CoalescerKey(const Request& r) {
@@ -83,12 +97,8 @@ std::string CoalescerKey(const Request& r) {
   auto cookie = FirstAuthValue(r.headers, "cookie");
   // Normalized auth material: presence flags keep absent/empty/present
   // distinct; values compared exact/opaque after trimming.
-  std::string material;
-  material.push_back(auth.first ? '\x01' : '\x00');
-  material.append(auth.second);
-  material.push_back('\x01');
-  material.push_back(cookie.first ? '\x01' : '\x00');
-  material.append(cookie.second);
+  std::string material = FrameField(auth.first, auth.second) +
+                         FrameField(cookie.first, cookie.second);
   std::string key;
   key.reserve(r.method.size() + 1 + r.url.size() + 1 + 16);
   key.append(r.method);
