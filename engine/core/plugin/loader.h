@@ -1,10 +1,16 @@
 // Load-time plugin handshake (NFR-CORE-003, AC-CORE-004).
 //
 // loadPlugin() dlopens the candidate .so, resolves only the single
-// MusePluginEntry symbol, and rejects major/minor/hash mismatches
-// before any plugin code runs. Success returns ok(handle); every
-// mismatch returns err(PluginError) with a structured diagnostic
-// naming the expected vs actual descriptor.
+// MusePluginEntry symbol, and rejects major/minor/hash mismatches.
+// Success returns ok(handle); every mismatch returns err(PluginError)
+// with a structured diagnostic naming the expected vs actual
+// descriptor.
+//
+// TRUST REQUIREMENT: callers must pass only trusted,
+// integrity-verified (OTA/signature, NFR-CORE-008) .so paths. dlopen
+// executes the library's static initializers before the handshake
+// runs, so this handshake provides version safety (stale-ABI
+// protection), not containment of malicious plugins.
 #pragma once
 
 #include <string>

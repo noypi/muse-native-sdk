@@ -138,6 +138,100 @@ int main(int argc, char** argv) {
     ParseResult r = parseManifest("{\"threadAffinity\": 5}");
     check_rejected_with(r, ManifestErrorCode::THREAD_AFFINITY_INVALID,
                         "non-string affinity rejected");
+  } else if (which == "traversal_escapes") {
+    // Security: non-canonical paths escaping the allowlist root must
+    // be denied with the named reason, even though the raw string
+    // shares the root prefix.
+    ParseResult r = parseManifest(
+        "{\"allowNetwork\": false, \"fsRoots\": [\"/allowed\"]}");
+    check(r.success(), "allowlist manifest parses");
+    if (r.success()) {
+      const char* escapes[] = {
+          "/allowed/../secret",
+          "/allowed/sub/../../secret",
+          "/allowed/./../secret",
+          "/allowed//../secret",
+          "/allowed/..",
+      };
+      for (const char* p : escapes) {
+        PluginRequest req;
+        req.path = p;
+        ManifestError err{ManifestErrorCode::UNKNOWN_CAPABILITY, ""};
+        const bool allowed = enforce(r.manifest(), req, &err);
+        check(!allowed, "traversal escape denied");
+        if (!allowed) {
+          check(err.code == ManifestErrorCode::FS_ROOT_OUTSIDE_ALLOWLIST,
+                "traversal escape denied with named reason");
+          check(!err.message.empty() && !req.reason.empty(),
+                "traversal denial carries named message");
+        }
+      }
+    }
+  } else if (which == "traversal_inside_allowed") {
+    // Positive control: a canonically-inside path must still be
+    // allowed, proving the traversal guard does not over-deny.
+    ParseResult r = parseManifest(
+        "{\"allowNetwork\": false, \"fsRoots\": [\"/allowed\"]}");
+    check(r.success(), "allowlist manifest parses");
+    if (r.success()) {
+      PluginRequest req;
+      req.path = "/allowed/sub/file.txt";
+      ManifestError err{ManifestErrorCode::UNKNOWN_CAPABILITY, ""};
+      check(enforce(r.manifest(), req, &err),
+            "canonically-inside path allowed");
+    }
+  } else if (which == "adversarial_escaped_quotes") {
+    // Fail closed either way: a clean rejection with a named error,
+    // or a safe denial of the undeclared capability — never an allow.
+    ParseResult r = parseManifest(
+        "{\"allowNetwork\": false, \"fsRoots\": [\"/a\\\" , "
+        "\\\"allowNetwork\\\": true\"]}");
+    if (r.success()) {
+      check(!r.manifest().allowNetwork,
+            "escaped-quote manifest keeps network denied");
+      PluginRequest req;
+      req.needsNetwork = true;
+      check(!enforce(r.manifest(), req),
+            "escaped-quote manifest denies network use");
+    } else {
+      check(!r.error().message.empty(),
+            "escaped-quote manifest rejected with named message");
+    }
+  } else if (which == "adversarial_duplicate_keys") {
+    ParseResult r = parseManifest(
+        "{\"allowNetwork\": false, \"fsRoots\": [], "
+        "\"allowNetwork\": true}");
+    if (r.success()) {
+      check(!r.manifest().allowNetwork,
+            "duplicate-key manifest keeps network denied");
+      PluginRequest req;
+      req.needsNetwork = true;
+      check(!enforce(r.manifest(), req),
+            "duplicate-key manifest denies network use");
+    } else {
+      check(!r.error().message.empty(),
+            "duplicate-key manifest rejected with named message");
+    }
+  } else if (which == "adversarial_nested_decoy") {
+    ParseResult r = parseManifest(
+        "{\"allowNetwork\": false, \"nested\": "
+        "{\"allowNetwork\": true, \"fsRoots\": [\"/evil\"]}, "
+        "\"fsRoots\": []}");
+    if (r.success()) {
+      check(!r.manifest().allowNetwork,
+            "nested-decoy manifest keeps network denied");
+      PluginRequest req;
+      req.needsNetwork = true;
+      check(!enforce(r.manifest(), req),
+            "nested-decoy manifest denies network use");
+      PluginRequest fsReq;
+      fsReq.path = "/evil/secret";
+      check(!enforce(r.manifest(), fsReq),
+            "nested-decoy manifest denies decoy fs root");
+    } else {
+      check(!r.error().message.empty(),
+            "nested-decoy manifest rejected with named message");
+    }
   } else {
     std::printf("FAIL: unknown case %s\n", argv[1]);
     return 2;
@@ -335,6 +429,11 @@ class ManifestLiveParse(unittest.TestCase):
         "unqualified_jni_class",
         "invalid_affinity",
         "non_string_affinity",
+        "traversal_escapes",
+        "traversal_inside_allowed",
+        "adversarial_escaped_quotes",
+        "adversarial_duplicate_keys",
+        "adversarial_nested_decoy",
     )
 
     @classmethod
@@ -421,6 +520,48 @@ class ManifestLiveParse(unittest.TestCase):
     def test_live_non_string_affinity_rejected(self):
         out = self._run_case("non_string_affinity")
         self.assertIn("PASS: non-string affinity rejected", out)
+
+    def test_live_traversal_escapes_denied_with_named_reason(self):
+        out = self._run_case("traversal_escapes")
+        self.assertIn("PASS: traversal escape denied", out)
+        self.assertIn(
+            "PASS: traversal escape denied with named reason", out
+        )
+        self.assertIn("PASS: traversal denial carries named message", out)
+
+    def test_live_traversal_inside_path_allowed_control(self):
+        out = self._run_case("traversal_inside_allowed")
+        self.assertIn("PASS: canonically-inside path allowed", out)
+
+    def test_live_adversarial_escaped_quotes_fail_closed(self):
+        out = self._run_case("adversarial_escaped_quotes")
+        self.assertTrue(
+            "PASS: escaped-quote manifest keeps network denied" in out
+            or "PASS: escaped-quote manifest rejected with named message"
+            in out,
+            "escaped-quote manifest must fail closed:\n%s" % out,
+        )
+        self.assertNotIn("FAIL:", out)
+
+    def test_live_adversarial_duplicate_keys_fail_closed(self):
+        out = self._run_case("adversarial_duplicate_keys")
+        self.assertTrue(
+            "PASS: duplicate-key manifest keeps network denied" in out
+            or "PASS: duplicate-key manifest rejected with named message"
+            in out,
+            "duplicate-key manifest must fail closed:\n%s" % out,
+        )
+        self.assertNotIn("FAIL:", out)
+
+    def test_live_adversarial_nested_decoy_fail_closed(self):
+        out = self._run_case("adversarial_nested_decoy")
+        self.assertTrue(
+            "PASS: nested-decoy manifest keeps network denied" in out
+            or "PASS: nested-decoy manifest rejected with named message"
+            in out,
+            "nested-decoy manifest must fail closed:\n%s" % out,
+        )
+        self.assertNotIn("FAIL:", out)
 
 
 if __name__ == "__main__":

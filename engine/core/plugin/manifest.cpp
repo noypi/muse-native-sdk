@@ -48,17 +48,61 @@ bool IsKnownCapabilityName(const std::string& capability) {
          capability == "affinity";
 }
 
+// Lexically normalize a path (resolve "." / ".." and duplicate "/"
+// without touching the filesystem, so non-existent targets are safe).
+// Absolute paths cannot escape "/"; relative ".." prefixes are kept so
+// the allowlist test still denies them.
+std::string NormalizePath(const std::string& path) {
+  const bool absolute = !path.empty() && path[0] == '/';
+  std::vector<std::string> parts;
+  std::string::size_type i = 0;
+  while (i <= path.size()) {
+    std::string::size_type next = path.find('/', i);
+    if (next == std::string::npos) next = path.size();
+    std::string comp = path.substr(i, next - i);
+    if (comp.empty() || comp == ".") {
+      // Skip.
+    } else if (comp == "..") {
+      if (!parts.empty() && parts.back() != "..") {
+        parts.pop_back();
+      } else if (!absolute) {
+        parts.push_back("..");
+      }
+      // Absolute ".." past root stays at root (dropped).
+    } else {
+      parts.push_back(comp);
+    }
+    i = next + 1;
+  }
+  std::string out;
+  if (absolute) out += "/";
+  for (size_t k = 0; k < parts.size(); ++k) {
+    if (k > 0) out += "/";
+    out += parts[k];
+  }
+  if (out.empty()) return absolute ? "/" : ".";
+  return out;
+}
+
 // True when path is at or under one of the declared allowlist roots.
 // Deny-by-default: an empty allowlist denies every fs use.
+// Both the request path and the roots are lexically normalized first,
+// so non-canonical ".." (e.g. "/allowed/../secret") cannot slip past
+// the prefix+boundary test; an embedded NUL fails closed. Symlink /
+// TOCTOU canonicalization at open time stays with the sandbox peer.
 bool UnderRoots(const std::string& path,
                 const std::vector<std::string>& fsRoots) {
   if (path.empty()) return true;
+  if (path.find('\0') != std::string::npos) return false;
+  const std::string normPath = NormalizePath(path);
   for (const std::string& root : fsRoots) {
     if (root.empty()) continue;
-    if (path == root) return true;
-    if (path.size() > root.size() &&
-        path.compare(0, root.size(), root) == 0 &&
-        (root.back() == '/' || path[root.size()] == '/')) {
+    if (root.find('\0') != std::string::npos) continue;
+    const std::string normRoot = NormalizePath(root);
+    if (normPath == normRoot) return true;
+    if (normPath.size() > normRoot.size() &&
+        normPath.compare(0, normRoot.size(), normRoot) == 0 &&
+        (normRoot.back() == '/' || normPath[normRoot.size()] == '/')) {
       return true;
     }
   }

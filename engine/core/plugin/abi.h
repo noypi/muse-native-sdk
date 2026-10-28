@@ -5,8 +5,9 @@
 // reported descriptor against the expected one: major (hard reject),
 // minor (hard reject per the spec handshake), then the SHA-256 ABI
 // hash over the canonical ABI descriptor, compared as a 64-char hex
-// string plus NUL. Any mismatch rejects the plugin before any plugin
-// code runs.
+// string plus NUL. Any mismatch rejects the plugin; the handshake
+// gives version safety only (dlopen constructors/entry() run first),
+// so load only trusted, integrity-verified paths — sandboxing is NFR-CORE-008's domain.
 #pragma once
 
 #include <cstdint>

@@ -4,8 +4,16 @@
 // single MusePluginEntry symbol. The reported descriptor is compared
 // against the expected one — major (hard reject), minor (hard reject
 // per the spec handshake), then the ABI hash — and any mismatch
-// returns err(...) before any plugin code runs, with a structured
-// diagnostic naming expected vs actual.
+// returns err(...) with a structured diagnostic naming expected vs
+// actual.
+//
+// TRUST REQUIREMENT: only load .so files from trusted,
+// integrity-verified (OTA/signature, NFR-CORE-008) paths. dlopen runs
+// the library's static initializers and entry() itself is plugin code,
+// so the handshake below runs AFTER untrusted .so constructors have
+// already executed in-process. The handshake rejects incompatible or
+// vendored builds; it does not sandbox constructor side effects.
+// Sandboxing constructors is NFR-CORE-008's domain (out of scope).
 #include "loader.h"
 
 #include <dlfcn.h>
@@ -97,6 +105,20 @@ LoadResult LoadResult::err(PluginError error) {
 }
 
 LoadResult loadPlugin(const char* path, PluginDescriptor expected) {
+  if (path == nullptr || *path == '\0') {
+    PluginError error;
+    // Fail closed before any dlopen call: nullptr would make dlopen
+    // return a handle to the main program and std::string + path would
+    // dereference null (UB). Reported under the hash-mismatch code per
+    // the published contract (see abi.h NOTE).
+    error.code = PluginErrorCode::ABI_HASH_MISMATCH;
+    error.message =
+        std::string("plugin load failed: null or empty path, expected=") +
+        kEntrySymbol + " actual=load-error";
+    error.expectedHash = CopyHash(expected.abiHash);
+    error.actualHash = "";
+    return LoadResult::err(error);
+  }
   void* so = dlopen(path, RTLD_NOW);
   if (so == nullptr) {
     PluginError error;
@@ -126,9 +148,11 @@ LoadResult loadPlugin(const char* path, PluginDescriptor expected) {
     return LoadResult::err(error);
   }
 
-  // Resolve only MusePluginEntry: the entry function just reports the
-  // descriptor. No other plugin code runs until every check below
-  // passes.
+  // Resolve only MusePluginEntry: the entry function reports the
+  // descriptor for the version/hash checks below. Note dlopen above
+  // already ran the library's static initializers and entry() is
+  // itself plugin code, so these checks reject incompatible builds
+  // but cannot sandbox constructor side effects (see file header).
   auto* entry = reinterpret_cast<EntryFn>(symbol);
   const PluginDescriptor* actual = entry();
   if (actual == nullptr) {

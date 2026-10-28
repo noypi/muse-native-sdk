@@ -115,7 +115,7 @@ static size_t LongestRun(const std::string& s, char c) {
 
 int main(int argc, char** argv) {
   if (argc != 3) {
-    std::puts("FAIL: usage: probe <plugin.so> <expected-code>");
+    std::puts("FAIL: usage: probe <plugin.so|__NULL__|__EMPTY__> <expected-code>");
     return 2;
   }
   PluginDescriptor expected{};
@@ -124,7 +124,12 @@ int main(int argc, char** argv) {
   std::memset(expected.abiHash, 'e', 64);
   expected.abiHash[64] = '\0';
   expected.entryPoint = "MusePluginEntry";
-  LoadResult result = loadPlugin(argv[1], expected);
+  const std::string pathArg = argv[1];
+  const char* loadPath = argv[1];
+  if (pathArg == "__NULL__") loadPath = nullptr;
+  static const char kEmpty[] = "";
+  if (pathArg == "__EMPTY__") loadPath = kEmpty;
+  LoadResult result = loadPlugin(loadPath, expected);
   const std::string want = argv[2];
   int failures = 0;
   auto check = [&](bool cond, const char* name) {
@@ -147,6 +152,17 @@ int main(int argc, char** argv) {
       code = "ABI_HASH_MISMATCH";
     }
     check(code == want, "rejection carries expected code");
+    // Null/empty-path arm: fail closed before any dlopen with the
+    // published contract message naming the bad path. Reaching this
+    // line at all proves no crash on the null/empty load path, and the
+    // err(...) shape proves no self-handle ok().
+    if (pathArg == "__NULL__" || pathArg == "__EMPTY__") {
+      check(err.message.find("null or empty path") != std::string::npos,
+            "null/empty path diagnosed by name");
+      check(err.message.find("expected") != std::string::npos &&
+                err.message.find("actual") != std::string::npos,
+            "null/empty diagnostic names expected vs actual");
+    }
     check(err.message.find("expected") != std::string::npos &&
               err.message.find("actual") != std::string::npos,
           "diagnostic names expected vs actual");
@@ -517,6 +533,49 @@ class LoaderLiveLoad(unittest.TestCase):
         self.assertIn("PASS: rejection carries expected code", out)
         self.assertIn(
             "PASS: no unbounded read past non-terminated hash", out
+        )
+        self.assertIn("LOADER_LIVE_ALL_PASS", out)
+
+    def _run_null_path(self, path_arg):
+        if _find_cxx() is None or self._exe is None:
+            if self._exe is None and _find_cxx() is not None:
+                self.fail(
+                    "live loader driver must compile: %s"
+                    % (self._build_stderr,)
+                )
+            self.skipTest(_MISSING_COMPILER_SKIP)
+        proc = subprocess.run(
+            [self._exe, path_arg, "ABI_HASH_MISMATCH"],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        self.assertEqual(
+            proc.returncode,
+            0,
+            "live load case %r must exit 0 (err(ABI_HASH_MISMATCH), "
+            "no crash, no self-handle ok()):\n%s"
+            % (path_arg, proc.stdout + proc.stderr),
+        )
+        return proc.stdout
+
+    def test_live_null_path_fail_closed(self):
+        out = self._run_null_path("__NULL__")
+        self.assertIn("PASS: crafted plugin rejected", out)
+        self.assertIn("PASS: rejection carries expected code", out)
+        self.assertIn("PASS: null/empty path diagnosed by name", out)
+        self.assertIn(
+            "PASS: null/empty diagnostic names expected vs actual", out
+        )
+        self.assertIn("LOADER_LIVE_ALL_PASS", out)
+
+    def test_live_empty_path_fail_closed(self):
+        out = self._run_null_path("__EMPTY__")
+        self.assertIn("PASS: crafted plugin rejected", out)
+        self.assertIn("PASS: rejection carries expected code", out)
+        self.assertIn("PASS: null/empty path diagnosed by name", out)
+        self.assertIn(
+            "PASS: null/empty diagnostic names expected vs actual", out
         )
         self.assertIn("LOADER_LIVE_ALL_PASS", out)
 

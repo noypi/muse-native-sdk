@@ -80,6 +80,16 @@ struct PluginRequest {
 
 ParseResult parseManifest(const char* json);
 
+// NOTE (hardening, deliberately not a full JSON parser): parseManifest
+// accepts only the flat manifest shape it generates (known keys with
+// literal true/false, string arrays, one string affinity). The
+// hand-rolled scanner does not interpret backslash escapes (e.g. \"
+// or \u) and matches keys by first textual occurrence, so adversarial
+// shapes (escaped quotes, duplicate keys, nested-object decoys) fail
+// closed as denials rather than grants. Do not add a key whose fail
+// direction is "allow" without replacing the scanner with a real JSON
+// object-model lookup.
+
 // Deny-by-default enforcement: returns true only when every requested
 // capability was declared in the manifest; otherwise returns false
 // (deny) and records the named reason. Undeclared capabilities are
