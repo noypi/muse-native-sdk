@@ -71,7 +71,11 @@ struct VerifyResult {
 
 // Logging hook for AC-SECURITY-011 rejection logging. Called once per
 // denial with the denial error. Defaults to no-op; never throws.
-// A host may install a sink via setRejectLogHook.
+// A host may install a sink via setRejectLogHook. Install-before-use:
+// the hook must be installed single-threaded before any verifyAndMap
+// call that may run concurrently; reinstalling while verification is in
+// flight is not supported. The pointer itself is stored atomically so a
+// late install can never cause a data race (undefined behavior).
 using RejectLogHook = void (*)(const SandboxError&) noexcept;
 void setRejectLogHook(RejectLogHook hook) noexcept;
 

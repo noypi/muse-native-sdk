@@ -38,8 +38,17 @@ inline constexpr const char* kBootstrapPhaseNames[kBootstrapPhaseCount] = {
 
 // Bootstrap configuration. Default-constructible; eager-only work is
 // disabled unless the caller explicitly opts in.
+//
+// `failAtPhase` is a test/diagnostic-only injection hook (default -1 =
+// no failure, production behavior unchanged). When
+// `0 <= failAtPhase < kBootstrapPhaseCount`, phase execution stops at
+// that phase: runBootstrap returns ok=false with a named StartupError
+// (phase=failAtPhase, message naming the phase) and zeroed timings
+// beyond it. Values outside [0, kBootstrapPhaseCount) — including the
+// -1 default — disable injection. Production callers leave the default.
 struct BootstrapConfig {
   bool allowEager = false;
+  int failAtPhase = -1;
 };
 
 // Per-phase monotonic timing ([startNs, endNs] in steady-clock

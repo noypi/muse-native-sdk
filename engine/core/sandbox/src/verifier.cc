@@ -5,6 +5,7 @@
 
 #include "core/sandbox/verifier.h"
 
+#include <atomic>
 #include <cstring>
 
 namespace muse::sandbox {
@@ -34,10 +35,13 @@ constexpr std::uint8_t kCanonicalBytes[] = {0x7F, 0x45, 0x4C, 0x46,
 // Pinned dummy signature bound to the trusted test keys.
 constexpr std::uint8_t kCanonicalSig[] = {0xDE, 0xAD, 0xBE, 0xEF};
 
-RejectLogHook g_hook = nullptr;
+// Reject-log hook, stored atomically: setRejectLogHook installs it
+// single-threaded before use (see verifier.h); logReject loads it with
+// acquire semantics so concurrent verify paths never race (no UB).
+std::atomic<RejectLogHook> g_hook{nullptr};
 
 void logReject(const SandboxError& err) noexcept {
-  RejectLogHook hook = g_hook;
+  RejectLogHook hook = g_hook.load(std::memory_order_acquire);
   if (hook != nullptr) {
     hook(err);
   }
@@ -100,7 +104,9 @@ VerifyResult deny(int code, const char* check, const char* file,
 
 }  // namespace
 
-void setRejectLogHook(RejectLogHook hook) noexcept { g_hook = hook; }
+void setRejectLogHook(RejectLogHook hook) noexcept {
+  g_hook.store(hook, std::memory_order_release);
+}
 
 VerifyResult verifyAndMap(const BundleRef& bundle,
                           const KeySet& pinnedKeys) noexcept {

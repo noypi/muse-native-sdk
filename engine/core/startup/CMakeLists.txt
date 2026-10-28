@@ -59,4 +59,14 @@ if(Python3_FOUND)
     COMMENT "AC-CORE-031: no dynamic initializers on the startup path"
     VERBATIM)
   add_dependencies(dynamicInitCheck startup bootstrap_test dynamic_init_test)
+else()
+  # Loud fallback: the AC-CORE-031 gate must never vanish silently when
+  # Python3 is unavailable. The stub fails at build time with a clear
+  # message instead of leaving the check absent.
+  message(WARNING "AC-CORE-031: Python3 interpreter not found; dynamicInitCheck will fail loudly instead of scanning")
+  add_custom_target(dynamicInitCheck
+    COMMAND ${CMAKE_COMMAND} -E echo "AC-CORE-031 dynamicInitCheck: Python3 interpreter not found; cannot scan startup-path objects"
+    COMMAND ${CMAKE_COMMAND} -E false
+    COMMENT "AC-CORE-031: Python3 missing, failing loudly (no silent gate)"
+    VERBATIM)
 endif()

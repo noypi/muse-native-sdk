@@ -48,12 +48,15 @@ BootstrapResult runBootstrap(const BootstrapConfig& config) noexcept {
   result.error = StartupError{};
 
   std::uint64_t prevEnd = 0;
+  // Fixed order is enforced structurally: the loop visits each phase
+  // index in kBootstrapPhaseNames order exactly once.
   for (int i = 0; i < kBootstrapPhaseCount; ++i) {
-    // Fixed-order gate: phases execute strictly in index order. Any
-    // deviation is a typed denial naming the expected phase, never a
-    // silent skip or reorder.
-    if (i < 0 || i >= kBootstrapPhaseCount) {
-      result.error = StartupError{1, i, "bootstrap phase out of order"};
+    // Diagnostic-only failure injection (see BootstrapConfig::failAtPhase).
+    // Stops execution at the injected phase with a named StartupError;
+    // timings at and beyond it stay zeroed (no partial execution beyond
+    // the failed phase). No allocation; noexcept-safe.
+    if (i == config.failAtPhase) {
+      result.error = StartupError{1, i, kBootstrapPhaseNames[i]};
       return result;
     }
 

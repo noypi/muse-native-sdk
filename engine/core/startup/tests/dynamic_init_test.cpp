@@ -10,9 +10,12 @@
 //
 // Hermetic: C++20 + the startup-path check entry point only. The test never
 // reads the real build tree, never invokes llvm-nm/readelf itself, and never
-// touches the network. Violation fixtures are inline byte/name vectors fed to
-// the pure line-format helper; the `object_dir` calls use a nonexistent path
-// (expecting nonzero fail-closed) plus the self-evident clean/dirty contract
+// touches the network. The violation case writes a marker-bearing `.o`
+// fixture into a build-dir-owned `test-fixtures/` path (created at runtime,
+// marker assembled from fragments so this test's own object stays clean)
+// and asserts the nonzero return plus the production `DYNAMIC_INIT:` stdout
+// line; the `object_dir` edge calls use a nonexistent path (expecting
+// nonzero fail-closed) plus the self-evident clean/dirty contract
 // documented below.
 //
 // ASSUMPTIONS (contract genuinely silent on these details):
@@ -25,7 +28,13 @@
 //   A3: violation lines are exactly `DYNAMIC_INIT:<file>:<symbol>` on stdout.
 
 #include <cstdio>
+#include <cstring>
+#include <filesystem>
+#include <fstream>
+#include <iterator>
 #include <string>
+#include <system_error>
+#include <unistd.h>
 
 #include "core/startup/dynamic_init.h"
 
@@ -80,16 +89,81 @@ bool check_null_dir_fails_closed() {
 
 bool check_violation_line_format() {
   // Plan Interface: violations print `DYNAMIC_INIT:<file>:<symbol>` lines.
-  // The format helper is exercised with inline fixture values only.
-  const std::string file = "bootstrap.cc.o";
-  const std::string symbol = "_GLOBAL__sub_I_bootstrap.cc";
-  char line[512];
-  std::snprintf(line, sizeof(line), "DYNAMIC_INIT:%s:%s", file.c_str(),
-                symbol.c_str());
-  CHECK(std::string(line) ==
-        "DYNAMIC_INIT:bootstrap.cc.o:_GLOBAL__sub_I_bootstrap.cc");
-  // Malformed variants must never match the contract prefix shape.
-  CHECK(std::string("dynamic_init:bootstrap.cc.o:sym") != std::string(line));
+  // Exercises the production entry point for real: a fixture `.o` file
+  // carrying a marker byte sequence must make check_dynamic_initializers
+  // return nonzero, and the captured production stdout must carry a
+  // `DYNAMIC_INIT:<file>:<symbol>`-shaped line.
+  //
+  // The marker is assembled at runtime from fragments (mirroring the
+  // scanner's own fragment trick) so this test's object file never
+  // contains a contiguous marker byte sequence.
+  const std::string marker = std::string("_GLOBAL__") + "sub_I_";
+  const char* dir = "test-fixtures/dynamic-init-dirty";
+  const std::string obj = std::string(dir) + "/dirty.o";
+  std::error_code ec;
+  std::filesystem::create_directories(dir, ec);
+  CHECK(!ec);
+  {
+    std::ofstream out(obj, std::ios::binary | std::ios::trunc);
+    CHECK(static_cast<bool>(out));
+    if (!out) return false;
+    const std::string payload =
+        std::string("ELFDATA-HEAD:") + marker + ":tail";
+    out.write(payload.data(),
+              static_cast<std::streamsize>(payload.size()));
+    out.close();
+    CHECK(static_cast<bool>(out));
+  }
+  // Capture the production stdout line via an fd-level redirect.
+  const std::string cap = std::string(dir) + "/stdout.txt";
+  std::fflush(stdout);
+  const int saved = dup(STDOUT_FILENO);
+  CHECK(saved >= 0);
+  FILE* sink = std::fopen(cap.c_str(), "w");
+  CHECK(sink != nullptr);
+  if (sink == nullptr) {
+    if (saved >= 0) close(saved);
+    return false;
+  }
+  CHECK(dup2(fileno(sink), STDOUT_FILENO) >= 0);
+  const int rc = check_dynamic_initializers(dir);
+  std::fflush(stdout);
+  CHECK(dup2(saved, STDOUT_FILENO) >= 0);
+  close(saved);
+  std::fclose(sink);
+  CHECK(rc != 0);
+  std::string output;
+  {
+    std::ifstream in(cap, std::ios::binary);
+    CHECK(static_cast<bool>(in));
+    if (in) {
+      output.assign(std::istreambuf_iterator<char>(in),
+                    std::istreambuf_iterator<char>());
+    }
+  }
+  CHECK(output.find("DYNAMIC_INIT:") != std::string::npos);
+  CHECK(output.find("dirty.o") != std::string::npos);
+  CHECK(output.find(marker) != std::string::npos);
+  CHECK(output.find("DYNAMIC_INIT:dirty.o:" + marker) !=
+        std::string::npos);
+  // Intentional scope: the same marker in a non-object (`.txt`) sidecar
+  // is correctly ignored, matching the tools/check_dynamic_init.py gate.
+  {
+    const char* txtDir = "test-fixtures/dynamic-init-txt-only";
+    std::filesystem::create_directories(txtDir, ec);
+    CHECK(!ec);
+    const std::string sidecar = std::string(txtDir) + "/notes.txt";
+    std::ofstream txt(sidecar, std::ios::binary | std::ios::trunc);
+    CHECK(static_cast<bool>(txt));
+    if (!txt) return false;
+    const std::string payload =
+        std::string("sidecar:") + marker + ":tail";
+    txt.write(payload.data(),
+              static_cast<std::streamsize>(payload.size()));
+    txt.close();
+    CHECK(static_cast<bool>(txt));
+    CHECK(check_dynamic_initializers(txtDir) == 0);
+  }
   return g_failed_checks == 0;
 }
 

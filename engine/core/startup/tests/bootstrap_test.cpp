@@ -129,21 +129,40 @@ bool check_eager_gate_defaults_off() {
 bool check_failure_shape_and_no_partial_execution() {
   // Plan Interface: failure returns ok=false plus named
   // StartupError{ code, phase, message } and no partial execution beyond
-  // the failed phase. Only exercised when the implementation reports a
-  // failure; on success the shape is vacuously satisfied.
-  BootstrapConfig cfg{};
-  BootstrapResult r = runBootstrap(cfg);
-  if (r.ok) {
+  // the failed phase. Exercised for real via the diagnostic
+  // `failAtPhase` injection hook (documented test-only in bootstrap.h);
+  // the default config preserves infallible-by-default success.
+  {
+    BootstrapConfig cfg{};
+    CHECK(cfg.failAtPhase == -1);
+    BootstrapResult r = runBootstrap(cfg);
+    CHECK(r.ok);
     CHECK(r.error.code == 0);
-    return g_failed_checks == 0;
+    if (!r.ok) return false;
   }
-  CHECK(r.error.code != 0);
-  CHECK(r.error.message != nullptr);
-  CHECK(r.error.message[0] != '\0');
-  CHECK(r.error.phase >= 0 && r.error.phase < 6);
-  // Phases beyond the failed one must carry no execution timing.
-  for (int i = r.error.phase + 1; i < 6; ++i) {
-    CHECK(r.timings[i].startNs == 0 && r.timings[i].endNs == 0);
+  {
+    BootstrapConfig cfg{};
+    cfg.failAtPhase = 2;
+    BootstrapResult r = runBootstrap(cfg);
+    CHECK(!r.ok);
+    if (r.ok) return false;
+    CHECK(r.error.code != 0);
+    CHECK(r.error.phase == 2);
+    CHECK(r.error.message != nullptr);
+    CHECK(r.error.message[0] != '\0');
+    CHECK(std::strstr(r.error.message, "GPU device") != nullptr);
+    // Phases before the failed one executed: stamped timings.
+    for (int i = 0; i < 2; ++i) {
+      CHECK(r.timings[i].phase == i);
+      CHECK(r.timings[i].name != nullptr);
+      CHECK(std::strcmp(r.timings[i].name, kExpectedOrder[i]) == 0);
+      CHECK(r.timings[i].endNs >= r.timings[i].startNs);
+      CHECK(r.timings[i].startNs != 0 || r.timings[i].endNs != 0);
+    }
+    // No partial execution at/beyond the failed phase: zeroed timings.
+    for (int i = 2; i < 6; ++i) {
+      CHECK(r.timings[i].startNs == 0 && r.timings[i].endNs == 0);
+    }
   }
   return g_failed_checks == 0;
 }

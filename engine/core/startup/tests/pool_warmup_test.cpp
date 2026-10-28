@@ -107,18 +107,34 @@ bool check_gate_allows_at_and_after_declared_phase() {
 
 bool check_prewarm_failure_names_thread_pools_phase() {
   // Plan Interface: failure returns err(StartupError{ code,
-  // phase="thread-pools", message }). Only exercised when the
-  // implementation reports a failure; on success the shape is vacuously
-  // satisfied (same pattern as batch-1 failure-shape case).
-  PoolWarmupConfig cfg{};
-  WarmupResult r = prewarmPools(cfg);
-  if (r.ok) {
-    CHECK(r.error.code == 0);
-    return g_failed_checks == 0;
+  // phase="thread-pools", message }). Actually triggered via the
+  // `threadCount <= 0` denial: zero and negative counts both fail with
+  // a named thread-pools error, while the default config still succeeds.
+  {
+    PoolWarmupConfig cfg{0};
+    WarmupResult r = prewarmPools(cfg);
+    CHECK(!r.ok);
+    if (r.ok) return false;
+    CHECK(r.error.code != 0);
+    CHECK(r.error.phase == 1);
+    CHECK(message_names_thread_pools(r.error.message));
   }
-  CHECK(r.error.code != 0);
-  CHECK(r.error.phase == 1);
-  CHECK(message_names_thread_pools(r.error.message));
+  {
+    PoolWarmupConfig cfg{};
+    cfg.threadCount = -3;
+    WarmupResult r = prewarmPools(cfg);
+    CHECK(!r.ok);
+    if (r.ok) return false;
+    CHECK(r.error.code != 0);
+    CHECK(r.error.phase == 1);
+    CHECK(message_names_thread_pools(r.error.message));
+  }
+  {
+    PoolWarmupConfig cfg{};
+    WarmupResult r = prewarmPools(cfg);
+    CHECK(r.ok);
+    CHECK(r.error.code == 0);
+  }
   return g_failed_checks == 0;
 }
 

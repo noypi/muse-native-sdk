@@ -38,7 +38,12 @@ SECTION_PATTERNS = (
 
 
 def _iter_object_files(root):
-    """Yield paths of candidate object files under root (recursive)."""
+    """Yield paths of candidate object files under root (recursive).
+
+    Intentional extension gate (startup-path objects only: .o/.obj/.a/.so):
+    mirrors the isObjectFile gate in engine/core/startup/src/dynamic_init.cc
+    so both surfaces share the same scan scope by design.
+    """
     for dirpath, _dirnames, filenames in os.walk(root):
         for name in filenames:
             lower = name.lower()
