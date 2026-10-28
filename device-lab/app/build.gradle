@@ -1,0 +1,36 @@
+// device-lab producer app (FR-RUNTIME-008). CI compiles; no APK is committed.
+plugins {
+    id 'com.android.application'
+    id 'org.jetbrains.kotlin.android'
+}
+
+android {
+    namespace 'com.muse.devicelab'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId 'com.muse.devicelab'
+        minSdk 29
+        targetSdk 34
+        versionCode 1
+        versionName '0.1'
+
+        externalNativeBuild {
+            cmake {
+                // NDK r27 pin consumed from the version catalog (NFR-BUILD-016).
+                arguments '-DANDROID_PLATFORM=android-29'
+                abiFilters 'arm64-v8a', 'x86_64'
+            }
+        }
+    }
+
+    externalNativeBuild {
+        cmake {
+            path '../../../engine/runtime/CMakeLists.txt'
+        }
+    }
+}
+
+dependencies {
+    implementation libs.kotlin.stdlib
+}
