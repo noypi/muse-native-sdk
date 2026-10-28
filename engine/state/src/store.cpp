@@ -58,6 +58,10 @@ Status Store::dispatch(Action a) {
   if (q != nullptr) {
     Status st = q->enqueue(m);
     if (st != Status::kOk) {
+      // Enqueue-failure path (mirrors the failing-action path above):
+      // restore the exact prior value; the two writes coalesce into a
+      // single batch. Never leaks optimistic state on durable failure.
+      atoms_.write(slot_, prior, Provenance::kJs);
       return st;
     }
   }
