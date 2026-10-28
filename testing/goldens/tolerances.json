@@ -1,0 +1,377 @@
+{
+  "audit": [],
+  "tolerances": {
+    "Badge-dark": {
+      "max_differing_pixels": 4,
+      "mean_per_channel_error": 1.0
+    },
+    "Badge-light": {
+      "max_differing_pixels": 4,
+      "mean_per_channel_error": 1.0
+    },
+    "Badge-rtl": {
+      "max_differing_pixels": 4,
+      "mean_per_channel_error": 1.0
+    },
+    "BottomAppBar-dark": {
+      "max_differing_pixels": 4,
+      "mean_per_channel_error": 1.0
+    },
+    "BottomAppBar-light": {
+      "max_differing_pixels": 4,
+      "mean_per_channel_error": 1.0
+    },
+    "BottomAppBar-rtl": {
+      "max_differing_pixels": 4,
+      "mean_per_channel_error": 1.0
+    },
+    "BottomSheet-dark": {
+      "max_differing_pixels": 4,
+      "mean_per_channel_error": 1.0
+    },
+    "BottomSheet-light": {
+      "max_differing_pixels": 4,
+      "mean_per_channel_error": 1.0
+    },
+    "BottomSheet-rtl": {
+      "max_differing_pixels": 4,
+      "mean_per_channel_error": 1.0
+    },
+    "Button-dark": {
+      "max_differing_pixels": 4,
+      "mean_per_channel_error": 1.0
+    },
+    "Button-light": {
+      "max_differing_pixels": 4,
+      "mean_per_channel_error": 1.0
+    },
+    "Button-rtl": {
+      "max_differing_pixels": 4,
+      "mean_per_channel_error": 1.0
+    },
+    "ButtonGroup-dark": {
+      "max_differing_pixels": 4,
+      "mean_per_channel_error": 1.0
+    },
+    "ButtonGroup-light": {
+      "max_differing_pixels": 4,
+      "mean_per_channel_error": 1.0
+    },
+    "ButtonGroup-rtl": {
+      "max_differing_pixels": 4,
+      "mean_per_channel_error": 1.0
+    },
+    "Card-dark": {
+      "max_differing_pixels": 4,
+      "mean_per_channel_error": 1.0
+    },
+    "Card-light": {
+      "max_differing_pixels": 4,
+      "mean_per_channel_error": 1.0
+    },
+    "Card-rtl": {
+      "max_differing_pixels": 4,
+      "mean_per_channel_error": 1.0
+    },
+    "Carousel-dark": {
+      "max_differing_pixels": 4,
+      "mean_per_channel_error": 1.0
+    },
+    "Carousel-light": {
+      "max_differing_pixels": 4,
+      "mean_per_channel_error": 1.0
+    },
+    "Carousel-rtl": {
+      "max_differing_pixels": 4,
+      "mean_per_channel_error": 1.0
+    },
+    "Chip-dark": {
+      "max_differing_pixels": 4,
+      "mean_per_channel_error": 1.0
+    },
+    "Chip-light": {
+      "max_differing_pixels": 4,
+      "mean_per_channel_error": 1.0
+    },
+    "Chip-rtl": {
+      "max_differing_pixels": 4,
+      "mean_per_channel_error": 1.0
+    },
+    "Dialog-dark": {
+      "max_differing_pixels": 4,
+      "mean_per_channel_error": 1.0
+    },
+    "Dialog-light": {
+      "max_differing_pixels": 4,
+      "mean_per_channel_error": 1.0
+    },
+    "Dialog-rtl": {
+      "max_differing_pixels": 4,
+      "mean_per_channel_error": 1.0
+    },
+    "FAB-dark": {
+      "max_differing_pixels": 4,
+      "mean_per_channel_error": 1.0
+    },
+    "FAB-light": {
+      "max_differing_pixels": 4,
+      "mean_per_channel_error": 1.0
+    },
+    "FAB-rtl": {
+      "max_differing_pixels": 4,
+      "mean_per_channel_error": 1.0
+    },
+    "FABMenu-dark": {
+      "max_differing_pixels": 4,
+      "mean_per_channel_error": 1.0
+    },
+    "FABMenu-light": {
+      "max_differing_pixels": 4,
+      "mean_per_channel_error": 1.0
+    },
+    "FABMenu-rtl": {
+      "max_differing_pixels": 4,
+      "mean_per_channel_error": 1.0
+    },
+    "Image-dark": {
+      "max_differing_pixels": 4,
+      "mean_per_channel_error": 1.0
+    },
+    "Image-light": {
+      "max_differing_pixels": 4,
+      "mean_per_channel_error": 1.0
+    },
+    "Image-rtl": {
+      "max_differing_pixels": 4,
+      "mean_per_channel_error": 1.0
+    },
+    "List-dark": {
+      "max_differing_pixels": 4,
+      "mean_per_channel_error": 1.0
+    },
+    "List-light": {
+      "max_differing_pixels": 4,
+      "mean_per_channel_error": 1.0
+    },
+    "List-rtl": {
+      "max_differing_pixels": 4,
+      "mean_per_channel_error": 1.0
+    },
+    "LoadingIndicator-dark": {
+      "max_differing_pixels": 4,
+      "mean_per_channel_error": 1.0
+    },
+    "LoadingIndicator-light": {
+      "max_differing_pixels": 4,
+      "mean_per_channel_error": 1.0
+    },
+    "LoadingIndicator-rtl": {
+      "max_differing_pixels": 4,
+      "mean_per_channel_error": 1.0
+    },
+    "Menu-dark": {
+      "max_differing_pixels": 4,
+      "mean_per_channel_error": 1.0
+    },
+    "Menu-light": {
+      "max_differing_pixels": 4,
+      "mean_per_channel_error": 1.0
+    },
+    "Menu-rtl": {
+      "max_differing_pixels": 4,
+      "mean_per_channel_error": 1.0
+    },
+    "NavigationBar-dark": {
+      "max_differing_pixels": 4,
+      "mean_per_channel_error": 1.0
+    },
+    "NavigationBar-light": {
+      "max_differing_pixels": 4,
+      "mean_per_channel_error": 1.0
+    },
+    "NavigationBar-rtl": {
+      "max_differing_pixels": 4,
+      "mean_per_channel_error": 1.0
+    },
+    "NavigationDrawer-dark": {
+      "max_differing_pixels": 4,
+      "mean_per_channel_error": 1.0
+    },
+    "NavigationDrawer-light": {
+      "max_differing_pixels": 4,
+      "mean_per_channel_error": 1.0
+    },
+    "NavigationDrawer-rtl": {
+      "max_differing_pixels": 4,
+      "mean_per_channel_error": 1.0
+    },
+    "NavigationRail-dark": {
+      "max_differing_pixels": 4,
+      "mean_per_channel_error": 1.0
+    },
+    "NavigationRail-light": {
+      "max_differing_pixels": 4,
+      "mean_per_channel_error": 1.0
+    },
+    "NavigationRail-rtl": {
+      "max_differing_pixels": 4,
+      "mean_per_channel_error": 1.0
+    },
+    "ScrollView-dark": {
+      "max_differing_pixels": 4,
+      "mean_per_channel_error": 1.0
+    },
+    "ScrollView-light": {
+      "max_differing_pixels": 4,
+      "mean_per_channel_error": 1.0
+    },
+    "ScrollView-rtl": {
+      "max_differing_pixels": 4,
+      "mean_per_channel_error": 1.0
+    },
+    "SearchBar-dark": {
+      "max_differing_pixels": 4,
+      "mean_per_channel_error": 1.0
+    },
+    "SearchBar-light": {
+      "max_differing_pixels": 4,
+      "mean_per_channel_error": 1.0
+    },
+    "SearchBar-rtl": {
+      "max_differing_pixels": 4,
+      "mean_per_channel_error": 1.0
+    },
+    "SegmentedButton-dark": {
+      "max_differing_pixels": 4,
+      "mean_per_channel_error": 1.0
+    },
+    "SegmentedButton-light": {
+      "max_differing_pixels": 4,
+      "mean_per_channel_error": 1.0
+    },
+    "SegmentedButton-rtl": {
+      "max_differing_pixels": 4,
+      "mean_per_channel_error": 1.0
+    },
+    "Slider-dark": {
+      "max_differing_pixels": 4,
+      "mean_per_channel_error": 1.0
+    },
+    "Slider-light": {
+      "max_differing_pixels": 4,
+      "mean_per_channel_error": 1.0
+    },
+    "Slider-rtl": {
+      "max_differing_pixels": 4,
+      "mean_per_channel_error": 1.0
+    },
+    "Snackbar-dark": {
+      "max_differing_pixels": 4,
+      "mean_per_channel_error": 1.0
+    },
+    "Snackbar-light": {
+      "max_differing_pixels": 4,
+      "mean_per_channel_error": 1.0
+    },
+    "Snackbar-rtl": {
+      "max_differing_pixels": 4,
+      "mean_per_channel_error": 1.0
+    },
+    "SnackbarHost-dark": {
+      "max_differing_pixels": 4,
+      "mean_per_channel_error": 1.0
+    },
+    "SnackbarHost-light": {
+      "max_differing_pixels": 4,
+      "mean_per_channel_error": 1.0
+    },
+    "SnackbarHost-rtl": {
+      "max_differing_pixels": 4,
+      "mean_per_channel_error": 1.0
+    },
+    "SplitButton-dark": {
+      "max_differing_pixels": 4,
+      "mean_per_channel_error": 1.0
+    },
+    "SplitButton-light": {
+      "max_differing_pixels": 4,
+      "mean_per_channel_error": 1.0
+    },
+    "SplitButton-rtl": {
+      "max_differing_pixels": 4,
+      "mean_per_channel_error": 1.0
+    },
+    "Text-dark": {
+      "max_differing_pixels": 4,
+      "mean_per_channel_error": 1.0
+    },
+    "Text-light": {
+      "max_differing_pixels": 4,
+      "mean_per_channel_error": 1.0
+    },
+    "Text-rtl": {
+      "max_differing_pixels": 4,
+      "mean_per_channel_error": 1.0
+    },
+    "TextField-dark": {
+      "max_differing_pixels": 4,
+      "mean_per_channel_error": 1.0
+    },
+    "TextField-light": {
+      "max_differing_pixels": 4,
+      "mean_per_channel_error": 1.0
+    },
+    "TextField-rtl": {
+      "max_differing_pixels": 4,
+      "mean_per_channel_error": 1.0
+    },
+    "Toolbar-dark": {
+      "max_differing_pixels": 4,
+      "mean_per_channel_error": 1.0
+    },
+    "Toolbar-light": {
+      "max_differing_pixels": 4,
+      "mean_per_channel_error": 1.0
+    },
+    "Toolbar-rtl": {
+      "max_differing_pixels": 4,
+      "mean_per_channel_error": 1.0
+    },
+    "TopAppBar-dark": {
+      "max_differing_pixels": 4,
+      "mean_per_channel_error": 1.0
+    },
+    "TopAppBar-light": {
+      "max_differing_pixels": 4,
+      "mean_per_channel_error": 1.0
+    },
+    "TopAppBar-rtl": {
+      "max_differing_pixels": 4,
+      "mean_per_channel_error": 1.0
+    },
+    "Touchable-dark": {
+      "max_differing_pixels": 4,
+      "mean_per_channel_error": 1.0
+    },
+    "Touchable-light": {
+      "max_differing_pixels": 4,
+      "mean_per_channel_error": 1.0
+    },
+    "Touchable-rtl": {
+      "max_differing_pixels": 4,
+      "mean_per_channel_error": 1.0
+    },
+    "View-dark": {
+      "max_differing_pixels": 4,
+      "mean_per_channel_error": 1.0
+    },
+    "View-light": {
+      "max_differing_pixels": 4,
+      "mean_per_channel_error": 1.0
+    },
+    "View-rtl": {
+      "max_differing_pixels": 4,
+      "mean_per_channel_error": 1.0
+    }
+  }
+}

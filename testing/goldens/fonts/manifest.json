@@ -1,0 +1,30 @@
+{
+  "frozen": true,
+  "fonts": [
+    {
+      "file": "DejaVuSans.ttf",
+      "version": "2.37",
+      "sha256": "127c33357609383a1ea209604f37a53f883c76f1809b19cc911c92153317f3aa"
+    },
+    {
+      "file": "NotoSans.ttf",
+      "version": "2.35",
+      "sha256": "e200f05aced3377a42d92cadfddb2796af7a7d1fe601c81471942c9ebfc79d99"
+    },
+    {
+      "file": "NotoSansMono.ttf",
+      "version": "2.35",
+      "sha256": "f700bfcc69fbee4309ce359bd33b4ba3328a331d00b00c66b4d3e40fa5649f8e"
+    }
+  ],
+  "shaping": {
+    "engine": "harfbuzz",
+    "hinting": "none",
+    "antialias": "grayscale"
+  },
+  "locale": {
+    "locale": "de_DE.UTF-8",
+    "timezone": "Asia/Tokyo"
+  },
+  "digest": "6a6b4ac9498d9626ff6cdea4678cf75b5d4eb5a4cc45ce7562bc596266d1068c"
+}

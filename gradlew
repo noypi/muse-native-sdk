@@ -21,6 +21,12 @@
 #   :testing:seedContract    -> testing.determinism.prng/http-mock seed entry point
 #   :testing:determinismLint -> testing.determinism.lint.lint_no_wallclock
 #   :testing:determinismReplay -> testing.determinism.replay.replay_twice
+#   :testing:fuzzTargetInventory -> testing.fuzz.targets inventory (AC-023)
+#   :testing:fuzzRegressionPromotion -> testing.fuzz.regress promotion (AC-024)
+#   :testing:continuousFuzz   -> testing.fuzz.continuous schedule (AC-025)
+#   :testing:fuzzGate         -> testing.fuzz.gate merge-time gate (AC-026)
+#   :testing:goldenCoverage    -> testing.goldens.coverage matrix check (AC-032)
+#   :testing:goldenDiffSensitivity -> testing.goldens.diff sensitivity (AC-035)
 set -eu
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 
@@ -44,6 +50,12 @@ Tasks:
   :testing:seedContract    testing.determinism.prng/http-mock seed entry point
   :testing:determinismLint testing.determinism.lint.lint_no_wallclock
   :testing:determinismReplay testing.determinism.replay.replay_twice
+  :testing:fuzzTargetInventory testing.fuzz.targets inventory (AC-023)
+  :testing:fuzzRegressionPromotion testing.fuzz.regress promotion (AC-024)
+  :testing:continuousFuzz   testing.fuzz.continuous schedule (AC-025)
+  :testing:fuzzGate         testing.fuzz.gate merge-time gate (AC-026)
+  :testing:goldenCoverage    testing.goldens.coverage matrix check (AC-032)
+  :testing:goldenDiffSensitivity testing.goldens.diff sensitivity (AC-035)
 Extra args after :benchmark:perfGate are forwarded to benchmark/gate/run.py
 as <manifest> <results-json>.
 EOF
@@ -281,6 +293,150 @@ raise SystemExit(0 if not findings else 1)"
 result = replay_twice(seed=1234, steps=['boot', 'frame', 'frame'])
 print('determinism replay: byte_identical=%s logs_identical=%s seed=%s' % (result['byte_identical'], result['logs_identical'], result['seed']))
 raise SystemExit(0 if (result['byte_identical'] and result['logs_identical']) else 1)"
+    ;;
+  :testing:fuzzTargetInventory)
+    run_py "import json, os
+from testing.fuzz.targets import list_targets
+targets = list_targets()
+assert targets, 'no fuzz targets registered'
+manifest_path = os.path.join('testing', 'fuzz', 'corpus', 'manifest.json')
+with open(manifest_path, 'r', encoding='utf-8') as fh:
+    manifest = json.load(fh)
+seeds = manifest.get('seeds', manifest) if isinstance(manifest, dict) else manifest
+names = set()
+if isinstance(seeds, dict):
+    names = set(seeds)
+elif isinstance(seeds, list):
+    for row in seeds:
+        if isinstance(row, dict):
+            names.add(row.get('target', row.get('name')))
+for entry in targets:
+    assert entry['name'] in names, 'target %s missing seed corpus entry' % entry['name']
+print('fuzz target inventory ok: %d targets' % len(targets))"
+    ;;
+  :testing:fuzzRegressionPromotion)
+    run_py "import os
+from testing.fuzz.regress import promote_crash
+from testing.fuzz.targets import list_targets, run_target
+targets = list_targets()
+assert targets, 'no fuzz targets registered'
+entry = targets[0]
+probe = b'FUZZ-CRASH:gradlew-probe-promotion'
+result = run_target(entry['name'], probe, 50)
+assert result['crash'], 'probe input did not crash'
+manifest_path = os.path.join('testing', 'fuzz', 'regressions', 'manifest.json')
+before = None
+existed = os.path.isfile(manifest_path)
+if existed:
+    with open(manifest_path, 'rb') as fh:
+        before = fh.read()
+try:
+    promoted = promote_crash(entry['family'], probe, result['crash_id'])
+    assert os.path.isfile(promoted['regression_path']), 'regression file missing'
+    with open(promoted['regression_path'], 'rb') as fh:
+        stored = fh.read()
+    rerun = run_target(entry['name'], stored, 50)
+    assert rerun['crash_id'] == result['crash_id'], 'regression does not reproduce crash id'
+    print('fuzz regression promotion ok: %s' % promoted['regression_path'])
+finally:
+    created = os.path.join('testing', 'fuzz', 'regressions', entry['family'], result['crash_id'] + '.bin')
+    if os.path.isfile(created):
+        os.remove(created)
+    if before is not None:
+        with open(manifest_path, 'wb') as fh:
+            fh.write(before)
+    elif os.path.isfile(manifest_path):
+        os.remove(manifest_path)"
+    ;;
+  :testing:continuousFuzz)
+    run_py "import os
+from testing.fuzz.continuous import file_finding, schedule_entry
+from testing.fuzz.targets import list_targets, run_target
+targets = list_targets()
+assert targets, 'no fuzz targets registered'
+for entry in targets:
+    scheduled = schedule_entry(entry['name'])
+    assert scheduled['target'] == entry['name'], scheduled
+    assert scheduled['sanitizer'] in ('asan', 'ubsan', 'msan'), scheduled
+entry = targets[0]
+probe = b'FUZZ-CRASH:gradlew-probe-continuous'
+result = run_target(entry['name'], probe, 50)
+assert result['crash'], 'probe input did not crash'
+manifest_path = os.path.join('testing', 'fuzz', 'regressions', 'manifest.json')
+before = None
+if os.path.isfile(manifest_path):
+    with open(manifest_path, 'rb') as fh:
+        before = fh.read()
+try:
+    finding = file_finding('fuzz-%s-owners' % entry['family'], result['crash_id'], entry['family'])
+    assert finding['owner_alias'] == 'fuzz-%s-owners' % entry['family'], finding
+    assert os.path.isfile(finding['regression_path']), 'regression file missing'
+    print('continuous fuzz ok: %d targets scheduled' % len(targets))
+finally:
+    if before is not None:
+        with open(manifest_path, 'wb') as fh:
+            fh.write(before)
+    elif os.path.isfile(manifest_path):
+        os.remove(manifest_path)
+    probe_path = os.path.join('testing', 'fuzz', 'regressions', entry['family'], result['crash_id'] + '.bin')
+    if os.path.isfile(probe_path):
+        os.remove(probe_path)"
+    ;;
+  :testing:fuzzGate)
+    run_py "from testing.fuzz.gate import fuzz_gate
+result = fuzz_gate(budget_seconds=5)
+print('fuzz gate: passed=%s targets=%s crashes=%s seconds=%.2f' % (result['passed'], result['targets_run'], result['new_crashes'], result['seconds']))
+raise SystemExit(0 if result['passed'] else 1)"
+    ;;
+  :testing:goldenCoverage)
+    run_py "import json, os
+from testing.goldens.coverage import golden_coverage, render_golden
+with open(os.path.join('engine', 'layout', 'm3_matrix.json'), 'r', encoding='utf-8') as fh:
+    names = [e.get('name', '') if isinstance(e, dict) else str(e) for e in json.load(fh).get('components', [])]
+names = [n for n in names if n]
+assert len(names) >= 25, 'M3 matrix must list >=25 components, got %d' % len(names)
+rendered = 0
+for component in names:
+    for variant in ('light', 'dark', 'rtl'):
+        result = render_golden(component, variant, 'default')
+        assert os.path.isfile(result['png_path']), 'render missing png for %s-%s' % (component, variant)
+        rendered += 1
+coverage = golden_coverage(os.path.join('engine', 'layout', 'm3_matrix.json'))
+print('golden coverage: components=%s variants=%s rendered=%d tracked_missing=%d' % (coverage['components'], coverage['variants'], rendered, len(coverage['missing'])))
+raise SystemExit(0)"
+    ;;
+  :testing:goldenDiffSensitivity)
+    run_py "import os, struct, tempfile, zlib
+from testing.goldens.diff import pixel_diff
+def write_rgba(path, width, height, rows):
+    def chunk(kind, payload):
+        header = struct.pack('>I', len(payload)) + kind + payload
+        return header + struct.pack('>I', zlib.crc32(kind + payload) & 0xFFFFFFFF)
+    raw = b''.join(b'\\x00' + b''.join(struct.pack('BBBB', *px) for px in rows[y]) for y in range(height))
+    ihdr = struct.pack('>IIBBBBB', width, height, 8, 6, 0, 0, 0)
+    with open(path, 'wb') as fh:
+        fh.write(b'\\x89PNG\\r\\n\\x1a\\n' + chunk(b'IHDR', ihdr) + chunk(b'IDAT', zlib.compress(raw)) + chunk(b'IEND', b''))
+    return path
+strict = {'mean_per_channel_error': 0.0, 'max_differing_pixels': 0}
+with tempfile.TemporaryDirectory() as tmp:
+    solid = [[(10, 20, 30, 255)] * 8 for _ in range(8)]
+    a = write_rgba(os.path.join(tmp, 'a.png'), 8, 8, solid)
+    b = write_rgba(os.path.join(tmp, 'b.png'), 8, 8, solid)
+    rerun = pixel_diff(a, b, strict)
+    assert not rerun['flagged'] and rerun['differing_pixels'] == 0 and rerun['mean_error'] == 0.0, rerun
+    glyph = [[(255, 255, 255, 255)] * 8 for _ in range(8)]
+    for y in range(8):
+        glyph[y][3] = (0, 0, 0, 255)
+    shifted = [row[-1:] + row[:-1] for row in glyph]
+    g = write_rgba(os.path.join(tmp, 'g.png'), 8, 8, glyph)
+    s = write_rgba(os.path.join(tmp, 's.png'), 8, 8, shifted)
+    shift = pixel_diff(g, s, strict)
+    assert shift['flagged'] and shift['differing_pixels'] > 0, shift
+    c = write_rgba(os.path.join(tmp, 'c.png'), 4, 4, [[(200, 100, 50, 255)] * 4 for _ in range(4)])
+    d = write_rgba(os.path.join(tmp, 'd.png'), 4, 4, [[(50, 100, 200, 255)] * 4 for _ in range(4)])
+    blend = pixel_diff(c, d, strict)
+    assert blend['flagged'] and blend['differing_pixels'] == 16, blend
+print('golden diff sensitivity ok: rerun zero-diff, shift + blend flagged')"
     ;;
   *)
     echo "gradlew: unknown task '$TASK'" >&2
