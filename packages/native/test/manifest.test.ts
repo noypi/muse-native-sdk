@@ -56,9 +56,27 @@ const TIER_2 = [
   'TextInput',
 ] as const;
 
-const EXPECTED: ReadonlyMap<string, 1 | 2> = new Map([
-  ...TIER_1.map((n): [string, 1 | 2] => [n, 1]),
-  ...TIER_2.map((n): [string, 1 | 2] => [n, 2]),
+const TIER_3 = [
+  'TopAppBar',
+  'NavigationBar',
+  'NavigationRail',
+  'NavigationDrawer',
+  'SegmentedButton',
+  'Dialog',
+  'BottomSheet',
+  'Menu',
+  'SnackbarHost',
+  'SearchBar',
+  'Carousel',
+  'BottomAppBar',
+  'ButtonGroup',
+  'SplitButton',
+] as const;
+
+const EXPECTED: ReadonlyMap<string, 1 | 2 | 3> = new Map([
+  ...TIER_1.map((n): [string, 1 | 2 | 3] => [n, 1]),
+  ...TIER_2.map((n): [string, 1 | 2 | 3] => [n, 2]),
+  ...TIER_3.map((n): [string, 1 | 2 | 3] => [n, 3]),
 ]);
 
 const VALID_PROP_TYPES = new Set(['string', 'boolean', 'number', 'token', 'slot', 'object', 'function']);
@@ -93,21 +111,22 @@ test('manifest components is an array', () => {
 });
 
 // ---------------------------------------------------------------------------
-// AC-M3-007: exactly one entry per component, no extras (27 total)
+// AC-M3-007: exactly one entry per component, no extras (41 total:
+// 10 tier-1 + 17 tier-2 + 14 tier-3)
 // ---------------------------------------------------------------------------
 
-test('manifest contains exactly 27 components', () => {
+test('manifest contains exactly 41 components', () => {
   const manifest = loadManifest();
-  assert.equal(manifest.components.length, 27);
+  assert.equal(manifest.components.length, 41);
 });
 
-test('manifest contains exactly the 27 spec-named components', () => {
+test('manifest contains exactly the 41 spec-named components', () => {
   const manifest = loadManifest();
   const names = new Set(manifest.components.map((c: any) => c?.name));
   for (const expected of EXPECTED.keys()) {
     assert.ok(names.has(expected), `missing component: ${expected}`);
   }
-  assert.equal(names.size, 27, 'manifest has extra entries beyond the 27 spec-named components');
+  assert.equal(names.size, 41, 'manifest has extra entries beyond the 41 spec-named components');
 });
 
 test('manifest has no duplicate component entries', () => {
@@ -120,7 +139,7 @@ test('manifest has no duplicate component entries', () => {
 // Per-entry shape: tier + native backing + props
 // ---------------------------------------------------------------------------
 
-test('every entry declares tier 1 or 2 matching the tier tables', () => {
+test('every entry declares tier 1, 2 or 3 matching the tier tables', () => {
   const manifest = loadManifest();
   for (const entry of manifest.components) {
     assert.ok(entry && typeof entry.name === 'string', 'entry has a string name');
@@ -128,11 +147,21 @@ test('every entry declares tier 1 or 2 matching the tier tables', () => {
   }
 });
 
-test('every entry names a non-empty native backing', () => {
+test('every entry names a non-empty native backing or composite base', () => {
   const manifest = loadManifest();
+  const tier12Names = new Set([...TIER_1, ...TIER_2]);
   for (const entry of manifest.components) {
-    assert.equal(typeof entry.native, 'string', `${entry.name} native must be a string`);
-    assert.ok(entry.native.length > 0, `${entry.name} native must be non-empty`);
+    if (entry.tier === 3) {
+      assert.equal(typeof entry.base, 'string', `${entry.name} base must be a string`);
+      assert.ok(entry.base.length > 0, `${entry.name} base must be non-empty`);
+      assert.ok(
+        tier12Names.has(entry.base),
+        `${entry.name} base must be a tier-1/2 name, got ${entry.base}`,
+      );
+    } else {
+      assert.equal(typeof entry.native, 'string', `${entry.name} native must be a string`);
+      assert.ok(entry.native.length > 0, `${entry.name} native must be non-empty`);
+    }
   }
 });
 
