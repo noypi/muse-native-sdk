@@ -1,6 +1,7 @@
 #include "motion/patterns.h"
 
 #include <cmath>
+#include <cstdint>
 #include <cstring>
 #include <map>
 #include <utility>
@@ -55,6 +56,37 @@ int delayMs() {
   return cached;
 }
 
+// Converts branch-style viscous damping (c in force = -k(x-t) - c*v) to
+// main's damping ratio (c = 2*zeta*sqrt(k)); same scheme as T2/T3 paths.
+SpringSpec toSpringSpec(const MotionToken& t) {
+  SpringSpec spec;
+  spec.stiffness = t.stiffness;
+  if (t.stiffness > 0.0f && t.damping > 0.0f) {
+    spec.dampingRatio = t.damping / (2.0f * std::sqrt(t.stiffness));
+  } else {
+    spec.dampingRatio = 1.0f;
+  }
+  return spec;
+}
+
+// Fixed 1ms-substep integration of the main solver between sample stamps;
+// capped so huge deltas terminate. Same numerical scheme as T2/T3.
+SpringState advanceTo(const SpringState& from, const SpringSpec& spec,
+                      float target, double fromMs, double toMs) {
+  if (!(toMs > fromMs)) return from;
+  SpringState s = from;
+  double t = fromMs;
+  std::uint32_t steps = 0;
+  while (t < toMs && steps < 100000) {
+    double step = toMs - t;
+    if (step > 1.0) step = 1.0;
+    s = advanceSpring(s, spec, target, static_cast<float>(step));
+    t += step;
+    ++steps;
+  }
+  return s;
+}
+
 struct Flight {
   bool occupied = false;
   bool active = false;
@@ -65,7 +97,7 @@ struct Flight {
   uint64_t startMs = 0;
   // Resolved once per entry from the pattern's token names.
   int moveMs = 0;
-  SpringParams spring{0.0f, 0.0f};
+  SpringSpec spring{};
   // Last carried state (advanced by carry(); read by patternVelocity).
   float curValue = 0.0f;
   float curVelocity = 0.0f;
@@ -88,7 +120,7 @@ Flight& entryFor(PatternId p, NodeId target) {
   const PatternTokens pinned = tokensFor(p);
   f.moveMs = resolveToken(pinned.durationToken).durationMs;
   const MotionToken spring = resolveToken(pinned.springToken);
-  f.spring = SpringParams{spring.stiffness, spring.damping};
+  f.spring = toSpringSpec(spring);
   f.occupied = true;
   f.curValue = kRestValue;
   f.curVelocity = 0.0f;
@@ -98,7 +130,8 @@ Flight& entryFor(PatternId p, NodeId target) {
 }
 
 // Advances the flight's cached state to nowMs along its segment:
-// delay hold, then the token-parameterized spring. Past the
+// delay hold, then the token-parameterized spring via advanceSpring.
+// Past the
 // delay+duration horizon a converged segment snaps to (target, 0).
 // Never travels back: nowMs at or before startMs reports the segment
 // start. Returns true when the previous flight completed at/before nowMs.
@@ -118,8 +151,9 @@ bool carry(Flight& f, uint64_t nowMs) {
     f.curVelocity = f.startVelocity;
     return false;
   }
-  const SpringState s = springEvaluate(f.startValue, f.startVelocity,
-                                       f.target, f.spring, t / 1000.0);
+  const SpringState s =
+      advanceTo(SpringState{f.startValue, f.startVelocity}, f.spring,
+                f.target, 0.0, t);
   f.curValue = s.value;
   f.curVelocity = s.velocity;
   const auto horizon = static_cast<uint64_t>(holdMs) +
