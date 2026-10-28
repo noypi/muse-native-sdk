@@ -49,7 +49,7 @@ float snapTarget(float offsetPx, float velocityPxS, const SnapPoints& pts);
 // triggers: any state with `overscrollPx <= 0` returns Idle. Otherwise Idle
 // past the threshold arms, Armed past the threshold refreshes (release
 // modelled as a second overshooting call), Armed below the threshold
-// disarms, and Refreshing sticks.
+// disarms, and Refreshing sticks while overscroll stays positive (drop to <= 0 releases to Idle).
 RefreshState pullRefresh(RefreshState s, float overscrollPx);
 
 // Nested-scroll handoff (RULE-LISTS-001): when parent and child share a
