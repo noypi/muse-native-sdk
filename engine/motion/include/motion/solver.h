@@ -16,6 +16,7 @@ struct SpringSpec {
 
 SpringState advanceSpring(const SpringState& state, const SpringSpec& spec,
                           float target, float dtMs) noexcept;
+// Guard: non-finite dtMs is treated as no-advance (state returned unchanged).
 SpringState retargetSpring(const SpringState& state, float newTarget) noexcept;
 
 }  // namespace motion

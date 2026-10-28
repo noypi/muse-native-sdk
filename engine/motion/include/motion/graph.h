@@ -79,6 +79,11 @@ struct Sample {
 // clock); no wall clock, no JS symbols. Sequence children run one after
 // another (durations chain); parallel children run together (maps merge).
 // Composites nest arbitrarily in either direction.
+// Cycle/depth rule (DoS guard): evaluation recurses at most 64 levels deep;
+// deeper (cyclic 0<->1 or ultra-deep) references terminate deterministically
+// and read as done/ignored. add() keeps its signature and performs no
+// rejection. Non-finite tMs is treated as no-advance (clamped to 0), and
+// spring leaves integrate at most 100000 fixed steps per call.
 class Graph {
  public:
   Graph() = default;

@@ -32,8 +32,16 @@ bool known(const std::vector<Node>& nodes, NodeId id) {
   return id.value < nodes.size();
 }
 
+// Security caps: recursion depth bounds durationOf/evalAt so a cyclic
+// (0<->1) or ultra-deep graph terminates deterministically (over-cap reads
+// as done/ignored); the step cap bounds the spring fixed-step loop so
+// huge/Inf tMs cannot hang the animation thread.
+constexpr int kMaxGraphDepth = 64;
+constexpr std::uint32_t kMaxSpringSteps = 100000;
+
 // Duration a child occupies inside a sequence / parallel parent.
-float durationOf(const std::vector<Node>& nodes, NodeId id) {
+float durationOf(const std::vector<Node>& nodes, NodeId id, int depth = 0) {
+  if (depth > kMaxGraphDepth) return 0.0f;
   if (!known(nodes, id)) return 0.0f;
   const Node& node = nodes[id.value];
   switch (kindOf(node)) {
@@ -51,13 +59,13 @@ float durationOf(const std::vector<Node>& nodes, NodeId id) {
     case Kind::Sequence: {
       float total = 0.0f;
       for (NodeId child : node.sequence.children)
-        total += durationOf(nodes, child);
+        total += durationOf(nodes, child, depth + 1);
       return total;
     }
     case Kind::Parallel: {
       float longest = 0.0f;
       for (NodeId child : node.parallel.children) {
-        const float d = durationOf(nodes, child);
+        const float d = durationOf(nodes, child, depth + 1);
         if (d > longest) longest = d;
       }
       return longest;
@@ -74,12 +82,15 @@ float clamp01(float v) {
 
 // Evaluates node `index` at local time t, merging leaf values into `out`.
 // Returns the node's done flag. Unknown ids are ignored (done, no output).
+// Non-finite t is treated as no-advance (clamped to 0). Recursion past
+// kMaxGraphDepth is treated as done (ignored) so cycles terminate.
 bool evalAt(const std::vector<Node>& nodes, std::uint32_t index, float t,
-            std::map<NodeId, float>& out) {
+            std::map<NodeId, float>& out, int depth = 0) {
+  if (depth > kMaxGraphDepth) return true;
   if (index >= nodes.size()) return true;
   const NodeId self{index};
   const Node& node = nodes[index];
-  if (t < 0.0f) t = 0.0f;
+  if (!(t >= 0.0f) || !std::isfinite(t)) t = 0.0f;
 
   switch (kindOf(node)) {
     case Kind::Value: {
@@ -95,11 +106,13 @@ bool evalAt(const std::vector<Node>& nodes, std::uint32_t index, float t,
       state.velocity = 0.0f;
       float elapsed = 0.0f;
       const float step = 8.0f;
-      while (elapsed < t) {
+      std::uint32_t steps = 0;
+      while (elapsed < t && steps < kMaxSpringSteps) {
         float dt = t - elapsed;
         if (dt > step) dt = step;
         state = advanceSpring(state, spec, node.spring.to, dt);
         elapsed += dt;
+        ++steps;
       }
       out[self] = state.value;
       const bool settled =
@@ -153,7 +166,7 @@ bool evalAt(const std::vector<Node>& nodes, std::uint32_t index, float t,
       // Chain durations: child i starts when children [0, i) end.
       float total = 0.0f;
       for (NodeId child : node.sequence.children)
-        total += durationOf(nodes, child);
+        total += durationOf(nodes, child, depth + 1);
       // Find the active (first unfinished, else last known) child.
       float start = 0.0f;
       bool haveActive = false;
@@ -162,7 +175,7 @@ bool evalAt(const std::vector<Node>& nodes, std::uint32_t index, float t,
       NodeId lastKnown{0};
       bool haveKnown = false;
       for (NodeId child : node.sequence.children) {
-        const float d = durationOf(nodes, child);
+        const float d = durationOf(nodes, child, depth + 1);
         if (known(nodes, child)) {
           lastKnown = child;
           haveKnown = true;
@@ -185,11 +198,11 @@ bool evalAt(const std::vector<Node>& nodes, std::uint32_t index, float t,
         activeStart = 0.0f;
         for (NodeId child : node.sequence.children) {
           if (child == lastKnown) break;
-          activeStart += durationOf(nodes, child);
+          activeStart += durationOf(nodes, child, depth + 1);
         }
       }
       std::map<NodeId, float> childOut;
-      evalAt(nodes, active.value, t - activeStart, childOut);
+      evalAt(nodes, active.value, t - activeStart, childOut, depth + 1);
       for (const auto& kv : childOut) out[kv.first] = kv.second;
       // Expose the active leaf value under the sequence's own id.
       const auto selfIt = childOut.find(active);
@@ -203,13 +216,13 @@ bool evalAt(const std::vector<Node>& nodes, std::uint32_t index, float t,
       // Past the end: every known child must read done at its clamped slot.
       float s = 0.0f;
       for (NodeId child : node.sequence.children) {
-        const float d = durationOf(nodes, child);
+        const float d = durationOf(nodes, child, depth + 1);
         if (known(nodes, child)) {
           float local = t - s;
           if (local < 0.0f) local = 0.0f;
           if (local > d) local = d;
           std::map<NodeId, float> tmp;
-          if (!evalAt(nodes, child.value, local, tmp)) return false;
+          if (!evalAt(nodes, child.value, local, tmp, depth + 1)) return false;
         }
         s += d;
       }
@@ -221,7 +234,7 @@ bool evalAt(const std::vector<Node>& nodes, std::uint32_t index, float t,
       for (NodeId child : node.parallel.children) {
         if (!known(nodes, child)) continue;
         haveKnown = true;
-        if (!evalAt(nodes, child.value, t, out)) allDone = false;
+        if (!evalAt(nodes, child.value, t, out, depth + 1)) allDone = false;
       }
       return !haveKnown || allDone;
     }
@@ -241,7 +254,7 @@ Sample Graph::evaluate(float tMs) const noexcept {
   Sample sample;
   sample.done = true;
   float t = tMs;
-  if (!(t >= 0.0f)) t = 0.0f;
+  if (!(t >= 0.0f) || !std::isfinite(t)) t = 0.0f;
   for (std::uint32_t i = 0; i < static_cast<std::uint32_t>(nodes_.size());
        ++i) {
     if (!evalAt(nodes_, i, t, sample.values)) sample.done = false;

@@ -25,6 +25,8 @@ struct InputSample {
 // Direct C++ call path sample -> transform with no JS/JNI boundary.
 // Drag samples write through to the injected writer in the same call;
 // release seeds the T1 spring state carrying position + velocity.
+// Guard: samples with non-finite position/velocity/tMs are ignored on the
+// same path as non-monotonic tMs (no state change, no writer call).
 class GestureBinding {
  public:
   explicit GestureBinding(ITransformWriter* writer);

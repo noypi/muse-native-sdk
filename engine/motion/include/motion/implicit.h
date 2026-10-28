@@ -45,6 +45,9 @@ struct ItemMove {
 class ImplicitRegistry {
  public:
   void markImplicit(PropertyId p, TransitionSpec s);
+  // Guard: non-finite target/tMs are ignored (no state change). Integration
+  // per call is capped at 100000 fixed steps; non-finite tMs in get/evaluate
+  // returns the current value unchanged.
   void set(PropertyId p, float target, float tMs);
   float get(PropertyId p, float tMs) const noexcept;
   // Opacity channel: 1.0 for live items; 1.0 -> 0.0 for removed items.

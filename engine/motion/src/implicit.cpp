@@ -1,6 +1,7 @@
 #include "motion/implicit.h"
 
 #include <algorithm>
+#include <cmath>
 #include <vector>
 
 namespace motion {
@@ -9,17 +10,24 @@ namespace {
 
 // Fixed integration step for evaluating the spring between samples.
 constexpr float kStepMs = 1.0f;
+// Security cap: bounds the fixed-step loop so huge/Inf deltas terminate.
+// Past the cap the spring is returned as-is (caller observes the capped
+// value); normal animation deltas never approach this bound.
+constexpr std::uint32_t kMaxAdvanceSteps = 100000;
 
 SpringState advanceTo(const SpringState& from, const SpringSpec& spec,
                       float target, float fromMs, float toMs) noexcept {
+  if (!std::isfinite(fromMs) || !std::isfinite(toMs)) return from;
   if (!(toMs > fromMs)) return from;
   SpringState s = from;
   float t = fromMs;
-  while (t < toMs) {
+  std::uint32_t steps = 0;
+  while (t < toMs && steps < kMaxAdvanceSteps) {
     float step = toMs - t;
     if (step > kStepMs) step = kStepMs;
     s = advanceSpring(s, spec, target, step);
     t += step;
+    ++steps;
   }
   return s;
 }
@@ -33,6 +41,7 @@ void ImplicitRegistry::markImplicit(PropertyId p, TransitionSpec s) {
 }
 
 void ImplicitRegistry::set(PropertyId p, float target, float tMs) {
+  if (!std::isfinite(target) || !std::isfinite(tMs)) return;
   Entry& e = entries_[p.value];
   if (!e.implicit) {
     e.hasValue = true;
@@ -69,6 +78,7 @@ float ImplicitRegistry::get(PropertyId p, float tMs) const noexcept {
   if (it == entries_.end()) return 0.0f;
   const Entry& e = it->second;
   if (!e.hasValue) return 0.0f;
+  if (!std::isfinite(tMs)) return e.state.value;
   if (!e.implicit || !e.active) return e.state.value;
   return evaluate(e, tMs).value;
 }
@@ -76,6 +86,7 @@ float ImplicitRegistry::get(PropertyId p, float tMs) const noexcept {
 SpringState ImplicitRegistry::evaluate(const Entry& e, float tMs) const
     noexcept {
   if (!e.active) return e.state;
+  if (!std::isfinite(tMs)) return e.state;
   if (!(tMs > e.startMs)) {
     // Still in the delay/stagger hold: value has not started moving.
     return e.state;

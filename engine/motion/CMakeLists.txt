@@ -74,3 +74,8 @@ add_executable(interrupt_session_test tests/interrupt_session_test.cpp)
 target_link_libraries(interrupt_session_test PRIVATE motion)
 target_compile_options(interrupt_session_test PRIVATE -Wall -Wextra -Wpedantic)
 add_test(NAME interrupt_session_test COMMAND interrupt_session_test)
+
+add_executable(security_hardening_test tests/security_hardening_test.cpp)
+target_link_libraries(security_hardening_test PRIVATE motion)
+target_compile_options(security_hardening_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME security_hardening_test COMMAND security_hardening_test)

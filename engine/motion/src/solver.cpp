@@ -8,6 +8,7 @@ SpringState advanceSpring(const SpringState& state, const SpringSpec& spec,
                           float target, float dtMs) noexcept {
   if (!(spec.stiffness > 0.0f)) return state;
   if (!(spec.dampingRatio > 0.0f)) return state;
+  if (!std::isfinite(dtMs)) return state;
   if (!(dtMs > 0.0f)) return state;
   if (!(target == target)) return state;
 
