@@ -99,6 +99,18 @@ int main() {
     assert(p.status == filter_graph::Status::kMissingPso);
     printf("PASS missing-brightness-pso-reported\n");
   }
+  // 7. Security: >16 spec passes short-circuit with kUnsupportedFilter and
+  // empty passes (bounds the 2x blur amplification).
+  {
+    filter_graph::FilterSpec s;
+    s.passes = std::vector<filter_graph::FilterPassType>(
+        17, filter_graph::FilterPassType::kBrightness);
+    s.extents = {64u, 64u};
+    filter_graph::FilterPlan p = filter_graph::buildFilterGraph(s, FullCache());
+    assert(p.status == filter_graph::Status::kUnsupportedFilter);
+    assert(p.passes.empty());
+    printf("PASS oversize-pass-list-unsupported-filter\n");
+  }
   printf("ALL T4 TESTS PASSED\n");
   return 0;
 }

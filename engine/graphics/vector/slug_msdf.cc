@@ -17,7 +17,7 @@ constexpr int kEdgesPerGlyph = 4;
 }  // namespace
 
 MsdfResult shapeAndPlace(const ShapedRun& run, float subpixelX) {
-  if (subpixelX < 0.0f) {
+  if (!std::isfinite(subpixelX) || subpixelX < 0.0f) {
     return MsdfResult{Status::kInvalidArg, {}};
   }
   MsdfResult out;

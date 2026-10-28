@@ -34,7 +34,10 @@ struct MsdfResult {
 // Lay out the shaped run along the pen, offset by subpixelX, and emit one
 // MSDF texel record per glyph for the Slug shader.
 // Empty run yields an empty result with Status::kOk.
-// Negative subpixelX yields Status::kInvalidArg.
+// Negative or non-finite (NaN/Inf) subpixelX yields Status::kInvalidArg.
+// texelU is glyph / 16.0f with no glyph-id range check here: callers must
+// validate glyph ids against the atlas (16 cells per row) before consuming
+// GlyphPlacement, since huge ids sample far outside the atlas.
 MsdfResult shapeAndPlace(const ShapedRun& run, float subpixelX);
 
 }  // namespace slug_msdf

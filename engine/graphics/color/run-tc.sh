@@ -8,8 +8,12 @@ set -eu
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/../../.." && pwd)
 cd "$ROOT"
 
-g++ -std=c++17 -I . engine/graphics/color/color_space.test.cpp engine/graphics/color/color_space.cc -o /tmp/tc-color_space.test
-/tmp/tc-color_space.test
+BIN_TC_CS=$(mktemp /tmp/tc-color_space.XXXXXX)
+BIN_TC_FG=$(mktemp /tmp/tc-filter_graph.XXXXXX)
+trap 'rm -f "$BIN_TC_CS" "$BIN_TC_FG"' EXIT
 
-g++ -std=c++17 -I . engine/graphics/color/filter_graph.test.cpp engine/graphics/color/filter_graph.cc -o /tmp/tc-filter_graph.test
-/tmp/tc-filter_graph.test
+g++ -std=c++17 -I . engine/graphics/color/color_space.test.cpp engine/graphics/color/color_space.cc -o "$BIN_TC_CS"
+"$BIN_TC_CS"
+
+g++ -std=c++17 -I . engine/graphics/color/filter_graph.test.cpp engine/graphics/color/filter_graph.cc -o "$BIN_TC_FG"
+"$BIN_TC_FG"

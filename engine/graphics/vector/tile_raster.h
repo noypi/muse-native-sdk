@@ -12,7 +12,7 @@ namespace tile_raster {
 
 enum class BackendKind { kCpu = 0, kVulkan = 1, kUnknown = 999 };
 
-enum class Status { kOk = 0, kUnsupportedBackend = 1 };
+enum class Status { kOk = 0, kUnsupportedBackend = 1, kInvalidArg = 2 };
 
 struct Point {
   double x = 0.0;
@@ -45,6 +45,10 @@ struct CoverageResult {
 // Returns per-tile coverage bitmask list (covered tile = 1, empty = 0).
 // Empty path input yields an empty result with Status::kOk.
 // Unknown BackendKind yields Status::kUnsupportedBackend.
+// Degenerate grids (rows/cols <= 0, non-finite or non-positive tile sizes,
+// or any non-finite segment coordinate) yield Status::kOk with empty masks.
+// Oversize grids (rows*cols > 4096 tiles, computed in 64-bit arithmetic)
+// yield Status::kInvalidArg with empty masks.
 CoverageResult rasterizeTiles(const PathBatch& paths, const TileGrid& grid,
                               BackendKind backend);
 

@@ -56,6 +56,9 @@ struct FilterPlan {
 // pass's pre-compiled PSO id from psos. Unknown pass type short-circuits
 // with Status::kUnsupportedFilter; absent PSO entry short-circuits with
 // Status::kMissingPso (no partial passes returned on error).
+// More than 16 spec passes short-circuits with Status::kUnsupportedFilter
+// (no partial passes returned), bounding the 2x blur amplification.
+// blurRadius/extents are currently informational and never size allocations.
 FilterPlan buildFilterGraph(const FilterSpec& spec, const PsoCache& psos);
 
 }  // namespace filter_graph

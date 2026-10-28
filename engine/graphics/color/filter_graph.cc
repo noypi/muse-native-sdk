@@ -4,8 +4,16 @@
 
 namespace filter_graph {
 
+namespace {
+constexpr size_t kMaxPasses = 16;
+}  // namespace
+
 FilterPlan buildFilterGraph(const FilterSpec& spec, const PsoCache& psos) {
   FilterPlan plan;
+  if (spec.passes.size() > kMaxPasses) {
+    plan.status = Status::kUnsupportedFilter;
+    return plan;
+  }
   for (FilterPassType pass : spec.passes) {
     switch (pass) {
       case FilterPassType::kGaussBlur: {

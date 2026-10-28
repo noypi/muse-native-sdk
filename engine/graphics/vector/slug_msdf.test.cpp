@@ -4,6 +4,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <limits>
 #include <vector>
 
 #include "engine/graphics/vector/slug_msdf.h"
@@ -106,6 +107,19 @@ int main() {
     float gridPos = r.glyphs[0].x * 64.0f;
     assert(std::round(gridPos) == gridPos);
     printf("PASS off-grid-shift-quantized-to-1-64-grid\n");
+  }
+  // 8. Security: NaN and +Inf subpixelX yield kInvalidArg with no placements
+  // (no NaN/Inf propagates to the Slug shader).
+  {
+    const float nan = std::numeric_limits<float>::quiet_NaN();
+    const float inf = std::numeric_limits<float>::infinity();
+    slug_msdf::MsdfResult r1 = slug_msdf::shapeAndPlace(TwoGlyphRun(), nan);
+    assert(r1.status == slug_msdf::Status::kInvalidArg);
+    assert(r1.glyphs.empty());
+    slug_msdf::MsdfResult r2 = slug_msdf::shapeAndPlace(TwoGlyphRun(), inf);
+    assert(r2.status == slug_msdf::Status::kInvalidArg);
+    assert(r2.glyphs.empty());
+    printf("PASS nan-inf-shift-invalid-arg\n");
   }
   printf("ALL T2 TESTS PASSED\n");
   return 0;

@@ -8,8 +8,12 @@ set -eu
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/../../.." && pwd)
 cd "$ROOT"
 
-g++ -std=c++17 -I . engine/graphics/vector/tile_raster.test.cpp engine/graphics/vector/tile_raster.cc -o /tmp/tv-tile_raster.test
-/tmp/tv-tile_raster.test
+BIN_TV_RASTER=$(mktemp /tmp/tv-tile_raster.XXXXXX)
+BIN_TV_SLUG=$(mktemp /tmp/tv-slug_msdf.XXXXXX)
+trap 'rm -f "$BIN_TV_RASTER" "$BIN_TV_SLUG"' EXIT
 
-g++ -std=c++17 -I . engine/graphics/vector/slug_msdf.test.cpp engine/graphics/vector/slug_msdf.cc -o /tmp/tv-slug_msdf.test
-/tmp/tv-slug_msdf.test
+g++ -std=c++17 -I . engine/graphics/vector/tile_raster.test.cpp engine/graphics/vector/tile_raster.cc -o "$BIN_TV_RASTER"
+"$BIN_TV_RASTER"
+
+g++ -std=c++17 -I . engine/graphics/vector/slug_msdf.test.cpp engine/graphics/vector/slug_msdf.cc -o "$BIN_TV_SLUG"
+"$BIN_TV_SLUG"

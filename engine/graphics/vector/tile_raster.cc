@@ -1,5 +1,8 @@
 #include "tile_raster.h"
 
+#include <cmath>
+#include <cstdint>
+
 namespace tile_raster {
 namespace {
 
@@ -34,6 +37,10 @@ bool SegmentCoversRect(const Segment& s, double xmin, double ymin, double xmax,
 
 }  // namespace
 
+// Upper bound on allocated tiles (rows*cols) to contain heap/CPU cost from
+// crafted grid dims. Compared against 64-bit product to avoid 32-bit overflow.
+constexpr int64_t kMaxTiles = 4096;
+
 CoverageResult rasterizeTiles(const PathBatch& paths, const TileGrid& grid,
                               BackendKind backend) {
   if (backend != BackendKind::kCpu && backend != BackendKind::kVulkan) {
@@ -52,7 +59,22 @@ CoverageResult rasterizeTiles(const PathBatch& paths, const TileGrid& grid,
       grid.tile_height <= 0.0) {
     return result;  // Degenerate grid: kOk with empty masks.
   }
-  result.masks.assign(static_cast<size_t>(grid.rows * grid.cols), 0u);
+  if (!std::isfinite(grid.tile_width) || !std::isfinite(grid.tile_height)) {
+    return result;  // Non-finite tile size (NaN check first: NaN <= 0 is false).
+  }
+  for (const Segment& seg : paths.segments) {
+    if (!std::isfinite(seg.a.x) || !std::isfinite(seg.a.y) ||
+        !std::isfinite(seg.b.x) || !std::isfinite(seg.b.y)) {
+      return result;  // Non-finite coordinates: kOk with empty (zero) coverage.
+    }
+  }
+  const int64_t n =
+      static_cast<int64_t>(grid.rows) * static_cast<int64_t>(grid.cols);
+  if (n > kMaxTiles) {
+    result.status = Status::kInvalidArg;
+    return result;
+  }
+  result.masks.assign(static_cast<size_t>(n), 0u);
   for (int row = 0; row < grid.rows; ++row) {
     for (int col = 0; col < grid.cols; ++col) {
       const double xmin = col * grid.tile_width;
@@ -66,7 +88,8 @@ CoverageResult rasterizeTiles(const PathBatch& paths, const TileGrid& grid,
           break;
         }
       }
-      result.masks[static_cast<size_t>(row * grid.cols + col)] = mask;
+      result.masks[static_cast<size_t>(row) * static_cast<size_t>(grid.cols) +
+                     static_cast<size_t>(col)] = mask;
     }
   }
   return result;
