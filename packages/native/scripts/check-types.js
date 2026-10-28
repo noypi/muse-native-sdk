@@ -6,8 +6,8 @@
 // (localTscBin / isStrictLiveTscRequired / liveTscGuard): a missing local
 // tsc skips with a recorded message (blocked-env), unless
 // MUSE_REQUIRE_LIVE_TSC=1 or CI=true is set, in which case it fails naming
-// the missing tsc. `check:types` stays a separate CI gate — it is NOT wired
-// into `npm test` (TC-M3-004's Check row invokes it directly).
+// the missing tsc. `check:types` remains standalone-invocable AND (T6) is
+// chained first in `scripts.test` (TC-M3-004's Check row also invokes it directly).
 const fs = require('node:fs');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
