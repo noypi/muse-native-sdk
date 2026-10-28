@@ -26,7 +26,11 @@ BASE_SRC=$(mktemp /tmp/ts-base_only.XXXXXX.cpp)
 BIN_BASE=$(mktemp /tmp/ts-base_only.XXXXXX)
 BIN_TS_MODULE=$(mktemp /tmp/ts-scene_module.XXXXXX)
 BIN_TS_COMPOSITE=$(mktemp /tmp/ts-scene_composite.XXXXXX)
-trap 'rm -f "$BASE_SRC" "$BIN_BASE" "$BIN_TS_MODULE" "$BIN_TS_COMPOSITE"' EXIT
+TRIPLE_A_SRC=$(mktemp /tmp/ts-triple_a.XXXXXX.cpp)
+BIN_TRIPLE_A=$(mktemp /tmp/ts-triple_a.XXXXXX)
+TRIPLE_B_SRC=$(mktemp /tmp/ts-triple_b.XXXXXX.cpp)
+BIN_TRIPLE_B=$(mktemp /tmp/ts-triple_b.XXXXXX)
+trap 'rm -f "$BASE_SRC" "$BIN_BASE" "$BIN_TS_MODULE" "$BIN_TS_COMPOSITE" "$TRIPLE_A_SRC" "$BIN_TRIPLE_A" "$TRIPLE_B_SRC" "$BIN_TRIPLE_B"' EXIT
 
 cat > "$BASE_SRC" <<'EOF'
 // Base-configuration probe: includes NO scene headers. If the base build
@@ -50,3 +54,28 @@ g++ -std=c++17 -I . engine/graphics/scene/scene_module.test.cpp engine/graphics/
 
 g++ -std=c++17 -I . engine/graphics/scene/scene_composite.test.cpp engine/graphics/scene/scene_composite.cc engine/graphics/scene/scene_module.cc -o "$BIN_TS_COMPOSITE"
 "$BIN_TS_COMPOSITE"
+
+# T8 triple-include TU probes (BLOCKER 1 + MINOR 3): one TU including
+# scene_module.h + scene_composite.h + texture_pool.h must compile in BOTH
+# scene-header orders. Pre-fix this fails (narrow-Status missing kOverBudget /
+# duplicate PoolState/Status redefinition); post-fix (single-owner
+# graphics_status.h, PoolState owned by texture_pool.h and included — not
+# redeclared — by scene_composite.h, real scene_module.h include) both TUs
+# compile cleanly.
+cat > "$TRIPLE_A_SRC" <<'EOF'
+#include "engine/graphics/scene/scene_module.h"
+#include "engine/graphics/scene/scene_composite.h"
+#include "engine/graphics/textures/texture_pool.h"
+int main() { return 0; }
+EOF
+g++ -std=c++17 -I . "$TRIPLE_A_SRC" -o "$BIN_TRIPLE_A"
+"$BIN_TRIPLE_A"
+
+cat > "$TRIPLE_B_SRC" <<'EOF'
+#include "engine/graphics/scene/scene_composite.h"
+#include "engine/graphics/scene/scene_module.h"
+#include "engine/graphics/textures/texture_pool.h"
+int main() { return 0; }
+EOF
+g++ -std=c++17 -I . "$TRIPLE_B_SRC" -o "$BIN_TRIPLE_B"
+"$BIN_TRIPLE_B"

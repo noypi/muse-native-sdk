@@ -3,6 +3,8 @@
 #ifndef ENGINE_GRAPHICS_PACING_FRAME_RATE_H_
 #define ENGINE_GRAPHICS_PACING_FRAME_RATE_H_
 
+#include "engine/graphics/pacing/pacing_status.h"
+
 namespace pacing {
 
 enum class ContentClass { kIdle, kScroll, kAnimation, kVideo };
@@ -11,8 +13,6 @@ struct DisplayModeRange {
   int minHz;
   int maxHz;
 };
-
-enum class Status { kOk, kInvalidArg };
 
 struct FrameRateIntent {
   int fps = 0;

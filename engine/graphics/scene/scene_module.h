@@ -5,7 +5,7 @@
 #ifndef ENGINE_GRAPHICS_SCENE_SCENE_MODULE_H_
 #define ENGINE_GRAPHICS_SCENE_SCENE_MODULE_H_
 
-enum class Status { kOk, kNotLinked, kInvalidArg };
+#include "engine/graphics/graphics_status.h"
 
 struct SceneModuleConfig {
   bool userRequested = false;

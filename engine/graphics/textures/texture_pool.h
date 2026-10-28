@@ -7,6 +7,7 @@
 #ifndef ENGINE_GRAPHICS_TEXTURES_TEXTURE_POOL_H_
 #define ENGINE_GRAPHICS_TEXTURES_TEXTURE_POOL_H_
 
+#include "engine/graphics/graphics_status.h"
 #include "engine/graphics/textures/texture_format.h"
 
 struct TextureRequest {
@@ -21,8 +22,6 @@ struct PoolState {
   int ringSlots = 0;
   int usedSlots = 0;
 };
-
-enum class Status { kOk, kOverBudget, kInvalidArg };
 
 struct PoolOutcome {
   bool admitted = false;

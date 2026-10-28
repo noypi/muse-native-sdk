@@ -3,9 +3,9 @@
 #ifndef ENGINE_GRAPHICS_PACING_RENDER_AHEAD_H_
 #define ENGINE_GRAPHICS_PACING_RENDER_AHEAD_H_
 
-namespace pacing {
+#include "engine/graphics/pacing/pacing_status.h"
 
-enum class Status { kOk, kInvalidArg };
+namespace pacing {
 
 struct RenderAheadVerdict {
   int admitted = 0;
