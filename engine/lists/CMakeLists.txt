@@ -39,3 +39,17 @@ target_include_directories(refresh_rate_test PRIVATE include)
 target_compile_options(refresh_rate_test PRIVATE -Wall -Wextra -Wpedantic -Werror)
 
 add_test(NAME refresh_rate_test COMMAND refresh_rate_test)
+
+add_executable(position_persist_test tests/position_persist_test.cpp src/position_persist.cpp)
+target_link_libraries(position_persist_test PRIVATE lists)
+target_include_directories(position_persist_test PRIVATE include)
+target_compile_options(position_persist_test PRIVATE -Wall -Wextra -Wpedantic -Werror)
+
+add_test(NAME position_persist_test COMMAND position_persist_test)
+
+add_executable(diff_benchmark_test tests/diff_benchmark_test.cpp src/snap_refresh.cpp)
+target_link_libraries(diff_benchmark_test PRIVATE lists)
+target_include_directories(diff_benchmark_test PRIVATE include)
+target_compile_options(diff_benchmark_test PRIVATE -Wall -Wextra -Wpedantic -Werror)
+
+add_test(NAME diff_benchmark_test COMMAND diff_benchmark_test)
