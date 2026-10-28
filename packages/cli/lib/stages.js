@@ -77,9 +77,9 @@ function assertAppDir(ctx) {
   }
 }
 
-// Sample target (FR-WORKFLOW-003): `examples/m3-gallery` resolved relative
-// to the build working directory (child `cwd`), i.e. `<cwd>/examples/m3-gallery`.
-// Selected builds compile/package its sources into the same artefacts;
+// Sample target (FR-WORKFLOW-003): `examples/m3-gallery`. Resolved by
+// `resolveSampleDir` without depending on the process cwd (see below);
+// selected builds compile/package its sources into the same artefacts;
 // default builds never touch it.
 const SAMPLE_TARGET = path.join('examples', 'm3-gallery');
 
@@ -88,24 +88,61 @@ function isSampleSelected(config) {
   return v === true || v === 'true';
 }
 
-// Resolve the sample dir: cwd-relative first (the `<cwd>/examples/m3-gallery`
-// form the spec and the T2 positional operand name), falling back to a
-// sibling of the app dir. Returns the cwd-based path when neither exists so
-// callers fail closed naming the expected path.
+// Resolve the sample dir without depending on the process cwd. Candidates
+// in order: (1) the appDir itself when it is the sample (ends with
+// `examples/m3-gallery`); (2) a sibling `<parent-of-appDir>/examples/m3-gallery`;
+// (3) walk up from this lib dir (__dirname) to the first ancestor containing
+// `examples/m3-gallery` (covers the repo-root layout regardless of caller
+// cwd). Returns the first existing directory; when none exists, reports the
+// repo-root-anchored expected path so callers fail closed naming it.
 function resolveSampleDir(appDir) {
-  const cwdBased = path.resolve(SAMPLE_TARGET);
-  try {
-    if (fs.statSync(cwdBased).isDirectory()) return cwdBased;
-  } catch (_) {
-    // Fall through to the sibling candidate below.
+  const expectedSuffix = path.join('examples', 'm3-gallery');
+  const repoRootGuess = path.resolve(__dirname, '..', '..', '..');
+  const resolved = path.resolve(appDir || '');
+  if (resolved.endsWith(expectedSuffix)) {
+    try {
+      if (fs.statSync(resolved).isDirectory()) return resolved;
+    } catch (_) {
+      // Not present — try the remaining candidates below.
+    }
   }
-  const sibling = path.join(path.dirname(path.resolve(appDir)), 'examples', 'm3-gallery');
+  const sibling = path.join(path.dirname(resolved), 'examples', 'm3-gallery');
   try {
     if (fs.statSync(sibling).isDirectory()) return sibling;
   } catch (_) {
-    // Neither exists — report the cwd-based expected path.
+    // Fall through to the ancestor walk below.
   }
-  return cwdBased;
+  let dir = __dirname;
+  let found = null;
+  let foundRoot = null;
+  for (;;) {
+    const candidate = path.join(dir, 'examples', 'm3-gallery');
+    try {
+      if (fs.statSync(candidate).isDirectory()) {
+        found = candidate;
+        foundRoot = dir;
+        break;
+      }
+    } catch (_) {
+      // Keep walking up.
+    }
+    const parent = path.dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  // Only honor the checkout-anchored candidate when the build target lives
+  // inside the same checkout (resolved under foundRoot, or is the sample
+  // itself). Otherwise a hermetic out-of-tree build (e.g. a tmp fake repo)
+  // would leak this checkout's committed sample instead of failing closed.
+  if (found !== null && (resolved === found || resolved.startsWith(foundRoot + path.sep))) return found;
+  // Fail closed naming an expected path: the repo-root-anchored one for
+  // in-checkout targets, else the app-anchored sibling so out-of-tree
+  // builds report a path near the app (which does not exist here).
+  const anchorRoot = foundRoot !== null ? foundRoot : repoRootGuess;
+  if (resolved === anchorRoot || resolved.startsWith(anchorRoot + path.sep)) {
+    return path.join(anchorRoot, SAMPLE_TARGET);
+  }
+  return sibling;
 }
 
 // Assert the resolved `withSample` selection's target is present. Throws a
