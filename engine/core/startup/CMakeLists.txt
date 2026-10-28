@@ -6,10 +6,11 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 # Production sources are coder-owned (plan T1 Files: src/bootstrap.cc;
-# plan T2 Files: src/dynamic_init.cc).
+# plan T2 Files: src/dynamic_init.cc; plan T3 Files: src/pool_warmup.cc).
 add_library(startup
   src/bootstrap.cc
   src/dynamic_init.cc
+  src/pool_warmup.cc
 )
 target_include_directories(startup PUBLIC include)
 target_compile_options(startup PRIVATE -Wall -Wextra -Wpedantic)
@@ -24,7 +25,9 @@ enable_testing()
 # the `dynamicInitCheck` target — the tester must not add them early.
 foreach(TEST_SRC
     tests/bootstrap_test.cpp
-    tests/dynamic_init_test.cpp)
+    tests/dynamic_init_test.cpp
+    tests/pool_warmup_test.cpp
+    tests/startup_gate_test.cpp)
   get_filename_component(TEST_NAME ${TEST_SRC} NAME_WE)
   add_executable(${TEST_NAME} ${TEST_SRC})
   target_link_libraries(${TEST_NAME} PRIVATE startup)
