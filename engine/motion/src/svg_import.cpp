@@ -90,7 +90,7 @@ std::string eventTimingAttrOf(const std::string& tag) {
         std::size_t after = pos + needle.size();
         // Attribute use is `name=` possibly with whitespace before '='.
         std::size_t j = after;
-        while (j < tag.size() && (tag[j] == ' ' || tag[j] == '\t')) ++j;
+        while (j < tag.size() && isSpace(tag[j])) ++j;
         if (j < tag.size() && tag[j] == '=') return needle;
       }
       pos = tag.find(needle, pos + 1);

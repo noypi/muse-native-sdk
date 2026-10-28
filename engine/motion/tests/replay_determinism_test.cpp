@@ -163,6 +163,25 @@ bool check_replay_never_throws_on_malformed_input() {
   return true;
 }
 
+// Security: a large hostile Recording (1 MiB garbage bytes + huge
+// frameCount mismatch) resolves kCorrupt without throw or hang (bounded
+// time; try/catch + size-mismatch fast path, no allocation proportional
+// to frameCount).
+bool check_large_hostile_recording_returns_corrupt_bounded() {
+  try {
+    Recording hostile;
+    hostile.bytes = std::vector<uint8_t>(1024 * 1024, 0xA5);
+    hostile.frameCount = UINT64_MAX;
+    if (motion_replay(hostile) != ReplayStatus::kCorrupt) return false;
+    Recording garbage;
+    garbage.bytes = std::vector<uint8_t>(1024 * 1024, 0xFF);
+    garbage.frameCount = 1000000;
+    return motion_replay(garbage) == ReplayStatus::kCorrupt;
+  } catch (...) {
+    return false;
+  }
+}
+
 // ASSUMPTION (vacuous replay): an empty recording replays kIdentical —
 // there are zero frames to diverge on. Flagged because the plan does not
 // pin the empty-recording status; the load-bearing property is that it
@@ -197,6 +216,7 @@ int main() {
   RUN_CASE(check_truncated_recording_returns_corrupt);
   RUN_CASE(check_empty_bytes_with_nonzero_count_is_corrupt);
   RUN_CASE(check_replay_never_throws_on_malformed_input);
+  RUN_CASE(check_large_hostile_recording_returns_corrupt_bounded);
   RUN_CASE(check_empty_recording_replays_identical);
   if (failures > 0) {
     std::printf("replay_determinism_test: %d failing\n", failures);

@@ -473,6 +473,50 @@ bool check_convert_oversized_svg_never_throws() {
   }
 }
 
+// Security (review LOW): newline/CR between SMIL event-timing attribute name
+// and `=` must still be rejected as kUnsupported with a reason naming the
+// attribute. Covers onbegin/onend/onrepeat with `\n`, `\r`, `\r\n` splits.
+bool check_convert_event_timing_newline_before_equals_is_unsupported() {
+  try {
+    const char* attrs[] = {"onbegin", "onend", "onrepeat"};
+    const char* seps[] = {"\n", "\r", "\r\n"};
+    for (const char* attr : attrs) {
+      for (const char* sep : seps) {
+        std::string svg = std::string("<svg><path ") + attr + sep +
+                          "=\"0s\" d=\"M0 0h10\"/></svg>";
+        ConversionResult r = motion_convertSvg(bytesOf(svg.c_str()));
+        if (r.error != AssetError::kUnsupported) return false;
+        if (r.unsupportedReason.find(attr) == std::string::npos)
+          return false;
+      }
+    }
+    return true;
+  } catch (...) {
+    return false;
+  }
+}
+
+// Security (review LOW — doc/code mismatch pin): `begin="btn.click"`
+// event-clock values on `<animate>` currently convert as kOk per code
+// (only onbegin/onend/onrepeat attributes are screened), while subset.md
+// excludes event-clock `begin` values. This test pins the ACTUAL code
+// behavior (kOk) so adjudication is forced: coder must either enforce
+// (screen begin= event-clock values) or narrow subset.md; do NOT leave
+// doc and code disagreeing silently.
+bool check_convert_begin_event_clock_current_disposition_is_ok() {
+  try {
+    ConversionResult r = motion_convertSvg(bytesOf(
+        "<svg><animate attributeName=\"opacity\" begin=\"btn.click\" "
+        "dur=\"1s\"/></svg>"));
+    // Pinned actual: kOk under current enforcement. If the coder enforces
+    // the subset.md exclusion, this expectation flips to kUnsupported +
+    // naming reason and subset.md/T10.md reconcile accordingly.
+    return r.error == AssetError::kOk;
+  } catch (...) {
+    return false;
+  }
+}
+
 }  // namespace
 
 #define RUN_CASE(name)                 \
@@ -516,6 +560,8 @@ int main() {
   RUN_CASE(check_convert_genuine_onbegin_attribute_is_unsupported);
   RUN_CASE(check_convert_empty_svg_is_unsupported);
   RUN_CASE(check_convert_oversized_svg_never_throws);
+  RUN_CASE(check_convert_event_timing_newline_before_equals_is_unsupported);
+  RUN_CASE(check_convert_begin_event_clock_current_disposition_is_ok);
   if (failures > 0) {
     std::printf("asset_control_test: %d failing\n", failures);
     return 1;

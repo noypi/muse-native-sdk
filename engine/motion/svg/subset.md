@@ -34,9 +34,10 @@ uppercase variants (`Path`), and aliases are NOT supported — they report
 - **Masks / clipping**: `mask`, `clipPath`.
 - **Script**: `script` — never executed, never dropped; rejected loudly.
 - **Foreign content**: `foreignObject`.
-- **SMIL event timing**: `onbegin` / `onend` / `onrepeat` attributes (and
-  event-clock `begin` values) — excluded even when the host element is
-  otherwise supported.
+- **SMIL event timing**: `onbegin` / `onend` / `onrepeat` trigger
+  attributes — excluded even when the host element is otherwise supported.
+  Event-clock `begin` values (e.g. `begin="btn.click"`) are currently
+  accepted through conversion (no behavior change in this revision).
 - **Everything else unlisted**: `text`, `image`, `use`, `style`, `defs`
   (as content), `symbol`, `marker`, `pattern`, `linearGradient`,
   `radialGradient`, unknown/future elements — all `kUnsupported`.
