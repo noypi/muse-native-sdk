@@ -12,8 +12,12 @@ add_library(layout
   src/sliver.cpp
   src/masonry.cpp
   src/form_factor.cpp
+  src/hinge_split.cpp
+  src/fold_signal.cpp
+  src/tabletop.cpp
   src/property.cpp
   src/batch.cpp
+  src/insets.cpp
 )
 target_include_directories(layout PUBLIC include)
 target_compile_options(layout PRIVATE -Wall -Wextra -Wpedantic -Werror)
@@ -56,6 +60,46 @@ target_link_libraries(batch_test PRIVATE layout)
 target_compile_options(batch_test PRIVATE -Wall -Wextra -Wpedantic -Werror)
 add_test(NAME batch_test COMMAND batch_test)
 
+add_executable(posture_test tests/posture_test.cpp)
+target_link_libraries(posture_test PRIVATE layout)
+target_compile_options(posture_test PRIVATE -Wall -Wextra -Wpedantic -Werror)
+add_test(NAME posture_test COMMAND posture_test)
+
+add_executable(fold_signal_test tests/fold_signal_test.cpp)
+target_link_libraries(fold_signal_test PRIVATE layout)
+target_compile_options(fold_signal_test PRIVATE -Wall -Wextra -Wpedantic -Werror)
+add_test(NAME fold_signal_test COMMAND fold_signal_test)
+
 add_executable(m3_matrix_check tests/m3_matrix_check.cpp)
 target_compile_options(m3_matrix_check PRIVATE -Wall -Wextra -Wpedantic -Werror)
 add_test(NAME m3_matrix_check COMMAND m3_matrix_check ${CMAKE_CURRENT_SOURCE_DIR}/m3_matrix.json)
+
+add_executable(hinge_split_test tests/hinge_split_test.cpp)
+target_link_libraries(hinge_split_test PRIVATE layout)
+target_compile_options(hinge_split_test PRIVATE -Wall -Wextra -Wpedantic -Werror)
+add_test(NAME hinge_split_test COMMAND hinge_split_test)
+
+add_executable(tabletop_test tests/tabletop_test.cpp)
+target_link_libraries(tabletop_test PRIVATE layout)
+target_compile_options(tabletop_test PRIVATE -Wall -Wextra -Wpedantic -Werror)
+add_test(NAME tabletop_test COMMAND tabletop_test)
+
+add_executable(inset_signal_test tests/inset_signal_test.cpp)
+target_link_libraries(inset_signal_test PRIVATE layout)
+target_compile_options(inset_signal_test PRIVATE -Wall -Wextra -Wpedantic -Werror)
+add_test(NAME inset_signal_test COMMAND inset_signal_test)
+
+add_executable(ime_animation_test tests/ime_animation_test.cpp)
+target_link_libraries(ime_animation_test PRIVATE layout)
+target_compile_options(ime_animation_test PRIVATE -Wall -Wextra -Wpedantic -Werror)
+add_test(NAME ime_animation_test COMMAND ime_animation_test)
+
+add_executable(safe_area_test tests/safe_area_test.cpp)
+target_link_libraries(safe_area_test PRIVATE layout)
+target_compile_options(safe_area_test PRIVATE -Wall -Wextra -Wpedantic -Werror)
+add_test(NAME safe_area_test COMMAND safe_area_test)
+
+add_executable(ime_scripted_test tests/ime_scripted_test.cpp)
+target_link_libraries(ime_scripted_test PRIVATE layout)
+target_compile_options(ime_scripted_test PRIVATE -Wall -Wextra -Wpedantic -Werror)
+add_test(NAME ime_scripted_test COMMAND ime_scripted_test)

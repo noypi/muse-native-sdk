@@ -17,6 +17,33 @@ enum class Posture { Flat, HalfOpened, Unknown };
 // (opaque int from FoldingFeature#getOrientation), occlusion type mapped to
 // `hingeOccludes`, and the hinge/fold bounds rect. A hinge-absent state
 // (hasHinge == false, or an empty rect) degrades to full-width: no split.
+// Plain viewport/hinge rect (x/y/w/h floats). Aggregate: `Rect{a, b, c, d}`
+// maps positionally to x/y/w/h.
+struct Rect {
+  float x = 0.0f;
+  float y = 0.0f;
+  float w = 0.0f;
+  float h = 0.0f;
+};
+
+// Foldable posture input mirroring androidx.window.layout FoldingFeature.
+// PascalCase enumerators match the existing `Posture` convention.
+enum class FoldState { Flat, HalfOpened, Unknown };
+enum class FoldOrientation { Vertical, Horizontal };
+enum class OcclusionType { None, Full };
+
+// C++-side mirror of a WindowManager/FoldingFeature update plus the optional
+// hinge-angle sensor reading. When the sensor is absent (`hasHingeAngle ==
+// false`) layout degrades to `bounds` + `occlusion` only.
+struct FoldingFeatureState {
+  FoldState state = FoldState::Unknown;
+  FoldOrientation orientation = FoldOrientation::Vertical;
+  OcclusionType occlusion = OcclusionType::None;
+  float hingeAngleDeg = 0.0f;
+  bool hasHingeAngle = false;
+  Rect bounds{};
+};
+
 struct FormFactorState {
   Posture posture = Posture::Unknown;
   bool hasHinge = false;
@@ -28,6 +55,36 @@ struct FormFactorState {
   int orientation = 0;
 };
 
+// Combined snapshot returned by `FormFactorSource::current()`. Carries the
+// compat `FormFactorState` (as `compat`) alongside the T1 folding fields
+// (exposed directly as `state`/`orientation`/`occlusion`/`hingeAngleDeg`/
+// `hasHingeAngle`/`bounds`). Implicit conversions to either input struct keep
+// both existing `const FormFactorState& cur = src.current();` call sites and
+// new `const FoldingFeatureState& cur = src.current();` call sites compiling;
+// direct `src.current().orientation` resolves to the folding orientation (the
+// compat orientation stays reachable via the conversion).
+struct FormFactorCombined {
+  FormFactorState compat{};
+  FoldState state = FoldState::Unknown;
+  FoldOrientation orientation = FoldOrientation::Vertical;
+  OcclusionType occlusion = OcclusionType::None;
+  float hingeAngleDeg = 0.0f;
+  bool hasHingeAngle = false;
+  Rect bounds{};
+
+  operator FormFactorState() const noexcept { return compat; }
+  operator FoldingFeatureState() const noexcept {
+    FoldingFeatureState out;
+    out.state = state;
+    out.orientation = orientation;
+    out.occlusion = occlusion;
+    out.hingeAngleDeg = hingeAngleDeg;
+    out.hasHingeAngle = hasHingeAngle;
+    out.bounds = bounds;
+    return out;
+  }
+};
+
 // Consumes window-layout updates and applies them on the next solver pass.
 // `onWindowLayoutChanged` is the callback entry for the JNI seam: it never
 // throws and never calls into JS. `consumeForNextPass` returns false when
@@ -37,7 +94,8 @@ class FormFactorSource {
   FormFactorSource() = default;
 
   void onWindowLayoutChanged(const FormFactorState& s) noexcept;
-  const FormFactorState& current() const noexcept;
+  void onFoldingFeatureChanged(FoldingFeatureState s) noexcept;
+  const FormFactorCombined& current() const noexcept;
 
   // Returns the subtree roots intersecting the hinge rect with nonzero-area
   // overlap. With no hinge (or an empty rect) the set is empty: the layout
@@ -50,11 +108,16 @@ class FormFactorSource {
   // solved box keeps content under the hinge rect. Unaffected subtrees keep
   // their exact frames. Returns false (without re-solving) when the state
   // is unchanged since the last pass.
-  bool consumeForNextPass(Solver& s, NodeId root);
+  //
+  // Lifecycle in-place contract: this path never recreates the host
+  // Activity (or any cross-boundary object) — it only re-solves the pending
+  // subtree in place. It never throws and issues no JS/cross-boundary
+  // calls; a repeated identical state is a no-op returning false.
+  bool consumeForNextPass(Solver& s, NodeId root) noexcept;
 
  private:
-  FormFactorState current_{};
-  FormFactorState applied_{};
+  FormFactorCombined current_{};
+  FormFactorCombined applied_{};
   bool hasApplied_ = false;
 };
 
