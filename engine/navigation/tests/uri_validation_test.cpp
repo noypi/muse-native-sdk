@@ -262,6 +262,129 @@ bool check_wrong_scheme_rejects() {
   return !r.accepted && !r.navigate;
 }
 
+bool check_missing_required_param_rejects() {
+  // "qty" is required on this self-built manifest; omitting it must be
+  // BAD_PARAM (AC-NAV-014 typed-param check). A dedicated manifest is used
+  // so the test does not depend on the shared fixture's required flags.
+  const char* body = R"json({
+    "hosts": ["shop.example.com"],
+    "schemes": ["https"],
+    "packageName": "com.example.app",
+    "sha256CertFingerprints": ["AA:BB:CC:DD"],
+    "routes": [
+      {"host": "shop.example.com", "pathPattern": "/p/.*",
+       "routeId": "product",
+       "query": [{"name": "qty", "type": "int", "required": true}]}
+    ]
+  })json";
+  std::string path = writeTempManifest(body);
+  LoadManifestResult lr = LoadManifest(path);
+  std::remove(path.c_str());
+  if (!lr.ok) return false;
+  ValidateResult r =
+      ValidateUri("https://shop.example.com/p/7", lr.manifest);
+  return !r.accepted && !r.navigate && r.reason == RejectReason::BAD_PARAM;
+}
+
+bool check_bool_param_accepts_typed() {
+  RouteManifest m = twoHostManifest();
+  // ASSUMPTION: manifest fixture below declares "debug" as Bool on the
+  // profile route; the test builds its own manifest so it does not depend
+  // on coder-chosen fixture content.
+  const char* body = R"json({
+    "hosts": ["social.example.com"],
+    "schemes": ["https"],
+    "packageName": "com.example.app",
+    "sha256CertFingerprints": ["AA:BB:CC:DD"],
+    "routes": [
+      {"host": "social.example.com", "pathPattern": "/u/.*",
+       "routeId": "profile",
+       "query": [{"name": "admin", "type": "bool"}]}
+    ]
+  })json";
+  std::string path = writeTempManifest(body);
+  LoadManifestResult lr = LoadManifest(path);
+  std::remove(path.c_str());
+  if (!lr.ok) return false;
+  ValidateResult r =
+      ValidateUri("https://social.example.com/u/ada?admin=true", lr.manifest);
+  if (!r.accepted || r.navigate) return false;
+  auto it = r.params.find("admin");
+  return it != r.params.end() && it->second.type == ParamType::Bool &&
+         it->second.boolValue == true;
+}
+
+bool check_single_param_too_long_rejects() {
+  RouteManifest m = twoHostManifest();
+  // Single param value > 1KB must be OVERSIZE even when the URI is short.
+  std::string bigValue(1100, 'x');
+  ValidateResult r = ValidateUri(
+      "https://shop.example.com/p/7?qty=3&pad=" + bigValue, m);
+  return !r.accepted && !r.navigate && r.reason == RejectReason::OVERSIZE;
+}
+
+bool check_too_many_params_rejects() {
+  RouteManifest m = twoHostManifest();
+  // More than 32 params must be OVERSIZE.
+  std::string uri = "https://shop.example.com/p/7?qty=3";
+  for (int i = 0; i < 33; ++i) {
+    uri += "&k" + std::to_string(i) + "=v";
+  }
+  ValidateResult r = ValidateUri(uri, m);
+  return !r.accepted && !r.navigate && r.reason == RejectReason::OVERSIZE;
+}
+
+bool check_malformed_encoding_rejects() {
+  RouteManifest m = twoHostManifest();
+  ValidateResult r =
+      ValidateUri("https://shop.example.com/p/%ZZ", m);
+  return !r.accepted && !r.navigate && r.reason == RejectReason::ENCODING;
+}
+
+bool check_backslash_traversal_rejects() {
+  RouteManifest m = twoHostManifest();
+  ValidateResult r =
+      ValidateUri("https://shop.example.com\\p\\secret", m);
+  return !r.accepted && !r.navigate &&
+         r.reason == RejectReason::TRAVERSAL;
+}
+
+bool check_dotdot_traversal_rejects() {
+  RouteManifest m = twoHostManifest();
+  ValidateResult r =
+      ValidateUri("https://shop.example.com/p/../secret", m);
+  return !r.accepted && !r.navigate &&
+         r.reason == RejectReason::TRAVERSAL;
+}
+
+bool check_hostile_inputs_never_throw() {
+  RouteManifest m = twoHostManifest();
+  const char* hostile[] = {
+      "https://evil.example.net/p/1",
+      "https://user:pass@shop.example.com/p/1",
+      "https://shop.example.com/p/%2e%2e/secret",
+      "https://shop.example.com/p/%ZZ",
+      "https://shop.example.com/p/../secret",
+      "https://shop.example.com\\p\\secret",
+  };
+  try {
+    for (const char* u : hostile) {
+      ValidateResult r = ValidateUri(u, m);
+      if (r.accepted) return false;
+      if (r.navigate) return false;  // navigate:false invariant.
+    }
+  } catch (...) {
+    return false;  // validateUri must never throw.
+  }
+  return true;
+}
+
+// Compile-time limit constants from the plan Detail (uri <= 4KB, single
+// param <= 1KB, params <= 32) must exist in navigation/uri_validation.h.
+static_assert(kMaxUriBytes == 4096, "uri limit must be 4KB");
+static_assert(kMaxParamBytes == 1024, "param limit must be 1KB");
+static_assert(kMaxParams == 32, "param count limit must be 32");
+
 }  // namespace
 
 int main() {
@@ -291,6 +414,21 @@ int main() {
   EXPECT_TRUE(check_encoded_traversal_rejects(),
               "encoded_traversal_rejects");
   EXPECT_TRUE(check_wrong_scheme_rejects(), "wrong_scheme_rejects");
+  EXPECT_TRUE(check_missing_required_param_rejects(),
+              "missing_required_param_rejects");
+  EXPECT_TRUE(check_bool_param_accepts_typed(),
+              "bool_param_accepts_typed");
+  EXPECT_TRUE(check_single_param_too_long_rejects(),
+              "single_param_too_long_rejects");
+  EXPECT_TRUE(check_too_many_params_rejects(), "too_many_params_rejects");
+  EXPECT_TRUE(check_malformed_encoding_rejects(),
+              "malformed_encoding_rejects");
+  EXPECT_TRUE(check_backslash_traversal_rejects(),
+              "backslash_traversal_rejects");
+  EXPECT_TRUE(check_dotdot_traversal_rejects(),
+              "dotdot_traversal_rejects");
+  EXPECT_TRUE(check_hostile_inputs_never_throw(),
+              "hostile_inputs_never_throw");
   if (failures > 0) {
     std::printf("uri_validation_test: %d failing\n", failures);
     return 1;
