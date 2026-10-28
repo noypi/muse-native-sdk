@@ -190,6 +190,110 @@ bool check_missing_file_fails_load() {
   return !r.ok && !r.error.detail.empty();
 }
 
+// ---- Security review follow-up: loader strictness (BAD_PATTERN) ----
+
+bool check_empty_hosts_rejects_bad_pattern() {
+  std::string body = R"json({
+    "hosts": [],
+    "schemes": ["https"],
+    "packageName": "com.example.app",
+    "sha256CertFingerprints": ["AA:BB:CC:DD"],
+    "routes": [
+      {"host": "shop.example.com", "pathPattern": "/p/.*",
+       "routeId": "product", "query": []}
+    ]
+  })json";
+  std::string path = writeTempManifest(body);
+  LoadManifestResult r = LoadManifest(path);
+  std::remove(path.c_str());
+  return !r.ok && r.error.reason == ManifestErrorReason::BAD_PATTERN &&
+         !r.error.detail.empty();
+}
+
+bool check_missing_hosts_rejects_bad_pattern() {
+  std::string body = R"json({
+    "schemes": ["https"],
+    "packageName": "com.example.app",
+    "sha256CertFingerprints": ["AA:BB:CC:DD"],
+    "routes": [
+      {"host": "shop.example.com", "pathPattern": "/p/.*",
+       "routeId": "product", "query": []}
+    ]
+  })json";
+  std::string path = writeTempManifest(body);
+  LoadManifestResult r = LoadManifest(path);
+  std::remove(path.c_str());
+  return !r.ok && r.error.reason == ManifestErrorReason::BAD_PATTERN &&
+         !r.error.detail.empty();
+}
+
+bool check_empty_schemes_rejects_bad_pattern() {
+  std::string body = R"json({
+    "hosts": ["shop.example.com"],
+    "schemes": [],
+    "packageName": "com.example.app",
+    "sha256CertFingerprints": ["AA:BB:CC:DD"],
+    "routes": [
+      {"host": "shop.example.com", "pathPattern": "/p/.*",
+       "routeId": "product", "query": []}
+    ]
+  })json";
+  std::string path = writeTempManifest(body);
+  LoadManifestResult r = LoadManifest(path);
+  std::remove(path.c_str());
+  return !r.ok && r.error.reason == ManifestErrorReason::BAD_PATTERN &&
+         !r.error.detail.empty();
+}
+
+bool check_missing_routes_rejects_bad_pattern() {
+  std::string body = R"json({
+    "hosts": ["shop.example.com"],
+    "schemes": ["https"],
+    "packageName": "com.example.app",
+    "sha256CertFingerprints": ["AA:BB:CC:DD"]
+  })json";
+  std::string path = writeTempManifest(body);
+  LoadManifestResult r = LoadManifest(path);
+  std::remove(path.c_str());
+  return !r.ok && r.error.reason == ManifestErrorReason::BAD_PATTERN &&
+         !r.error.detail.empty();
+}
+
+bool check_empty_package_name_rejects_bad_pattern() {
+  std::string body = R"json({
+    "hosts": ["shop.example.com"],
+    "schemes": ["https"],
+    "packageName": "",
+    "sha256CertFingerprints": ["AA:BB:CC:DD"],
+    "routes": [
+      {"host": "shop.example.com", "pathPattern": "/p/.*",
+       "routeId": "product", "query": []}
+    ]
+  })json";
+  std::string path = writeTempManifest(body);
+  LoadManifestResult r = LoadManifest(path);
+  std::remove(path.c_str());
+  return !r.ok && r.error.reason == ManifestErrorReason::BAD_PATTERN &&
+         !r.error.detail.empty();
+}
+
+bool check_missing_package_name_rejects_bad_pattern() {
+  std::string body = R"json({
+    "hosts": ["shop.example.com"],
+    "schemes": ["https"],
+    "sha256CertFingerprints": ["AA:BB:CC:DD"],
+    "routes": [
+      {"host": "shop.example.com", "pathPattern": "/p/.*",
+       "routeId": "product", "query": []}
+    ]
+  })json";
+  std::string path = writeTempManifest(body);
+  LoadManifestResult r = LoadManifest(path);
+  std::remove(path.c_str());
+  return !r.ok && r.error.reason == ManifestErrorReason::BAD_PATTERN &&
+         !r.error.detail.empty();
+}
+
 // ---- T3: URI validation acceptance section (owned by batch 2) ----
 
 RouteManifest twoHostManifest() {
@@ -357,8 +461,23 @@ bool check_dotdot_traversal_rejects() {
          r.reason == RejectReason::TRAVERSAL;
 }
 
-bool check_hostile_inputs_never_throw() {
+// Security review follow-up: non-default-port authority handling is pinned
+// to the CURRENT policy — the port suffix is stripped and ignored, so an
+// allowlisted host with any port is still accepted (host identity pinned).
+// If production ever adopts an explicit port policy, this test must be
+// updated deliberately alongside it.
+bool check_non_default_port_accepted_port_ignored() {
   RouteManifest m = twoHostManifest();
+  ValidateResult r =
+      ValidateUri("https://shop.example.com:9999/p/42?qty=3", m);
+  if (!r.accepted || r.navigate) return false;
+  if (r.routeId != "product") return false;
+  auto it = r.params.find("qty");
+  return it != r.params.end() && it->second.type == ParamType::Int &&
+         it->second.intValue == 3;
+}
+
+bool check_hostile_inputs_never_throw() {  RouteManifest m = twoHostManifest();
   const char* hostile[] = {
       "https://evil.example.net/p/1",
       "https://user:pass@shop.example.com/p/1",
@@ -400,6 +519,18 @@ int main() {
               "error_detail_carries_field_path");
   EXPECT_TRUE(check_autoverify_defaults_true(), "autoverify_defaults_true");
   EXPECT_TRUE(check_missing_file_fails_load(), "missing_file_fails_load");
+  EXPECT_TRUE(check_empty_hosts_rejects_bad_pattern(),
+              "empty_hosts_rejects_bad_pattern");
+  EXPECT_TRUE(check_missing_hosts_rejects_bad_pattern(),
+              "missing_hosts_rejects_bad_pattern");
+  EXPECT_TRUE(check_empty_schemes_rejects_bad_pattern(),
+              "empty_schemes_rejects_bad_pattern");
+  EXPECT_TRUE(check_missing_routes_rejects_bad_pattern(),
+              "missing_routes_rejects_bad_pattern");
+  EXPECT_TRUE(check_empty_package_name_rejects_bad_pattern(),
+              "empty_package_name_rejects_bad_pattern");
+  EXPECT_TRUE(check_missing_package_name_rejects_bad_pattern(),
+              "missing_package_name_rejects_bad_pattern");
   // T3 validation section.
   EXPECT_TRUE(check_valid_link_accepts_with_typed_params(),
               "valid_link_accepts_with_typed_params");
@@ -429,6 +560,8 @@ int main() {
               "dotdot_traversal_rejects");
   EXPECT_TRUE(check_hostile_inputs_never_throw(),
               "hostile_inputs_never_throw");
+  EXPECT_TRUE(check_non_default_port_accepted_port_ignored(),
+              "non_default_port_accepted_port_ignored");
   if (failures > 0) {
     std::printf("uri_validation_test: %d failing\n", failures);
     return 1;
