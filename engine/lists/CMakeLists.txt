@@ -5,7 +5,7 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-add_library(lists STATIC src/stable_key.cpp src/myers_diff.cpp src/scroll_physics.cpp src/scroll_signal.cpp src/refresh_rate.cpp src/position_persist.cpp src/snap_refresh.cpp)
+add_library(lists STATIC src/stable_key.cpp src/myers_diff.cpp src/scroll_physics.cpp src/scroll_signal.cpp src/refresh_rate.cpp src/position_persist.cpp src/snap_refresh.cpp src/item_animator.cpp src/drag_reorder.cpp src/swipe_dismiss.cpp src/selection_mode.cpp)
 target_include_directories(lists PUBLIC include)
 target_compile_options(lists PRIVATE -Wall -Wextra -Wpedantic -Werror)
 
@@ -54,3 +54,31 @@ target_include_directories(diff_benchmark_test PRIVATE include)
 target_compile_options(diff_benchmark_test PRIVATE -Wall -Wextra -Wpedantic -Werror)
 
 add_test(NAME diff_benchmark_test COMMAND diff_benchmark_test)
+
+add_executable(item_animator_test tests/item_animator_test.cpp)
+target_link_libraries(item_animator_test PRIVATE lists)
+target_include_directories(item_animator_test PRIVATE include)
+target_compile_options(item_animator_test PRIVATE -Wall -Wextra -Wpedantic -Werror)
+
+add_test(NAME item_animator_test COMMAND item_animator_test)
+
+add_executable(drag_reorder_test tests/drag_reorder_test.cpp)
+target_link_libraries(drag_reorder_test PRIVATE lists)
+target_include_directories(drag_reorder_test PRIVATE include)
+target_compile_options(drag_reorder_test PRIVATE -Wall -Wextra -Wpedantic -Werror)
+
+add_test(NAME drag_reorder_test COMMAND drag_reorder_test)
+
+add_executable(swipe_dismiss_test tests/swipe_dismiss_test.cpp)
+target_link_libraries(swipe_dismiss_test PRIVATE lists)
+target_include_directories(swipe_dismiss_test PRIVATE include)
+target_compile_options(swipe_dismiss_test PRIVATE -Wall -Wextra -Wpedantic -Werror)
+
+add_test(NAME swipe_dismiss_test COMMAND swipe_dismiss_test)
+
+add_executable(selection_mode_test tests/selection_mode_test.cpp)
+target_link_libraries(selection_mode_test PRIVATE lists)
+target_include_directories(selection_mode_test PRIVATE include)
+target_compile_options(selection_mode_test PRIVATE -Wall -Wextra -Wpedantic -Werror)
+
+add_test(NAME selection_mode_test COMMAND selection_mode_test)
