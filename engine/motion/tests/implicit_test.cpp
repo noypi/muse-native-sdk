@@ -92,8 +92,10 @@ static bool check_sample_before_start_clamps() {
   return approx(before, 0.0f, 0.05f);
 }
 
-// Named case: no-op when value unchanged — repeating the current target
-// does not restart the transition (T2 Interface).
+// Named case: no-op when value unchanged — repeating the settled target
+// at/after settle does not restart the transition (T2 Interface). Monotonic:
+// repeat is issued after the settle sample, so it holds under a true no-op
+// and any correct implementation.
 static bool check_unchanged_value_is_noop() {
   const motion::NodeId id = 13;
   try {
@@ -102,11 +104,14 @@ static bool check_unchanged_value_is_noop() {
     return false;
   }
   motion::onPropertyChange(id, "opacity", 1.0f, 8000);
-  float settled = motion::sample(id, "opacity", 8000 + 100000);
+  const uint64_t kSettleMs = 8000 + 100000;
+  float settled = motion::sample(id, "opacity", kSettleMs);
   if (!approx(settled, 1.0f, 0.02f)) return false;
-  motion::onPropertyChange(id, "opacity", 1.0f, 8000 + 100);
-  float after = motion::sample(id, "opacity", 8000 + 100);
-  return approx(after, settled, 0.02f);
+  motion::onPropertyChange(id, "opacity", 1.0f, kSettleMs + 100);
+  float after = motion::sample(id, "opacity", kSettleMs + 100);
+  if (!approx(after, 1.0f, 0.02f)) return false;
+  float further = motion::sample(id, "opacity", kSettleMs + 100 + 5000);
+  return approx(further, 1.0f, 0.02f);
 }
 
 // Named case: second change mid-flight retargets continuously — no snap back
@@ -125,6 +130,28 @@ static bool check_midflight_change_retargets_continuously() {
   if (!approx(at_retarget, mid, 0.05f)) return false;
   float later = motion::sample(id, "opacity", 20000 + 120 + 100000);
   return approx(later, 0.0f, 0.05f);
+}
+
+// Named case (M3 test-owned): mid-flight same-target repeat is a true no-op —
+// repeating the target mid-flight must not teleport the value to the target
+// and must leave the flight in progress.
+static bool check_midflight_same_target_repeat_is_noop() {
+  const motion::NodeId id = 18;
+  try {
+    motion::markImplicit(id, "opacity", kOpacityToken);
+  } catch (const std::exception&) {
+    return false;
+  }
+  motion::onPropertyChange(id, "opacity", 1.0f, 60000);
+  float mid = motion::sample(id, "opacity", 60000 + 120);
+  if (!(mid > 0.0f && mid < 1.0f)) return false;
+  motion::onPropertyChange(id, "opacity", 1.0f, 60000 + 120);
+  float again = motion::sample(id, "opacity", 60000 + 120);
+  if (!approx(again, mid, 1e-3f)) return false;
+  float later = motion::sample(id, "opacity", 60000 + 120 + 30);
+  if (!(later > again)) return false;
+  if (approx(later, 1.0f, 0.02f)) return false;
+  return true;
 }
 
 // Named case: per-property isolation — animating opacity does not move an
@@ -192,6 +219,7 @@ int main() {
   RUN_CASE(check_change_interpolates_from_old_to_new);
   RUN_CASE(check_sample_before_start_clamps);
   RUN_CASE(check_unchanged_value_is_noop);
+  RUN_CASE(check_midflight_same_target_repeat_is_noop);
   RUN_CASE(check_midflight_change_retargets_continuously);
   RUN_CASE(check_properties_are_independent_per_node);
   RUN_CASE(check_nodes_are_independent);

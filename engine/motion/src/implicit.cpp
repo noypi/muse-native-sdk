@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 #include <map>
 #include <string>
 #include <utility>
@@ -61,6 +62,22 @@ SpringSpec toSpringSpec(const MotionToken& t) {
     spec.dampingRatio = 1.0f;
   }
   return spec;
+}
+
+// Property-class fallback for never-registered pairs: geometry-ish
+// properties resolve the T1 spatial token, effects properties the T1
+// effects token. Unknown properties have no class and stay static.
+bool isGeometryProperty(const char* property) {
+  return std::strcmp(property, "transform") == 0 ||
+         std::strcmp(property, "position") == 0 ||
+         std::strcmp(property, "size") == 0 ||
+         std::strcmp(property, "shape") == 0;
+}
+
+bool isEffectsProperty(const char* property) {
+  return std::strcmp(property, "opacity") == 0 ||
+         std::strcmp(property, "color") == 0 ||
+         std::strcmp(property, "colour") == 0;
 }
 
 // Smoothstep fallback for non-spring (duration/easing) tokens: monotone
@@ -268,22 +285,23 @@ void onPropertyChange(NodeId id, const char* property, float toValue,
   ImplicitKey key{id, std::string(property)};
   ImplicitEntry& e = implicitRegistry()[key];  // rest entry when unregistered
   if (!e.hasToken && !e.hasTransition) {
-    // Unregistered pair: animate from rest with a neutral effects spring so
-    // a first change still interpolates 0 -> toValue.
-    e.hasToken = true;
-    e.token = MotionToken{TokenKind::EffectsSpring, 0, nullptr, 150.0f, 20.0f};
+    // Unregistered pair: resolve the fallback token from T1 by property
+    // class so geometry never animates on an effects spring (and vice
+    // versa). Unknown properties stay static: no token, no transition.
+    if (isGeometryProperty(property)) {
+      e.hasToken = true;
+      e.token = resolveToken("spatial-default");
+    } else if (isEffectsProperty(property)) {
+      e.hasToken = true;
+      e.token = resolveToken("effects-default");
+    } else {
+      return;
+    }
   }
   const float currentTarget = e.hasTransition ? e.target : 0.0f;
   if (toValue == currentTarget) {
-    // No-op: repeating the target never restarts the transition. The value
-    // is confirmed at its target, so settle the segment here — sampling at
-    // or after nowMs returns the target instead of rewinding along the old
-    // curve (the redundant set declares the animation's end state).
-    if (e.hasTransition) {
-      e.startValue = e.target;
-      e.startVelocity = 0.0f;
-      e.startMs = nowMs;
-    }
+    // True no-op: repeating the target leaves the in-flight segment
+    // untouched so mid-flight samples stay continuous.
     return;
   }
   // Retarget keeps the current value+velocity for continuity: evaluate at

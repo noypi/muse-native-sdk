@@ -260,12 +260,32 @@ def scan_gallery(gallery_dir):
     return hints
 
 
+_QUALIFIER_PAREN = re.compile(r"[(].*?[)]")
+
+
+def normalize_component(name):
+    """Normalize a map Component cell to its base component name.
+
+    Variant qualifiers are stripped explicitly (e.g. "Button (all variants)"
+    -> "button", "TopAppBar (all sizes)" -> "topappbar"); comparison is
+    exact on the normalized name, never substring.
+    """
+    return _QUALIFIER_PAREN.sub("", name).strip().lower()
+
+
 def check_gallery_hints(hints, rows):
-    """Fail when a gallery story names a component with no map row at all."""
-    components = [row["component"].lower() for row in rows]
+    """Fail when a gallery story names a component with no map row at all.
+
+    Best-effort backstop only: the pinned EXPECTED_ROWS inventory enforced
+    by check_coverage stays authoritative. Matching is exact on normalized
+    base component names (variant qualifiers stripped explicitly), so a
+    hint that is merely a substring of a mapped row still fails instead
+    of passing silently.
+    """
+    components = frozenset(normalize_component(row["component"])
+                           for row in rows)
     for hint in sorted(hints):
-        if not any(hint in component or component in hint
-                   for component in components):
+        if normalize_component(hint) not in components:
             _fail("motion_map_check: gallery story names unmapped "
                   "component %r (no silent default applied)" % hint)
 

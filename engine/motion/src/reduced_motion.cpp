@@ -1,12 +1,14 @@
 #include "motion/reduced_motion.h"
 
+#include <atomic>
+
 namespace motion {
 
 namespace {
 
-// Process-global toggle; plain bool is sufficient because the engine runs
-// its hermetic tests single-threaded and the toggle is set explicitly.
-bool gReducedMotion = false;
+// Process-global toggle; atomic so a settings/UI thread can flip it while
+// the render thread reads activeVariant without a data race.
+std::atomic<bool> gReducedMotion{false};
 
 const char* fullName(PatternId p) {
   switch (p) {
