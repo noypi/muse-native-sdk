@@ -1,0 +1,6 @@
+{
+  "tiers": [
+    { "format": "astc", "fallback": false },
+    { "format": "etc2", "fallback": true }
+  ]
+}
