@@ -66,6 +66,34 @@ bool check_seek_matches_sequential_within_tolerance() {
   }
 }
 
+// Distinct markers yield distinct in-range progress (review gap 2): the
+// documented fixed table maps "intro" -> 0.25 and "mid" -> 0.5, so seeking
+// to each marker must move progress() to distinguishable absolute positions
+// (fails while progress() is a constant 0.0f regardless of marker).
+bool check_distinct_markers_yield_distinct_progress() {
+  try {
+    AssetPlayer p;
+    if (p.load(AssetFormat::kLottie, payload("lottie-markers-distinct")) !=
+        AssetError::kOk) {
+      return false;
+    }
+    if (p.play() != AssetError::kOk) return false;
+    if (p.seekToMarker("intro") != AssetError::kOk) return false;
+    float introPos = p.progress();
+    if (p.seekToMarker("mid") != AssetError::kOk) return false;
+    float midPos = p.progress();
+    if (introPos < 0.0f || introPos > 1.0f) return false;
+    if (midPos < 0.0f || midPos > 1.0f) return false;
+    if (!near(introPos, 0.25f)) return false;
+    if (!near(midPos, 0.5f)) return false;
+    // Distinguishable well beyond the 1e-4 seek tolerance.
+    if (std::fabs(midPos - introPos) <= kSeekTol) return false;
+    return true;
+  } catch (...) {
+    return false;
+  }
+}
+
 // Repeated seek to the same marker is deterministic within tolerance.
 bool check_repeated_seek_is_deterministic() {
   try {
@@ -222,6 +250,7 @@ bool check_progress_in_range_after_seek() {
 int main() {
   int failures = 0;
   RUN_CASE(check_seek_matches_sequential_within_tolerance);
+  RUN_CASE(check_distinct_markers_yield_distinct_progress);
   RUN_CASE(check_repeated_seek_is_deterministic);
   RUN_CASE(check_seek_matches_across_time_scales);
   RUN_CASE(check_seek_matches_across_variants);

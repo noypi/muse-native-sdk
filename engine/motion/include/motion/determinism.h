@@ -28,22 +28,22 @@
 // Reseeds the motion RNG stream. Observable boundary: reseeding with the
 // same seed reproduces the identical hash/serialization sequence.
 // Never throws, never aborts.
-void motion_seed(uint64_t seed);
+void motion_seed(uint64_t seed) noexcept;
 
 // Stable deterministic hash of the full spring state (x, v, stiffness,
 // damping): same bits -> same hash (including NaN/inf/denormal), and the
 // hash discriminates differing components. Bitwise FNV-1a 64 over the raw
 // component bits, matching motion_emitFrame's stateHash. Pure: no global
 // state is read. Never throws, never aborts.
-uint64_t motion_stateHash(const SpringState& s);
+uint64_t motion_stateHash(const SpringState& s) noexcept;
 
 // Canonical LE serialization: exactly 32 bytes, deterministic, with equal
 // states encoding byte-identically. Never aborts.
-std::vector<uint8_t> motion_serialize(const SpringState& s);
+std::vector<uint8_t> motion_serialize(const SpringState& s) noexcept;
 
 // Decodes a canonical 32-byte payload produced by motion_serialize.
 // Returns false (leaving `*out` untouched) when `b.size() != 32` or
 // `out == nullptr`. Never throws, never aborts.
-bool motion_deserialize(const std::vector<uint8_t>& b, SpringState* out);
+bool motion_deserialize(const std::vector<uint8_t>& b, SpringState* out) noexcept;
 
 #endif  // MOTION_DETERMINISM_H_

@@ -8,11 +8,13 @@
 
 namespace {
 
-// Seeded RNG stream state (splitmix64). The hash/serialize/solver path is
-// pure and never consults this state, so reseeding with the same seed
-// trivially reproduces the identical observable sequence; the stream exists
-// so stochastic extensions draw deterministically from the seeded value
-// instead of any device or clock source.
+// Seeded RNG stream state (splitmix64). INTENTIONAL STUB: the
+// hash/serialize/solver path is pure and never consults this state, so
+// reseeding with the same seed trivially reproduces the identical observable
+// sequence; the stream exists so stochastic extensions draw deterministically
+// from the seeded value instead of any device or clock source. Tester-layer
+// wiring point: a future motion_random* draw API reads/advances this state;
+// until then motion_seed is write-only by design.
 uint64_t g_rng_state = 0;
 
 uint64_t HashBits(uint64_t bits, uint64_t hash) {
@@ -54,9 +56,9 @@ double DecodeDoubleLE(const uint8_t* src) {
 
 }  // namespace
 
-void motion_seed(uint64_t seed) { g_rng_state = seed; }
+void motion_seed(uint64_t seed) noexcept { g_rng_state = seed; }
 
-uint64_t motion_stateHash(const SpringState& s) {
+uint64_t motion_stateHash(const SpringState& s) noexcept {
   uint64_t hash = 14695981039346656037ULL;
   hash = HashDouble(s.x, hash);
   hash = HashDouble(s.v, hash);
@@ -65,7 +67,7 @@ uint64_t motion_stateHash(const SpringState& s) {
   return hash;
 }
 
-std::vector<uint8_t> motion_serialize(const SpringState& s) {
+std::vector<uint8_t> motion_serialize(const SpringState& s) noexcept {
   // Declaration order (x, v, stiffness, damping), 8 bytes LE each.
   std::vector<uint8_t> out(32, 0);
   EncodeDoubleLE(s.x, &out[0]);
@@ -75,7 +77,7 @@ std::vector<uint8_t> motion_serialize(const SpringState& s) {
   return out;
 }
 
-bool motion_deserialize(const std::vector<uint8_t>& b, SpringState* out) {
+bool motion_deserialize(const std::vector<uint8_t>& b, SpringState* out) noexcept {
   // Strict canonical form: exactly 32 bytes, non-null destination.
   // No throwing or trapping operations below: size check, null check,
   // then shift/or/memcpy only. Any 32-byte payload (including 0xFF

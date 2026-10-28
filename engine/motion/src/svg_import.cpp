@@ -50,17 +50,50 @@ std::string tagNameOf(const std::string& tag) {
 
 // SMIL event-timing attributes are excluded from the subset even when the
 // host element is supported (subset.md). Reports the attribute name.
+//
+// The scan is quote-aware and anchored to attribute-name position: quoted
+// spans (single/double) are skipped so a literal such as
+// `<path d="...onbegin=...">` inside an attribute value never matches, and a
+// hit must start at an attribute boundary (preceded by ASCII whitespace or
+// '/') with `name =` following. No over-approximation: only genuine
+// attribute uses are reported.
 std::string eventTimingAttrOf(const std::string& tag) {
+  auto isSpace = [](char c) {
+    return c == ' ' || c == '\t' || c == '\n' || c == '\r';
+  };
   for (const char* attr : {"onbegin", "onend", "onrepeat"}) {
     std::string needle(attr);
     std::size_t pos = tag.find(needle);
     while (pos != std::string::npos) {
-      std::size_t after = pos + needle.size();
-      // Attribute use is `name=` possibly with whitespace before '='.
-      std::size_t j = after;
-      while (j < tag.size() && (tag[j] == ' ' || tag[j] == '\t')) ++j;
-      if (j < tag.size() && tag[j] == '=') return needle;
-      pos = tag.find(needle, after);
+      // Determine whether `pos` lies inside a quoted span by re-scanning
+      // from the tag start (tags are short; clarity over cleverness).
+      bool inSingle = false;
+      bool inDouble = false;
+      for (std::size_t k = 0; k < pos; ++k) {
+        if (inSingle) {
+          if (tag[k] == '\'') inSingle = false;
+        } else if (inDouble) {
+          if (tag[k] == '"') inDouble = false;
+        } else if (tag[k] == '\'') {
+          inSingle = true;
+        } else if (tag[k] == '"') {
+          inDouble = true;
+        }
+      }
+      bool quoted = inSingle || inDouble;
+      // Attribute-name position: start of tag cannot be an attribute
+      // (element name comes first); otherwise the preceding char must be
+      // whitespace or '/' (self-close spacing).
+      bool atBoundary =
+          pos > 0 && (isSpace(tag[pos - 1]) || tag[pos - 1] == '/');
+      if (!quoted && atBoundary) {
+        std::size_t after = pos + needle.size();
+        // Attribute use is `name=` possibly with whitespace before '='.
+        std::size_t j = after;
+        while (j < tag.size() && (tag[j] == ' ' || tag[j] == '\t')) ++j;
+        if (j < tag.size() && tag[j] == '=') return needle;
+      }
+      pos = tag.find(needle, pos + 1);
     }
   }
   return "";

@@ -48,12 +48,17 @@ class AssetPlayer {
 
   // Seeks to a named marker. kNotPrepared before a successful load;
   // kDecodeFailed for the empty marker (invalid marker, never kOk);
-  // kOk for a named marker. Never throws.
+  // kOk for a named marker. Catalogued markers ("intro" -> 0.25, "mid" ->
+  // 0.5 per the fixed table) move progress() to the absolute marker
+  // position; uncatalogued non-empty names are accepted as kOk without
+  // moving progress. Positions are scale/variant-independent by design.
+  // Never throws.
   AssetError seekToMarker(const std::string& marker);
 
   // Sets the playback rate. kNotPrepared before a successful load; kOk
-  // for finite values after load (T8 owns clamping semantics).
-  // Never throws.
+  // for finite values after load (T8 owns clamping semantics);
+  // kDecodeFailed for non-finite (NaN/inf) rates, which leave the stored
+  // rate unchanged. Never throws.
   AssetError setSpeed(float s);
 
   // Playback position in [0, 1]; exactly 0.0f before load. Never throws.

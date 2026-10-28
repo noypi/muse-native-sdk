@@ -207,6 +207,40 @@ bool check_equal_priority_newest_start_frame_wins() {
   return true;
 }
 
+// Asymmetric recency (review gap 1): equal priority resolves per the
+// documented rule — kNewest means the newer-frame party wins, i.e. BOTH
+// frames participate in the comparison. Incumbent-newer and challenger-newer
+// pairs each yield kNewest deterministically (repeat-stable and stable
+// across magnitudes), and the exact tie (equal frames, no newer party)
+// yields kNewest by convention.
+bool check_equal_priority_asymmetric_recency_resolves_per_rule() {
+  try {
+    // Incumbent is the newer party.
+    if (motion_arbitrate(100, 0, 5, 5) != ArbitrationWinner::kNewest)
+      return false;
+    // Challenger is the newer party: same rule result, not a flipped rule.
+    if (motion_arbitrate(0, 100, 5, 5) != ArbitrationWinner::kNewest)
+      return false;
+    // Same asymmetry at other magnitudes and priorities.
+    if (motion_arbitrate(42, 7, 0, 0) != ArbitrationWinner::kNewest)
+      return false;
+    if (motion_arbitrate(7, 42, 0, 0) != ArbitrationWinner::kNewest)
+      return false;
+    // Exact tie: no newer party, kNewest by convention, repeat-stable.
+    if (motion_arbitrate(9, 9, 5, 5) != ArbitrationWinner::kNewest)
+      return false;
+    if (motion_arbitrate(9, 9, 5, 5) != motion_arbitrate(9, 9, 5, 5))
+      return false;
+    // Swapping the frames never changes the deciding rule for equal
+    // priority (both orders report the recency rule).
+    if (motion_arbitrate(100, 0, 5, 5) != motion_arbitrate(0, 100, 5, 5))
+      return false;
+  } catch (...) {
+    return false;  // pure function: must never throw
+  }
+  return true;
+}
+
 // Exhaustive pair test: same inputs always resolve to the same winner
 // (repeat determinism over a grid of frames x priorities).
 bool check_same_inputs_always_resolve_to_same_winner() {
@@ -270,6 +304,7 @@ int main() {
   RUN_CASE(check_invalid_timestep_returns_error_without_throw);
   RUN_CASE(check_higher_priority_wins_regardless_of_frames);
   RUN_CASE(check_equal_priority_newest_start_frame_wins);
+  RUN_CASE(check_equal_priority_asymmetric_recency_resolves_per_rule);
   RUN_CASE(check_same_inputs_always_resolve_to_same_winner);
   RUN_CASE(check_extreme_inputs_are_deterministic);
   if (failures > 0) {

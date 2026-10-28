@@ -7,9 +7,20 @@ namespace {
 // reverses. Small but nonzero to keep progress reporting usable.
 constexpr float kMinTimeScale = 0.01f;
 
-float g_timeScale = 1.0f;
+float g_timeScale = 1.0f;  // INTENTIONAL STUB (write-only by design):
+                            // no advance/step API reads it yet — seek
+                            // positions are absolute marker fractions and
+                            // intentionally scale-independent. Tester-layer
+                            // wiring point: a future advance(elapsed) helper
+                            // multiplies elapsed by g_timeScale; clamping is
+                            // observed meanwhile as continued usability.
 bool g_reducedMotion = false;
-bool g_lastBudgetShed = false;
+bool g_lastBudgetShed = false;  // INTENTIONAL STUB (nominally false):
+                                // no budget timer lives in this TU, so the
+                                // nominal path never sets it. Tester-layer
+                                // wiring point: the consumed perf budget-guard
+                                // overrun signal sets it when decorative
+                                // layers shed first.
 
 }  // namespace
 

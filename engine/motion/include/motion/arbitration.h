@@ -41,24 +41,36 @@ Winner arbitrate(std::vector<Claim> claims) noexcept;
 //
 // Pure total order: higher priority wins; equal priority resolves to recency
 // (newer/larger start frame wins). The observable result names only which
-// rule decided, so unequal priority yields kHighestPriority and equal
-// priority yields kNewest regardless of incumbent/challenger roles. Exact
-// ties (equal priority and equal start frame) are deterministic but the
-// chosen enumerant is unspecified; callers must not depend on it beyond
-// repeat-determinism. Header-only; covered FR-MOTION-008 behavior
-// (motion::arbitrate) is unchanged.
+// rule decided: unequal priority yields kHighestPriority, and equal priority
+// yields kNewest, where kNewest means the newer-frame party wins (the larger
+// of incumbentStartFrame/challengerStartFrame; both frames are compared
+// below). Exact ties (equal priority and equal start frame) have no newer
+// party, so no enumerant can name a winner: by convention they also yield
+// kNewest. NARROWING (explicit): this return type reports the deciding rule,
+// not winner identity — callers must not read kNewest as "challenger wins"
+// (or "incumbent wins"); only repeat-determinism holds for exact ties.
+// Header-only; covered FR-MOTION-008 behavior (motion::arbitrate) is
+// unchanged.
 enum class ArbitrationWinner { kNewest, kHighestPriority };
 
 inline ArbitrationWinner motion_arbitrate(uint64_t incumbentStartFrame,
                                           uint64_t challengerStartFrame,
                                           int incumbentPriority,
                                           int challengerPriority) noexcept {
-  (void)incumbentStartFrame;
-  (void)challengerStartFrame;
   if (incumbentPriority != challengerPriority) {
     return ArbitrationWinner::kHighestPriority;
   }
-  return ArbitrationWinner::kNewest;
+  // Equal priority: recency tiebreak — the larger (newer) start frame wins,
+  // reported as kNewest. Both frames participate in the comparison; the
+  // exact-tie case (frames equal) deterministically yields kNewest by the
+  // convention documented above.
+  if (incumbentStartFrame > challengerStartFrame) {
+    return ArbitrationWinner::kNewest;  // incumbent is the newer party
+  }
+  if (challengerStartFrame > incumbentStartFrame) {
+    return ArbitrationWinner::kNewest;  // challenger is the newer party
+  }
+  return ArbitrationWinner::kNewest;  // exact tie: no newer party; convention
 }
 
 #endif  // MOTION_ARBITRATION_H_

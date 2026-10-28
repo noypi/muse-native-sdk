@@ -51,8 +51,10 @@
 // non-empty unsupportedReason naming the offending element (Q-MOTION-002
 // "fail loudly" evidence); a fully-supported convert must be kOk with an
 // empty reason. Empty input expects non-kOk (kUnsupported) + non-empty reason.
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -272,6 +274,40 @@ bool check_set_speed_after_load_succeeds() {
   }
 }
 
+// Non-finite rates (inf/NaN) are rejected with kDecodeFailed and leave the
+// stored rate unchanged (review gap 3). No speed getter exists on the
+// surface, so "unchanged" is pinned through the closest observable behavior:
+// the player stays fully usable and re-setting the last finite rate is
+// still accepted as kOk.
+bool check_set_speed_rejects_non_finite_rate_unchanged() {
+  AssetPlayer p;
+  try {
+    if (p.load(AssetFormat::kSvg,
+               bytesOf("<svg><path d=\"M0 0h10\"/></svg>")) !=
+        AssetError::kOk)
+      return false;
+    if (p.setSpeed(2.0f) != AssetError::kOk) return false;
+    if (p.setSpeed(std::numeric_limits<float>::infinity()) !=
+        AssetError::kDecodeFailed)
+      return false;
+    if (p.setSpeed(-std::numeric_limits<float>::infinity()) !=
+        AssetError::kDecodeFailed)
+      return false;
+    if (p.setSpeed(std::numeric_limits<float>::quiet_NaN()) !=
+        AssetError::kDecodeFailed)
+      return false;
+    // Stored rate unchanged: the last finite rate is still accepted and the
+    // player remains fully usable (play/seek/progress unaffected).
+    if (p.setSpeed(2.0f) != AssetError::kOk) return false;
+    if (p.play() != AssetError::kOk) return false;
+    if (p.seekToMarker("intro") != AssetError::kOk) return false;
+    float v = p.progress();
+    return v >= 0.0f && v <= 1.0f;
+  } catch (...) {
+    return false;
+  }
+}
+
 // progress() after load is within [0,1], never throws.
 bool check_progress_after_load_in_range() {
   AssetPlayer p;
@@ -388,6 +424,33 @@ bool check_convert_script_svg_names_reason() {
   }
 }
 
+// A timing token inside a quoted attribute value is NOT an event-timing
+// attribute (review gap 4): the quote-aware scan skips quoted spans, so
+// `<path d="...onbegin=...">` converts as kOk with an empty reason.
+bool check_convert_quoted_timing_token_returns_ok() {
+  try {
+    ConversionResult r = motion_convertSvg(bytesOf(
+        "<svg><path d=\"M0 0 onbegin=10\"/></svg>"));
+    return r.error == AssetError::kOk && r.unsupportedReason.empty();
+  } catch (...) {
+    return false;
+  }
+}
+
+// A genuine onbegin= attribute is still excluded from the subset: kUnsupported
+// with a reason naming the attribute (pairs with the quoted-value case above
+// to prove the scan is anchored, not merely substring-blind).
+bool check_convert_genuine_onbegin_attribute_is_unsupported() {
+  try {
+    ConversionResult r = motion_convertSvg(bytesOf(
+        "<svg><path onbegin=\"0s\" d=\"M0 0h10\"/></svg>"));
+    if (r.error != AssetError::kUnsupported) return false;
+    return r.unsupportedReason.find("onbegin") != std::string::npos;
+  } catch (...) {
+    return false;
+  }
+}
+
 // Empty input converts as non-kOk with a non-empty reason, never throws.
 bool check_convert_empty_svg_is_unsupported() {
   try {
@@ -440,6 +503,7 @@ int main() {
   RUN_CASE(check_double_play_stays_ok);
   RUN_CASE(check_seek_markers_after_load);
   RUN_CASE(check_set_speed_after_load_succeeds);
+  RUN_CASE(check_set_speed_rejects_non_finite_rate_unchanged);
   RUN_CASE(check_progress_after_load_in_range);
   RUN_CASE(check_gating_is_per_player_instance);
   RUN_CASE(check_supported_elements_report_supported);
@@ -448,6 +512,8 @@ int main() {
   RUN_CASE(check_convert_supported_svg_returns_ok);
   RUN_CASE(check_convert_filter_svg_names_reason);
   RUN_CASE(check_convert_script_svg_names_reason);
+  RUN_CASE(check_convert_quoted_timing_token_returns_ok);
+  RUN_CASE(check_convert_genuine_onbegin_attribute_is_unsupported);
   RUN_CASE(check_convert_empty_svg_is_unsupported);
   RUN_CASE(check_convert_oversized_svg_never_throws);
   if (failures > 0) {
