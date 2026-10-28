@@ -128,6 +128,16 @@ target_link_libraries(asset_control_test PRIVATE motion)
 target_compile_options(asset_control_test PRIVATE -Wall -Wextra -Wpedantic)
 add_test(NAME asset_control_test COMMAND asset_control_test)
 
+add_executable(asset_import_test tests/asset_import_test.cpp)
+target_link_libraries(asset_import_test PRIVATE motion)
+target_compile_options(asset_import_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME asset_import_test COMMAND asset_import_test)
+
+add_executable(record_replay_test tests/record_replay_test.cpp)
+target_link_libraries(record_replay_test PRIVATE motion)
+target_compile_options(record_replay_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME record_replay_test COMMAND record_replay_test)
+
 add_executable(asset_seek_test tests/asset_seek_test.cpp)
 target_link_libraries(asset_seek_test PRIVATE motion)
 target_compile_options(asset_seek_test PRIVATE -Wall -Wextra -Wpedantic)
