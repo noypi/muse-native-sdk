@@ -15,9 +15,12 @@
 //   ReplayStatus motion_replay(const Recording& r) noexcept
 //
 // ASSUMPTION (tamper disposition): recorder.h defines kDiverged as
-// "structurally valid but content differs", so a content flip that keeps
-// size/frameCount consistent is expected to replay as kDiverged (not
-// kIdentical, not kCorrupt). Truncation (size/frameCount mismatch) is
+// "structurally valid but content differs" and kCorrupt as
+// truncated/mismatched/garbage input, and the recorder seals each
+// recording with a trailer checksum. A size-preserving bit flip therefore
+// breaks the checksum and replays as kCorrupt (never kIdentical, never a
+// crash); kDiverged is reached via a checksum-passing divergence such as a
+// recorded non-finite state. Truncation (size/frameCount mismatch) is
 // expected to replay as kCorrupt.
 // ASSUMPTION (empty replay): an empty recording replays kIdentical — zero
 // frames to diverge on; the load-bearing property is a deterministic,
@@ -130,7 +133,7 @@ bool check_record_then_replay_is_identical() {
 // the trailer checksum covers the payload, so any bit flip replays as
 // kCorrupt, never kIdentical and never a crash. (Checksum-verified
 // tamper detection; see recorder.cpp trailer design.)
-bool check_tampered_recording_replays_diverged() {
+bool check_tampered_recording_never_replays_identical() {
   bool ok = false;
   try {
     motion_recordStart();
@@ -302,7 +305,7 @@ int main() {
   RUN_CASE(check_virtual_clock_rejects_non_positive_step);
   RUN_CASE(check_record_frame_never_throws);
   RUN_CASE(check_record_then_replay_is_identical);
-  RUN_CASE(check_tampered_recording_replays_diverged);
+  RUN_CASE(check_tampered_recording_never_replays_identical);
   RUN_CASE(check_non_finite_state_replays_diverged);
   RUN_CASE(check_truncated_recording_replays_corrupt);
   RUN_CASE(check_empty_bytes_with_nonzero_count_is_corrupt);

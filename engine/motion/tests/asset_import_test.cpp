@@ -311,7 +311,8 @@ bool check_malformed_and_oversized_never_throw() {
   AssetPlayer p;
   try {
     std::vector<uint8_t> garbage(256, 0xFF);
-    if (!isValidError(p.load(AssetFormat::kRive, garbage))) return false;
+    AssetError ge = p.load(AssetFormat::kRive, garbage);
+    if (ge == AssetError::kOk || !isValidError(ge)) return false;
     std::vector<uint8_t> big(1024 * 1024, 0x41);
     if (!isValidError(p.load(AssetFormat::kAvd, big))) return false;
     ConversionResult r = motion_convertSvg(big);
