@@ -20,10 +20,11 @@ enum class Status {
   kNotFound = 1,
 };
 
-// Origin of a write. Only the JS origin exists at this layer; later batches
-// add further origins which funnel through the same AtomStore::write path.
+// Origin of a write. JS and Tier-2 native origins funnel through the same
+// AtomStore::write path; the enumerator records which origin wrote last.
 enum class Provenance {
   kJs,
+  kTier2,
 };
 
 // Minimal value carried by an atom (T1 structural subset). Constructible from
@@ -101,12 +102,14 @@ class AtomStore {
   AtomId create(TypedValue v);
   void write(AtomId id, TypedValue v, Provenance p);
   StatusOr<TypedValue> read(AtomId id, ObserverId obs) const;
+  Provenance provenance(AtomId id) const;
   Batch flush();
 
  private:
   struct Entry {
     explicit Entry(const TypedValue& v) : value(v) {}
     TypedValue value;
+    Provenance last_writer = Provenance::kJs;
     std::unordered_set<ObserverId> observers;
   };
 

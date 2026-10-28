@@ -14,13 +14,13 @@ AtomId AtomStore::create(TypedValue v) {
 }
 
 void AtomStore::write(AtomId id, TypedValue v, Provenance p) {
-  (void)p;
   std::lock_guard<std::mutex> lock(mutex_);
   auto it = atoms_.find(id);
   if (it == atoms_.end()) {
     return;  // Unknown id: ignore, never UB.
   }
   it->second.value = v;
+  it->second.last_writer = p;
   // Visit only this atom's own dependent observers: O(dependents), not
   // O(atoms). One invalidation folds into the pending coalesced batch.
   pending_visits_ += 1 + it->second.observers.size();
@@ -35,6 +35,15 @@ StatusOr<TypedValue> AtomStore::read(AtomId id, ObserverId obs) const {
   }
   it->second.observers.insert(obs);
   return it->second.value;
+}
+
+Provenance AtomStore::provenance(AtomId id) const {
+  std::lock_guard<std::mutex> lock(mutex_);
+  auto it = atoms_.find(id);
+  if (it == atoms_.end()) {
+    return Provenance::kJs;
+  }
+  return it->second.last_writer;
 }
 
 Batch AtomStore::flush() {
