@@ -431,5 +431,438 @@ class TestFrozenFonts(unittest.TestCase):
         self.assertTrue(result["frozen"])
 
 
+TOLERANCES_JSON = os.path.join(GOLDENS_DIR, "tolerances.json")
+TOLERANCE_PY = os.path.join(GOLDENS_DIR, "tolerance.py")
+DIFF_PY = os.path.join(GOLDENS_DIR, "diff.py")
+GRADLEW_PATH = os.path.join(REPO_ROOT, "gradlew")
+
+# ASSUMPTION: ``tolerances.json`` maps golden test id -> tolerance entry
+# plus an ``audit`` list that ``set_tolerance`` appends to; entry ids for
+# shipped goldens follow the ``<component>-<variant>`` golden naming used
+# by ``coverage._golden_path``. The tests publish this shape; the coder
+# implements to it.
+TOLERANCE_KEYS = ("mean_per_channel_error", "max_differing_pixels")
+
+
+def _load_tolerances_raw():
+    with open(TOLERANCES_JSON, "r", encoding="utf-8") as handle:
+        return json.load(handle)
+
+
+def _tolerance_entries(raw):
+    if isinstance(raw, dict) and isinstance(raw.get("tolerances"), dict):
+        return raw["tolerances"]
+    if isinstance(raw, dict):
+        return {
+            key: value
+            for key, value in raw.items()
+            if isinstance(value, dict) and "audit" not in key
+        }
+    return {}
+
+
+def _write_rgba_png(path, width, height, rows):
+    """Write an unfiltered 8-bit RGBA PNG using stdlib only."""
+    import struct
+    import zlib
+
+    def _chunk(kind, data):
+        header = struct.pack(">I", len(data)) + kind + data
+        return header + struct.pack(">I", zlib.crc32(kind + data) & 0xFFFFFFFF)
+
+    raw = b"".join(
+        b"\x00"
+        + b"".join(
+            struct.pack("BBBB", *pixel) for pixel in rows[y]
+        )
+        for y in range(height)
+    )
+    ihdr = struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0)
+    png = (
+        b"\x89PNG\r\n\x1a\n"
+        + _chunk(b"IHDR", ihdr)
+        + _chunk(b"IDAT", zlib.compress(raw))
+        + _chunk(b"IEND", b"")
+    )
+    with open(path, "wb") as handle:
+        handle.write(png)
+    return path
+
+
+def _solid_rows(width, height, pixel):
+    return [[tuple(pixel) for _ in range(width)] for _ in range(height)]
+
+
+class TestToleranceFilesExist(unittest.TestCase):
+    def test_tolerances_json_exists_and_is_json(self):
+        self.assertTrue(
+            os.path.isfile(TOLERANCES_JSON),
+            "missing %s" % TOLERANCES_JSON,
+        )
+        with open(TOLERANCES_JSON, "r", encoding="utf-8") as handle:
+            raw = json.load(handle)
+        self.assertIsInstance(raw, dict)
+
+    def test_tolerance_module_exists(self):
+        self.assertTrue(
+            os.path.isfile(TOLERANCE_PY),
+            "missing %s" % TOLERANCE_PY,
+        )
+
+    def test_diff_module_exists(self):
+        self.assertTrue(
+            os.path.isfile(DIFF_PY),
+            "missing %s" % DIFF_PY,
+        )
+
+
+class TestGetTolerance(unittest.TestCase):
+    def _get_tolerance(self, test_id):
+        from testing.goldens.tolerance import get_tolerance
+
+        return get_tolerance(test_id)
+
+    def _first_shipped_id(self):
+        entries = _tolerance_entries(_load_tolerances_raw())
+        self.assertTrue(entries, "tolerances.json carries no entries")
+        return sorted(entries)[0]
+
+    def test_get_tolerance_returns_mean_error_and_pixel_bound(self):
+        # Plan Detail (quoted verbatim): "every golden test id has an
+        # explicit entry (no global default silently applied — missing
+        # entry raises `KeyError`)".
+        result = self._get_tolerance(self._first_shipped_id())
+        self.assertIsInstance(result, dict)
+        for key in TOLERANCE_KEYS:
+            self.assertIn(key, result)
+        self.assertIsInstance(
+            result["mean_per_channel_error"], (int, float)
+        )
+        self.assertIsInstance(result["max_differing_pixels"], int)
+        self.assertGreaterEqual(result["mean_per_channel_error"], 0)
+        self.assertGreaterEqual(result["max_differing_pixels"], 0)
+
+    def test_get_tolerance_missing_entry_raises_key_error(self):
+        with self.assertRaises(KeyError):
+            self._get_tolerance("no-such-golden-test-xyz")
+
+    def test_get_tolerance_has_no_silent_default(self):
+        # A second unknown id must also raise: no global default may be
+        # silently applied for any test id.
+        with self.assertRaises(KeyError):
+            self._get_tolerance("another-unknown-golden-test-xyz")
+
+    def test_every_shipped_entry_declares_both_metrics(self):
+        entries = _tolerance_entries(_load_tolerances_raw())
+        self.assertTrue(entries, "tolerances.json carries no entries")
+        for test_id, entry in entries.items():
+            for key in TOLERANCE_KEYS:
+                self.assertIn(
+                    key, entry, "tolerance %r missing %r" % (test_id, key)
+                )
+
+    def test_get_tolerance_empty_test_id_raises(self):
+        # Security/input validation: an empty test id must not resolve
+        # to a tolerance entry.
+        # (ASSUMPTION: empty test id raises KeyError, never a default.)
+        with self.assertRaises(KeyError):
+            self._get_tolerance("")
+
+
+class TestSetTolerance(unittest.TestCase):
+    def _backup_and_restore(self):
+        with open(TOLERANCES_JSON, "rb") as handle:
+            before = handle.read()
+        self.addCleanup(self._restore, before)
+
+    def _restore(self, before):
+        with open(TOLERANCES_JSON, "wb") as handle:
+            handle.write(before)
+
+    def test_set_tolerance_empty_review_ref_rejected(self):
+        # Plan Detail (quoted verbatim): "`set_tolerance` requires a
+        # non-empty review ref (e.g. PR/issue id)".
+        from testing.goldens.tolerance import set_tolerance
+
+        with self.assertRaises(PermissionError):
+            set_tolerance(
+                "unittest-tolerance-gate",
+                {
+                    "mean_per_channel_error": 0.0,
+                    "max_differing_pixels": 0,
+                },
+                "",
+            )
+
+    def test_set_tolerance_none_review_ref_rejected(self):
+        # Security: a missing review ref must not open a bypass that
+        # writes tolerances without review.
+        from testing.goldens.tolerance import set_tolerance
+
+        with self.assertRaises((PermissionError, TypeError)):
+            set_tolerance(
+                "unittest-tolerance-gate",
+                {
+                    "mean_per_channel_error": 0.0,
+                    "max_differing_pixels": 0,
+                },
+                None,
+            )
+
+    def test_set_tolerance_with_review_ref_appends_audit_log(self):
+        # Plan Detail (quoted verbatim): "appends to `tolerances.json`
+        # audit log".
+        from testing.goldens.tolerance import get_tolerance, set_tolerance
+
+        self._backup_and_restore()
+        test_id = "unittest-tolerance-synthetic"
+        result = set_tolerance(
+            test_id,
+            {"mean_per_channel_error": 1.5, "max_differing_pixels": 4},
+            "PR-1234",
+        )
+        self.assertIsInstance(result, dict)
+        stored = get_tolerance(test_id)
+        self.assertEqual(stored["mean_per_channel_error"], 1.5)
+        self.assertEqual(stored["max_differing_pixels"], 4)
+        with open(TOLERANCES_JSON, "r", encoding="utf-8") as handle:
+            text = handle.read()
+        self.assertIn("PR-1234", text)
+
+    def test_set_tolerance_does_not_mutate_on_rejected_review(self):
+        from testing.goldens.tolerance import set_tolerance
+
+        self._backup_and_restore()
+        with open(TOLERANCES_JSON, "rb") as handle:
+            before = handle.read()
+        with self.assertRaises(PermissionError):
+            set_tolerance(
+                "unittest-tolerance-rejected",
+                {"mean_per_channel_error": 9.0, "max_differing_pixels": 9},
+                "",
+            )
+        with open(TOLERANCES_JSON, "rb") as handle:
+            self.assertEqual(handle.read(), before)
+
+    def test_set_tolerance_traversal_test_id_rejected(self):
+        # Security: a traversal test id must not escape the tolerances
+        # store or be accepted as a review-gated change.
+        from testing.goldens.tolerance import set_tolerance
+
+        with self.assertRaises((ValueError, KeyError, PermissionError)):
+            set_tolerance(
+                "../../tmp-evil-tolerance",
+                {"mean_per_channel_error": 0.0, "max_differing_pixels": 0},
+                "PR-1234",
+            )
+
+
+class TestPixelDiff(unittest.TestCase):
+    def _pixel_diff(self, a_path, b_path, tolerance):
+        from testing.goldens.diff import pixel_diff
+
+        return pixel_diff(a_path, b_path, tolerance)
+
+    def _strict(self):
+        return {"mean_per_channel_error": 0.0, "max_differing_pixels": 0}
+
+    def test_pixel_diff_identical_rerun_is_zero_diff(self):
+        # Plan Acceptance (quoted verbatim): "identical rerun produces
+        # zero diffs".
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            rows = _solid_rows(8, 8, (10, 20, 30, 255))
+            a_path = _write_rgba_png(os.path.join(tmp, "a.png"), 8, 8, rows)
+            b_path = _write_rgba_png(os.path.join(tmp, "b.png"), 8, 8, rows)
+            result = self._pixel_diff(a_path, b_path, self._strict())
+        self.assertIsInstance(result, dict)
+        for key in ("flagged", "differing_pixels", "mean_error"):
+            self.assertIn(key, result)
+        self.assertFalse(result["flagged"])
+        self.assertEqual(result["differing_pixels"], 0)
+        self.assertEqual(result["mean_error"], 0.0)
+
+    def test_pixel_diff_one_px_glyph_shift_flagged(self):
+        # Plan Detail (quoted verbatim): "sensitivity proven by synthetic
+        # fixtures (1px-shifted glyph strip ... flagged at T7
+        # tolerances)".
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            base = _solid_rows(8, 8, (255, 255, 255, 255))
+            for y in range(8):
+                base[y][3] = (0, 0, 0, 255)
+            shifted = [list(row) for row in base]
+            for y in range(8):
+                shifted[y] = [shifted[y][-1]] + shifted[y][:-1]
+            a_path = _write_rgba_png(os.path.join(tmp, "a.png"), 8, 8, base)
+            b_path = _write_rgba_png(
+                os.path.join(tmp, "b.png"), 8, 8, shifted
+            )
+            result = self._pixel_diff(a_path, b_path, self._strict())
+        self.assertTrue(result["flagged"])
+        self.assertGreater(result["differing_pixels"], 0)
+        self.assertGreater(result["mean_error"], 0.0)
+
+    def test_pixel_diff_blend_change_flagged(self):
+        # Plan Detail (quoted verbatim): "blend-mode-altered swatch ...
+        # flagged at T7 tolerances".
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            a_rows = _solid_rows(4, 4, (200, 100, 50, 255))
+            b_rows = _solid_rows(4, 4, (50, 100, 200, 255))
+            a_path = _write_rgba_png(
+                os.path.join(tmp, "a.png"), 4, 4, a_rows
+            )
+            b_path = _write_rgba_png(
+                os.path.join(tmp, "b.png"), 4, 4, b_rows
+            )
+            result = self._pixel_diff(a_path, b_path, self._strict())
+        self.assertTrue(result["flagged"])
+        self.assertEqual(result["differing_pixels"], 16)
+        self.assertGreater(result["mean_error"], 0.0)
+
+    def test_pixel_diff_within_tolerance_not_flagged(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            a_rows = _solid_rows(4, 4, (100, 100, 100, 255))
+            b_rows = _solid_rows(4, 4, (100, 100, 100, 255))
+            b_rows[0][0] = (101, 100, 100, 255)
+            a_path = _write_rgba_png(
+                os.path.join(tmp, "a.png"), 4, 4, a_rows
+            )
+            b_path = _write_rgba_png(
+                os.path.join(tmp, "b.png"), 4, 4, b_rows
+            )
+            loose = {
+                "mean_per_channel_error": 5.0,
+                "max_differing_pixels": 4,
+            }
+            result = self._pixel_diff(a_path, b_path, loose)
+        self.assertFalse(result["flagged"])
+        self.assertEqual(result["differing_pixels"], 1)
+
+    def test_pixel_diff_dimension_mismatch_flagged(self):
+        # (ASSUMPTION: images of different sizes are flagged with
+        # differing_pixels > 0 rather than raising.)
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            a_path = _write_rgba_png(
+                os.path.join(tmp, "a.png"),
+                4,
+                4,
+                _solid_rows(4, 4, (1, 2, 3, 255)),
+            )
+            b_path = _write_rgba_png(
+                os.path.join(tmp, "b.png"),
+                2,
+                2,
+                _solid_rows(2, 2, (1, 2, 3, 255)),
+            )
+            result = self._pixel_diff(a_path, b_path, self._strict())
+        self.assertTrue(result["flagged"])
+        self.assertGreater(result["differing_pixels"], 0)
+
+    def test_pixel_diff_missing_file_raises(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            a_path = _write_rgba_png(
+                os.path.join(tmp, "a.png"),
+                2,
+                2,
+                _solid_rows(2, 2, (1, 2, 3, 255)),
+            )
+            with self.assertRaises((FileNotFoundError, OSError, ValueError)):
+                self._pixel_diff(
+                    a_path, os.path.join(tmp, "absent.png"), self._strict()
+                )
+
+    def test_pixel_diff_corrupt_png_raises(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            good = _write_rgba_png(
+                os.path.join(tmp, "good.png"),
+                2,
+                2,
+                _solid_rows(2, 2, (1, 2, 3, 255)),
+            )
+            bad = os.path.join(tmp, "bad.png")
+            with open(bad, "wb") as handle:
+                handle.write(b"not-a-png")
+            try:
+                self._pixel_diff(good, bad, self._strict())
+            except (ImportError, ModuleNotFoundError):
+                self.fail("testing.goldens.diff is not implemented")
+            except Exception:
+                return
+            self.fail("pixel_diff did not raise on corrupt PNG")
+
+    def test_pixel_diff_uses_stdlib_only_no_pillow(self):
+        # Plan Detail (quoted verbatim): "pure-stdlib pixel comparator
+        # (PNG decode via stdlib `zlib`+`struct`, no Pillow)".
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            rows = _solid_rows(2, 2, (7, 8, 9, 255))
+            a_path = _write_rgba_png(os.path.join(tmp, "a.png"), 2, 2, rows)
+            b_path = _write_rgba_png(os.path.join(tmp, "b.png"), 2, 2, rows)
+            self._pixel_diff(a_path, b_path, self._strict())
+        self.assertNotIn("PIL", sys.modules)
+        self.assertNotIn("Pillow", sys.modules)
+
+
+class TestGradlewGoldenWiring(unittest.TestCase):
+    TASKS = ("goldenCoverage", "goldenDiffSensitivity")
+
+    def _gradlew_text(self):
+        with open(GRADLEW_PATH, "r", encoding="utf-8") as handle:
+            return handle.read()
+
+    def test_gradlew_declares_golden_tasks(self):
+        text = self._gradlew_text()
+        for task in self.TASKS:
+            self.assertIn(
+                ":testing:%s" % task,
+                text,
+                "gradlew missing :testing:%s case" % task,
+            )
+
+    def test_gradlew_golden_tasks_exit_zero(self):
+        import subprocess
+
+        for task in self.TASKS:
+            proc = subprocess.run(
+                ["sh", GRADLEW_PATH, ":testing:%s" % task],
+                cwd=REPO_ROOT,
+                capture_output=True,
+                text=True,
+                timeout=120,
+            )
+            self.assertEqual(
+                proc.returncode,
+                0,
+                ":testing:%s exited %s: %s"
+                % (task, proc.returncode, proc.stderr[-2000:]),
+            )
+
+    def test_gradlew_unknown_testing_task_fails_nonzero(self):
+        import subprocess
+
+        proc = subprocess.run(
+            ["sh", GRADLEW_PATH, ":testing:noSuchTaskXYZ"],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        self.assertNotEqual(proc.returncode, 0)
+
+
 if __name__ == "__main__":
     unittest.main()

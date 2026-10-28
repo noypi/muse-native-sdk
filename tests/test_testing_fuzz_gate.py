@@ -826,5 +826,72 @@ class TestContinuousFuzz(unittest.TestCase):
             )
 
 
+class TestGradlewFuzzWiring(unittest.TestCase):
+    """Batch 4 (T8) — gradlew wiring for the fuzz suite (FR-TESTING-003).
+
+    Covers FR-TESTING-003 / AC-TESTING-023..026 wiring:
+    ``gradlew :testing:<task>`` tasks ``fuzzTargetInventory``,
+    ``fuzzRegressionPromotion``, ``continuousFuzz``, ``fuzzGate``
+    (exit 0 pass / non-zero fail). The per-task pass/fail shapes are
+    covered by the T1–T4 unit tests above; these tests prove the
+    ``gradlew`` case-statement dispatches each task following the
+    existing ``:testing:*`` pattern.
+
+    Hermetic: stdlib unittest + subprocess of the repo ``gradlew``
+    shim only; no network/downloads/device/secrets.
+    """
+
+    TASKS = (
+        "fuzzTargetInventory",
+        "fuzzRegressionPromotion",
+        "continuousFuzz",
+        "fuzzGate",
+    )
+    GRADLEW_PATH = os.path.join(REPO_ROOT, "gradlew")
+
+    def _gradlew_text(self):
+        with open(self.GRADLEW_PATH, "r", encoding="utf-8") as handle:
+            return handle.read()
+
+    def test_gradlew_declares_fuzz_tasks(self):
+        text = self._gradlew_text()
+        for task in self.TASKS:
+            self.assertIn(
+                ":testing:%s" % task,
+                text,
+                "gradlew missing :testing:%s case" % task,
+            )
+
+    def test_gradlew_fuzz_tasks_exit_zero(self):
+        import subprocess
+
+        for task in self.TASKS:
+            proc = subprocess.run(
+                ["sh", self.GRADLEW_PATH, ":testing:%s" % task],
+                cwd=REPO_ROOT,
+                capture_output=True,
+                text=True,
+                timeout=180,
+            )
+            self.assertEqual(
+                proc.returncode,
+                0,
+                ":testing:%s exited %s: %s"
+                % (task, proc.returncode, proc.stderr[-2000:]),
+            )
+
+    def test_gradlew_unknown_fuzz_task_fails_nonzero(self):
+        import subprocess
+
+        proc = subprocess.run(
+            ["sh", self.GRADLEW_PATH, ":testing:noSuchFuzzTaskXYZ"],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        self.assertNotEqual(proc.returncode, 0)
+
+
 if __name__ == "__main__":
     unittest.main()
