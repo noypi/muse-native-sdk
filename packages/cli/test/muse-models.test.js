@@ -191,3 +191,209 @@ describe('muse template and content carry the muse: section', () => {
     assert.ok(text.includes('presets:'), 'root file must declare muse.presets');
   });
 });
+
+// ---------------------------------------------------------------------------
+// BUG-TSX-010 Batch 1 — T1: `muse:` subtree routed out of the flat config
+// parser so init output validates. Hermetic: node:test + node:assert/strict +
+// stdlib (fs/os/path) only. resolveConfig is driven through its public
+// interface against tmp-dir muse-native.yaml files; no env secrets, no
+// network, no live services.
+// Interface (plan verbatim):
+// `resolveConfig(argv: string[], env: Record<string,string>, cwd: string):
+// { config: { name: string, version: string }, winningLayer:
+// Record<string,string> }` — muse: key no longer throws ConfigError
+// unknown-key; scalar validation unchanged.
+// ---------------------------------------------------------------------------
+describe('BUG-TSX-010 T1 — muse: subtree bypasses flat ConfigError gate', () => {
+  const tmpRoots = [];
+  afterEach(() => {
+    while (tmpRoots.length) fs.rmSync(tmpRoots.pop(), { recursive: true, force: true });
+  });
+
+  function mkApp(yamlText) {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'muse-t1-'));
+    tmpRoots.push(dir);
+    fs.writeFileSync(path.join(dir, 'muse-native.yaml'), yamlText);
+    return dir;
+  }
+
+  function resolveIn(dir, argv = ['build'], env = {}) {
+    const { resolveConfig } = require('../lib/config.js');
+    return resolveConfig(argv, env, dir);
+  }
+
+  it('init template file (name/version + muse: block) resolves without ConfigError', () => {
+    const template = fs.readFileSync(path.join(__dirname, '..', 'templates', 'muse-native.yaml'), 'utf8');
+    const dir = mkApp(template);
+    const { config, winningLayer } = resolveIn(dir);
+    assert.deepEqual(config, { name: 'hello-app', version: '0.0.1' });
+    assert.equal(winningLayer.name, 'file');
+    assert.equal(winningLayer.version, 'file');
+  });
+
+  it('nested muse: lines never leak into the scalar config map', () => {
+    const template = fs.readFileSync(path.join(__dirname, '..', 'templates', 'muse-native.yaml'), 'utf8');
+    const dir = mkApp(template);
+    const { config } = resolveIn(dir);
+    assert.deepEqual(Object.keys(config).sort(), ['name', 'version']);
+  });
+
+  it('hand-written name/version-only file resolves identically to the template scalars', () => {
+    const dir = mkApp('name: hello-app\nversion: 0.0.1\n');
+    const { config, winningLayer } = resolveIn(dir);
+    assert.deepEqual(config, { name: 'hello-app', version: '0.0.1' });
+    assert.deepEqual(winningLayer, { name: 'file', version: 'file' });
+  });
+
+  it('unknown scalar key still throws ConfigError fail-closed (never partial)', () => {
+    const dir = mkApp('name: hi\nversion: 0.0.1\nevil: 1\n');
+    assert.throws(() => resolveIn(dir), (err) => {
+      assert.equal(err.name, 'ConfigError');
+      assert.equal(err.key, 'evil');
+      assert.match(err.message, /unknown key/);
+      return true;
+    });
+  });
+
+  it('wrong scalar type (numeric name:) still throws ConfigError naming the type', () => {
+    const dir = mkApp('name: 123\nversion: 0.0.1\n');
+    assert.throws(() => resolveIn(dir), (err) => {
+      assert.equal(err.name, 'ConfigError');
+      assert.equal(err.key, 'name');
+      assert.equal(err.expected, 'string');
+      return true;
+    });
+  });
+
+  it('--muse CLI flag stays rejected: unknown key (structured section, not a scalar key)', () => {
+    const dir = mkApp('name: hi\nversion: 0.0.1\n');
+    assert.throws(() => resolveIn(dir, ['build', '--muse', 'x']), (err) => {
+      assert.equal(err.name, 'ConfigError');
+      assert.equal(err.key, 'muse');
+      return true;
+    });
+  });
+
+  it('MUSE_NATIVE_MUSE env stays ignored: never becomes a config key (ASSUMPTION: env layer is scalar-only)', () => {
+    const dir = mkApp('name: hi\nversion: 0.0.1\n');
+    const { config } = resolveIn(dir, ['build'], { MUSE_NATIVE_MUSE: 'x' });
+    assert.deepEqual(config, { name: 'hi', version: '0.0.1' });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// BUG-TSX-010 Batch 2 — T3 seam cases (TC-TSX-022): the T1-parsed template
+// `muse:` subtree (not a hand-built object) validates `{ ok: true }`
+// against the inline allow-list; unknown route / wrong model / unlisted
+// param throw `ConfigError` (existing contract, now wired).
+// Hermetic: node:test + node:assert/strict + stdlib (fs/os/path) only. The
+// template text is read from the committed template file and parsed with a
+// minimal in-test indentation-aware parser, so the parser routing (nested
+// `muse:` lines must not leak as scalar keys) is covered; fixtures use only
+// dummy IDs, no secrets, no network, no live services.
+// Interface (plan verbatim): `node --test
+// packages/cli/test/muse-models.test.js` — seam cases: template-file
+// `muse:` subtree validates `{ ok: true }` against the inline allow-list;
+// unknown route / wrong model / unlisted param throw `ConfigError`
+// (existing contract, now wired).
+// ---------------------------------------------------------------------------
+describe('BUG-TSX-010 T3 — template-file muse: subtree seam (TC-TSX-022)', () => {
+  // Minimal indentation-aware parse of the top-level `muse:` subtree out of
+  // raw yaml text: mirrors the T1 routing (nested lines must not leak as
+  // scalar keys) without adding a YAML dependency. Returns `{ muse }`.
+  function parseMuseSubtree(text) {
+    const lines = text.split('\n');
+    const start = lines.findIndex((l) => /^muse:\s*$/.test(l));
+    assert.ok(start >= 0, 'fixture text must declare a top-level muse: block');
+    const muse = {};
+    const stack = [{ indent: -1, obj: muse }];
+    for (const raw of lines.slice(start + 1)) {
+      if (/^\s*(#|$)/.test(raw)) continue; // comment or blank
+      const indent = raw.match(/^\s*/)[0].length;
+      if (indent === 0) break; // next top-level key: muse: subtree ends
+      const m = raw.match(/^\s*([^:\s][^:]*):\s*(.*?)\s*$/);
+      assert.ok(m, `fixture line must be key: value, got ${JSON.stringify(raw)}`);
+      while (stack[stack.length - 1].indent >= indent) stack.pop();
+      const parent = stack[stack.length - 1].obj;
+      const key = m[1].trim();
+      const value = m[2];
+      if (value === '' || value === '{}') {
+        parent[key] = value === '{}' ? {} : {};
+        if (value === '') stack.push({ indent, obj: parent[key] });
+      } else {
+        parent[key] = value;
+      }
+    }
+    return { muse };
+  }
+
+  function templateText() {
+    return fs.readFileSync(path.join(__dirname, '..', 'templates', 'muse-native.yaml'), 'utf8');
+  }
+
+  it('template-file muse: subtree validates { ok: true } against the inline allow-list', () => {
+    const { validateMuseSection } = loadImpl();
+    const parsed = parseMuseSubtree(templateText());
+    assert.ok(parsed.muse.models, 'parsed subtree must carry models');
+    assert.ok(parsed.muse.presets, 'parsed subtree must carry presets');
+    assert.deepEqual(validateMuseSection(parsed, allowList()), { ok: true });
+  });
+
+  it('parsed template subtree with an unknown route throws ConfigError naming the route', () => {
+    const { validateMuseSection } = loadImpl();
+    const text = templateText().replace('  models:\n', '  models:\n    speak: gpt-4\n');
+    assertConfigError(() => validateMuseSection(parseMuseSubtree(text), allowList()), 'speak');
+  });
+
+  it('parsed template subtree with a wrong model throws ConfigError naming the model', () => {
+    const { validateMuseSection } = loadImpl();
+    const text = templateText().replace('    reason: muse-spark-1.3', '    reason: gpt-4');
+    assertConfigError(() => validateMuseSection(parseMuseSubtree(text), allowList()), 'gpt-4');
+  });
+
+  it('parsed template subtree with an unlisted preset param throws ConfigError naming the param', () => {
+    const { validateMuseSection } = loadImpl();
+    const text = templateText().replace(
+      '        reasoning_effort: high',
+      '        reasoning_effort: high\n        evil: 1',
+    );
+    assertConfigError(() => validateMuseSection(parseMuseSubtree(text), allowList()), 'evil');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// BUG-TSX-010 security hardening (security-review.md "Security Tests
+// Requested"): production `parseMuseSubtree` (packages/cli/lib/config.js)
+// must reject dangerous keys fail-closed with ConfigError naming the key.
+// Hermetic: node:test + node:assert/strict only; no fs, no env, no network.
+// ---------------------------------------------------------------------------
+describe('BUG-TSX-010 security — parseMuseSubtree rejects dangerous keys', () => {
+  function parseProd(text) {
+    const { parseMuseSubtree } = require('../lib/config.js');
+    return parseMuseSubtree(text);
+  }
+
+  it("parseMuseSubtree('muse:\\n  __proto__:\\n    x: 1') throws ConfigError with key __proto__", () => {
+    assert.throws(() => parseProd('muse:\n  __proto__:\n    x: 1'), (err) => {
+      assert.equal(err.name, 'ConfigError');
+      assert.equal(err.key, '__proto__');
+      return true;
+    });
+  });
+
+  it("parseMuseSubtree('muse:\\n  constructor:\\n    x: 1') throws ConfigError with key constructor", () => {
+    assert.throws(() => parseProd('muse:\n  constructor:\n    x: 1'), (err) => {
+      assert.equal(err.name, 'ConfigError');
+      assert.equal(err.key, 'constructor');
+      return true;
+    });
+  });
+
+  it("parseMuseSubtree('muse:\\n  prototype:\\n    x: 1') throws ConfigError with key prototype", () => {
+    assert.throws(() => parseProd('muse:\n  prototype:\n    x: 1'), (err) => {
+      assert.equal(err.name, 'ConfigError');
+      assert.equal(err.key, 'prototype');
+      return true;
+    });
+  });
+});

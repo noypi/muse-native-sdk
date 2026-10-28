@@ -83,10 +83,63 @@ function parseLine(line) {
   return { key, value: raw };
 }
 
+// Parse the collected `muse:` block text into nested plain objects.
+// Minimal indentation-aware parse (no YAML dependency): a `key:` line with
+// an empty value opens a nested map for the deeper-indented lines below it;
+// a `key: value` line sets a scalar leaf (same scalar rules as parseLine).
+// The leading top-level `muse:` header folds into the result, so the return
+// shape is `{ muse: {...} }` ready for `validateMuseSection`. Shared with
+// the build layer (T2); blank lines and `#` comments are ignored.
+function parseMuseSubtree(museText, file) {
+  const where = typeof file === 'string' && file ? file : 'muse-native.yaml';
+  const root = {};
+  const stack = [{ indent: -1, map: root }];
+  for (const rawLine of String(museText).split('\n')) {
+    const trimmed = rawLine.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+    const indent = rawLine.match(/^[ \t]*/)[0].length;
+    const colon = trimmed.indexOf(':');
+    if (colon === -1) continue;
+    const key = trimmed.slice(0, colon).trim();
+    if (!key) continue;
+    // Prototype-pollution hardening: `__proto__`/`constructor`/`prototype`
+    // must never flow into `parent[key] = ...` below. A `__proto__`
+    // assignment mutates the fresh object's prototype instead of creating an
+    // own key, so the key is silently dropped past validation (own-key
+    // enumeration never sees it). Fail closed like the rest of this layer:
+    // reject the key loudly instead of mis-parsing it. Valid keys are
+    // unaffected — this guard only fires on the three dangerous names.
+    if (key === '__proto__' || key === 'constructor' || key === 'prototype') {
+      throw new ConfigError(key, where, 'rejected dangerous key');
+    }
+    while (stack.length > 1 && indent <= stack[stack.length - 1].indent) stack.pop();
+    const parent = stack[stack.length - 1].map;
+    const rest = trimmed.slice(colon + 1).trim();
+    if (rest === '' || rest.startsWith('#')) {
+      const child = {};
+      parent[key] = child;
+      stack.push({ indent, map: child });
+    } else {
+      const leaf = parseLine(trimmed);
+      parent[key] = leaf ? leaf.value : rest;
+    }
+  }
+  return root;
+}
+
 // Read the file layer: canonical `muse-native.yaml` wins when present;
 // the deprecated aliases are a read-only fallback used only when the
-// canonical file is absent. Returns { values, file } where `file` is the
-// basename of the file the values came from ('' when no file exists).
+// canonical file is absent. Returns { values, file, muse } where `file`
+// is the basename of the file the values came from ('' when no file
+// exists) and `muse` is the parsed `muse:` subtree (`{ muse: {...} }`,
+// undefined when the file declares no `muse:` block) for the build layer.
+//
+// The init template ships a top-level `muse:` mapping (models/presets)
+// the flat scalar parser cannot represent, so the `muse:` line and every
+// line indented under it are routed out of the scalar `values` map before
+// `validateConfig` (nested `models:`/`presets:` lines must never leak in as
+// scalar keys). `muse` stays out of SCHEMA and the CLI/env layers:
+// a structured section, not a scalar key.
 function readFileLayer(cwd) {
   const candidates = [CANONICAL_FILE].concat(ALIAS_FILES);
   let found = null;
@@ -102,15 +155,36 @@ function readFileLayer(cwd) {
       break;
     }
   }
-  if (!found) return { values: {}, file: '' };
+  if (!found) return { values: {}, file: '', muse: undefined };
   const full = path.join(cwd, found);
   const text = fs.readFileSync(full, 'utf8');
   const values = {};
+  const museLines = [];
+  let inMuse = false;
   for (const line of text.split('\n')) {
+    if (inMuse) {
+      const trimmed = line.trim();
+      if (trimmed === '' || trimmed.startsWith('#') || /^[ \t]/.test(line)) {
+        museLines.push(line);
+        continue;
+      }
+      inMuse = false;
+    }
+    const trimmed = line.trim();
+    if (trimmed === '' || trimmed.startsWith('#')) continue;
+    // Top-level `muse:` (no leading indent): route out of the scalar map.
+    // An empty value opens the indented subtree; an inline value has no
+    // subtree — either way `muse` is never a scalar config key.
+    if (!/^[ \t]/.test(line) && /^muse\s*:/.test(trimmed)) {
+      museLines.push(line);
+      const rest = trimmed.slice(trimmed.indexOf(':') + 1).trim();
+      if (rest === '' || rest.startsWith('#')) inMuse = true;
+      continue;
+    }
     const parsed = parseLine(line);
     if (parsed) values[parsed.key] = parsed.value;
   }
-  return { values, file: full };
+  return { values, file: full, muse: museLines.length ? parseMuseSubtree(museLines.join('\n'), full) : undefined };
 }
 
 // Collect `--<key> <value>` pairs from argv. Positional operands and the
@@ -224,4 +298,4 @@ function getOptionSchema() {
   return entries;
 }
 
-module.exports = { SCHEMA, DEFAULTS, ConfigError, resolveConfig, validateConfig, getOptionSchema };
+module.exports = { SCHEMA, DEFAULTS, ConfigError, resolveConfig, validateConfig, getOptionSchema, readFileLayer, parseMuseSubtree };

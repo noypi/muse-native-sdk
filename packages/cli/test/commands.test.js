@@ -209,6 +209,179 @@ describe('TC-TSX-022/023 Batch 3 — T7 build emits IR + binary tree', () => {
 // === Batch 4 (T8 dev, T9 run, T10 fixture) appends NEW describe blocks below. ===
 
 // ---------------------------------------------------------------------------
+// BUG-TSX-010 Batch 1 — T1 (CLI seam): init template passes resolveConfig,
+// so `build --print-config` on init output exits 0. T2 (wiring):
+// runBuild validates the muse: section fail-closed before any compile/stage
+// work — ConfigError → stderr + exit 2 with no dist/ writes; absent muse:
+// builds as before.
+// Interface (plan verbatim):
+// T1 `resolveConfig(argv: string[], env: Record<string,string>, cwd:
+// string): { config: { name: string, version: string }, winningLayer:
+// Record<string,string> }` — muse: key no longer throws ConfigError
+// unknown-key; scalar validation unchanged.
+// T2 `runBuild(appDir: string, rest: string[]): void` — after resolveConfig
+// calls validateMuseSection(parsedYaml: { muse?: unknown }, allowList:
+// { version: number, routes: Record<string,{model:string,params:
+// Record<string,unknown>}> }): { ok: true }; ConfigError → exit 2 no dist/;
+// absent muse: → ok.
+// Hermetic: node:test + node:assert/strict + stdlib only; tmp-dir apps;
+// inline muse: fixtures only (ASSUMPTION: the T1-parsed template subtree
+// carries the same models/presets shape the allow-list pins).
+// ---------------------------------------------------------------------------
+const MUSE_BLOCK = [
+  'muse:',
+  '  models:',
+  '    segment: sam-3.1',
+  '    reason: muse-spark-1.3',
+  '    structure: muse-spark-1.3',
+  '    transcribe: muse-voice-transcribe-1.0',
+  '    generate-image: muse-image',
+  '  presets:',
+  '    reason-default:',
+  '      route: reason',
+  '      params:',
+  '        reasoning_effort: high',
+  '    lens-fast:',
+  '      route: segment',
+  '      params:',
+  '        mask_encoding: polygon',
+  '',
+].join('\n');
+
+function writeMuseApp(appDir, museBlock) {
+  writeMinimalApp(appDir);
+  fs.writeFileSync(
+    path.join(appDir, 'muse-native.yaml'),
+    'name: minimal-fixture\nversion: 0.0.0\n' + museBlock,
+  );
+}
+
+function assertNoDist(appDir) {
+  assert.ok(!fs.existsSync(path.join(appDir, 'dist', 'ir.json')), 'must not write dist/ir.json on config failure');
+  assert.ok(!fs.existsSync(path.join(appDir, 'dist', 'tree.mui.bin')), 'must not write dist/tree.mui.bin on config failure');
+}
+
+describe('BUG-TSX-010 T1 — init template config resolves (CLI seam)', () => {
+  it('build --print-config on init output exits 0 and prints file-layer name/version', () => {
+    const parent = mkTmp('muse-t1cli-');
+    const dir = path.join(parent, 'hello-app');
+    const ri = runCli(['init', dir]);
+    assert.equal(ri.status, 0, `init must exit 0, got ${ri.status}: ${ri.stderr}`);
+    const r = runCli(['build', dir, '--print-config']);
+    assert.equal(r.status, 0, `build --print-config on init output must exit 0, got ${r.status}: ${r.stderr}`);
+    const printed = JSON.parse(r.stdout);
+    assert.equal(printed.config.name, 'hello-app');
+    assert.equal(printed.config.version, '0.0.1');
+    assert.equal(printed.winningLayer.name, 'file');
+  });
+
+  it('build --print-config with an unknown scalar key still exits 2', () => {
+    const appDir = mkTmp('muse-t1cli-');
+    writeMinimalApp(appDir);
+    fs.appendFileSync(path.join(appDir, 'muse-native.yaml'), 'evil: 1\n');
+    const r = runCli(['build', appDir, '--print-config']);
+    assert.equal(r.status, 2, `unknown scalar key must exit 2, got ${r.status}`);
+    assert.ok(r.stderr.includes('evil'), 'stderr must name the bad key');
+  });
+});
+
+describe('BUG-TSX-010 T2 — runBuild validates muse: fail-closed', () => {
+  it('template muse: section builds exit 0 with both artefacts', () => {
+    const appDir = mkTmp('muse-t2-');
+    writeMuseApp(appDir, MUSE_BLOCK);
+    const r = runCli(['build', appDir]);
+    assert.equal(r.status, 0, `template muse: section must build exit 0, got ${r.status}: ${r.stderr}`);
+    assert.ok(fs.statSync(path.join(appDir, 'dist', 'ir.json')).isFile(), 'dist/ir.json must be written');
+    assert.ok(fs.statSync(path.join(appDir, 'dist', 'tree.mui.bin')).isFile(), 'dist/tree.mui.bin must be written');
+  });
+
+  it('muse.models with an unknown route fails exit 2 naming the route, no dist/', () => {
+    const appDir = mkTmp('muse-t2-');
+    writeMuseApp(appDir, 'muse:\n  models:\n    speak: gpt-4\n');
+    const r = runCli(['build', appDir]);
+    assert.equal(r.status, 2, `unknown route must exit 2, got ${r.status}: ${r.stderr}`);
+    assert.ok(r.stderr.includes('speak'), `stderr must name the route, got: ${JSON.stringify(r.stderr)}`);
+    assertNoDist(appDir);
+  });
+
+  it('muse.models with a wrong model for its route fails exit 2, no dist/', () => {
+    const appDir = mkTmp('muse-t2-');
+    writeMuseApp(
+      appDir,
+      'muse:\n  models:\n    segment: sam-3.1\n    reason: gpt-4\n    structure: muse-spark-1.3\n    transcribe: muse-voice-transcribe-1.0\n    generate-image: muse-image\n',
+    );
+    const r = runCli(['build', appDir]);
+    assert.equal(r.status, 2, `wrong model must exit 2, got ${r.status}: ${r.stderr}`);
+    assert.ok(r.stderr.includes('gpt-4'), `stderr must name the model, got: ${JSON.stringify(r.stderr)}`);
+    assertNoDist(appDir);
+  });
+
+  it('muse.presets with an unlisted param fails exit 2 naming the param, no dist/', () => {
+    const appDir = mkTmp('muse-t2-');
+    writeMuseApp(
+      appDir,
+      'muse:\n  presets:\n    reason-default:\n      route: reason\n      params:\n        reasoning_effort: high\n        evil: 1\n',
+    );
+    const r = runCli(['build', appDir]);
+    assert.equal(r.status, 2, `unlisted param must exit 2, got ${r.status}: ${r.stderr}`);
+    assert.ok(r.stderr.includes('evil'), `stderr must name the param, got: ${JSON.stringify(r.stderr)}`);
+    assertNoDist(appDir);
+  });
+
+  it('muse.presets naming an unknown route fails exit 2, no dist/', () => {
+    const appDir = mkTmp('muse-t2-');
+    writeMuseApp(appDir, 'muse:\n  presets:\n    bad-route:\n      route: speak\n      params: {}\n');
+    const r = runCli(['build', appDir]);
+    assert.equal(r.status, 2, `unknown preset route must exit 2, got ${r.status}: ${r.stderr}`);
+    assert.ok(r.stderr.includes('speak'), `stderr must name the route, got: ${JSON.stringify(r.stderr)}`);
+    assertNoDist(appDir);
+  });
+
+  it('project without muse: still builds exit 0 (absent section returns ok)', () => {
+    const appDir = mkTmp('muse-t2-');
+    writeMinimalApp(appDir);
+    const r = runCli(['build', appDir]);
+    assert.equal(r.status, 0, `absent muse: must build exit 0, got ${r.status}: ${r.stderr}`);
+    assert.ok(fs.statSync(path.join(appDir, 'dist', 'ir.json')).isFile(), 'dist/ir.json must be written');
+    assert.ok(fs.statSync(path.join(appDir, 'dist', 'tree.mui.bin')).isFile(), 'dist/tree.mui.bin must be written');
+  });
+
+  it('malicious model id (path traversal) is rejected exit 2, no dist/', () => {
+    const appDir = mkTmp('muse-t2-');
+    writeMuseApp(appDir, 'muse:\n  models:\n    reason: ../../escape\n');
+    const r = runCli(['build', appDir]);
+    assert.equal(r.status, 2, `malicious model id must exit 2, got ${r.status}: ${r.stderr}`);
+    assert.ok(r.stderr.includes('..'), `stderr must name the offending value, got: ${JSON.stringify(r.stderr)}`);
+    assertNoDist(appDir);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// BUG-TSX-010 Batch 2 — T3 roundtrip regression (TC-TSX-022): `init
+// <tmpdir>` then `build` on the same dir exits 0 with `dist/ir.json` +
+// `dist/tree.mui.bin`. Fails before the T1+T2 fix (exit 2 `unknown key
+// muse`), passes after. Hermetic: node:test + node:assert/strict + stdlib
+// only; tmp dirs via mkTmp, cleaned in afterEach; existing T6/T7 fixtures
+// untouched.
+// Interface (plan verbatim): `node --test
+// packages/cli/test/commands.test.js` — new case `init <tmpdir> then build
+// <tmpdir>: exit 0 and dist/ir.json + dist/tree.mui.bin exist`.
+// ---------------------------------------------------------------------------
+describe('BUG-TSX-010 T3 — init-to-build roundtrip (TC-TSX-022)', () => {
+  it('init <tmpdir> then build <tmpdir>: exit 0 and dist/ir.json + dist/tree.mui.bin exist', () => {
+    const parent = mkTmp('muse-t3roundtrip-');
+    const dir = path.join(parent, 'roundtrip-app');
+    const ri = runCli(['init', dir]);
+    assert.equal(ri.status, 0, `init must exit 0, got ${ri.status}: ${ri.stderr}`);
+    const r = runCli(['build', dir]);
+    assert.equal(r.status, 0, `build of init output must exit 0, got ${r.status}: ${r.stderr}`);
+    assert.ok(!/unknown key.*muse/.test(r.stderr), `stderr must not report an unknown muse key, got: ${JSON.stringify(r.stderr)}`);
+    assert.ok(fs.statSync(path.join(dir, 'dist', 'ir.json')).isFile(), 'dist/ir.json must be written');
+    assert.ok(fs.statSync(path.join(dir, 'dist', 'tree.mui.bin')).isFile(), 'dist/tree.mui.bin must be written');
+  });
+});
+
+// ---------------------------------------------------------------------------
 // T8 — `muse-native dev` validates + serves (minimal).
 // Interface: `muse-native dev <appDir>` → validates sources (same loader as
 // build), stdout `serving <appDir> at http://127.0.0.1:<port>/` (default port

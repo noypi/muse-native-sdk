@@ -82,6 +82,32 @@ function runBuild(appDir, rest) {
     process.exitCode = getExitCode('config');
     return;
   }
+  // BUG-TSX-010 T2: validate the `muse:` section fail-closed before any
+  // compile/stage work. `readFileLayer` re-reads the same app dir
+  // `resolveConfig` just resolved (T1 routes `muse:` out of the scalar map
+  // and exposes the parsed subtree here); an absent `muse:` section returns
+  // ok and builds as before. A present section is checked against the proxy
+  // allow-list; an unavailable allow-list fails closed, same as any other
+  // config error (stderr + exit 2, no `dist/` writes).
+  try {
+    const { validateMuseSection, ConfigError: MuseConfigError } = require('./muse-models.js');
+    const fileLayer = config.readFileLayer(resolved);
+    if (fileLayer.muse !== undefined) {
+      let allowList;
+      try {
+        const { loadConfig } = require('../../../proxy/lib/load-config.js');
+        allowList = loadConfig(path.join(__dirname, '..', '..', '..', 'proxy', 'proxy.config.json'));
+      } catch (_) {
+        throw new MuseConfigError('muse', 'muse-native.yaml', 'a readable proxy allow-list');
+      }
+      validateMuseSection(fileLayer.muse, allowList);
+    }
+  } catch (err) {
+    const message = err && err.message ? err.message : String(err);
+    process.stderr.write(message.endsWith('\n') ? message : message + '\n');
+    process.exitCode = getExitCode('config');
+    return;
+  }
   if (argv.includes('--print-config')) {
     process.stdout.write(JSON.stringify(resolvedConfig, null, 2) + '\n');
     process.exitCode = getExitCode('ok');
