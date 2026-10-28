@@ -2,6 +2,8 @@
 // AC-GRAPHICS-003). Pure pass-ordering logic, no Vulkan calls.
 #include "engine/graphics/color/filter_graph.h"
 
+namespace filter_graph {
+
 FilterPlan buildFilterGraph(const FilterSpec& spec, const PsoCache& psos) {
   FilterPlan plan;
   for (FilterPassType pass : spec.passes) {
@@ -37,3 +39,5 @@ FilterPlan buildFilterGraph(const FilterSpec& spec, const PsoCache& psos) {
   plan.status = Status::kOk;
   return plan;
 }
+
+}  // namespace filter_graph

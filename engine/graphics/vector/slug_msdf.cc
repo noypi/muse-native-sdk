@@ -1,6 +1,10 @@
 // T2: Slug MSDF Bezier text path with subpixel alignment.
 #include "engine/graphics/vector/slug_msdf.h"
 
+#include <cmath>
+
+namespace slug_msdf {
+
 namespace {
 
 // Atlas golden pinned by the T2 contract: 16 glyph cells per row, glyph
@@ -21,14 +25,16 @@ MsdfResult shapeAndPlace(const ShapedRun& run, float subpixelX) {
   if (run.glyphIds.empty()) {
     return out;
   }
-  // The shift arrives pre-quantized to 1/64px from the text engine; apply it
-  // as-is so half-texel (1/128px) goldens survive without rounding drift.
+  // Subpixel x-shift quantization: snap to the nearest 1/64px grid before
+  // layout (plan T2 Detail). The negative-arg guard above runs on the raw
+  // input; placement below uses the quantized value.
+  const float q = std::round(subpixelX * 64.0f) / 64.0f;
   out.glyphs.reserve(run.glyphIds.size());
   float pen = 0.0f;
   for (size_t i = 0; i < run.glyphIds.size(); ++i) {
     GlyphPlacement g;
     g.glyph = run.glyphIds[i];
-    g.x = pen + subpixelX;
+    g.x = pen + q;
     g.texelU = static_cast<float>(g.glyph) / kCellsPerRow;
     g.texelV = kTexelV;
     g.edgeCount = kEdgesPerGlyph;
@@ -39,3 +45,5 @@ MsdfResult shapeAndPlace(const ShapedRun& run, float subpixelX) {
   }
   return out;
 }
+
+}  // namespace slug_msdf

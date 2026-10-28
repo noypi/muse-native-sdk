@@ -1,5 +1,6 @@
 #include "tile_raster.h"
 
+namespace tile_raster {
 namespace {
 
 // True when the segment passes through the axis-aligned rect with non-zero
@@ -70,3 +71,5 @@ CoverageResult rasterizeTiles(const PathBatch& paths, const TileGrid& grid,
   }
   return result;
 }
+
+}  // namespace tile_raster

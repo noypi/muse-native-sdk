@@ -8,6 +8,8 @@
 #include <cstdint>
 #include <vector>
 
+namespace tile_raster {
+
 enum class BackendKind { kCpu = 0, kVulkan = 1, kUnknown = 999 };
 
 enum class Status { kOk = 0, kUnsupportedBackend = 1 };
@@ -45,5 +47,7 @@ struct CoverageResult {
 // Unknown BackendKind yields Status::kUnsupportedBackend.
 CoverageResult rasterizeTiles(const PathBatch& paths, const TileGrid& grid,
                               BackendKind backend);
+
+}  // namespace tile_raster
 
 #endif  // ENGINE_GRAPHICS_VECTOR_TILE_RASTER_H_

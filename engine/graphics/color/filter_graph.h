@@ -10,6 +10,8 @@
 #include <string>
 #include <vector>
 
+namespace filter_graph {
+
 enum class Status { kOk = 0, kUnsupportedFilter = 1, kMissingPso = 2 };
 
 enum class FilterPassType {
@@ -55,5 +57,7 @@ struct FilterPlan {
 // with Status::kUnsupportedFilter; absent PSO entry short-circuits with
 // Status::kMissingPso (no partial passes returned on error).
 FilterPlan buildFilterGraph(const FilterSpec& spec, const PsoCache& psos);
+
+}  // namespace filter_graph
 
 #endif  // ENGINE_GRAPHICS_COLOR_FILTER_GRAPH_H_

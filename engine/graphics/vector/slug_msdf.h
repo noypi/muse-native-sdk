@@ -8,6 +8,8 @@
 #include <cstdint>
 #include <vector>
 
+namespace slug_msdf {
+
 enum class Status { kOk = 0, kInvalidArg = 1 };
 
 // Mocked FR-TEXT-007 interface: shaped glyph run from the text engine.
@@ -34,5 +36,7 @@ struct MsdfResult {
 // Empty run yields an empty result with Status::kOk.
 // Negative subpixelX yields Status::kInvalidArg.
 MsdfResult shapeAndPlace(const ShapedRun& run, float subpixelX);
+
+}  // namespace slug_msdf
 
 #endif  // ENGINE_GRAPHICS_VECTOR_SLUG_MSDF_H_
