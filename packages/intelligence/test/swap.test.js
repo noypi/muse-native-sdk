@@ -9,7 +9,7 @@
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
 
-const { evaluateSwap } = require('../lib/swap.js');
+const { evaluateSwap, checkSwapAnswers } = require('../lib/swap.js');
 
 // --- Fixtures -----------------------------------------------------------
 
@@ -101,5 +101,55 @@ describe('evaluateSwap — Meta-First swap contract (AC-MUSE-002)', () => {
     const res = evaluateSwap(museResult(), generic);
     assert.equal(res.polygonViz, 'broken');
     assert.equal(res.overall, 'generic-degraded');
+  });
+});
+
+// --- Gate ---------------------------------------------------------------
+// T3 — spec-entry gate (FR-MUSE-001, AC-MUSE-003).
+// Hermetic: the registry below is an in-test literal mirroring each active
+// component's spec-entry swap answer (component → breakage string), mirroring
+// the docs/meta-first.md section 5 table (T2). No spec-file parsing, no
+// filesystem reads. checkSwapAnswers(entries) is pure: it returns `missing`
+// for empty/absent answers.
+
+const SWAP_ANSWERS = {
+  MuseLens: 'Mask overlay cannot render: generic run-length/box shape is unparseable as polygon points, so segmentation viz breaks.',
+  MuseField: 'Thinking indicator goes silent: generic content-only deltas yield zero reasoning_content callbacks, so the field falls back to degraded plain text.',
+  MuseList: 'Grouped summary→groups→items hierarchy fails schema validation with a named error and degrades to plain text.',
+  MuseVoice: 'Dictation yields no partials/final transcript shape: transcript target stays empty, so voice entry breaks.',
+  MuseImage: 'Avatar/cover generation loses identity stability: same prompt re-renders non-reproducibly and style presets are ignored, so fallback art drifts per call.',
+};
+
+describe('checkSwapAnswers — spec-entry gate (AC-MUSE-003)', () => {
+  it('passes when all five active components record a non-empty swap answer', () => {
+    const res = checkSwapAnswers({ ...SWAP_ANSWERS });
+    assert.equal(res.ok, true);
+    assert.deepEqual(res.missing, []);
+  });
+
+  it('gate fails when any entry is removed (absent key → missing)', () => {
+    const { MuseVoice, ...withoutVoice } = SWAP_ANSWERS;
+    void MuseVoice;
+    const res = checkSwapAnswers(withoutVoice);
+    assert.equal(res.ok, false);
+    assert.deepEqual(res.missing, ['MuseVoice']);
+  });
+
+  it('gate fails when any entry is emptied (empty string → missing)', () => {
+    const res = checkSwapAnswers({ ...SWAP_ANSWERS, MuseList: '' });
+    assert.equal(res.ok, false);
+    assert.deepEqual(res.missing, ['MuseList']);
+  });
+
+  it('boundary: whitespace-only answer counts as missing', () => {
+    const res = checkSwapAnswers({ ...SWAP_ANSWERS, MuseImage: '   ' });
+    assert.equal(res.ok, false);
+    assert.deepEqual(res.missing, ['MuseImage']);
+  });
+
+  it('boundary: null/undefined answer counts as missing, all missing listed', () => {
+    const res = checkSwapAnswers({ ...SWAP_ANSWERS, MuseLens: null, MuseField: undefined });
+    assert.equal(res.ok, false);
+    assert.deepEqual(res.missing, ['MuseLens', 'MuseField']);
   });
 });

@@ -70,4 +70,26 @@ function evaluateSwap(museResult, genericResult) {
   return { polygonViz, thinkingStream, structuredOutput, overall };
 }
 
-module.exports = { evaluateSwap };
+// checkSwapAnswers(entries) — spec-entry gate (FR-MUSE-001, AC-MUSE-003).
+// Pure, synchronous, no I/O, no spec-file parsing, no filesystem reads.
+// `entries` maps each active component to its spec-entry swap answer.
+// An answer counts as missing when it is absent (key not present),
+// null/undefined, not a string, or empty/whitespace-only. Returns
+// `missing` in insertion order; `ok` is true iff missing is empty.
+const SWAP_COMPONENTS = ['MuseLens', 'MuseField', 'MuseList', 'MuseVoice', 'MuseImage'];
+
+function isMissingAnswer(value) {
+  if (typeof value !== 'string') return true;
+  return value.trim().length === 0;
+}
+
+function checkSwapAnswers(entries) {
+  const source = entries && typeof entries === 'object' ? entries : {};
+  const missing = [];
+  for (const name of SWAP_COMPONENTS) {
+    if (!(name in source) || isMissingAnswer(source[name])) missing.push(name);
+  }
+  return { ok: missing.length === 0, missing };
+}
+
+module.exports = { evaluateSwap, checkSwapAnswers };
