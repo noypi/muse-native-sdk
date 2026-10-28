@@ -157,7 +157,13 @@ function main() {
     return;
   }
   if (command === 'init') {
-    require('./init.js')(argv[1]);
+    // `<dir>` stays positional; `--force` (any position after `init`)
+    // permits scaffolding into a non-empty directory while preserving
+    // pre-existing files (guard lives in init.js).
+    const rest = argv.slice(1);
+    const force = rest.includes('--force');
+    const dir = rest.find((a) => a !== '--force');
+    require('./init.js')(dir, { force });
     return;
   }
   if (command === 'build') {
@@ -194,12 +200,12 @@ function main() {
 module.exports = { validateOptions, OptionError, main };
 
 // Run on direct invocation and when loaded through the `muse-native` (or
-// `muse`) bin wrapper. Do not auto-run when required in-process (unit
+// `muse` alias) bin wrapper. Do not auto-run when required in-process (unit
 // tests), where `require.main` is the test runner.
 (function autoRun() {
   try {
     const entry = require.main && require.main.filename ? String(require.main.filename) : '';
-    if (/muse(-native)?\.js$/.test(entry)) {
+    if (/(muse-native|muse)\.js$/.test(entry)) {
       main();
       return;
     }

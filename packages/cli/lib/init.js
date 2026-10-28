@@ -1,20 +1,27 @@
 'use strict';
 // @muse/cli — `muse-native init <dir>` project scaffolding.
-// Copies the template tree (muse-native.yaml, src/App.tsx, package.json)
-// into <dir>. Fails closed: missing operand is usage + exit 2, an
-// existing non-empty dir is an error + exit 1 with no writes.
+// Copies the template tree (muse-native.yaml, package.json, tsconfig.json,
+// src/App.tsx, README.md) into <dir>. Fails closed: missing operand is
+// usage + exit 2, an existing non-empty dir is an error + exit 1 with no
+// writes.
 const fs = require('node:fs');
 const path = require('node:path');
 
 const TEMPLATES_DIR = path.join(__dirname, '..', 'templates');
-const TEMPLATE_FILES = ['muse-native.yaml', path.join('src', 'App.tsx'), 'package.json'];
+const TEMPLATE_FILES = [
+  'muse-native.yaml',
+  'package.json',
+  'tsconfig.json',
+  'README.md',
+  path.join('src', 'App.tsx'),
+];
 
 function printInitUsage() {
   process.stderr.write('Usage: muse-native init <dir>\n');
 }
 
-function runInit(dir) {
-  if (!dir) {
+function runInit(dir, opts) {
+  if (!dir || (typeof dir === 'string' && dir.startsWith('-'))) {
     printInitUsage();
     process.exitCode = 2;
     return;
@@ -36,7 +43,8 @@ function runInit(dir) {
     }
     entries = null;
   }
-  if (entries !== null && entries.length > 0) {
+  const force = Boolean(opts && opts.force);
+  if (entries !== null && entries.length > 0 && !force) {
     process.stderr.write(`Error: directory '${dir}' already exists and is not empty.\n`);
     process.exitCode = 1;
     return;
@@ -77,6 +85,7 @@ function runInit(dir) {
     return;
   }
   process.stdout.write(`Scaffolded new muse-native project in ${dir}\n`);
+  process.stdout.write(`Next steps:\n  cd ${dir}\n  muse-native build .\n  muse-native run .\n`);
   process.exitCode = 0;
 }
 
