@@ -32,6 +32,9 @@ add_library(net
   src/cronet_transport.cc
   src/transport_policy.cc
   src/quic_fallback.cc
+  src/storage_model.cc
+  src/storage_permissions.cc
+  src/connectivity.cc
 )
 target_include_directories(net PUBLIC include)
 target_compile_options(net PRIVATE -Wall -Wextra -Wpedantic)
