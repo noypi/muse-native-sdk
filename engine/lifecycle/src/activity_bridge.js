@@ -105,6 +105,19 @@ function createActivityBridge(hub, store) {
     return { applied: result.applied, state: result.state };
   }
 
+  function onConfigurationChanged(change, idempotencyKey) {
+    checkKey(idempotencyKey);
+    if (seenKeys.has(idempotencyKey)) {
+      return { applied: false, state: lastState, recreated: false };
+    }
+    const result = hub.dispatch(`config:${change}`);
+    seenKeys.add(idempotencyKey);
+    if (result && typeof result.state === 'string') {
+      lastState = result.state;
+    }
+    return { applied: result.applied, state: result.state, recreated: false };
+  }
+
   function saveSnapshot(payload) {
     const packed = guard.pack(payload);
     // Spilled scope values live in the guard's per-instance storage, which is
@@ -162,7 +175,7 @@ function createActivityBridge(hub, store) {
     }
   }
 
-  return { onActivityEvent, saveSnapshot, relaunch };
+  return { onActivityEvent, onConfigurationChanged, saveSnapshot, relaunch };
 }
 
 module.exports = { createActivityBridge };
