@@ -13,9 +13,15 @@ add_library(runtime
   src/js_engine.cpp
   src/vulkan_baseline.cpp
   src/renderer.cpp
+  src/jni_bridge.cpp
 )
 target_include_directories(runtime PUBLIC include)
 target_compile_options(runtime PRIVATE -Wall -Wextra -Wpedantic)
+
+find_package(JNI)
+if(JNI_FOUND)
+  target_include_directories(runtime PUBLIC ${JNI_INCLUDE_DIRS})
+endif()
 
 add_executable(instantiate_test tests/instantiate_test.cpp)
 target_link_libraries(instantiate_test PRIVATE runtime)
@@ -164,3 +170,17 @@ add_executable(ime_depth_test tests/ime_depth_test.cpp)
 target_link_libraries(ime_depth_test PRIVATE runtime)
 target_compile_options(ime_depth_test PRIVATE -Wall -Wextra -Wpedantic)
 add_test(NAME ime_depth_test COMMAND ime_depth_test)
+
+add_executable(jni_boundary_test tests/jni_boundary_test.cpp)
+target_link_libraries(jni_boundary_test PRIVATE runtime)
+target_compile_options(jni_boundary_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME jni_boundary_test COMMAND jni_boundary_test)
+
+# T3 hermetic dual-ABI gate (permanent wiring; no NDK required).
+# Real Android configure (ANDROID_ABI defined via T1 -C lane) skips this;
+# plain host configure defines both <root>-<abi>/libRuntime.so outputs plus
+# the android_build_gate ctest entry. Guarded so the -C hermetic preload
+# (CMAKE_PROJECT_INCLUDE re-inclusion) does not double-define targets.
+if(NOT DEFINED ANDROID_ABI AND NOT TARGET Runtime_android_arm64_v8a)
+  include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/android-ndk.cmake")
+endif()
