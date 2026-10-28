@@ -67,7 +67,12 @@ foreach(TEST_SRC
     tests/migration_test.cpp
     tests/outbox_transaction_test.cpp
     tests/reactive_query_test.cpp
-    tests/store_open_test.cpp)
+    tests/store_open_test.cpp
+    tests/cronet_api_test.cpp
+    tests/transport_policy_test.cpp
+    tests/connectivity_state_test.cpp
+    tests/quic_fallback_test.cpp
+    tests/storage_model_test.cpp)
   get_filename_component(TEST_NAME ${TEST_SRC} NAME_WE)
   add_executable(${TEST_NAME} ${TEST_SRC})
   target_link_libraries(${TEST_NAME} PRIVATE net)

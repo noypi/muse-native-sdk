@@ -1,15 +1,11 @@
-// Batch 1 contract tests — FR-NET-007 / AC-NET-011 (TC-NET-011).
-// T2: build/init-time transport selection honoring shared pinning + cleartext.
-// Binds ONLY to the T2 `Interface:` line; never to implementation.
-// Hermetic: fake ITlsPolicy with allow/deny matrix; socket use observed via a
-// counting factory fake passed as the factory plus inner-delegation counting
-// through the public boundary (deny must never show the inner 200/"ok"
-// signature; allow must); no downloads, no live network, no env/config reads.
-// ASSUMPTION (A-T2-seam): Origin/Request/Response/Error shapes beyond the T2
-// `Interface:` line are minimal-test seams (Origin{host,scheme}, Request{url},
-// Response{status,err}, Error::kPolicyDenied, AppNetConfig{transport}); the
-// settled contract is the verbatim `Interface:` line in T2.md. T1's ITransport
-// seam is a T1 production file; these tests treat it as consumed.
+// FR-NET-007 / AC-NET-011 (TC-NET-011) — transport selection + policy gate.
+// Binds to main's surface (net/transport.h, net/types.h, net/transport_policy.h):
+// StatusCode (kOk, zero-cast failure), Error::kTransport (main's vocabulary has
+// no kPolicyDenied — denial IS failure-to-execute: zero status + kTransport),
+// Origin{scheme,host,port} (policy keys on host; port ignored).
+// Hermetic: fake ITlsPolicy allow/deny matrix; socket use observed via a
+// counting factory fake plus inner-delegation signatures through the public
+// boundary; no downloads, no live network, no env/config reads.
 #include <cstdio>
 #include <memory>
 #include <stdexcept>
@@ -17,8 +13,12 @@
 
 #include "net/transport.h"
 #include "net/transport_policy.h"
+#include "net/types.h"
 
 namespace {
+
+constexpr muse::net::StatusCode kZeroStatus =
+    static_cast<muse::net::StatusCode>(0);
 
 // Fake TLS policy: programmable pin + cleartext decisions. Deny by default.
 class FakeTlsPolicy : public muse::net::ITlsPolicy {
@@ -54,12 +54,11 @@ muse::net::Request httpReq() {
 // factory fake is passed on every CreateTransport call to prove the factory
 // path is carried (factoryUses stays 0 by construction — production never
 // calls it), while actual socket/inner use is observed through delegation:
-// deny responses must carry kPolicyDenied and never the inner's 200/"ok"
-// signature, and allow responses must carry the inner's 200/"ok" signature
-// (proving the inner transport was consulted). A regression that touches the
-// inner transport (or factory) before the policy decision would return the
-// inner's 200/"ok" on a deny path and fail these assertions — the old plain
-// `socketUseCount` variable could not observe that (nothing incremented it).
+// deny responses must carry zero status + kTransport and never the inner's
+// kOk/"ok" signature, and allow responses must carry the inner's kOk/"ok"
+// signature (proving the inner transport was consulted). A regression that
+// touches the inner transport (or factory) before the policy decision would
+// return the inner's kOk/"ok" on a deny path and fail these assertions.
 class CountingSocketFactory : public muse::net::IQuicSocketFactory {
  public:
   mutable int factoryUses = 0;
@@ -69,20 +68,23 @@ class CountingSocketFactory : public muse::net::IQuicSocketFactory {
 int innerDelegations = 0;
 
 bool isInnerResponse(const muse::net::Response& r) {
-  return r.status == 200 && r.body == "ok" &&
+  return r.status == muse::net::StatusCode::kOk && r.body == "ok" &&
          r.err == muse::net::Error::kNone;
 }
 
-// Deny observation: kPolicyDenied with no inner signature, factory untouched.
+// Deny observation: zero status + kTransport with no inner signature,
+// factory untouched. (Denial shares the failure-to-execute shape by design.)
 bool expectDeniedBeforeSocketUse(const muse::net::Response& r,
                                  const CountingSocketFactory& factory) {
-  if (r.status != 0 || r.err != muse::net::Error::kPolicyDenied) return false;
+  if (r.status != kZeroStatus || r.err != muse::net::Error::kTransport) {
+    return false;
+  }
   if (isInnerResponse(r)) return false;
   if (factory.factoryUses != 0) return false;
   return innerDelegations == 0;
 }
 
-// Allow observation: inner consulted (200/"ok"), factory still untouched.
+// Allow observation: inner consulted (kOk/"ok"), factory still untouched.
 bool expectAllowedViaInner(const muse::net::Response& r,
                            const CountingSocketFactory& factory) {
   if (!isInnerResponse(r)) return false;
@@ -116,7 +118,7 @@ muse::net::Request ipv6Req(const std::string& url) {
 }
 
 // Throwing TLS policy: every gate consultation throws. Production must fail
-// closed (kPolicyDenied, never throws, inner untouched) — AC-NET-011.
+// closed (zero status + kTransport, never throws, inner untouched).
 class ThrowingTlsPolicy : public muse::net::ITlsPolicy {
  public:
   bool isPinned(const muse::net::Origin& o) const override {
@@ -131,7 +133,7 @@ class ThrowingTlsPolicy : public muse::net::ITlsPolicy {
 
 }  // namespace
 
-// Pinned-mismatch returns kPolicyDenied with zero socket calls (default).
+// Pinned-mismatch returns zero-status/kTransport with zero socket calls (default).
 static bool check_default_pinned_mismatch_denied() {
   innerDelegations = 0;
   CountingSocketFactory factory;
@@ -145,7 +147,7 @@ static bool check_default_pinned_mismatch_denied() {
   return expectDeniedBeforeSocketUse(r, factory);
 }
 
-// Pinned-mismatch returns kPolicyDenied with zero socket calls (cronet).
+// Pinned-mismatch returns zero-status/kTransport with zero socket calls (cronet).
 static bool check_cronet_pinned_mismatch_denied() {
   innerDelegations = 0;
   CountingSocketFactory factory;
@@ -159,7 +161,7 @@ static bool check_cronet_pinned_mismatch_denied() {
   return expectDeniedBeforeSocketUse(r, factory);
 }
 
-// Cleartext-denied origin returns kPolicyDenied with zero socket calls (both).
+// Cleartext-denied origin returns zero-status/kTransport, zero socket calls (both).
 static bool check_cleartext_denied_both() {
   FakeTlsPolicy tls;
   tls.pinOk = true;
@@ -178,7 +180,7 @@ static bool check_cleartext_denied_both() {
   return true;
 }
 
-// Allowed origins proceed past policy on both transports (no kPolicyDenied).
+// Allowed origins proceed past policy on both transports (no denial).
 static bool check_allowed_origins_proceed_both() {
   FakeTlsPolicy tls;
   tls.pinOk = true;
@@ -211,10 +213,12 @@ static bool check_selection_yields_requested_kind() {
   c.transport = muse::net::TransportKind::kCronet;
   auto td = muse::net::CreateTransport(d, tls, nullptr);
   auto tc = muse::net::CreateTransport(c, tls, nullptr);
-  return td->name() != tc->name();
+  if (td->name() == tc->name()) return false;
+  if (td->name() != "default" || tc->name() != "cronet") return false;
+  return true;
 }
 
-// Malformed/oversized URL fails closed (kPolicyDenied or kTransport), never throws.
+// Malformed/oversized URL fails closed (zero status + kTransport), never throws.
 static bool check_malformed_url_fails_closed_never_throws() {
   FakeTlsPolicy tls;
   muse::net::AppNetConfig cfg;
@@ -226,9 +230,8 @@ static bool check_malformed_url_fails_closed_never_throws() {
   r.url = std::string(65536, 'x');
   try {
     muse::net::Response resp = t->execute(r, ctx);
-    return resp.status == 0 &&
-           (resp.err == muse::net::Error::kPolicyDenied ||
-            resp.err == muse::net::Error::kTransport);
+    return resp.status == kZeroStatus &&
+           resp.err == muse::net::Error::kTransport;
   } catch (...) {
     return false;
   }
@@ -250,7 +253,7 @@ static bool check_ipv6_bare_literal_kept_whole() {
   return innerDelegations > 0;
 }
 
-// Bracketed IPv6 literal with port strips only the port suffix (" ]:443 "):
+// Bracketed IPv6 literal with port strips only the port suffix:
 // https://[::1]:443/ must consult the policy with host "[::1]".
 static bool check_ipv6_literal_with_port_stripped() {
   innerDelegations = 0;
@@ -266,8 +269,8 @@ static bool check_ipv6_literal_with_port_stripped() {
   return innerDelegations > 0;
 }
 
-// Throwing ITlsPolicy fails closed: every gate path returns kPolicyDenied,
-// never throws, inner untouched (both transports, both schemes) — AC-NET-011.
+// Throwing ITlsPolicy fails closed: every gate path returns zero-status/
+// kTransport, never throws, inner untouched (both transports, both schemes).
 static bool check_throwing_tls_policy_fails_closed_policy_denied() {
   ThrowingTlsPolicy tls;
   muse::net::ExecCtx ctx;
@@ -293,7 +296,7 @@ static bool check_throwing_tls_policy_fails_closed_policy_denied() {
 
 // Credentialed/non-default-port URL keys the policy on the host alone:
 // "https://user:pass@host:8443/" consults "host" (userinfo/port stripped),
-// while "https://host@evil/" consults "evil" (rightmost '@' wins) — AC-NET-011.
+// while "https://host@evil/" consults "evil" (rightmost '@' wins).
 static bool check_credentialed_url_keys_policy_on_host_alone() {
   {
     innerDelegations = 0;
@@ -326,14 +329,14 @@ static bool check_credentialed_url_keys_policy_on_host_alone() {
   return true;
 }
 
-#define RUN_CASE(name)                           \
-  do {                                           \
-    if (!(name)()) {                             \
-      std::printf("FAIL %s\n", #name);           \
-      ++failures;                                \
-    } else {                                     \
-      std::printf("PASS %s\n", #name);           \
-    }                                            \
+#define RUN_CASE(name)                         \
+  do {                                         \
+    if (!(name)()) {                           \
+      std::printf("FAIL %s\n", #name);         \
+      ++failures;                              \
+    } else {                                   \
+      std::printf("PASS %s\n", #name);         \
+    }                                          \
   } while (0)
 
 int main() {

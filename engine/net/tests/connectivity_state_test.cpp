@@ -59,6 +59,7 @@ muse::net::Origin makeOrigin(const std::string& scheme,
   muse::net::Origin origin;
   origin.scheme = scheme;
   origin.host = host;
+  origin.port = (scheme == "https") ? 443 : 80;
   return origin;
 }
 
