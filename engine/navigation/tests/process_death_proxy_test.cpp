@@ -58,10 +58,11 @@ std::string homeSnapshot() {
 // Host-side device-lab proxy: serialize the live bridge, destroy the graph
 // (a fresh bridge stands in for the relaunched process), restore the blob,
 // and report 0 iff the restore commits and the snapshot is bit-identical.
-// `maxBytes` documents the persist budget; budget enforcement itself is
-// T3 `truncateSnapshot` work applied by the caller, not by this proxy.
+// `maxBytes` is the persist budget, enforced via T3 `truncateSnapshot`
+// applied by the caller side of this proxy (plan T6 note): the blob is
+// truncated to budget before the kill, so an oversize blob exercises the
+// T3 drop-priority path instead of round-tripping unbounded.
 int simulateProcessDeath(RouterBridge& b, size_t maxBytes) {
-  (void)maxBytes;
   std::string blob;
   try {
     blob = b.snapshotForPersist();
@@ -69,6 +70,13 @@ int simulateProcessDeath(RouterBridge& b, size_t maxBytes) {
     return 1;
   }
   if (blob.empty()) return 2;
+  try {
+    SnapshotResult t = truncateSnapshot(blob, maxBytes, TelemetrySink{});
+    if (!t.ok) return 9;
+    blob = t.blob;
+  } catch (...) {
+    return 1;
+  }
   RouterBridge relaunched(kRoutes);
   bool ok = false;
   try {
@@ -132,15 +140,34 @@ bool check_proxy_scroll_focus_with_selection_survive() {
   }
   if (!ok) return false;
   // Structural state restored; content section (scroll + selection) rode
-  // the blob instead of being stripped or corrupting the commit.
-  std::string snap = b.snapshotForPersist();
+  // the blob instead of being stripped or corrupting the commit. Install
+  // matching providers on the relaunched bridge (a fresh process re-binds
+  // its lists/text hooks on start) and assert the re-persisted blob still
+  // carries the scroll offset and the focus selection.
+  try {
+    b.setScrollProvider(scroll);
+    b.setFocusProvider(focus);
+  } catch (...) {
+    return false;
+  }
+  std::string snap;
+  try {
+    snap = b.snapshotForPersist();
+  } catch (...) {
+    return false;
+  }
   if (snap.empty() || snap.rfind("NAV1;", 0) != 0) return false;
+  if (snap.find("120") == std::string::npos) return false;
+  if (snap.find("field=comment,sel=3-7") == std::string::npos) return false;
   NavGraph expect(kRoutes);
   expect.apply(NavOp{NavOpType::Push, "details", 0});
   std::string structural = cap.blob;
   std::string::size_type pos = structural.find(";content=");
   if (pos != std::string::npos) structural.erase(pos);
-  return snap == structural && expect.serialize() == structural;
+  std::string repersistStructural = snap;
+  pos = repersistStructural.find(";content=");
+  if (pos != std::string::npos) repersistStructural.erase(pos);
+  return repersistStructural == structural && expect.serialize() == structural;
 }
 
 bool check_proxy_v1_snapshot_migrates() {
@@ -194,6 +221,44 @@ bool check_proxy_unknown_route_degrades_home_true() {
   return ok && b.snapshotForPersist() == homeSnapshot();
 }
 
+bool check_proxy_budget_truncates_then_restores() {
+  // T3 budget path applied caller-side: truncating a content blob to a
+  // tight budget fits the budget, raises the truncated flag, and the
+  // truncated blob still restores.
+  NavGraph g(kRoutes);
+  g.apply(NavOp{NavOpType::Push, "details", 0});
+  ScrollProvider scroll = [](const std::string& routeId) -> std::string {
+    if (routeId == "details") return "120";
+    return "";
+  };
+  FocusProvider focus = [](const std::string& routeId) -> std::string {
+    if (routeId == "details") return "field=comment,sel=3-7";
+    return "";
+  };
+  SnapshotResult cap = captureSnapshotWithContent(g, scroll, focus);
+  if (!cap.ok) return false;
+  std::string structural = cap.blob;
+  std::string::size_type pos = structural.find(";content=");
+  if (pos != std::string::npos) structural.erase(pos);
+  size_t maxBytes = structural.size();
+  SnapshotResult t;
+  try {
+    t = truncateSnapshot(cap.blob, maxBytes, TelemetrySink{});
+  } catch (...) {
+    return false;
+  }
+  if (!t.ok || !t.truncated) return false;
+  if (t.blob.size() > maxBytes) return false;
+  RouterBridge b(kRoutes);
+  bool ok = false;
+  try {
+    ok = b.restoreFromLifeSave(t.blob);
+  } catch (...) {
+    return false;
+  }
+  return ok;
+}
+
 bool check_proxy_never_throws_no_crash() {
   bool noThrow = true;
   try {
@@ -224,6 +289,8 @@ int main() {
               "proxy_corrupt_returns_false");
   EXPECT_TRUE(check_proxy_unknown_route_degrades_home_true(),
               "proxy_unknown_route_degrades_home_true");
+  EXPECT_TRUE(check_proxy_budget_truncates_then_restores(),
+              "proxy_budget_truncates_then_restores");
   EXPECT_TRUE(check_proxy_never_throws_no_crash(),
               "proxy_never_throws_no_crash");
   if (failures > 0) {

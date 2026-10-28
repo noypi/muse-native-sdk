@@ -11,6 +11,8 @@ namespace {
 // this minimal registry; anything structurally sound but referencing an
 // outside route degrades to home (UNKNOWN_ROUTE) instead of crashing.
 // Kept in sync with the route table used by the T6 contract tests.
+// NOTE: test-stand-in registry only — wire to the app route table before
+// device-lab (no behavior change in this run).
 const std::vector<std::string>& KnownRoutes() {
   static const std::vector<std::string> kRoutes = {"home", "details",
                                                    "settings"};
