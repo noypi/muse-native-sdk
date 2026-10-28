@@ -66,4 +66,16 @@ StatusOr<std::vector<FontHandle>> discoverFonts(const FontQuery& q);
 StatusOr<FontHandle> resolveFallbackForScript(std::uint32_t script_tag,
                                               const char* bcp47_locale) noexcept;
 
+// FR-TEXT-011 / AC-TEXT-026: full fallback chain script/locale ->
+// generic family -> bundled last-resort face. Walks the T1 matcher first,
+// then the generic-family step, then the bundled face terminus; never
+// returns Status::kMissingGlyph while the bundled face is present (returns
+// it instead). Unlike resolveFallbackForScript, unknown script/locale/family
+// terminates at the bundled face, NOT kMissingGlyph. Pure C++, zero JNI on
+// the call path. Null/empty locale/family mean default treatment: resolves
+// or yields kMissingGlyph, never throws. Never throws.
+StatusOr<FontHandle> resolveFallbackChain(std::uint32_t script_tag,
+                                          const char* bcp47_locale,
+                                          const char* generic_family) noexcept;
+
 }  // namespace muse::text

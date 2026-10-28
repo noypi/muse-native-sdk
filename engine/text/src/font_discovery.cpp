@@ -243,4 +243,75 @@ StatusOr<FontHandle> resolveFallbackForScript(
   return Status::kMissingGlyph;
 }
 
+// FR-TEXT-011 / AC-TEXT-026: full fallback chain. Step 1 is the T1
+// script+locale matcher above; step 2 is the generic-family step; step 3 is
+// the bundled last-resort terminus. Deliberately differs from T1: unknown
+// script/locale/family terminates at the bundled face (ok(), non-zero)
+// instead of Status::kMissingGlyph, so the chain never reports tofu while
+// the bundled face is present. Allocation-free and noexcept-safe: no
+// std::string/vector construction on the nullable inputs (manual ASCII
+// compares only), so null/empty locale/family can only resolve, never throw.
+StatusOr<FontHandle> resolveFallbackChain(
+    std::uint32_t script_tag, const char* bcp47_locale,
+    const char* generic_family) noexcept {
+  // Step 1: T1 matcher (covers every supported script; locale selects only
+  // the Hani variant, unknown/null/empty locale falls back to Hans).
+  auto specific = resolveFallbackForScript(script_tag, bcp47_locale);
+  if (specific.ok()) {
+    return specific;
+  }
+  // Step 2: generic-family step for supported scripts. A known family name
+  // yields its script-covered face; unknown/null/empty family falls through
+  // to the bundled terminus below. Manual compare keeps this noexcept-safe
+  // on nullable input (no std::string construction from nullptr).
+  const SystemFontEnumerator enumerator;
+  if (generic_family != nullptr && generic_family[0] != '\0' &&
+      enumerator.SupportsScript(script_tag)) {
+    auto same = [](const char* a, const char* b) noexcept -> bool {
+      unsigned i = 0;
+      for (;; ++i) {
+        if (a[i] != b[i]) return false;
+        if (a[i] == '\0') return true;
+      }
+    };
+    bool known = same(generic_family, "sans-serif") ||
+                 same(generic_family, "serif") ||
+                 same(generic_family, "monospace") ||
+                 same(generic_family, "cursive") ||
+                 same(generic_family, "fantasy") ||
+                 same(generic_family, "Noto Sans Arabic");
+    if (known) {
+      // Mirror FamilyFaceId/GenericFaces without allocating: a known family
+      // always has script coverage on a supported script here (step 1 would
+      // already have returned it), so the generic per-script face is the
+      // deterministic step-2 answer.
+      switch (script_tag) {
+        case kArab:
+          return FontHandle(kGenericArabId);
+        case kCyrl:
+          return FontHandle(kGenericCyrlId);
+        case kDeva:
+          return FontHandle(kGenericDevaId);
+        case kHebr:
+          return FontHandle(kSansHebrId);
+        case kThai:
+          return FontHandle(kSansThaiId);
+        case kKhmr:
+          return FontHandle(kSansKhmrId);
+        case kMymr:
+          return FontHandle(kSansMymrId);
+        case kHani:
+          return FontHandle(kSansHaniHansId);
+        default:
+          return FontHandle(kGenericLatnId);
+      }
+    }
+  }
+  // Step 3: bundled last-resort terminus. Script-independent and non-zero,
+  // so every input — including unknown script/locale/family — terminates
+  // here with ok() instead of kMissingGlyph.
+  (void)bcp47_locale;
+  return enumerator.LastResortFace(script_tag);
+}
+
 }  // namespace muse::text

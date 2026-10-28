@@ -53,6 +53,13 @@ EmojiRun shapeEmoji(const std::uint8_t* utf8, std::size_t len,
 
 // Returns true iff the whole input decodes cleanly, passes sequence
 // validation, and forms exactly one grapheme cluster. Never throws.
-bool isSingleCluster(const std::uint8_t* utf8, std::size_t len);
+bool isSingleCluster(const std::uint8_t* utf8, std::size_t len) noexcept;
+
+// T4 (FR-TEXT-010 / AC-TEXT-021): StatusOr-returning emoji-run entry point.
+// Same clustering/layer semantics as shapeEmoji, but malformed input
+// (including null/empty) yields Status::kUnsupportedSequence instead of a
+// value run. Never throws; zero JNI.
+StatusOr<EmojiRun> shapeEmojiRun(const std::uint8_t* utf8, std::size_t len,
+                                 FontHandle emojiFace) noexcept;
 
 }  // namespace muse::text

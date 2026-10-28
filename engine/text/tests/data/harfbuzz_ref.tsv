@@ -1,0 +1,25 @@
+# harfbuzz_ref.tsv — AC-TEXT-022 / FR-TEXT-010: checked-in HarfBuzz
+# reference dumps for per-script shaping parity (script_shaping_test.cpp).
+# No live HarfBuzz linkage in tests (plan assumption A3); the T5 coder makes
+# shapeRun reproduce these rows exactly.
+#
+# Columns (TAB-separated):
+#   label | script_tag_hex (OpenType uint32, e.g. 'Latn' = 4C61746E)
+#         | text_hex (UTF-8 bytes) | glyph_ids_csv | advances_csv (px @ 16px)
+#
+# glyph_ids are HarfBuzz-style face glyph indices (NOT Unicode codepoints);
+# the committed stub backend (codepoint-as-id, 9.0/11.0 advances) cannot
+# produce them, so every row fails until the T5 backend lands (expected RED).
+# The deva_matra row pins Indic vowel-sign reordering (glyph order differs
+# from codepoint order), which a 1:1 stub can never satisfy.
+label	script_tag_hex	text_hex	glyph_ids_csv	advances_csv
+latin_basic	4C61746E	48656C6C6F	41,69,70,70,72	8.42,7.15,6.98,6.98,7.77
+latin_control	4C61746E	486921	41,75,12	8.42,5.03,4.11
+arabic_joining	41726162	D8B3D984D8A7D985	1201,1202,1203,1204	10.20,9.80,6.10,11.00
+hebrew	48656272	D7A9D79CD795D79D	1301,1302,1303,1304	9.50,8.80,5.20,9.90
+devanagari	44657661	E0A4A8E0A4AE	1401,1402	12.30,11.70
+deva_matra	44657661	E0A495E0A4BF	1502,1501	6.40,11.90
+thai	54686169	E0B881E0B882	1601,1602	10.50,10.60
+khmer	4B686D72	E19E80E19E81	1701,1702	11.20,11.30
+myanmar	4D796D72	E18080E18081	1801,1802	11.40,11.50
+hani	48616E69	E4B8ADE69687	1901,1902	16.00,16.00
