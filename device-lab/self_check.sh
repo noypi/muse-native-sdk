@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Hermetic self-check for the batch-2 device-lab harness (T5, T6).
+# Hermetic self-check for the batch-2+3 device-lab harness (T5, T6, T7, T8).
 # Verifies WITHOUT any device/emulator:
 #   1. every harness script parses (bash -n),
 #   2. both suites fail CLOSED with a missing-harness message when the SDK/adb
@@ -13,12 +13,12 @@ pass=0; fail=0
 ok()   { echo "ok: $1"; pass=$((pass+1)); }
 bad()  { echo "NOT-OK: $1" >&2; fail=$((fail+1)); }
 
-for s in "$HERE/run.sh" "$HERE/ime-smoke/ime_smoke.sh" "$HERE/ime-inset/ime_inset.sh" "$HERE/self_check.sh"; do
+for s in "$HERE/run.sh" "$HERE/ime-smoke/ime_smoke.sh" "$HERE/ime-inset/ime_inset.sh" "$HERE/touch-smoke/touch_smoke.sh" "$HERE/config-change/config_change.sh" "$HERE/self_check.sh"; do
   if bash -n "$s"; then ok "syntax $s"; else bad "syntax $s"; fi
 done
 
 # Forced missing-harness run: bogus adb + empty SDK home => must exit 2 naming the harness.
-for suite in ime-smoke ime-inset; do
+for suite in ime-smoke ime-inset touch-smoke config-change; do
   out="$(ANDROID_HOME=/nonexistent-sdk-root ANDROID_SDK_ROOT=/nonexistent-sdk-root \
          DEVICE_LAB_ADB=/nonexistent-adb-xyz "$HERE/run.sh" "$suite" 2>&1)"
   rc=$?
@@ -34,7 +34,7 @@ done
 if adb devices 2>/dev/null | awk 'NR>1 && $2 ~ /^(device|emulator)$/ {found=1} END {exit !found}'; then
   echo "skip: device attached — no-device guard not exercised (suites should run for real)"
 else
-  for suite in ime-smoke ime-inset; do
+  for suite in ime-smoke ime-inset touch-smoke config-change; do
     out="$("$HERE/run.sh" "$suite" 2>&1)"; rc=$?
     if [[ $rc -ne 0 ]] && echo "$out" | grep -qi "no emulator/device attached"; then
       ok "$suite names missing emulator/device (rc=$rc)"
