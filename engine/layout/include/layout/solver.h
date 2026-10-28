@@ -54,6 +54,14 @@ class Solver {
   // callers are dropped by the truncation.
   std::size_t constraintCount() const noexcept;
   void truncateConstraints(std::size_t n) noexcept;
+  // Hinge-pin mark owned by the Solver (T6): FormFactorSource snapshots
+  // constraintCount() via setHingePins before appending transient pins and
+  // restores it on the next pass. Lifetime follows the Solver, so a
+  // destroyed solver can never truncate another solver's constraints.
+  std::size_t hingePinMark() const noexcept;
+  bool hasLiveHingePins() const noexcept;
+  void setHingePins(std::size_t mark) noexcept;
+  void clearHingePins() noexcept;
   Box solve(NodeId root);
   const Box& boxOf(NodeId id) const;
 
@@ -82,6 +90,8 @@ class Solver {
   std::vector<Constraint> constraints_;
   std::vector<std::pair<NodeId, LayoutDelegate*>> delegates_;
   bool solved_ = false;
+  std::size_t hingePinMark_ = 0;
+  bool hingePinsLive_ = false;
 };
 
 }  // namespace layout

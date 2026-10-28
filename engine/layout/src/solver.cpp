@@ -71,7 +71,23 @@ void Solver::truncateConstraints(std::size_t n) noexcept {
     constraints_.resize(n);
     solved_ = false;
   }
+  // A truncation at or below the pin mark already removed the pinned run,
+  // so the stored mark is stale: clear it rather than truncating twice.
+  if (hingePinsLive_ && n <= hingePinMark_) {
+    hingePinsLive_ = false;
+  }
 }
+
+std::size_t Solver::hingePinMark() const noexcept { return hingePinMark_; }
+
+bool Solver::hasLiveHingePins() const noexcept { return hingePinsLive_; }
+
+void Solver::setHingePins(std::size_t mark) noexcept {
+  hingePinMark_ = mark;
+  hingePinsLive_ = true;
+}
+
+void Solver::clearHingePins() noexcept { hingePinsLive_ = false; }
 
 Box Solver::solve(NodeId root) {
   if (static_cast<std::size_t>(root) >= nodes_.size()) {

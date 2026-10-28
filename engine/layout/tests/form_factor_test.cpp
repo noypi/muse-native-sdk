@@ -38,6 +38,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdio>
+#include <new>
 #include <vector>
 
 #include "layout/form_factor.h"
@@ -303,6 +304,93 @@ static bool check_repeated_toggles_do_not_grow_constraints() {
   return solver.constraintCount() == base;
 }
 
+// Named case (review pass-2 MINOR regression: hinge-pin table leak/alias —
+// now fixed by solver-owned mark: hasLiveHingePins()/hingePinMark()/
+// setHingePins()/clearHingePins() + truncateConstraints stale-mark guard).
+// Address-reuse/lifecycle: fold a Solver with a FULL hinge (pins live),
+// destroy it while pins are live, construct a new Solver at the SAME address
+// (placement into the same buffer), add caller constraints, run a flat
+// consume — the new solver's caller constraints must never be truncated and
+// frames must be unaffected. Encodes the actual semantics: the mark follows
+// the Solver lifetime (fresh solver has no live pins), so a flat consume on
+// the new solver performs no truncation.
+static bool check_solver_reuse_stale_mark_never_truncates_caller() {
+  alignas(layout::Solver) unsigned char buf[sizeof(layout::Solver)];
+
+  // Phase 1: fold with a FULL hinge so hinge pins go live, then destroy
+  // while pins are still live (no unfold/flat pass clears them).
+  void* firstAddr = nullptr;
+  {
+    auto* s = new (buf) layout::Solver();
+    firstAddr = static_cast<void*>(s);
+    ThreeCol t = build_three_col(*s);
+    s->solve(t.root);
+    layout::FormFactorSource src;
+    src.onWindowLayoutChanged(flat_no_hinge());
+    src.consumeForNextPass(*s, t.root);
+    src.onWindowLayoutChanged(half_opened_middle_hinge());
+    if (!src.consumeForNextPass(*s, t.root)) {
+      s->~Solver();
+      return false;
+    }
+    if (!s->hasLiveHingePins()) {
+      s->~Solver();
+      return false;
+    }
+    s->~Solver();  // destroyed with pins live: no mark may escape.
+  }
+
+  // Phase 2: new Solver at the same address (address reuse). Fresh mark
+  // state: no live pins, so a flat consume must not truncate anything.
+  auto* fresh = new (buf) layout::Solver();
+  if (static_cast<void*>(fresh) != firstAddr) {
+    fresh->~Solver();
+    return false;
+  }
+  if (fresh->hasLiveHingePins()) {
+    fresh->~Solver();
+    return false;
+  }
+  ThreeCol t = build_three_col(*fresh);
+  fresh->solve(t.root);
+  layout::Constraint caller;
+  caller.node = t.cols[0];
+  caller.attribute = 2;  // w
+  caller.constant = 123.0f;
+  caller.weight = 1.0f;
+  fresh->addConstraint(caller);
+  const std::size_t callerCount = fresh->constraintCount();
+  if (callerCount == 0) {
+    fresh->~Solver();
+    return false;
+  }
+  // A stale mark from the dead solver must be meaningless here: with no live
+  // pins, truncateConstraints at/above the count is a no-op and the guard
+  // clears liveness only when pins are actually live.
+  fresh->truncateConstraints(callerCount + 8);
+  if (fresh->constraintCount() != callerCount) {
+    fresh->~Solver();
+    return false;
+  }
+  // Flat consume on the fresh solver: no truncation, caller pin applied.
+  layout::FormFactorSource flat;
+  flat.onWindowLayoutChanged(flat_no_hinge());
+  if (!flat.consumeForNextPass(*fresh, t.root)) {
+    fresh->~Solver();
+    return false;
+  }
+  bool ok = (fresh->constraintCount() == callerCount);
+  const layout::Box& pinned = fresh->boxOf(t.cols[0]);
+  ok = ok && near(pinned.w, 123.0f) && near(pinned.x, 0.0f);
+  const layout::Box& c1 = fresh->boxOf(t.cols[1]);
+  const layout::Box& c2 = fresh->boxOf(t.cols[2]);
+  ok = ok && near(c1.x, 200.0f) && near(c1.w, 200.0f) &&
+       near(c2.x, 400.0f) && near(c2.w, 320.0f);
+  ok = ok && !fresh->hasLiveHingePins();
+  fresh->~Solver();
+  return ok;
+}
+
 #define RUN_CASE(name)                 \
   do {                                 \
     if (!(name)()) {                   \
@@ -325,6 +413,7 @@ int main() {
   RUN_CASE(check_fold_resolves_only_affected_subtrees_no_js);
   RUN_CASE(check_unfold_roundtrip_restores_frames);
   RUN_CASE(check_repeated_toggles_do_not_grow_constraints);
+  RUN_CASE(check_solver_reuse_stale_mark_never_truncates_caller);
   if (failures > 0) {
     std::printf("form_factor_test: %d failing\n", failures);
     return 1;

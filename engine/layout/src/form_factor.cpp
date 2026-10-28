@@ -37,40 +37,10 @@ bool intersectsHinge(const Box& b, const FormFactorState& s) {
 // run pinned by the previous pass (snapshot/restore of the constraint
 // count). Without this a removed hinge would keep shifting/shrinking
 // leaves after unfold-back, and repeated toggles would grow the list
-// without bound. Records are keyed by Solver address in a bounded,
-// allocation-free table; a full table degrades to the old behavior (pins
-// stay until a slot frees) rather than allocating.
-constexpr std::size_t kMaxPinnedSolvers = 8;
-
-struct HingePinRecord {
-  const Solver* solver = nullptr;
-  std::size_t mark = 0;
-  bool live = false;
-};
-
-HingePinRecord g_hingePins[kMaxPinnedSolvers];
-
-HingePinRecord* findHingePins(const Solver* s) noexcept {
-  for (auto& r : g_hingePins) {
-    if (r.solver == s) {
-      return &r;
-    }
-  }
-  return nullptr;
-}
-
-HingePinRecord* claimHingePins(const Solver* s) noexcept {
-  if (HingePinRecord* r = findHingePins(s)) {
-    return r;
-  }
-  for (auto& r : g_hingePins) {
-    if (r.solver == nullptr) {
-      r.solver = s;
-      return &r;
-    }
-  }
-  return nullptr;
-}
+// without bound. The snapshot mark is stored in the Solver itself (see
+// Solver::setHingePins), so lifetime follows the solver: destroying a
+// solver while pins are live cannot leak a slot or truncate another
+// solver's constraints on address reuse.
 
 }  // namespace
 
@@ -123,11 +93,9 @@ bool FormFactorSource::consumeForNextPass(Solver& s, NodeId root) {
   // Drop this solver's hinge pins from the previous pass before solving:
   // Solver::solve projects every accumulated pin, so stale pins would
   // otherwise keep the post-fold frames after the hinge is gone.
-  if (HingePinRecord* prev = findHingePins(&s)) {
-    if (prev->live) {
-      s.truncateConstraints(prev->mark);
-      prev->live = false;
-    }
+  if (s.hasLiveHingePins()) {
+    s.truncateConstraints(s.hingePinMark());
+    s.clearHingePins();
   }
   s.solve(root);
   // FULL-occlusion hinge: move affected subtrees off the hinge rect via
@@ -184,10 +152,7 @@ bool FormFactorSource::consumeForNextPass(Solver& s, NodeId root) {
       s.solve(root);
       // The pins above form a trailing run starting at pinMark: remember
       // it so the next pass truncates exactly these pins before solving.
-      if (HingePinRecord* rec = claimHingePins(&s)) {
-        rec->mark = pinMark;
-        rec->live = true;
-      }
+      s.setHingePins(pinMark);
     }
   }
   applied_ = current_;
