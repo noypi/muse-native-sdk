@@ -34,10 +34,13 @@
 // ASSUMPTION (no-JS proof): as in form_factor_test.cpp, the counter below
 // can only be incremented by a cross-boundary call; no such call exists on
 // this path, so the fold cases assert it stays 0.
+#include <algorithm>
 #include <cstdio>
 #include <utility>
+#include <vector>
 
 #include "layout/form_factor.h"
+#include "layout/solver.h"
 
 namespace {
 
@@ -99,6 +102,13 @@ static_assert(noexcept(std::declval<layout::FormFactorSource&>()
               "onFoldingFeatureChanged must be noexcept");
 static_assert(noexcept(std::declval<const layout::FormFactorSource&>().current()),
               "current must be noexcept");
+// T5 (TC-LAYOUT-043 hermetic half): consumeForNextPass is noexcept and
+// returns false when state is unchanged (extended semantics).
+static_assert(noexcept(std::declval<layout::FormFactorSource&>()
+                           .consumeForNextPass(
+                               std::declval<layout::Solver&>(),
+                               std::declval<layout::NodeId>())),
+              "consumeForNextPass must be noexcept");
 
 // Named case: a folding-feature update is queryable via current() field for
 // field (state, orientation, occlusion, hinge angle + presence flag,
@@ -247,6 +257,169 @@ static bool check_extreme_values_never_throw_and_stay_queryable() {
          g_jsObserverCalls == 0;
 }
 
+// ---- T5 unfold-scope cases (TC-LAYOUT-043 hermetic half) ----
+// On HALF_OPENED↔FLAT transitions only subtrees intersecting the hinge
+// region (the FoldingFeature bounds rect under FULL occlusion) are
+// re-solved; the pass performs no Activity recreation (in-place contract:
+// no throw, no JS/cross-boundary call) and leaves no content under a FULL
+// hinge. Device-lab half of TC-LAYOUT-043 stays external (see T5.md).
+//
+// ASSUMPTION (hinge source): the hinge region is the FoldingFeature
+// `bounds` rect carried by `onFoldingFeatureChanged` when
+// `occlusion == OcclusionType::Full`. Cases drive the transition purely via
+// `onFoldingFeatureChanged` + `consumeForNextPass`/`affectedSubtrees` and
+// assert solved-box geometry; they never touch the compat
+// `onWindowLayoutChanged` path.
+// ASSUMPTION (unaffected stability): "re-solves only hinge-affected
+// subtrees" is observable as byte-identical (epsilon) solved boxes for
+// non-intersecting siblings across the pass; no per-node dirty-set accessor
+// is asserted (the Interface line pins none).
+// ASSUMPTION (no-content proof): a solved box leaves "no content under FULL
+// hinge" when it does not overlap the hinge rect with nonzero area;
+// fixtures keep the hinge strictly inside/outside child boxes, so
+// edge-touch semantics stay unasserted.
+
+namespace t5 {
+
+struct ThreeCol {
+  layout::NodeId root = layout::kInvalidNodeId;
+  layout::NodeId cols[3];
+};
+
+ThreeCol build_three_col(layout::Solver& solver) {
+  ThreeCol t;
+  t.root = solver.addNode(layout::Backend::Flex, layout::kInvalidNodeId);
+  solver.setFlex(t.root, 720.0f, 800.0f, 0.0f);
+  const float widths[3] = {200.0f, 200.0f, 320.0f};
+  for (int i = 0; i < 3; ++i) {
+    t.cols[i] = solver.addNode(layout::Backend::Flex, t.root);
+    solver.setFlex(t.cols[i], widths[i], 800.0f, 0.0f);
+  }
+  return t;
+}
+
+layout::FoldingFeatureState flat_state() {
+  layout::FoldingFeatureState s{};
+  s.state = layout::FoldState::Flat;
+  s.orientation = layout::FoldOrientation::Vertical;
+  s.occlusion = layout::OcclusionType::None;
+  s.hingeAngleDeg = 180.0f;
+  s.hasHingeAngle = true;
+  s.bounds = layout::Rect{0.0f, 0.0f, 0.0f, 0.0f};
+  return s;
+}
+
+// FULL-occlusion hinge strictly inside the middle column (200..400):
+// x 290..330, full height.
+layout::FoldingFeatureState half_opened_middle_hinge() {
+  layout::FoldingFeatureState s{};
+  s.state = layout::FoldState::HalfOpened;
+  s.orientation = layout::FoldOrientation::Vertical;
+  s.occlusion = layout::OcclusionType::Full;
+  s.hingeAngleDeg = 90.0f;
+  s.hasHingeAngle = true;
+  s.bounds = layout::Rect{290.0f, 0.0f, 40.0f, 800.0f};
+  return s;
+}
+
+bool boxNear(const layout::Box& a, const layout::Box& b) {
+  return near(a.x, b.x) && near(a.y, b.y) && near(a.w, b.w) &&
+         near(a.h, b.h);
+}
+
+bool boxOverlapsRect(const layout::Box& b, const layout::Rect& r) {
+  return b.x < r.x + r.w && r.x < b.x + b.w && b.y < r.y + r.h &&
+         r.y < b.y + b.h;
+}
+
+bool sameSet(std::vector<layout::NodeId> got,
+             std::vector<layout::NodeId> want) {
+  std::sort(got.begin(), got.end());
+  std::sort(want.begin(), want.end());
+  return got == want;
+}
+
+}  // namespace t5
+
+// Named case (T5 error shape): repeating the identical folding state is a
+// no-op — the second consumeForNextPass returns false (no re-solve).
+static bool check_unfold_consume_false_when_unchanged() {
+  layout::Solver solver;
+  t5::ThreeCol t = t5::build_three_col(solver);
+  solver.solve(t.root);
+  layout::FormFactorSource src;
+  src.onFoldingFeatureChanged(t5::half_opened_middle_hinge());
+  if (!src.consumeForNextPass(solver, t.root)) return false;
+  src.onFoldingFeatureChanged(t5::half_opened_middle_hinge());
+  return !src.consumeForNextPass(solver, t.root);
+}
+
+// Named case (TC-LAYOUT-043 hermetic core): HALF_OPENED→FLAT→HALF_OPENED
+// re-solves only hinge-affected subtrees — the affected set is exactly the
+// intersecting middle column, and unaffected siblings keep byte-identical
+// boxes across the fold pass with no JS/recreation call.
+static bool check_unfold_resolves_only_hinge_affected_subtrees() {
+  layout::Solver solver;
+  t5::ThreeCol t = t5::build_three_col(solver);
+  solver.solve(t.root);
+  const layout::Box before0 = solver.boxOf(t.cols[0]);
+  const layout::Box before2 = solver.boxOf(t.cols[2]);
+  layout::FormFactorSource src;
+  src.onFoldingFeatureChanged(t5::flat_state());
+  src.consumeForNextPass(solver, t.root);
+  src.onFoldingFeatureChanged(t5::half_opened_middle_hinge());
+  if (!src.consumeForNextPass(solver, t.root)) return false;
+  if (!t5::sameSet(src.affectedSubtrees(solver, t.root), {t.cols[1]})) {
+    return false;
+  }
+  const layout::Box& after0 = solver.boxOf(t.cols[0]);
+  const layout::Box& after2 = solver.boxOf(t.cols[2]);
+  return t5::boxNear(after0, before0) && t5::boxNear(after2, before2) &&
+         g_jsObserverCalls == 0;
+}
+
+// Named case: FULL-occlusion hinge leaves no content under the hinge rect
+// after the fold pass — no solved child box overlaps the hinge region.
+static bool check_unfold_full_hinge_leaves_no_content_under_hinge() {
+  layout::Solver solver;
+  t5::ThreeCol t = t5::build_three_col(solver);
+  solver.solve(t.root);
+  layout::FormFactorSource src;
+  src.onFoldingFeatureChanged(t5::flat_state());
+  src.consumeForNextPass(solver, t.root);
+  src.onFoldingFeatureChanged(t5::half_opened_middle_hinge());
+  if (!src.consumeForNextPass(solver, t.root)) return false;
+  const layout::Rect hinge = t5::half_opened_middle_hinge().bounds;
+  for (int i = 0; i < 3; ++i) {
+    if (t5::boxOverlapsRect(solver.boxOf(t.cols[i]), hinge)) return false;
+  }
+  return true;
+}
+
+// Named case: unfold round-trip HALF_OPENED→FLAT restores every child frame
+// to its pre-fold value (no stale hinge shift survives hinge removal) with
+// no recreation call.
+static bool check_unfold_roundtrip_restores_frames_no_recreation() {
+  layout::Solver solver;
+  t5::ThreeCol t = t5::build_three_col(solver);
+  solver.solve(t.root);
+  const layout::Box pre0 = solver.boxOf(t.cols[0]);
+  const layout::Box pre1 = solver.boxOf(t.cols[1]);
+  const layout::Box pre2 = solver.boxOf(t.cols[2]);
+  layout::FormFactorSource src;
+  src.onFoldingFeatureChanged(t5::flat_state());
+  src.consumeForNextPass(solver, t.root);
+  src.onFoldingFeatureChanged(t5::half_opened_middle_hinge());
+  if (!src.consumeForNextPass(solver, t.root)) return false;
+  src.onFoldingFeatureChanged(t5::flat_state());
+  src.consumeForNextPass(solver, t.root);
+  const layout::Box& post0 = solver.boxOf(t.cols[0]);
+  const layout::Box& post1 = solver.boxOf(t.cols[1]);
+  const layout::Box& post2 = solver.boxOf(t.cols[2]);
+  return t5::boxNear(post0, pre0) && t5::boxNear(post1, pre1) &&
+         t5::boxNear(post2, pre2) && g_jsObserverCalls == 0;
+}
+
 #define RUN_CASE(name)                 \
   do {                                 \
     if (!(name)()) {                   \
@@ -267,6 +440,10 @@ int main() {
   RUN_CASE(check_occlusion_variants_roundtrip);
   RUN_CASE(check_orientation_roundtrips_opaquely);
   RUN_CASE(check_extreme_values_never_throw_and_stay_queryable);
+  RUN_CASE(check_unfold_consume_false_when_unchanged);
+  RUN_CASE(check_unfold_resolves_only_hinge_affected_subtrees);
+  RUN_CASE(check_unfold_full_hinge_leaves_no_content_under_hinge);
+  RUN_CASE(check_unfold_roundtrip_restores_frames_no_recreation);
   if (failures > 0) {
     std::printf("posture_test: %d failing\n", failures);
     return 1;

@@ -108,7 +108,12 @@ class FormFactorSource {
   // solved box keeps content under the hinge rect. Unaffected subtrees keep
   // their exact frames. Returns false (without re-solving) when the state
   // is unchanged since the last pass.
-  bool consumeForNextPass(Solver& s, NodeId root);
+  //
+  // Lifecycle in-place contract: this path never recreates the host
+  // Activity (or any cross-boundary object) — it only re-solves the pending
+  // subtree in place. It never throws and issues no JS/cross-boundary
+  // calls; a repeated identical state is a no-op returning false.
+  bool consumeForNextPass(Solver& s, NodeId root) noexcept;
 
  private:
   FormFactorCombined current_{};
