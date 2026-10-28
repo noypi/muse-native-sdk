@@ -71,7 +71,7 @@ export type TextInputProps = {
   selection?: TextSelection;
   composing?: string;
   contentType?: 'plain' | 'rich';
-  onSelectionChange?: (TextSelection) => void;
+  onSelectionChange?: (arg0: TextSelection) => void;
 };
 
 export declare function createTextInput(deps: TextInputDeps): TextInputHandle;
