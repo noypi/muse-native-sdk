@@ -15,9 +15,16 @@ export type EditingEngine = {
 };
 
 export type PlatformClipboard = {
-  readText(): string | Promise<string>;
-  writeText(s: string): void | Promise<void>;
+  readText(): string | RichTextPayload | Promise<string | RichTextPayload>;
+  writeText(s: string | RichTextPayload): void | Promise<void>;
   hasText(): boolean;
+};
+
+// T5 (AC-M3-014): opaque span entries carried by the rich clipboard
+// payload — preserved by value, never interpreted.
+export type RichTextPayload = {
+  text: string;
+  spans: unknown[];
 };
 
 export type InsetFrames = {
@@ -36,6 +43,9 @@ export type TextInputDeps = {
   insets: InsetFrames;
   binding?: TwoWayBinding;
   onSelectionChange?: (sel: { start: number; end: number }) => void;
+  // T5 (AC-M3-014): `contentType` arrives via deps per the unit-test
+  // contract (GR-08 T1.10 — see implementation note in textinput.js).
+  contentType?: 'plain' | 'rich';
 };
 
 export type TextInputHandle = {

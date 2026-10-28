@@ -94,6 +94,20 @@ function pasteText(pasted) {
   return '';
 }
 
+// T5 (AC-M3-014): span entries are opaque — preserved by value, never
+// interpreted. Deep-cloned on the way in (paste) and on the way out
+// (copy/cut) so the handle and the clipboard never alias each other.
+function cloneSpans(spans) {
+  if (!Array.isArray(spans)) {
+    return [];
+  }
+  try {
+    return JSON.parse(JSON.stringify(spans));
+  } catch (_) {
+    return spans.slice();
+  }
+}
+
 function createTextInput(deps) {
   const safe = deps === undefined || deps === null ? {} : deps;
   const editingEngine = safe.editingEngine;
@@ -108,6 +122,19 @@ function createTextInput(deps) {
   const onSelectionChange =
     typeof safe.onSelectionChange === 'function' ? safe.onSelectionChange : null;
   const insets = safe.insets;
+  // T5 (AC-M3-014): `contentType` travels in the `createTextInput` deps
+  // alongside `binding`/`onSelectionChange` per the unit-test contract —
+  // the handle is constructed from deps only, so there is no
+  // descriptor-props channel here. If the TSX descriptor props should also
+  // carry it, that routing is a planner/tester (GR-08 T1.10) decision; the
+  // copy/cut payload shape per content type stands either way. Defaults to
+  // `"plain"`: copy/cut write the plain string; under `"rich"` they write
+  // a `{ text, spans }` payload via `deps.clipboard.writeText`.
+  const contentType = safe.contentType === 'rich' ? 'rich' : 'plain';
+  // Spans retained from the last rich paste so a later copy/cut in rich
+  // mode reproduces them. Opaque by value; cleared by plain inserts and
+  // typed edits so stale spans never leak into a new payload.
+  let richSpans = [];
   let committed = readCommittedText(editingEngine, binding);
   let disposed = false;
   const cleanups = [];
@@ -244,7 +271,11 @@ function createTextInput(deps) {
     editingEngine.commitText(s);
     committed = s;
     pushBinding(binding, s);
-    const [ra, rb] = clampToLength(keptA, keptB, currentText().length);
+    if (contentType === 'rich') {
+      // A typed edit replaces the text without span metadata — drop any
+      // retained spans so the next rich copy/cut starts clean.
+      richSpans = [];
+    }    const [ra, rb] = clampToLength(keptA, keptB, currentText().length);
     try {
       editingEngine.setSelection(ra, rb);
     } catch (_) {
@@ -276,6 +307,13 @@ function createTextInput(deps) {
     return { start: ca, end: cb };
   }
 
+  function buildClipboardPayload(slice) {
+    if (contentType === 'rich') {
+      return { text: slice, spans: cloneSpans(richSpans) };
+    }
+    return slice;
+  }
+
   function copy() {
     if (disposed) {
       return;
@@ -290,7 +328,7 @@ function createTextInput(deps) {
       return;
     }
     try {
-      clipboard.writeText(slice);
+      clipboard.writeText(buildClipboardPayload(slice));
     } catch (_) {
       // Clipboard transport failures must not break the field.
     }
@@ -310,7 +348,7 @@ function createTextInput(deps) {
       return;
     }
     try {
-      clipboard.writeText(slice);
+      clipboard.writeText(buildClipboardPayload(slice));
     } catch (_) {
       // Clipboard transport failures must not break the field.
     }
@@ -329,6 +367,19 @@ function createTextInput(deps) {
     const insert = pasteText(pasted);
     if (insert.length === 0 || disposed) {
       return;
+    }
+    // A pasted `{ text, spans }` payload inserts its `.text` through the
+    // ordinary commit path below and — in rich mode — the handle retains
+    // the spans by value for a later copy/cut. Under `"plain"` only the
+    // string travels, so retained spans are dropped.
+    if (contentType === 'rich') {
+      if (pasted !== null && typeof pasted === 'object' && Array.isArray(pasted.spans)) {
+        richSpans = cloneSpans(pasted.spans);
+      } else {
+        richSpans = [];
+      }
+    } else {
+      richSpans = [];
     }
     const sel = getSelection();
     const text = currentText();
