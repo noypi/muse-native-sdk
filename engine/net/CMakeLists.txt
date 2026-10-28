@@ -7,6 +7,9 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 add_library(net
   src/transport.cc
+  src/rpc.cc
+  src/sse.cc
+  src/graphql.cc
   src/http_cache.cc
   src/retry.cc
   src/resilience.cc
@@ -33,7 +36,9 @@ foreach(TEST_SRC
     tests/websocket_test.cpp
     tests/webtransport_test.cpp
     tests/webrtc_session_test.cpp
-    tests/rtc_harness_test.cpp)
+    tests/rtc_harness_test.cpp
+    tests/grpc_interop_test.cpp
+    tests/graphql_subscription_test.cpp)
   get_filename_component(TEST_NAME ${TEST_SRC} NAME_WE)
   add_executable(${TEST_NAME} ${TEST_SRC})
   target_link_libraries(${TEST_NAME} PRIVATE net)
