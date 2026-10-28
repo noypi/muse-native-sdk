@@ -110,4 +110,16 @@ describe('T5 behavioral — scan-keys.sh --strict exit contract (AC-MUSE-004, AC
     const r = runGate([], dir);
     assert.equal(r.status, 0, `clean fixture must pass, got: ${r.stdout}${r.stderr}`);
   });
+
+  it('mid-word sk- words pass --strict: task-affinity + disk-scheduling exit 0 (BUG-MUSE-001)', () => {
+    const dir = mkDir();
+    fs.writeFileSync(
+      path.join(dir, 'lint.py'),
+      '"""FR-NAV-010 T11: Launch-mode / task-affinity contradiction lint.\n' +
+        'disk-scheduling note: no key material here.\n' +
+        '"""\n',
+    );
+    const r = runGate(['--strict'], dir);
+    assert.equal(r.status, 0, `task-affinity fixture must pass --strict, got: ${r.stdout}${r.stderr}`);
+  });
 });
