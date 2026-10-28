@@ -43,4 +43,48 @@ function checkSizes(artifacts, budgets) {
   return { ok: overruns.length === 0, overruns };
 }
 
-module.exports = { checkSizes };
+// T8 — size gate over T5 report rows (NFR-BUILD-019 / AC-BUILD-075).
+// Input shape mirrors recordSizes rows by reference ({ name, installBytes,
+// budget }); budgets remain caller input, never redefined here. Fail closed:
+// non-finite/negative installBytes is an overrun naming the artifact.
+function checkSizeGate(report) {
+  if (!report || typeof report !== 'object' || !Array.isArray(report.rows)) {
+    return { pass: false, deltas: [{ name: '<report>', delta: NaN }] };
+  }
+  const rows = report.rows;
+  const deltas = [];
+  for (const row of rows) {
+    const name =
+      row && typeof row === 'object' && row.name !== undefined
+        ? row.name
+        : String(row);
+    const installBytes =
+      row && typeof row === 'object' ? row.installBytes : undefined;
+    const budget = row && typeof row === 'object' ? row.budget : undefined;
+    if (
+      typeof installBytes !== 'number' ||
+      !Number.isFinite(installBytes) ||
+      installBytes < 0
+    ) {
+      deltas.push({
+        name,
+        delta: Number.isFinite(installBytes) ? installBytes : NaN,
+      });
+      continue;
+    }
+    if (
+      typeof budget !== 'number' ||
+      !Number.isFinite(budget) ||
+      budget < 0
+    ) {
+      deltas.push({ name, delta: NaN });
+      continue;
+    }
+    if (installBytes > budget) {
+      deltas.push({ name, delta: installBytes - budget });
+    }
+  }
+  return { pass: deltas.length === 0, deltas };
+}
+
+module.exports = { checkSizes, checkSizeGate };

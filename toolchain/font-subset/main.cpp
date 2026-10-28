@@ -137,7 +137,9 @@ std::string FormatRange(const KeepRange& r) {
 
 }  // namespace
 
-int main(int argc, const char* argv[]) {
+// Canonical guard entry for the `:toolchain:fontSubset` task (NFR-BUILD-017 /
+// AC-BUILD-063, TC-BUILD-063). Hermetic gate: toolchain/assets/fontSubsetGate.js.
+int main(int argc, char** argv) {
   if (argc > 3) {
     std::fprintf(stderr, "usage: %s [keep_list] [plan]\n",
                  argc > 0 ? argv[0] : "font_subset_guard");
