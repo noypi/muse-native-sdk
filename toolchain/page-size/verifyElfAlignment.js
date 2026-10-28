@@ -13,18 +13,20 @@ const path = require('node:path');
 
 const ALIGNED_PAGE_SIZE = '16384';
 
-function collectSharedObjects(dir, out) {
+function collectSharedObjects(dir, out, violations, root) {
   let entries;
   try {
     entries = fs.readdirSync(dir, { withFileTypes: true });
   } catch (err) {
-    void err;
+    const rel = path.relative(root, dir);
+    const code = err && err.code ? err.code : 'UNKNOWN';
+    violations.push(`${rel}: directory not scannable (${code})`);
     return;
   }
   for (const entry of entries) {
     const full = path.join(dir, entry.name);
     if (entry.isDirectory()) {
-      collectSharedObjects(full, out);
+      collectSharedObjects(full, out, violations, root);
     } else if (entry.isFile() && entry.name.endsWith('.so')) {
       out.push(full);
     }
@@ -50,9 +52,9 @@ function verifyElfAlignment(rootDir) {
   }
 
   const objects = [];
-  collectSharedObjects(root, objects);
-
   const violations = [];
+  collectSharedObjects(root, objects, violations, root);
+
   for (const soPath of objects) {
     let marker = null;
     try {
