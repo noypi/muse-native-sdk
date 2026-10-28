@@ -1,8 +1,23 @@
-// Throwaway fixture owned by run fr-tsx-008; real gallery is FR-SAMPLE-001/FR-M3-007; do not extend.
 import { View, Text } from '@muse/native';
-import { state } from '@muse/core';
 import { ButtonScreen } from "./screens/ButtonScreen";
+import { buildStories } from "./stories";
+
+const manifest = require('../../../packages/native/muse.manifest.json');
+
 export default function App() {
-  const title = state("hi");
-  return (<View><Text>{title.value}</Text><ButtonScreen /></View>);
+  const stories = buildStories(manifest);
+  return (
+    <View>
+      <ButtonScreen />
+      {stories.map((story, index) => {
+        const rendered = story.render();
+        return (
+          <View key={`${story.component}-${story.variant}-${story.state}-${story.theme}-${index}`}>
+            <Text>{`${story.component} ${story.variant} ${story.state} ${story.theme}`}</Text>
+            <Text>{JSON.stringify(rendered)}</Text>
+          </View>
+        );
+      })}
+    </View>
+  );
 }
