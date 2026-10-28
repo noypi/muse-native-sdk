@@ -76,12 +76,12 @@
                   "default": false
                 },
                 "enum": {
-                  "description": "Optional allowlist of accepted string values for this param.",
+                  "description": "Optional allowlist of accepted string values for this param. Reserved for codegen only: trie.h QueryParam has no enum field, so the loader drops it and ValidateUri never enforces it.",
                   "type": "array",
                   "items": { "type": "string" }
                 },
                 "default": {
-                  "description": "Optional default value used when the param is absent and not required.",
+                  "description": "Optional default value used when the param is absent and not required. Reserved for codegen only: the loader drops it and ingress validation never applies it.",
                   "type": "string"
                 }
               }

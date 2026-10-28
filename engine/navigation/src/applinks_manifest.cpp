@@ -254,7 +254,6 @@ LoadManifestResult LoadManifest(const std::string& path) {
     }
     std::ostringstream ss;
     ss << in.rdbuf();
-    Parser parser(ss.str());
     // Keep a copy of the text alive for the parser reference.
     std::string text = ss.str();
     Parser p(text);
@@ -276,17 +275,69 @@ LoadManifestResult LoadManifest(const std::string& path) {
     const JsonValue* fingerprints = find(root, "sha256CertFingerprints");
     const JsonValue* autoVerify = find(root, "autoVerify");
 
-    if (hosts && hosts->type == JsonValue::Type::Array) {
-      for (const auto& h : hosts->array) m.hosts.push_back(h.str);
+    if (!hosts || hosts->type != JsonValue::Type::Array ||
+        hosts->array.empty()) {
+      result.ok = false;
+      result.error.reason = ManifestErrorReason::BAD_PATTERN;
+      result.error.detail = "hosts: must be a non-empty array of strings";
+      return result;
     }
-    if (schemes && schemes->type == JsonValue::Type::Array) {
-      for (const auto& s : schemes->array) m.schemes.push_back(s.str);
+    for (size_t i = 0; i < hosts->array.size(); ++i) {
+      const JsonValue& h = hosts->array[i];
+      if (h.type != JsonValue::Type::String || h.str.empty()) {
+        result.ok = false;
+        result.error.reason = ManifestErrorReason::BAD_PATTERN;
+        result.error.detail = "hosts[" + std::to_string(i) +
+                              "]: must be a non-empty string";
+        return result;
+      }
+      m.hosts.push_back(h.str);
     }
-    if (packageName && packageName->type == JsonValue::Type::String) {
-      m.packageName = packageName->str;
+    if (!schemes || schemes->type != JsonValue::Type::Array ||
+        schemes->array.empty()) {
+      result.ok = false;
+      result.error.reason = ManifestErrorReason::BAD_PATTERN;
+      result.error.detail = "schemes: must be a non-empty array of strings";
+      return result;
+    }
+    for (size_t i = 0; i < schemes->array.size(); ++i) {
+      const JsonValue& s = schemes->array[i];
+      if (s.type != JsonValue::Type::String || s.str.empty()) {
+        result.ok = false;
+        result.error.reason = ManifestErrorReason::BAD_PATTERN;
+        result.error.detail = "schemes[" + std::to_string(i) +
+                              "]: must be a non-empty string";
+        return result;
+      }
+      m.schemes.push_back(s.str);
+    }
+    if (!packageName ||
+        packageName->type != JsonValue::Type::String ||
+        packageName->str.empty()) {
+      result.ok = false;
+      result.error.reason = ManifestErrorReason::BAD_PATTERN;
+      result.error.detail = "packageName: must be a non-empty string";
+      return result;
+    }
+    m.packageName = packageName->str;
+    if (!routes || routes->type != JsonValue::Type::Array ||
+        routes->array.empty()) {
+      result.ok = false;
+      result.error.reason = ManifestErrorReason::BAD_PATTERN;
+      result.error.detail = "routes: must be a non-empty array";
+      return result;
     }
     if (fingerprints && fingerprints->type == JsonValue::Type::Array) {
-      for (const auto& f : fingerprints->array) {
+      for (size_t i = 0; i < fingerprints->array.size(); ++i) {
+        const JsonValue& f = fingerprints->array[i];
+        if (f.type != JsonValue::Type::String || f.str.empty()) {
+          result.ok = false;
+          result.error.reason = ManifestErrorReason::BAD_PATTERN;
+          result.error.detail = "sha256CertFingerprints[" +
+                                std::to_string(i) +
+                                "]: must be a non-empty string";
+          return result;
+        }
         m.sha256CertFingerprints.push_back(f.str);
       }
     }

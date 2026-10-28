@@ -69,26 +69,29 @@ std::string UrlDecodeNoThrow(const std::string& s) noexcept {
   return out;
 }
 
-void WriteFileSync(const std::string& path, const std::string& data) {
+bool WriteFileSync(const std::string& path, const std::string& data) {
 #if defined(__unix__) || defined(__APPLE__)
   int fd = ::open(path.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0600);
-  if (fd < 0) return;
+  if (fd < 0) return false;
   size_t done = 0;
   while (done < data.size()) {
     ssize_t n = ::write(fd, data.data() + done, data.size() - done);
     if (n <= 0) break;
     done += static_cast<size_t>(n);
   }
-  ::fsync(fd);
+  bool complete = (done == data.size()) && ::fsync(fd) == 0;
   ::close(fd);
+  return complete;
 #else
   FILE* f = std::fopen(path.c_str(), "wb");
-  if (f == nullptr) return;
+  if (f == nullptr) return false;
+  bool ok = true;
   if (!data.empty()) {
-    std::fwrite(data.data(), 1, data.size(), f);
+    ok = std::fwrite(data.data(), 1, data.size(), f) == data.size();
   }
-  std::fflush(f);
+  ok = (std::fflush(f) == 0) && ok;
   std::fclose(f);
+  return ok;
 #endif
 }
 
@@ -127,7 +130,7 @@ DeferredLinkStore::DeferredLinkStore(const std::string& storePath,
     : storePath_(storePath), manifest_(manifest) {}
 
 void DeferredLinkStore::CaptureReferrer(const std::string& referrerUrl) {
-  WriteFileSync(storePath_, referrerUrl);
+  static_cast<void>(WriteFileSync(storePath_, referrerUrl));
 }
 
 std::optional<std::string> DeferredLinkStore::DrainPendingLaunch() {

@@ -20,6 +20,11 @@ class DeferredLinkStore {
                     const RouteManifest& manifest);
 
   // Persists synchronously to disk; idempotent (overwrite with same bytes).
+  // Returns void and never throws: capture runs on the referrer callback
+  // path where throwing across the JNI seam would crash the host process,
+  // so there is no diagnostic by design. A write failure (full disk, bad
+  // path, permissions) means the link is simply not persisted, and a later
+  // DrainPendingLaunch then yields nullopt (landing fallback).
   void CaptureReferrer(const std::string& referrerUrl);
 
   // Returns the stored link once, then clears it. Empty store -> nullopt.
