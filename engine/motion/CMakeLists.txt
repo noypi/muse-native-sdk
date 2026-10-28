@@ -14,6 +14,8 @@ add_library(motion
   src/layout_adapter.cpp
   src/implicit.cpp
   src/route_transition.cpp
+  src/clock.cpp
+  src/recorder.cpp
 )
 target_include_directories(motion PUBLIC include)
 target_compile_options(motion PRIVATE -Wall -Wextra -Wpedantic)
@@ -85,3 +87,13 @@ add_executable(retarget_test tests/retarget_test.cpp)
 target_link_libraries(retarget_test PRIVATE motion)
 target_compile_options(retarget_test PRIVATE -Wall -Wextra -Wpedantic)
 add_test(NAME retarget_test COMMAND retarget_test)
+
+add_executable(virtual_clock_test tests/virtual_clock_test.cpp)
+target_link_libraries(virtual_clock_test PRIVATE motion)
+target_compile_options(virtual_clock_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME virtual_clock_test COMMAND virtual_clock_test)
+
+add_executable(replay_determinism_test tests/replay_determinism_test.cpp)
+target_link_libraries(replay_determinism_test PRIVATE motion)
+target_compile_options(replay_determinism_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME replay_determinism_test COMMAND replay_determinism_test)
