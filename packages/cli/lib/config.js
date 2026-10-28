@@ -79,6 +79,9 @@ function validateConfig(raw, file) {
   const diag = raw.diagnostics;
   if (diag !== undefined && diag !== null && typeof diag === 'object' && !Array.isArray(diag)) {
     for (const code of Object.keys(diag)) {
+      if (code === '__proto__' || code === 'constructor' || code === 'prototype') {
+        throw new ConfigError(code, where, 'rejected dangerous key');
+      }
       if (diag[code] !== 'error' && diag[code] !== 'warn' && diag[code] !== 'off') {
         throw new ConfigError(code, where, 'error|warn|off');
       }
@@ -201,6 +204,9 @@ function readFileLayer(cwd) {
         if (trimmedInner === '' || trimmedInner.startsWith('#')) continue;
         const parsedInner = parseLine(trimmedInner);
         if (parsedInner) {
+          if (parsedInner.key === '__proto__' || parsedInner.key === 'constructor' || parsedInner.key === 'prototype') {
+            throw new ConfigError(parsedInner.key, full, 'rejected dangerous key');
+          }
           if (typeof values.diagnostics !== 'object' || values.diagnostics === null) values.diagnostics = {};
           values.diagnostics[parsedInner.key] = parsedInner.value;
         }
@@ -239,11 +245,17 @@ function readFileLayer(cwd) {
     }
     const parsed = parseLine(line);
     if (parsed) {
+      if (parsed.key === '__proto__' || parsed.key === 'constructor' || parsed.key === 'prototype') {
+        throw new ConfigError(parsed.key, full, 'rejected dangerous key');
+      }
       // Flat `diagnostics.CODE: <severity>` file form folds into the map.
       if (parsed.key === 'diagnostics' || parsed.key.startsWith('diagnostics.')) {
         if (parsed.key.startsWith('diagnostics.')) {
           const code = parsed.key.slice('diagnostics.'.length);
           if (code) {
+            if (code === '__proto__' || code === 'constructor' || code === 'prototype') {
+              throw new ConfigError(code, full, 'rejected dangerous key');
+            }
             if (typeof values.diagnostics !== 'object' || values.diagnostics === null) values.diagnostics = {};
             values.diagnostics[code] = parsed.value;
             continue;

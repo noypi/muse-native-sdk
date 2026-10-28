@@ -110,6 +110,17 @@ describe('T1 targets — withSample/strict/diagnostics schema + resolution', () 
     });
   });
 
+  it('dangerous diagnostics key fails closed with ConfigError naming the key', () => {
+    const dir = mkTmp('muse-t1-targets-');
+    fs.writeFileSync(path.join(dir, 'muse-native.yaml'), 'diagnostics:\n  __proto__: warn\n', 'utf8');
+    assert.throws(() => resolveConfig([], {}, dir), (err) => {
+      assert.ok(err instanceof ConfigError);
+      assert.equal(err.key, '__proto__');
+      assert.ok(String(err.message).includes('__proto__'));
+      return true;
+    });
+  });
+
   it('getOptionSchema includes withSample/strict/diagnostics from live SCHEMA', () => {
     const names = new Map(getOptionSchema().map((e) => [e.name, e]));
     for (const key of ['withSample', 'strict', 'diagnostics']) {
