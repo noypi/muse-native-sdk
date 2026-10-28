@@ -165,11 +165,25 @@ bool check_overshoot_then_settle() {
     st = motion::advanceSpring(st, spec, target, 8.0f);
     t += 8.0f;
     if (st.value > peak) peak = st.value;
+    // Settle gate: |value - target| <= 0.5 units AND |velocity| <= 0.5
+    // units/s (kSettleVelEps). Units/s is canonical everywhere
+    // (solver.h: velocity stored in units/s; solver.cpp integrates with
+    // dt = dtMs / 1000 so accel * dt yields units/s with no ms<->s
+    // conversion). The prior `kSettleVelEps * 1000.0f` (= 500 units/s)
+    // was a unit error that disabled the velocity half of the gate; the
+    // tightened gate matches the T1 settle literal
+    // (spring_solver_test.cpp `check_spring_settles_within_tolerance`).
+    // Semi-implicit Euler settle dynamics: velocity decays with the
+    // value envelope for this underdamped spec (stiffness 180,
+    // dampingRatio 0.9, 8ms steps), so both halves settle comfortably
+    // inside the 2000ms timeout — no flakiness (deterministic: fixed
+    // dtMs, no wall clock, no randomness).
     if (near(st.value, target, kSettleValueEps) &&
-        std::fabs(st.velocity) < kSettleVelEps * 1000.0f)
+        std::fabs(st.velocity) <= kSettleVelEps)
       break;
   }
   if (!near(st.value, target, kSettleValueEps)) return false;
+  if (std::fabs(st.velocity) > kSettleVelEps) return false;
   // ASSUMPTION (overshoot bound): M3 underdamped springs overshoot modestly;
   // gate at < 25% of travel as the hardcoded literal proxy.
   if (peak > target * 1.25f) return false;
