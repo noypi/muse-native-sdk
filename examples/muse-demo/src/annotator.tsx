@@ -8,6 +8,7 @@ import {
   MAX_SUGGESTIONS,
 } from './suggestions';
 import type { Polygon, AnnotateError } from './suggestions';
+import { InlineError, useInlineProxyError } from './errors';
 
 // Re-export the plan interface so the Lens tab's entry point is discoverable
 // from the rendering module as well as from `./suggestions`.
@@ -38,23 +39,42 @@ export function Annotator({ photoId, label, point }: AnnotatorProps) {
   const [mask, setMask] = useState<Polygon | undefined>(undefined);
   const [suggestions, setSuggestions] = useState<Polygon[]>([]);
   const [activeIndex, setActiveIndex] = useState<number>(-1);
-  const [errorCode, setErrorCode] = useState<string | undefined>(undefined);
+  // T8 inline error state (AC-SAMPLE-036): designed message + the same retry
+  // posted to the SnackbarHost via `fire` — never raw text.
+  const inlineError = useInlineProxyError();
+  const stateRef = useRef(inlineError);
+  stateRef.current = inlineError;
   const cancelRef = useRef<(() => void) | undefined>(undefined);
 
   const tap = useCallback(
     (next: { x: number; y: number }) => {
       if (cancelRef.current) cancelRef.current();
-      setErrorCode(undefined);
+      stateRef.current.clear();
+      // Retry re-fires the same segment call; success clears both surfaces.
+      const retryTap = () => {
+        annotatePhoto(photoId, next).then(
+          (result) => {
+            stateRef.current.clear();
+            setMask(result.mask);
+            setSuggestions(result.suggestions);
+            setActiveIndex(-1);
+          },
+          (err: AnnotateError) => {
+            stateRef.current.fire(err.code, retryTap);
+          },
+        );
+      };
       cancelRef.current = requestOnSettle(
         photoId,
         next,
         (result) => {
+          stateRef.current.clear();
           setMask(result.mask);
           setSuggestions(result.suggestions);
           setActiveIndex(-1);
         },
         (err: AnnotateError) => {
-          setErrorCode(err.code);
+          stateRef.current.fire(err.code, retryTap);
         },
       );
     },
@@ -91,7 +111,7 @@ export function Annotator({ photoId, label, point }: AnnotatorProps) {
           <Text>{`dashed suggestion ${index + 1}${index === activeIndex ? ' (active)' : ''}: ${pointsText(polygon)}`}</Text>
         </View>
       ))}
-      {errorCode ? <Text>{`error: ${errorCode}`}</Text> : null}
+      {inlineError.error ? <InlineError error={inlineError.error} /> : null}
       <Text>{`Field context=${context} privacy=auto`}</Text>
     </View>
   );

@@ -7,6 +7,7 @@
 // (spoken cap 5) for the focused photo only.
 
 import keywordsSidecar from '../assets/keywords.sidecar.json';
+import { surfaceProxyError } from './errors';
 
 // RULE-MUSE-007 rejection shape (never raw text): the code names the class,
 // `retry` re-fires the same call with the same arguments.
@@ -160,6 +161,15 @@ export function lookupRelated(photoId: string, query: string, sidecar?: Sidecar)
 // per row (see `./echoToggle.tsx`).
 export function spokenResults(hits: RelatedHit[]): string[] {
   return hits.slice(0, SPOKEN_CAP).map((hit) => hit.label);
+}
+
+// reportEnhanceError(err) — T8 call-site wiring (AC-SAMPLE-036): posts the
+// enhancement rejection to the M3 SnackbarHost with the same retry the caller
+// keeps in its inline `error` state, then returns `err` unchanged so the
+// caller stores the identical `{code, retry}` inline. Never renders raw text.
+export function reportEnhanceError(err: TranscribeError): TranscribeError {
+  surfaceProxyError(err.code, err.retry);
+  return err;
 }
 
 // Test/manual-reset hook: clears forced-error state.

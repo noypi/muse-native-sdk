@@ -149,14 +149,54 @@ const FIXTURES = {
   },
 };
 
+// T8 — forced-error triggers (AC-SAMPLE-036, RULE-MUSE-007). Any request
+// whose string payload contains a `force-<code>:` marker (photoId, prompt,
+// text, utterance, entryId, cacheKey, or nested body — e.g. the
+// `force-<code>:` photoId/listEntryId prefixes the T5–T7 demo modules send)
+// throws that ProxyError instead of serving the fixture above, so every
+// route used by T5–T7 (segment/reason/structure/transcribe/generate-image)
+// can surface every code (auth/upstream/timeout/schema) through the same
+// `{code, retry}` handling the demo modules already implement. Retryable
+// follows the dispatch convention: schema is terminal, the rest are
+// retryable. `handle(req)` stays sync.
+
+// T8 error specs live outside FIXTURES (not a route): code → retryable.
+
+// T8 error specs live outside FIXTURES (not a route): code → retryable.
+const ERROR_SPECS = {
+  auth: { code: 'auth', retryable: true },
+  upstream: { code: 'upstream', retryable: true },
+  timeout: { code: 'timeout', retryable: true },
+  schema: { code: 'schema', retryable: false },
+};
+
 function clone(value) {
   return JSON.parse(JSON.stringify(value));
+}
+
+// Scan the request payload for a `force-<code>:` marker. Stringifies the
+// whole request so every route's input shape is covered without per-route
+// branches; returns the code or undefined when no marker is present.
+function forcedErrorCode(req) {
+  let text = '';
+  try {
+    text = JSON.stringify(req);
+  } catch (err) {
+    return undefined;
+  }
+  const m = /force-(auth|upstream|timeout|schema):/.exec(text || '');
+  return m ? m[1] : undefined;
 }
 
 function handle(req) {
   const route = req && typeof req === 'object' ? req.route : undefined;
   if (typeof route !== 'string' || !Object.prototype.hasOwnProperty.call(FIXTURES, route)) {
     throw new ProxyError('unknown-route', String(route), false);
+  }
+  const forced = forcedErrorCode(req);
+  if (forced && Object.prototype.hasOwnProperty.call(ERROR_SPECS, forced)) {
+    const spec = ERROR_SPECS[forced];
+    throw new ProxyError(spec.code, route, spec.retryable);
   }
   return { status: 200, body: clone(FIXTURES[route]) };
 }

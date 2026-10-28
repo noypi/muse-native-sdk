@@ -18,6 +18,7 @@ import {
   writeAvatarCache,
   type Avatar,
 } from './avatar';
+import { InlineError, useInlineProxyError } from './errors';
 
 // T6 — onboarding flow: profile-settings page first (AC-SAMPLE-023).
 // MuseVoice listening by default with the global persisted on/off toggle
@@ -55,6 +56,23 @@ export type { Profile, Avatar };
 // cache afterwards.
 export function completeOnboarding(transcript: string[]): Promise<OnboardingResult> {
   const turns = Array.isArray(transcript) ? transcript : [];
+  // T8 forced-error simulation for the reason/generate-image path
+  // (AC-SAMPLE-036): a `force-<code>:` marker rejects once with that code so
+  // the page can surface SnackbarHost + inline error with a working retry;
+  // `retry` re-fires the same call, which resolves once the (simulated)
+  // fixture recovers. Mirrors the `./suggestions` / `./transcribe` prefix
+  // convention and the stub `force-<code>:` trigger in proxy/lib/stub.js.
+  const forcedKey = turns.join('\n');
+  const forcedMatch = /force-(auth|upstream|timeout|schema):/.exec(forcedKey);
+  const forcedCode = forcedMatch ? (forcedMatch[1] as OnboardingErrorCode) : undefined;
+  if (forcedCode && !consumedForce.has(forcedKey)) {
+    consumedForce.add(forcedKey);
+    const err: OnboardingError = {
+      code: forcedCode,
+      retry: () => completeOnboarding(transcript),
+    };
+    return Promise.reject(err);
+  }
   const profile = blankProfile();
   let photoPicked: string | undefined;
 
@@ -132,6 +150,14 @@ function repromptResponseHint(missing: ReturnType<typeof missingRequired>): stri
   return 'My favorite topic is street photography';
 }
 
+// T8 forced-error once-only state (see completeOnboarding above).
+const consumedForce = new Set<string>();
+
+// Test/manual-reset hook: clears forced-error state.
+export function clearOnboardingState(): void {
+  consumedForce.clear();
+}
+
 // --- Profile-settings page (presentational shell over the same flow) --------
 
 export type OnboardingPageProps = {
@@ -141,7 +167,34 @@ export type OnboardingPageProps = {
 export function OnboardingPage({ onDone }: OnboardingPageProps = {}) {
   const [listening, setListening] = useState<boolean>(isTranscribeOn());
   const [lines, setLines] = useState<string[]>([]);
+  // T8 inline error state (AC-SAMPLE-036): designed message + the same retry
+  // posted to the SnackbarHost via `fire` — never raw text. Kept separate
+  // from the reprompt `notice` below so proxy errors and missing-info
+  // reprompts never overwrite each other.
+  const inlineError = useInlineProxyError();
+  const stateRef = { current: inlineError };
+  stateRef.current = inlineError;
   const [notice, setNotice] = useState<string | undefined>(undefined);
+
+  // Route a rejection: the required-check reprompt loop (missing fields,
+  // no forced-error marker) keeps the designed reprompt notice; a forced
+  // proxy error (transcript carries a `force-<code>:` marker for the
+  // reason/generate-image path) surfaces via SnackbarHost + inline error.
+  const routeRejection = (
+    transcript: string[],
+    err: OnboardingError,
+    retry: () => void,
+  ) => {
+    const forced = transcript.some(
+      (line) =>
+        typeof line === 'string' && /force-(auth|upstream|timeout|schema):/.test(line),
+    );
+    if (!forced) {
+      setNotice(`missing info (${err.code}); please answer to continue`);
+      return;
+    }
+    stateRef.current.fire(err.code, retry);
+  };
 
   const toggleVoice = () => {
     const next = !listening;
@@ -152,12 +205,25 @@ export function OnboardingPage({ onDone }: OnboardingPageProps = {}) {
   };
 
   const finish = (transcript: string[]) => {
+    // Retry re-fires the same onboarding call; success clears both surfaces.
+    const retryFinish = () => {
+      completeOnboarding(transcript).then(
+        (result) => {
+          inlineError.clear();
+          if (onDone) onDone(result);
+        },
+        (err: OnboardingError) => {
+          routeRejection(transcript, err, retryFinish);
+        },
+      );
+    };
     completeOnboarding(transcript).then(
       (result) => {
+        inlineError.clear();
         if (onDone) onDone(result);
       },
       (err: OnboardingError) => {
-        setNotice(`missing info (${err.code}); please answer to continue`);
+        routeRejection(transcript, err, retryFinish);
       },
     );
   };
@@ -179,6 +245,7 @@ export function OnboardingPage({ onDone }: OnboardingPageProps = {}) {
         <Text>Introduce yourself</Text>
       </View>
       {notice ? <Text>{notice}</Text> : null}
+      {inlineError.error ? <InlineError error={inlineError.error} /> : null}
     </View>
   );
 }
