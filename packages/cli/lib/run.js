@@ -114,7 +114,12 @@ function startStub(projectDir, port) {
   const server = http.createServer((req, res) => {
     const url = req && typeof req.url === 'string' ? req.url : '';
     const m = /\/stub\/([^/?#]+)/.exec(url);
-    const route = m ? decodeURIComponent(m[1]) : undefined;
+    let route;
+    try {
+      route = m ? decodeURIComponent(m[1]) : undefined;
+    } catch (_) {
+      route = undefined;
+    }
     let result;
     try {
       result = stub.handle({ route, method: req.method, url });
