@@ -207,6 +207,34 @@ static bool check_null_queue_dispatch_still_applies() {
   return true;
 }
 
+// DurableQueue fake whose enqueue always fails: records the attempt and
+// reports Status::kCorrupt (durable-write failure).
+class FailingEnqueueQueue : public DurableQueue {
+ public:
+  Status enqueue(Mutation m) override {
+    calls.push_back(m);
+    return Status::kCorrupt;
+  }
+  std::vector<Mutation> calls;
+};
+
+// Named case (review finding: enqueue-failure rollback): a DurableQueue
+// enqueue failure restores the exact pre-mutation state (deep-equal) with
+// a single invalidation batch — mirror of the failing-action rollback case.
+static bool check_enqueue_failure_restores_exact_state_single_batch() {
+  Store store;
+  FailingEnqueueQueue q;
+  store.setDurableQueue(&q);
+  auto before = store.snapshot();
+  Action a;  // ASSUMPTION A6: default action fixture.
+  Status st = store.dispatch(a);
+  if (st == Status::kOk) return false;  // must report the enqueue failure
+  if (q.calls.size() != 1) return false;
+  if (!(store.snapshot() == before)) return false;
+  Batch b = store.flushBatch();
+  return b.size() == 1;
+}
+
 }  // namespace
 
 #define RUN_CASE(name)                           \
@@ -231,6 +259,7 @@ int main() {
   RUN_CASE(check_failing_action_restores_exact_state_single_batch);
   RUN_CASE(check_rollback_restores_deep_equal_single_batch);
   RUN_CASE(check_null_queue_dispatch_still_applies);
+  RUN_CASE(check_enqueue_failure_restores_exact_state_single_batch);
   if (failures > 0) {
     std::printf("atom_core_test: %d failing\n", failures);
     return 1;

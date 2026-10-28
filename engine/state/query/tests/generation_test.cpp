@@ -72,6 +72,40 @@ static bool check_equal_generation_response_accepted() {
   return r.value() == Value(1);
 }
 
+// Always-stale Transport fake: every response carries a generation older
+// than any held generation >= 2. Call-count capped so an unbounded
+// stale-refetch loop still terminates: after kCapCalls stale responses the
+// fake answers fresh (the overrun is recorded in calls, so the bound
+// assertion below fails cleanly instead of hanging the suite).
+class AlwaysStale : public Transport {
+ public:
+  int calls = 0;
+  static constexpr int kCapCalls = 4096;
+  IdempotencyHint idempotency() const override {
+    return IdempotencyHint::kIdempotent;
+  }
+  Response get(QueryKey /*k*/, IdempotencyHint /*h*/) override {
+    ++calls;
+    if (calls > kCapCalls) return Response{Value(2), /*generation=*/3};
+    return Response{Value(1), /*generation=*/1};
+  }
+};
+
+// Named case (review finding: bounded stale-refetch): an always-stale
+// transport must TERMINATE with a non-ok Status and bounded transport
+// calls (<= 1 + maxRetries + kStaleBound), never refetching forever.
+static bool check_always_stale_transport_terminates_non_ok_bounded() {
+  AlwaysStale t;
+  RetryPolicy p;
+  p.maxRetries = 3;
+  p.backoff = BackoffCurve{};
+  constexpr int kStaleBound = 3;
+  auto r = fetchGuarded(QueryKey("k"), Generation(3), p, &t);
+  if (r.ok()) return false;  // must report bounded-exhaustion failure
+  const int bound = 1 + static_cast<int>(p.maxRetries) + kStaleBound;
+  return t.calls <= bound;
+}
+
 }  // namespace
 
 #define RUN_CASE(name)                           \
@@ -89,6 +123,7 @@ int main() {
   RUN_CASE(check_stale_generation_response_dropped_never_written);
   RUN_CASE(check_current_generation_response_accepted);
   RUN_CASE(check_equal_generation_response_accepted);
+  RUN_CASE(check_always_stale_transport_terminates_non_ok_bounded);
   if (failures > 0) {
     std::printf("generation_test: %d failing\n", failures);
     return 1;
