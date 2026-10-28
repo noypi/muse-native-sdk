@@ -28,6 +28,8 @@ struct GuardVerdict {
 // Route guards (FR-NAV-003 / AC-NAV-006). evaluateGuard checks the
 // per-route rule table before any NavGraph::apply commit; a denied commit
 // returns a redirect route and never mutates the stack. reRunOnRestore
-// re-evaluates the same rules against a restored request.
+// re-evaluates the same rules against a restored request and returns the
+// verdict (true = restore allowed, false = restore denied); it mirrors
+// evaluateGuard(req).allowed.
 GuardVerdict evaluateGuard(const GuardRequest& req);
 bool reRunOnRestore(const GuardRequest& req);

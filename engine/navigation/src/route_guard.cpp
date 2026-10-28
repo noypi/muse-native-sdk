@@ -50,8 +50,8 @@ GuardVerdict evaluateGuard(const GuardRequest& req) {
 }
 
 bool reRunOnRestore(const GuardRequest& req) {
-  // Re-evaluate the same rules against the restored request; the re-run
-  // itself always executes (callers read the fresh verdict separately).
-  (void)evaluateGuard(req);
-  return true;
+  // Re-evaluate the same rules against the restored request and return the
+  // verdict: true = restore allowed, false = restore denied (e.g. revoked
+  // entitlement). Callers must treat false as "do not restore".
+  return evaluateGuard(req).allowed;
 }

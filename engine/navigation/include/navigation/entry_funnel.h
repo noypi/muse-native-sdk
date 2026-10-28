@@ -21,5 +21,8 @@ struct FunnelResult {
 // (launcher/deeplink/notification/service/onNewIntent) resolve through this
 // one funnel; a repeat of an identical intent returns deduped=true instead
 // of stacking a duplicate push. Dedup is keyed on the full intent
-// (source+uri+routeId) and held process-global.
+// (source+uri+routeId) and held process-global for the process lifetime
+// (intentional: warm-start repeats must still dedupe). Tests and process
+// re-init may call clearFunnelForTest() to reset the seen set.
 FunnelResult routeEntry(const EntryIntent& in);
+void clearFunnelForTest();

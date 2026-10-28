@@ -122,6 +122,20 @@ bool check_retarget_mid_gesture_does_not_restart_from_one() {
   return t.drivenProgress() < 0.65f && t.drivenProgress() > 0.45f;
 }
 
+bool check_retarget_owns_reversal_without_walk_frames() {
+  // MAJOR review finding: `retargetTo` must own the reversal. Drive to 0.6,
+  // retarget to 0.0, then feed frames that do NOT encode the walk-back (the
+  // gesture stalls at 0.6). A real retarget still advances drivenProgress()
+  // toward the target; the stub just re-applies `driven_ = progress` and
+  // stays at 0.6 forever (retarget state never consumed).
+  PredictiveTransition t;
+  t.onBackProgress(frame(0.6f));
+  t.retargetTo(0.0f);
+  t.onBackProgress(frame(0.6f));
+  t.onBackProgress(frame(0.6f));
+  return t.drivenProgress() < 0.6f - 1e-5f;
+}
+
 }  // namespace
 
 int main() {
@@ -135,6 +149,8 @@ int main() {
               "retarget_clamps_out_of_range_target");
   EXPECT_TRUE(check_retarget_mid_gesture_does_not_restart_from_one(),
               "retarget_mid_gesture_does_not_restart_from_one");
+  EXPECT_TRUE(check_retarget_owns_reversal_without_walk_frames(),
+              "retarget_owns_reversal_without_walk_frames");
   if (failures == 0) {
     std::printf("ALL PASS\n");
   }

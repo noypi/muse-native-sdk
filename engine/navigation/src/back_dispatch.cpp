@@ -27,7 +27,10 @@ std::string dispatchBack() {
   }
   const auto* best = &*registry.begin();
   for (const auto& entry : registry) {
-    if (entry.second > best->second) {
+    // Deterministic tie-break: higher priority wins; equal priorities go
+    // to the lexicographically smallest graphId.
+    if (entry.second > best->second ||
+        (entry.second == best->second && entry.first < best->first)) {
       best = &entry;
     }
   }

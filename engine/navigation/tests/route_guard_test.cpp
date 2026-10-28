@@ -82,10 +82,11 @@ bool check_restore_revoked_entitlement_denies() {
   req.routeId = "pro";
   req.authenticated = true;
   req.flags = {{"entitled_pro", false}};
-  // Re-run on a restored blob with revoked entitlement must deny.
+  // Re-run on a restored blob with revoked entitlement must deny: the
+  // re-run verdict itself is false (it mirrors evaluateGuard's verdict).
   bool rerun = reRunOnRestore(req);
   GuardVerdict v = evaluateGuard(req);
-  return rerun && !v.allowed && v.error == GuardError::ENTITLEMENT_DENIED;
+  return !rerun && !v.allowed && v.error == GuardError::ENTITLEMENT_DENIED;
 }
 
 bool check_restore_valid_entitlement_allows() {

@@ -24,6 +24,7 @@ struct NestedResult {
 // Nested navigator deeplink resolution (FR-NAV-007 / AC-NAV-018). Each child
 // graph owns an independent stack; resolving a nested leaf materializes the
 // full parent chain as one transaction. Unknown graph or unknown nested route
-// degrades to the home stack.
+// degrades to the home stack. The `host` must be the canonical app host
+// ("app") or a declared graphId; any other host degrades to the home stack.
 NestedResult resolveNested(const NestedManifest& m, const std::string& host,
                            const std::vector<std::string>& path);

@@ -50,3 +50,5 @@ FunnelResult routeEntry(const EntryIntent& in) {
   r.error = NavError::NONE;
   return r;
 }
+
+void clearFunnelForTest() { SeenIntents().clear(); }

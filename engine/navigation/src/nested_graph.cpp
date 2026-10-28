@@ -41,7 +41,21 @@ NestedResult degrade(const NestedManifest& m, const GraphDecl* target) {
 
 NestedResult resolveNested(const NestedManifest& m, const std::string& host,
                            const std::vector<std::string>& path) {
-  (void)host;
+  // Host check: the deeplink host must be the canonical app host ("app") or
+  // a declared graphId in the manifest. Any other host degrades to home.
+  bool hostOk = (host == "app");
+  if (!hostOk) {
+    for (const GraphDecl& g : m.graphs) {
+      if (g.graphId == host) {
+        hostOk = true;
+        break;
+      }
+    }
+  }
+  if (!hostOk) {
+    const GraphDecl* any = m.graphs.empty() ? nullptr : &m.graphs[0];
+    return degrade(m, any);
+  }
   if (path.size() < 2) {
     const GraphDecl* any = m.graphs.empty() ? nullptr : &m.graphs[0];
     return degrade(m, any);
