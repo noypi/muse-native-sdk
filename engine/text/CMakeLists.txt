@@ -17,6 +17,8 @@ add_library(muse_text STATIC
   src/font_scale.cpp
   src/scale_layout.cpp
   src/scale_config.cpp
+  ink/ink_stroke_pipeline.cpp
+  ink/palm_rejector.cpp
 )
 target_include_directories(muse_text PUBLIC include)
 target_compile_options(muse_text PRIVATE -Wall -Wextra -Wpedantic)
@@ -89,6 +91,14 @@ add_executable(stylus_samples_test tests/stylus_samples_test.cpp)
 target_link_libraries(stylus_samples_test PRIVATE muse_text)
 target_compile_options(stylus_samples_test PRIVATE -Wall -Wextra -Wpedantic)
 
+add_executable(stylus_axes_test ink/tests/stylus_axes_test.cpp)
+target_link_libraries(stylus_axes_test PRIVATE muse_text)
+target_compile_options(stylus_axes_test PRIVATE -Wall -Wextra -Wpedantic)
+
+add_executable(palm_rejection_test ink/tests/palm_rejection_test.cpp)
+target_link_libraries(palm_rejection_test PRIVATE muse_text)
+target_compile_options(palm_rejection_test PRIVATE -Wall -Wextra -Wpedantic)
+
 add_executable(rich_buffer_test tests/rich_buffer_test.cpp)
 target_link_libraries(rich_buffer_test PRIVATE muse_text)
 target_compile_options(rich_buffer_test PRIVATE -Wall -Wextra -Wpedantic)
@@ -132,6 +142,8 @@ add_test(NAME font_subset_guard_test COMMAND font_subset_guard_test)
 add_test(NAME golden_harness_test COMMAND golden_harness_test)
 add_test(NAME font_pipeline_test COMMAND font_pipeline_test)
 add_test(NAME stylus_samples_test COMMAND stylus_samples_test)
+add_test(NAME stylus_axes_test COMMAND stylus_axes_test)
+add_test(NAME palm_rejection_test COMMAND palm_rejection_test)
 add_test(NAME rich_buffer_test COMMAND rich_buffer_test)
 add_test(NAME nonlinear_scale_test COMMAND nonlinear_scale_test)
 add_test(NAME scale_remeasure_test COMMAND scale_remeasure_test)
