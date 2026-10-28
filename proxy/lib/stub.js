@@ -161,8 +161,6 @@ const FIXTURES = {
 // retryable. `handle(req)` stays sync.
 
 // T8 error specs live outside FIXTURES (not a route): code → retryable.
-
-// T8 error specs live outside FIXTURES (not a route): code → retryable.
 const ERROR_SPECS = {
   auth: { code: 'auth', retryable: true },
   upstream: { code: 'upstream', retryable: true },

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { View, Text } from '@muse/native';
 import {
   applyTurn,
@@ -18,7 +18,7 @@ import {
   writeAvatarCache,
   type Avatar,
 } from './avatar';
-import { InlineError, useInlineProxyError } from './errors';
+import { InlineError, dismissSnackbarNotice, useInlineProxyError } from './errors';
 
 // T6 — onboarding flow: profile-settings page first (AC-SAMPLE-023).
 // MuseVoice listening by default with the global persisted on/off toggle
@@ -172,7 +172,7 @@ export function OnboardingPage({ onDone }: OnboardingPageProps = {}) {
   // from the reprompt `notice` below so proxy errors and missing-info
   // reprompts never overwrite each other.
   const inlineError = useInlineProxyError();
-  const stateRef = { current: inlineError };
+  const stateRef = useRef(inlineError);
   stateRef.current = inlineError;
   const [notice, setNotice] = useState<string | undefined>(undefined);
 
@@ -205,11 +205,13 @@ export function OnboardingPage({ onDone }: OnboardingPageProps = {}) {
   };
 
   const finish = (transcript: string[]) => {
-    // Retry re-fires the same onboarding call; success clears both surfaces.
+    // Retry re-fires the same onboarding call; success clears both surfaces
+    // (inline state + the posted SnackbarHost notice).
     const retryFinish = () => {
       completeOnboarding(transcript).then(
         (result) => {
           inlineError.clear();
+          dismissSnackbarNotice();
           if (onDone) onDone(result);
         },
         (err: OnboardingError) => {
@@ -220,6 +222,7 @@ export function OnboardingPage({ onDone }: OnboardingPageProps = {}) {
     completeOnboarding(transcript).then(
       (result) => {
         inlineError.clear();
+        dismissSnackbarNotice();
         if (onDone) onDone(result);
       },
       (err: OnboardingError) => {

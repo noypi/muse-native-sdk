@@ -84,7 +84,15 @@ function inlineStubHandler() {
   };
 }
 
-function loadStubHandler() {
+function loadStubHandler(projectDir) {
+  if (projectDir) {
+    try {
+      const projectStub = require(path.join(path.resolve(projectDir), 'proxy', 'lib', 'stub.js'));
+      if (projectStub && typeof projectStub.handle === 'function') return projectStub;
+    } catch (_) {
+      // No project-local stub — fall through to the repo stub below.
+    }
+  }
   try {
     const loaded = require('../../../proxy/lib/stub.js');
     if (loaded && typeof loaded.handle === 'function') return loaded;
@@ -102,8 +110,7 @@ function loadStubHandler() {
 // to the network.
 function startStub(projectDir, port) {
   const target = Number(port) || DEFAULT_STUB_PORT;
-  const stub = loadStubHandler();
-  void projectDir;
+  const stub = loadStubHandler(projectDir);
   const server = http.createServer((req, res) => {
     const url = req && typeof req.url === 'string' ? req.url : '';
     const m = /\/stub\/([^/?#]+)/.exec(url);

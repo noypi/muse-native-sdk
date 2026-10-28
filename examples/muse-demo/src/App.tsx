@@ -11,9 +11,10 @@ import {
   type TranscribeError,
 } from './transcribe';
 import { EchoToggle, GuidedVoice } from './echoToggle';
-import { ErrorSnackbar, InlineError, useInlineProxyError } from './errors';
+import { ErrorSnackbar, InlineError, dismissSnackbarNotice, useInlineProxyError } from './errors';
 import { DemoChrome } from './chrome';
 import { isTranscribeOn } from './profile';
+import { OnboardingPage } from './onboarding';
 import { renderSpeaker } from './speaker';
 
 // muse-demo entry (T4, AC-SAMPLE-022): onboarding -> main tab shell.
@@ -73,11 +74,12 @@ function FieldVoiceEntry({ entryId }: { entryId: string }) {
 
   const enhance = (utterance: string) => {
     // Retry re-fires the same transcribe→reason call; success clears both
-    // surfaces.
+    // surfaces (inline state + the posted SnackbarHost notice).
     const retryEnhance = () => {
       enhanceFromVoice(entryId, utterance).then(
         (result) => {
           inlineError.clear();
+          dismissSnackbarNotice();
           setEnhanced(result.enhanced);
         },
         (err: TranscribeError) => {
@@ -88,6 +90,7 @@ function FieldVoiceEntry({ entryId }: { entryId: string }) {
     enhanceFromVoice(entryId, utterance).then(
       (result) => {
         inlineError.clear();
+        dismissSnackbarNotice();
         setEnhanced(result.enhanced);
       },
       (err: TranscribeError) => {
@@ -131,14 +134,17 @@ export default function App() {
   }, [page]);
 
   if (page === 'onboarding') {
+    // T6 profile-settings page (AC-SAMPLE-023): the full onboarding path
+    // (MuseVoice toggle, manual-form fallback, introduce → required-check →
+    // reprompt, avatar like-or-photo) is reachable here. `onDone` redirects to
+    // `main`, which re-reads the persisted transcribe toggle — so the redirect
+    // carries the persisted transcribe state. `<ErrorSnackbar/>` stays mounted
+    // so forced-error notices posted by the page are visible.
     return (
       <DemoChrome page="onboarding">
       <View>
-        <Text>Welcome to muse-demo</Text>
-        <Text>Annotate your photos with Lens, Field, and List.</Text>
-        <View onTouchStart={() => setPage('main')}>
-          <Text>Get started</Text>
-        </View>
+        <ErrorSnackbar />
+        <OnboardingPage onDone={() => setPage('main')} />
       </View>
       </DemoChrome>
     );

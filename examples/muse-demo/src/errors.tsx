@@ -70,6 +70,18 @@ export function getSnackbarNotice(): Notice | undefined {
   return current;
 }
 
+// dismissSnackbarNotice() — dismiss the currently posted SnackbarHost notice,
+// if any. Call alongside every `inlineError.clear()` on a success path so a
+// fail → retry-success sequence clears BOTH surfaces (inline state + snackbar)
+// instead of leaving the designed message posted indefinitely. Idempotent:
+// a no-op when nothing is posted.
+export function dismissSnackbarNotice(): void {
+  if (current) {
+    current = undefined;
+    emit();
+  }
+}
+
 function clearNotice(id: number): void {
   if (current && current.id === id) {
     current = undefined;
@@ -83,10 +95,12 @@ function clearNotice(id: number): void {
 // admits only the four codes; never surface raw text). The retry wrapper
 // keeps both surfaces on failure: a sync throw or a rejected promise leaves
 // the notice posted with retry still offered; a resolving promise clears the
-// notice it posted.
-export function surfaceProxyError(code: ProxyErrorCode, retry: () => void): void {
-  if (!isProxyErrorCode(code)) return;
-  if (typeof retry !== 'function') return;
+// notice it posted. Returns the wrapped retry so callers (notably
+// `useInlineProxyError.fire`) can store the SAME function inline — both
+// surfaces then offer the identical action, including the sync-throw guard.
+export function surfaceProxyError(code: ProxyErrorCode, retry: () => void): () => void {
+  if (!isProxyErrorCode(code)) return retry;
+  if (typeof retry !== 'function') return retry;
   const id = nextId;
   nextId += 1;
   const safeRetry = () => {
@@ -114,13 +128,16 @@ export function surfaceProxyError(code: ProxyErrorCode, retry: () => void): void
   };
   current = { id, code, retry: safeRetry };
   emit();
+  return safeRetry;
 }
 
 // --- Owning-component inline state (independent per owner, A-T8-2) ------------
 
 // useInlineProxyError() — per-owner inline `error` state. `fire` stores the
-// same retry locally AND posts it to the SnackbarHost, so both surfaces offer
-// the identical action. `clear` dismisses the inline state (call on success).
+// wrapped retry locally AND posts it to the SnackbarHost, so both surfaces
+// offer the identical action (same function, including the sync-throw guard).
+// `clear` dismisses the inline state AND the posted snackbar notice (call on
+// success) so retry-success clears both surfaces at every call site.
 export function useInlineProxyError(): {
   error: ProxyErrorSurface | undefined;
   fire: (code: ProxyErrorCode, retry: () => void) => void;
@@ -131,10 +148,13 @@ export function useInlineProxyError(): {
     error,
     fire: (code: ProxyErrorCode, retry: () => void) => {
       if (!isProxyErrorCode(code)) return;
-      surfaceProxyError(code, retry);
-      setError({ code, retry });
+      const safeRetry = surfaceProxyError(code, retry);
+      setError({ code, retry: safeRetry });
     },
-    clear: () => setError(undefined),
+    clear: () => {
+      dismissSnackbarNotice();
+      setError(undefined);
+    },
   };
 }
 
