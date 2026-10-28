@@ -180,6 +180,34 @@ static bool check_write_overwrites() {
   return backend.read(ref) == "two";
 }
 
+// Named case: StorageError contract — the error type is referenced by the
+// tests (kDenied/kNotFound stay distinct; production encoding constants bind
+// empty-read to kNotFound and empty-uri to kDenied); a missing read yields
+// empty content as the kNotFound encoding, never throws.
+static bool check_storage_error_encoding_contract() {
+  static_assert(muse::net::StorageError::kDenied !=
+                    muse::net::StorageError::kNotFound,
+                "StorageError encodings must stay distinct");
+  static_assert(muse::net::kEmptyReadError == muse::net::StorageError::kNotFound,
+                "empty read encodes kNotFound");
+  static_assert(muse::net::kEmptyUriError == muse::net::StorageError::kDenied,
+                "empty uri encodes kDenied");
+  const muse::net::StorageError notFound = muse::net::StorageError::kNotFound;
+  const muse::net::StorageError denied = muse::net::StorageError::kDenied;
+  if (notFound == denied) return false;
+  FakeBackend backend(muse::net::StorageRoute::kAppSpecific);
+  muse::net::DocRef ref;
+  ref.route = muse::net::StorageRoute::kAppSpecific;
+  ref.uri = "uri:no-such-doc";
+  try {
+    if (!backend.read(ref).empty()) return false;  // kNotFound encoding
+  } catch (...) {
+    return false;
+  }
+  return notFound == muse::net::kEmptyReadError &&
+         denied == muse::net::kEmptyUriError;
+}
+
 // Named case: share routes outbound through FileProvider with a content URI.
 static bool check_share_uses_fileprovider_content_uri() {
   FakeBackend backend(muse::net::StorageRoute::kSaf);
@@ -289,6 +317,7 @@ int main() {
   RUN_CASE(check_open_preserves_route);
   RUN_CASE(check_read_missing_yields_empty_never_throws);
   RUN_CASE(check_write_overwrites);
+  RUN_CASE(check_storage_error_encoding_contract);
   RUN_CASE(check_share_uses_fileprovider_content_uri);
   RUN_CASE(check_no_route_requires_manage_external_storage);
   RUN_CASE(check_persisted_grant_survives_restart);

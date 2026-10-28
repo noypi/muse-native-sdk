@@ -43,9 +43,18 @@ bool ParseOrigin(const std::string& url, Origin* out) {
   if (at != std::string::npos) {
     host = host.substr(at + 1);
   }
-  const std::size_t colon = host.find_last_of(':');
-  if (colon != std::string::npos) {
-    host = host.substr(0, colon);
+  // Strip an optional :port suffix, but never mangle a bracketed IPv6 literal:
+  // "[::1]" has no port suffix, while "[::1]:8080" does ("]:" separator).
+  if (!host.empty() && host[0] == '[') {
+    const std::size_t bracket_port = host.find("]:");
+    if (bracket_port != std::string::npos) {
+      host = host.substr(0, bracket_port + 1);
+    }
+  } else {
+    const std::size_t colon = host.find_last_of(':');
+    if (colon != std::string::npos) {
+      host = host.substr(0, colon);
+    }
   }
   if (host.empty()) {
     return false;
@@ -103,6 +112,10 @@ class DefaultTransport : public ITransport {
 // Policy gate shared by both transports: consults the same injected
 // ITlsPolicy before delegating. Denial happens before any socket use — the
 // inner transport (and factory) is never touched on deny.
+// Lifetime: `tls` must outlive the transport (borrowed reference; prefer a
+// shared_ptr/reference_wrapper if shared ownership is ever needed).
+// Threading: interceptor registration is single-threaded (see ITransport);
+// concurrent execute() is safe only when no thread registers concurrently.
 class PolicyEnforcingTransport : public ITransport {
  public:
   PolicyEnforcingTransport(std::shared_ptr<ITransport> inner, ITlsPolicy& tls)

@@ -20,6 +20,11 @@ bool ConnectivityMonitor::shouldPrefetch(NetInfo i) const {
 
 bool ConnectivityMonitor::isCleartextAllowed(
     const Origin& origin, const INetworkSecurityConfig& config) const {
+  // Cleartext policy is only meaningful for http origins; non-http schemes
+  // (e.g. https) carry no cleartext and are unconditionally allowed.
+  if (origin.scheme != "http") {
+    return true;
+  }
   try {
     return config.cleartextPermitted(origin.host);
   } catch (...) {
