@@ -176,6 +176,39 @@ void case_normalize_is_deterministic() {
         "normalize_is_deterministic");
 }
 
+// Boundary: normalize never throws for any covered source class.
+// NOTE (plan-interface gap): the T1 `Interface:` line names
+// `normalize(RawSourceEvent)` returning `Status::kUnknownSource` for an
+// unknown source class. The read-only production header exposes
+// `NormalizeMotion(...)` returning `NormalizedEvent` by value with no
+// `Status`/`RawSourceEvent` symbols, so an unknown-class Status case is
+// not expressible against this header (see contract T1.md Conflicts).
+// This case pins the "never throws" half of that requirement for every
+// source class the header does define.
+void case_normalize_never_throws() {
+  input::AxisState axes = make_axes(1.0f, 2.0f, 0.5f);
+  bool threw = false;
+  try {
+    (void)input::NormalizeMotion(0, input::ToolType::Touch, 0u, axes, 0u,
+                                 input::SourceClass::Touch);
+    (void)input::NormalizeMotion(0, input::ToolType::Stylus, 0u, axes, 0u,
+                                 input::SourceClass::Stylus);
+    (void)input::NormalizeMotion(0, input::ToolType::Mouse, 0u, axes, 0u,
+                                 input::SourceClass::Mouse);
+    (void)input::NormalizeMotion(0, input::ToolType::Trackpad, 0u, axes, 0u,
+                                 input::SourceClass::Trackpad);
+    (void)input::NormalizeMotion(0, input::ToolType::Key, 0u, axes, 0u,
+                                 input::SourceClass::Keyboard);
+    (void)input::NormalizeMotion(0, input::ToolType::Gamepad, 0u, axes, 0u,
+                                 input::SourceClass::Gamepad);
+    (void)input::NormalizeMotion(0, input::ToolType::Dpad, 0u, axes, 0u,
+                                 input::SourceClass::Dpad);
+  } catch (...) {
+    threw = true;
+  }
+  check(!threw, "normalize_never_throws");
+}
+
 // Boundary: zero/empty sample and extreme values pass through exactly.
 void case_boundary_zero_and_extreme_values() {
   input::AxisState zero = make_axes(0.0f, 0.0f, 0.0f);
@@ -205,6 +238,7 @@ int main() {
   case_dpad_preserves_all_fields();
   case_source_classes_are_distinct();
   case_normalize_is_deterministic();
+  case_normalize_never_throws();
   case_boundary_zero_and_extreme_values();
   if (g_failures == 0) {
     std::printf("ALL PASS\n");
