@@ -16,6 +16,7 @@ add_library(navigation
   src/applinks_manifest.cpp
   src/uri_validation.cpp
   src/deferred_link.cpp
+  src/link_validation.cpp
 )
 target_include_directories(navigation PUBLIC include)
 target_compile_options(navigation PRIVATE -Wall -Wextra -Wpedantic)
@@ -67,6 +68,11 @@ add_executable(deferred_link_test tests/deferred_link_test.cpp)
 target_link_libraries(deferred_link_test PRIVATE navigation)
 target_compile_options(deferred_link_test PRIVATE -Wall -Wextra -Wpedantic)
 add_test(NAME deferred_link_test COMMAND deferred_link_test)
+
+add_executable(link_validation_test tests/link_validation_test.cpp)
+target_link_libraries(link_validation_test PRIVATE navigation)
+target_compile_options(link_validation_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME link_validation_test COMMAND link_validation_test)
 
 # FR-NAV-006 T2 (NAV-APPLINKS codegen invocation — documentation only, no new
 # engine target added here):
