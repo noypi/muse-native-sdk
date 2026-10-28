@@ -5,7 +5,7 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-add_library(state src/atom.cpp src/store.cpp src/provenance.cpp src/frame.cpp query/src/query_client.cpp query/src/query_core.cpp query/src/cache.cpp persist/src/snapshot.cpp persist/src/corruption.cpp persist/src/rehydrate.cpp persist/src/restore.cpp sync/src/mutation_queue.cpp sync/src/crdt.cpp sync/src/epoch.cpp)
+add_library(state src/atom.cpp src/store.cpp src/provenance.cpp src/frame.cpp query/src/query_client.cpp query/src/query_core.cpp query/src/cache.cpp persist/src/snapshot.cpp persist/src/corruption.cpp persist/src/rehydrate.cpp persist/src/restore.cpp sync/src/mutation_queue.cpp sync/src/crdt.cpp sync/src/epoch.cpp sync/src/sync_scheduler.cpp sync/src/delta.cpp)
 target_include_directories(state PUBLIC include query/include persist/include sync/include)
 target_compile_options(state PRIVATE -Wall -Wextra -Wpedantic)
 
@@ -86,3 +86,13 @@ add_executable(epoch_test sync/tests/epoch_test.cpp)
 target_link_libraries(epoch_test PRIVATE state)
 target_compile_options(epoch_test PRIVATE -Wall -Wextra -Wpedantic)
 add_test(NAME epoch_test COMMAND epoch_test)
+
+add_executable(background_sync_test sync/tests/background_sync_test.cpp)
+target_link_libraries(background_sync_test PRIVATE state)
+target_compile_options(background_sync_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME background_sync_test COMMAND background_sync_test)
+
+add_executable(convergence_test sync/tests/convergence_test.cpp)
+target_link_libraries(convergence_test PRIVATE state)
+target_compile_options(convergence_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME convergence_test COMMAND convergence_test)
