@@ -5,9 +5,10 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-add_library(state src/atom.cpp src/store.cpp src/provenance.cpp src/frame.cpp query/src/query_client.cpp query/src/query_core.cpp query/src/cache.cpp persist/src/snapshot.cpp persist/src/corruption.cpp persist/src/rehydrate.cpp persist/src/restore.cpp sync/src/mutation_queue.cpp sync/src/crdt.cpp sync/src/epoch.cpp sync/src/sync_scheduler.cpp sync/src/delta.cpp)
-target_include_directories(state PUBLIC include query/include persist/include sync/include)
+add_library(state src/atom.cpp src/store.cpp src/provenance.cpp src/frame.cpp query/src/query_client.cpp query/src/query_core.cpp query/src/cache.cpp persist/src/snapshot.cpp persist/src/corruption.cpp persist/src/rehydrate.cpp persist/src/restore.cpp sync/src/mutation_queue.cpp sync/src/crdt.cpp sync/src/epoch.cpp sync/src/sync_scheduler.cpp sync/src/delta.cpp devtools/src/devtools.cpp)
+target_include_directories(state PUBLIC include query/include persist/include sync/include devtools/include)
 target_compile_options(state PRIVATE -Wall -Wextra -Wpedantic)
+set_source_files_properties(devtools/src/devtools.cpp PROPERTIES COMPILE_DEFINITIONS "MUSE_STATE_DEVTOOLS=1")
 
 add_executable(atom_core_test tests/atom_core_test.cpp)
 target_link_libraries(atom_core_test PRIVATE state)
@@ -96,3 +97,20 @@ add_executable(convergence_test sync/tests/convergence_test.cpp)
 target_link_libraries(convergence_test PRIVATE state)
 target_compile_options(convergence_test PRIVATE -Wall -Wextra -Wpedantic)
 add_test(NAME convergence_test COMMAND convergence_test)
+
+add_executable(time_travel_test devtools/tests/time_travel_test.cpp)
+target_link_libraries(time_travel_test PRIVATE state)
+target_compile_options(time_travel_test PRIVATE -Wall -Wextra -Wpedantic)
+target_compile_definitions(time_travel_test PRIVATE MUSE_STATE_DEVTOOLS=1)
+add_test(NAME time_travel_test COMMAND time_travel_test)
+
+add_executable(disabled_overhead_test devtools/tests/disabled_overhead_test.cpp)
+target_link_libraries(disabled_overhead_test PRIVATE state)
+target_compile_options(disabled_overhead_test PRIVATE -Wall -Wextra -Wpedantic)
+target_compile_definitions(disabled_overhead_test PRIVATE MUSE_STATE_DEVTOOLS=0)
+add_test(NAME disabled_overhead_test COMMAND disabled_overhead_test)
+
+# Release-artifact check (TC-STATE-033): devtools.cpp compiled as release
+# (MUSE_STATE_DEVTOOLS=0) must expose no DevTimeline/Snapshot/Dag symbols.
+add_test(NAME devtools_disabled_no_symbols
+  COMMAND sh -c "c++ -std=c++17 -DMUSE_STATE_DEVTOOLS=0 -I ${CMAKE_CURRENT_SOURCE_DIR}/include -I ${CMAKE_CURRENT_SOURCE_DIR}/devtools/include -c ${CMAKE_CURRENT_SOURCE_DIR}/devtools/src/devtools.cpp -o ${CMAKE_CURRENT_BINARY_DIR}/devtools_disabled_check.o && (nm -C ${CMAKE_CURRENT_BINARY_DIR}/devtools_disabled_check.o | grep -E 'DevTimeline|Snapshot|exportDag' && exit 1 || exit 0)")
