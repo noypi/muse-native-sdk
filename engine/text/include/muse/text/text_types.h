@@ -33,6 +33,9 @@ enum class Status {
   kOk = 0,
   kInvalidScript = 1,
   kNoFaceAvailable = 2,
+  // FR-TEXT-001 / AC-TEXT-002: malformed input for bidi/line-break (T5).
+  kInvalidInput = 3,
+  kUnsupportedSequence = 4,
 };
 
 // Minimal StatusOr: ok()/status()/operator* surface the contract needs.
