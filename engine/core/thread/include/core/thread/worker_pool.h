@@ -16,6 +16,10 @@ namespace thread {
 // skip work itself. submit() after shutdown() drops the task safely;
 // shutdown() is idempotent and joins all workers.
 //
+// A count of n == 0 is allowed but discouraged: no worker threads run, so
+// submitted tasks stay queued until shutdown() drops them. Prefer n >= 1
+// for any pool expected to execute work.
+//
 // Upgrade path to FR-CORE-003: replace the single central mutex+heap with
 // per-worker Chase-Lev deques and work stealing; keep Task, Priority, and
 // CancellationToken unchanged. Implemented on std::thread (C++17) with the

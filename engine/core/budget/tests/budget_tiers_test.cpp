@@ -11,6 +11,7 @@
 // Expected state: RED — <core/budget/manager.h> does not exist yet, so
 // this file fails to compile until the coder implements T4.
 #include <cstddef>
+#include <cstdint>
 #include <cstdio>
 #include <stdexcept>
 
@@ -171,12 +172,34 @@ static void check_vram_guard_releases_on_exception() {
   mgr.releaseVram(cfg.vramCapBytes);
 }
 
+// size_t-wraparound guard: used_ + bytes must not wrap past the cap check.
+// acquireVram(SIZE_MAX) with 1 MiB already used would wrap `used_ + bytes`
+// under a naive comparison; it must be rejected and leave accounting intact.
+static void check_acquire_vram_wraparound_rejected() {
+  core::budget::Manager::Config cfg =
+      core::budget::Manager::tierForRam(8 * kGiB);
+  core::budget::Manager mgr(cfg);
+  CHECK("acquire 1 MiB", mgr.acquireVram(1 * kMiB));
+  CHECK("SIZE_MAX acquire rejected (no wraparound bypass)",
+        !mgr.acquireVram(SIZE_MAX));
+  CHECK("huge acquire past remaining cap rejected",
+        !mgr.acquireVram(cfg.vramCapBytes));
+  CHECK("budget intact after wraparound attempts",
+        mgr.acquireVram(cfg.vramCapBytes - 1 * kMiB));
+  mgr.releaseVram(cfg.vramCapBytes - 1 * kMiB);
+  mgr.releaseVram(1 * kMiB);
+  CHECK("budget fully reusable after wraparound attempts",
+        mgr.acquireVram(cfg.vramCapBytes));
+  mgr.releaseVram(cfg.vramCapBytes);
+}
+
 int main() {
   check_tier_low_end_cap();
   check_tier_high_end_cap();
   check_tier_mid_band_monotone();
   check_acquire_release_within_cap();
   check_acquire_invalid_sizes();
+  check_acquire_vram_wraparound_rejected();
   check_on_trim_critical_evicts();
   check_on_trim_low_level_safe();
   check_vram_guard_releases_on_scope_exit();

@@ -1,5 +1,7 @@
 #include "core/budget/manager.h"
 
+#include <cstdint>
+
 namespace core {
 namespace budget {
 
@@ -25,8 +27,12 @@ Manager::Config Manager::tierForRam(size_t ramBytes) noexcept {
   const size_t span = kHighRamBytes - kLowRamBytes;
   const size_t growth = kHighCapBytes - kLowCapBytes;
   const size_t off = ramBytes - kLowRamBytes;
-  // off < span and growth < 2^32, so off * growth cannot overflow size_t.
-  return Config{ramBytes, kLowCapBytes + off * growth / span};
+  // Compute in 64 bits so off * growth cannot wrap on 32-bit size_t.
+  const uint64_t cap =
+      static_cast<uint64_t>(kLowCapBytes) +
+      static_cast<uint64_t>(off) * static_cast<uint64_t>(growth) /
+          static_cast<uint64_t>(span);
+  return Config{ramBytes, static_cast<size_t>(cap)};
 }
 
 void Manager::onTrim(int level) noexcept {
@@ -47,7 +53,10 @@ bool Manager::acquireVram(size_t bytes) noexcept {
   if (bytes > config_.vramCapBytes) {
     return false;
   }
-  if (used_ + bytes > config_.vramCapBytes) {
+  if (used_ >= config_.vramCapBytes) {
+    return false;
+  }
+  if (bytes > config_.vramCapBytes - used_) {
     return false;
   }
   used_ += bytes;

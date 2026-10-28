@@ -111,10 +111,60 @@ static void check_frame_sequence_arena_guard_reset() {
   }
 }
 
+// A trip inside an inner RenderGuard survives the inner guard's exit: the
+// inner trip ORs into the outer latch instead of being discarded.
+static void check_nested_guard_preserves_inner_trip() {
+  {
+    core::mem::RenderGuard outer(true);
+    {
+      core::mem::RenderGuard inner(true);
+      int* leak = new (std::nothrow) int(1);  // intentional trip wire
+      CHECK("inner trip latched",
+            core::mem::RenderGuard::globalHeapUsed());
+      delete leak;
+    }
+    CHECK("outer still latched after inner guard exits",
+          core::mem::RenderGuard::globalHeapUsed());
+  }
+}
+
+// A clean inner guard must not trip the outer latch.
+static void check_nested_guard_clean_inner_stays_clean() {
+  {
+    core::mem::RenderGuard outer(true);
+    {
+      core::mem::RenderGuard inner(true);
+      unsigned char buf[64];
+      core::mem::FrameArena arena(buf, sizeof(buf));
+      void* p = arena.allocate(16, 8);
+      CHECK("inner arena alloc succeeds", p != nullptr);
+    }
+    CHECK("outer clean after clean inner guard exits",
+          !core::mem::RenderGuard::globalHeapUsed());
+  }
+}
+
+// C++17 aligned operator new(size_t, align_val_t) also trips the guard.
+static void check_aligned_new_trips_guard() {
+  {
+    core::mem::RenderGuard guard(true);
+    struct alignas(32) Aligned {
+      unsigned char b[32];
+    };
+    Aligned* p = new (std::align_val_t(alignof(Aligned))) Aligned{};
+    CHECK("aligned new trips guard",
+          core::mem::RenderGuard::globalHeapUsed());
+    ::operator delete(p, std::align_val_t(alignof(Aligned)));
+  }
+}
+
 int main() {
   check_arena_alloc_passes_under_guard();
   check_pool_alloc_passes_under_guard();
   check_global_new_trips_guard();
+  check_nested_guard_preserves_inner_trip();
+  check_nested_guard_clean_inner_stays_clean();
+  check_aligned_new_trips_guard();
   check_guard_off_records_nothing();
   check_pool_exhaustion_returns_nullptr();
   check_frame_sequence_arena_guard_reset();

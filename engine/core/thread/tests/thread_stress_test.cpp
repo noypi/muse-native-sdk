@@ -73,11 +73,13 @@ static long parse_calls(int argc, char** argv) {
   return calls;
 }
 
-// --- phase 1: 100k background posts, frame-by-frame drain ------------------
-// Posts `calls` callbacks from background threads, drains frame-by-frame in
-// chunks, and asserts: every callback ran exactly once, LocalRefScope depth
-// never exceeded the 512-entry analogue, no drain exceeded the frame budget,
-// and no ANR (drain starvation) occurred.
+// --- phase 1: 100k background posts, per-frame chunked post/drain -------
+// Each frame posts at most kPerFrame callbacks from background producer
+// threads (proving post() is thread-safe under the 100k load), asserts the
+// queue never holds more than one frame's chunk, then drains exactly once
+// before the next frame's posts. Every drain runs under the main-thread
+// watchdog: any drain exceeding the frame budget counts as over-budget, a
+// drain exceeding 5x counts as an ANR/starvation event.
 static void check_stress_posts(long calls) {
   core::thread::Dispatcher d;
   std::atomic<long> ran{0};
@@ -85,48 +87,44 @@ static void check_stress_posts(long calls) {
   std::atomic<int> overflow_hits{0};
   std::atomic<int> scope_violations{0};
 
-  // Background producers: split posts across 4 threads to prove post() is
-  // thread-safe under the 100k load.
   const int kProducers = 4;
-  std::vector<std::thread> producers;
-  producers.reserve(static_cast<size_t>(kProducers));
-  for (int p = 0; p < kProducers; ++p) {
-    producers.emplace_back([&d, &ran, &max_depth, &overflow_hits,
-                            &scope_violations, calls, p, kProducers] {
-      long per = calls / kProducers;
-      long start = static_cast<long>(p) * per;
-      long end = (p == kProducers - 1) ? calls : start + per;
-      for (long i = start; i < end; ++i) {
-        d.post([&ran, &max_depth, &overflow_hits, &scope_violations] {
-          int depth = core::thread::LocalRefScope::depth();
-          if (depth <= 0) ++scope_violations;  // not wrapped in a scope
-          if (depth > kLocalRefBudget) ++overflow_hits;
-          int prev = max_depth.load(std::memory_order_relaxed);
-          while (depth > prev &&
-                 !max_depth.compare_exchange_weak(prev, depth)) {
-          }
-          ++ran;
-        });
-      }
-    });
-  }
-  for (auto& t : producers) t.join();
-
-  CHECK("stress: all background posts queued",
-        d.pending() == static_cast<std::size_t>(calls));
-  CHECK("stress: nothing ran before first drain", ran.load() == 0);
-
-  // Drain frame-by-frame (1000 callbacks per frame boundary) with the
-  // main-thread watchdog armed on every drain.
   const long kPerFrame = 1000;
   long frames = 0;
   long over_budget_frames = 0;
   long anr_events = 0;
-  while (d.pending() > 0) {
-    // Bound the work per frame: the dispatcher drains everything queued, so
-    // re-queue in per-frame chunks by draining what is there — here the
-    // queue was fully posted up front, and a single drain must still balance
-    // LocalRefScope depth; frame counting below tracks watchdog windows.
+  bool chunk_bound_ok = true;
+  long posted_total = 0;
+  while (posted_total < calls) {
+    long chunk = calls - posted_total;
+    if (chunk > kPerFrame) chunk = kPerFrame;
+    // Background producers split this frame's chunk; joined before drain.
+    std::vector<std::thread> producers;
+    producers.reserve(static_cast<size_t>(kProducers));
+    long base = chunk / kProducers;
+    long rem = chunk % kProducers;
+    for (int p = 0; p < kProducers; ++p) {
+      long n = base + (p < rem ? 1 : 0);
+      producers.emplace_back([&d, &ran, &max_depth, &overflow_hits,
+                              &scope_violations, n] {
+        for (long i = 0; i < n; ++i) {
+          d.post([&ran, &max_depth, &overflow_hits, &scope_violations] {
+            int depth = core::thread::LocalRefScope::depth();
+            if (depth <= 0) ++scope_violations;  // not wrapped in a scope
+            if (depth > kLocalRefBudget) ++overflow_hits;
+            int prev = max_depth.load(std::memory_order_relaxed);
+            while (depth > prev &&
+                   !max_depth.compare_exchange_weak(prev, depth)) {
+            }
+            ++ran;
+          });
+        }
+      });
+    }
+    for (auto& t : producers) t.join();
+    posted_total += chunk;
+    if (d.pending() > static_cast<std::size_t>(kPerFrame)) {
+      chunk_bound_ok = false;  // more than one frame's chunk queued
+    }
     auto t0 = std::chrono::steady_clock::now();
     d.drainFrame();
     auto t1 = std::chrono::steady_clock::now();
@@ -135,14 +133,15 @@ static void check_stress_posts(long calls) {
     ++frames;
     if (ms > kFrameBudgetMs) ++over_budget_frames;
     if (ms > kAnrMs) ++anr_events;
-    if (d.pending() > 0) {
-      // Defensive: dispatcher drains fully per contract, so a second
-      // iteration only happens if posts arrived late; cap iterations.
-      (void)kPerFrame;
-      if (frames > calls / 1 + 2) break;
+    if (d.pending() != 0) {
+      // Dispatcher drains fully per contract; anything left means a late
+      // post raced the drain — still a chunk-bound violation for this test.
+      chunk_bound_ok = false;
     }
   }
 
+  CHECK("stress: per-frame chunk bound held (pending <= 1000 at every drain)",
+        chunk_bound_ok);
   CHECK("stress: all 100k callbacks ran exactly once", ran.load() == calls);
   CHECK("stress: queue empty after frame-by-frame drain", d.pending() == 0);
   CHECK("stress: LocalRefScope depth balanced after drain",

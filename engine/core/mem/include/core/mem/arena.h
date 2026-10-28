@@ -38,6 +38,15 @@ class FrameArena {
 
 // Test-build trip wire: while armed, any global-heap allocation latches
 // globalHeapUsed() until the guard exits its scope.
+//
+// WARNING: the global operator new/delete replacements live in
+// engine/core/mem/src/arena.cpp and replace the PROCESS-WIDE heap
+// operators for every translation unit linked with core_mem. Production
+// render code MUST NOT link that TU: the replacement is scoped to test
+// builds only (link the trip-wire TU from test targets, keep it out of
+// production link lines). Linking it into production risks ODR clashes
+// with other operator-new definitions, cross-TU new/delete mismatch, and
+// heap-alloc misattribution outside the guard.
 class RenderGuard {
  public:
   explicit RenderGuard(bool on) noexcept;

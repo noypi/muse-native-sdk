@@ -21,7 +21,11 @@ class Dispatcher {
   Dispatcher(const Dispatcher&) = delete;
   Dispatcher& operator=(const Dispatcher&) = delete;
 
-  void post(Fn f, bool immediate = false) noexcept;
+  // Note: post() is NOT noexcept — copying the std::function and the
+  // queue push can throw; the implementation swallows queue errors but the
+  // by-value Fn copy happens before the body runs, so callers must not
+  // rely on a non-throwing guarantee.
+  void post(Fn f, bool immediate = false);
   void drainFrame() noexcept;
   std::size_t pending() const noexcept;
 

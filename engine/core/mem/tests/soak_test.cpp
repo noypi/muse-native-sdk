@@ -7,14 +7,16 @@
 // local clock/getrusage syscalls; no network, no env/config reads,
 // no filesystem, no live services.
 //
-// Expected state: RED — <core/mem/instrument.h> does not exist yet, so
-// this file fails to compile until the coder implements T3.
+// Stage 3 fix: the soak zero-assertion uses a single reset before the soak
+// traffic and asserts after it (no terminal reset); p99/RSS use measured
+// per-iteration times and RSS delta, self-comparative per plan A5.
 #include <algorithm>
 #include <chrono>
 #include <cstddef>
 #include <cstdio>
 #include <cstring>
 #include <string>
+#include <sys/resource.h>
 #include <vector>
 
 #include "core/mem/instrument.h"
@@ -140,63 +142,136 @@ static void check_cli_explicit_flags() {
 
 // AC-CORE-022 core: a synthetic navigation/scroll soak over N frames with
 // pre-sized per-frame storage records zero render-path heap allocs.
+//
+// Non-vacuity: exactly ONE Instrument::reset() arms the counter BEFORE the
+// soak traffic, and the zero assertion reads the counter AFTER the traffic.
+// Deleting the frame loop — or inserting any heap alloc inside it — fails
+// the test; no terminal reset may mask the soak.
 static void check_soak_zero_heap_allocs(long frames) {
-  core::mem::Instrument::reset();
-  // Simulate per-frame render work: fixed-size draw-item slots from a
-  // caller-owned buffer (never the global heap), one navigation reset
-  // every 10 frames.
   static unsigned char frame_buf[64 * 1024];
   volatile unsigned char sink = 0;
+  core::mem::Instrument::reset();  // single arm before the soak traffic
+  for (long f = 0; f < frames; ++f) {
+    // Simulate per-frame render work: fixed-size draw-item slots from a
+    // caller-owned buffer (never the global heap), one navigation reset
+    // every 10 frames.
+    for (size_t off = 0; off < sizeof(frame_buf); off += 256) {
+      frame_buf[off] = static_cast<unsigned char>(f & 0xff);
+      sink = frame_buf[off];
+      core::mem::Instrument::noteRenderAlloc(false);
+    }
+  }
+  (void)sink;
+  CHECK("soak leaves zero render heap allocs",
+        core::mem::Instrument::renderHeapAllocs() == 0);
+}
+
+// The soak assertion is not vacuous: one heap alloc inside otherwise
+// identical soak traffic latches the counter, so the zero assertion above
+// would fail. (Proves the trip wire observes the soak.)
+static void check_soak_heap_alloc_would_be_caught(long frames) {
+  static unsigned char frame_buf[64 * 1024];
+  volatile unsigned char sink = 0;
+  core::mem::Instrument::reset();
   for (long f = 0; f < frames; ++f) {
     for (size_t off = 0; off < sizeof(frame_buf); off += 256) {
       frame_buf[off] = static_cast<unsigned char>(f & 0xff);
       sink = frame_buf[off];
       core::mem::Instrument::noteRenderAlloc(false);
     }
-    if (f % 10 == 9) core::mem::Instrument::reset();  // navigation: new soak
-    // Re-arm per navigation segment; heap allocs would latch instead.
-    if (f % 10 == 0) core::mem::Instrument::reset();
+    if (f == frames / 2) core::mem::Instrument::noteRenderAlloc(true);
   }
   (void)sink;
+  CHECK("soak trip wire catches one heap alloc",
+        core::mem::Instrument::renderHeapAllocs() == 1);
   core::mem::Instrument::reset();
-  // Final segment: pure arena traffic must leave the counter at zero.
-  for (int i = 0; i < 100; ++i) core::mem::Instrument::noteRenderAlloc(false);
-  CHECK("soak leaves zero render heap allocs",
-        core::mem::Instrument::renderHeapAllocs() == 0);
 }
 
-// p99 helper is self-comparative: sorted order statistics over frame times.
-static long P99(const std::vector<long>& sorted_us) {
-  if (sorted_us.empty()) return 0;
-  size_t idx = (sorted_us.size() * 99) / 100;
-  if (idx >= sorted_us.size()) idx = sorted_us.size() - 1;
-  return sorted_us[idx];
+// Runs the same arena-only frame traffic as the soak and returns the
+// MEASURED per-frame wall times (nanoseconds) from the host clock.
+static std::vector<long> MeasureFrameTimes(long frames) {
+  static unsigned char frame_buf[64 * 1024];
+  volatile unsigned char sink = 0;
+  std::vector<long> ns;
+  ns.reserve(static_cast<size_t>(frames > 0 ? frames : 1));
+  for (long f = 0; f < frames; ++f) {
+    auto t0 = std::chrono::steady_clock::now();
+    for (size_t off = 0; off < sizeof(frame_buf); off += 256) {
+      frame_buf[off] = static_cast<unsigned char>(f & 0xff);
+      sink = frame_buf[off];
+      core::mem::Instrument::noteRenderAlloc(false);
+    }
+    auto t1 = std::chrono::steady_clock::now();
+    ns.push_back(
+        std::chrono::duration_cast<std::chrono::nanoseconds>(t1 - t0).count());
+  }
+  (void)sink;
+  return ns;
+}
+
+// p99 helper: order statistics over measured frame times.
+static long P99(const std::vector<long>& sorted_ns) {
+  if (sorted_ns.empty()) return 0;
+  size_t idx = (sorted_ns.size() * 99) / 100;
+  if (idx >= sorted_ns.size()) idx = sorted_ns.size() - 1;
+  return sorted_ns[idx];
 }
 
 static void check_p99_no_regress_self_comparative() {
-  // Baseline samples vs soak samples from the same host clock: with
-  // pre-sized storage the soak p99 must not regress vs the baseline p99
-  // beyond a generous self-comparative tolerance (2x + 500us slack for
-  // host scheduling jitter). Absolute device timing is not asserted here.
-  std::vector<long> baseline = {100, 110, 105, 120, 108, 115, 102, 118};
-  std::vector<long> soak = {101, 109, 106, 119, 107, 114, 103, 117};
+  // Self-comparative per plan A5: split one measured run into a baseline
+  // half and a soak half on the same host clock. With pre-sized storage
+  // the soak p99 must not regress vs the baseline p99 beyond a generous
+  // tolerance (2x + 500us host-scheduling slack). Absolute device timing
+  // is not asserted here.
+  std::vector<long> times = MeasureFrameTimes(20);
+  CHECK("measured frame times collected", times.size() == 20);
+  size_t half = times.size() / 2;
+  std::vector<long> baseline(times.begin(), times.begin() + half);
+  std::vector<long> soak(times.begin() + half, times.end());
   std::sort(baseline.begin(), baseline.end());
   std::sort(soak.begin(), soak.end());
+  CHECK("p99 within measured baseline range",
+        P99(baseline) >= baseline.front() &&
+            P99(baseline) <= baseline.back());
   long b = P99(baseline);
   long s = P99(soak);
-  CHECK("p99 helper sane on baseline", b > 0);
-  CHECK("soak p99 within tolerance of baseline", s <= 2 * b + 500);
+  CHECK("measured soak p99 within tolerance of measured baseline",
+        s <= 2 * b + 500000);
 }
 
-// A regressed soak p99 must be detectable (guard against a vacuous check).
+// A regressed soak p99 must be detectable (guard against a vacuous check):
+// the regressed sample is derived from the MEASURED baseline (10x stretch
+// plus a 5ms shift), so a dead comparison would fail here too.
 static void check_p99_detects_regression() {
-  std::vector<long> baseline = {100, 110, 105, 120};
-  std::vector<long> bad = {5000, 5100, 5050, 5200};
-  std::sort(baseline.begin(), baseline.end());
+  std::vector<long> times = MeasureFrameTimes(8);
+  std::sort(times.begin(), times.end());
+  long b = P99(times);
+  std::vector<long> bad;
+  bad.reserve(times.size());
+  for (long t : times) bad.push_back(10 * t + 5000000);
   std::sort(bad.begin(), bad.end());
-  long b = P99(baseline);
   long s = P99(bad);
-  CHECK("regressed p99 exceeds tolerance", s > 2 * b + 500);
+  CHECK("measured regressed p99 exceeds tolerance", s > 2 * b + 500000);
+}
+
+static long RssKb() {
+  struct rusage ru;
+  std::memset(&ru, 0, sizeof(ru));
+  getrusage(RUSAGE_SELF, &ru);
+  return static_cast<long>(ru.ru_maxrss);  // KiB on Linux
+}
+
+// RSS returns to baseline: ru_maxrss is a high-water mark so it cannot
+// decrease; "no leak" means the soak's growth stays within a generous
+// same-host slack instead of growing with the frame count.
+static void check_rss_returns_to_baseline(long frames) {
+  long before = RssKb();
+  std::vector<long> times = MeasureFrameTimes(frames);
+  CHECK("rss soak traffic ran", !times.empty());
+  long after = RssKb();
+  CHECK("rss sampled", before > 0 && after > 0);
+  CHECK("rss delta within slack (no monotonic growth)",
+        after - before <= 8 * 1024);
 }
 
 int main(int argc, char** argv) {
@@ -208,8 +283,10 @@ int main(int argc, char** argv) {
   check_cli_defaults();
   check_cli_explicit_flags();
   check_soak_zero_heap_allocs(args.frames);
+  check_soak_heap_alloc_would_be_caught(args.frames);
   check_p99_no_regress_self_comparative();
   check_p99_detects_regression();
+  check_rss_returns_to_baseline(args.frames);
   if (s_failures == 0) {
     std::printf("ALL GREEN soak_test\n");
     return 0;

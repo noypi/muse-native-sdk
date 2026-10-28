@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <string>
 #include <thread>
 
 namespace core {
@@ -25,7 +26,9 @@ class MainThreadChecker {
   static void setMainThreadId(std::thread::id id) noexcept;
   static void check(const char* what) noexcept;
   static std::size_t violations() noexcept;
-  static const char* lastWhat() noexcept;
+  // Returns a copy taken under the lock: the previous const char* view
+  // dangled as soon as another thread recorded a new violation.
+  static std::string lastWhat() noexcept;
   static void resetForTest() noexcept;
 
  private:

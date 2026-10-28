@@ -66,11 +66,11 @@ std::size_t MainThreadChecker::violations() noexcept {
   }
 }
 
-const char* MainThreadChecker::lastWhat() noexcept {
+std::string MainThreadChecker::lastWhat() noexcept {
   try {
     CheckerState& s = checkerState();
     std::lock_guard<std::mutex> lock(s.mutex);
-    return s.last.c_str();
+    return s.last;
   } catch (...) {
     return "";
   }
@@ -104,7 +104,7 @@ struct Dispatcher::Impl {
 Dispatcher::Dispatcher() : impl_(new Impl()) {}
 Dispatcher::~Dispatcher() { delete impl_; }
 
-void Dispatcher::post(Fn f, bool immediate) noexcept {
+void Dispatcher::post(Fn f, bool immediate) {
   if (!f) return;
   if (immediate) {
     // Bypass batching: run inline, still inside a LocalRefScope.
