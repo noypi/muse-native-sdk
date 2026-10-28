@@ -357,6 +357,31 @@ describe('BUG-TSX-010 T2 — runBuild validates muse: fail-closed', () => {
 });
 
 // ---------------------------------------------------------------------------
+// BUG-TSX-010 Batch 2 — T3 roundtrip regression (TC-TSX-022): `init
+// <tmpdir>` then `build` on the same dir exits 0 with `dist/ir.json` +
+// `dist/tree.mui.bin`. Fails before the T1+T2 fix (exit 2 `unknown key
+// muse`), passes after. Hermetic: node:test + node:assert/strict + stdlib
+// only; tmp dirs via mkTmp, cleaned in afterEach; existing T6/T7 fixtures
+// untouched.
+// Interface (plan verbatim): `node --test
+// packages/cli/test/commands.test.js` — new case `init <tmpdir> then build
+// <tmpdir>: exit 0 and dist/ir.json + dist/tree.mui.bin exist`.
+// ---------------------------------------------------------------------------
+describe('BUG-TSX-010 T3 — init-to-build roundtrip (TC-TSX-022)', () => {
+  it('init <tmpdir> then build <tmpdir>: exit 0 and dist/ir.json + dist/tree.mui.bin exist', () => {
+    const parent = mkTmp('muse-t3roundtrip-');
+    const dir = path.join(parent, 'roundtrip-app');
+    const ri = runCli(['init', dir]);
+    assert.equal(ri.status, 0, `init must exit 0, got ${ri.status}: ${ri.stderr}`);
+    const r = runCli(['build', dir]);
+    assert.equal(r.status, 0, `build of init output must exit 0, got ${r.status}: ${r.stderr}`);
+    assert.ok(!/unknown key.*muse/.test(r.stderr), `stderr must not report an unknown muse key, got: ${JSON.stringify(r.stderr)}`);
+    assert.ok(fs.statSync(path.join(dir, 'dist', 'ir.json')).isFile(), 'dist/ir.json must be written');
+    assert.ok(fs.statSync(path.join(dir, 'dist', 'tree.mui.bin')).isFile(), 'dist/tree.mui.bin must be written');
+  });
+});
+
+// ---------------------------------------------------------------------------
 // T8 — `muse-native dev` validates + serves (minimal).
 // Interface: `muse-native dev <appDir>` → validates sources (same loader as
 // build), stdout `serving <appDir> at http://127.0.0.1:<port>/` (default port

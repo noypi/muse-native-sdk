@@ -280,3 +280,83 @@ describe('BUG-TSX-010 T1 — muse: subtree bypasses flat ConfigError gate', () =
     assert.deepEqual(config, { name: 'hi', version: '0.0.1' });
   });
 });
+
+// ---------------------------------------------------------------------------
+// BUG-TSX-010 Batch 2 — T3 seam cases (TC-TSX-022): the T1-parsed template
+// `muse:` subtree (not a hand-built object) validates `{ ok: true }`
+// against the inline allow-list; unknown route / wrong model / unlisted
+// param throw `ConfigError` (existing contract, now wired).
+// Hermetic: node:test + node:assert/strict + stdlib (fs/os/path) only. The
+// template text is read from the committed template file and parsed with a
+// minimal in-test indentation-aware parser, so the parser routing (nested
+// `muse:` lines must not leak as scalar keys) is covered; fixtures use only
+// dummy IDs, no secrets, no network, no live services.
+// Interface (plan verbatim): `node --test
+// packages/cli/test/muse-models.test.js` — seam cases: template-file
+// `muse:` subtree validates `{ ok: true }` against the inline allow-list;
+// unknown route / wrong model / unlisted param throw `ConfigError`
+// (existing contract, now wired).
+// ---------------------------------------------------------------------------
+describe('BUG-TSX-010 T3 — template-file muse: subtree seam (TC-TSX-022)', () => {
+  // Minimal indentation-aware parse of the top-level `muse:` subtree out of
+  // raw yaml text: mirrors the T1 routing (nested lines must not leak as
+  // scalar keys) without adding a YAML dependency. Returns `{ muse }`.
+  function parseMuseSubtree(text) {
+    const lines = text.split('\n');
+    const start = lines.findIndex((l) => /^muse:\s*$/.test(l));
+    assert.ok(start >= 0, 'fixture text must declare a top-level muse: block');
+    const muse = {};
+    const stack = [{ indent: -1, obj: muse }];
+    for (const raw of lines.slice(start + 1)) {
+      if (/^\s*(#|$)/.test(raw)) continue; // comment or blank
+      const indent = raw.match(/^\s*/)[0].length;
+      if (indent === 0) break; // next top-level key: muse: subtree ends
+      const m = raw.match(/^\s*([^:\s][^:]*):\s*(.*?)\s*$/);
+      assert.ok(m, `fixture line must be key: value, got ${JSON.stringify(raw)}`);
+      while (stack[stack.length - 1].indent >= indent) stack.pop();
+      const parent = stack[stack.length - 1].obj;
+      const key = m[1].trim();
+      const value = m[2];
+      if (value === '' || value === '{}') {
+        parent[key] = value === '{}' ? {} : {};
+        if (value === '') stack.push({ indent, obj: parent[key] });
+      } else {
+        parent[key] = value;
+      }
+    }
+    return { muse };
+  }
+
+  function templateText() {
+    return fs.readFileSync(path.join(__dirname, '..', 'templates', 'muse-native.yaml'), 'utf8');
+  }
+
+  it('template-file muse: subtree validates { ok: true } against the inline allow-list', () => {
+    const { validateMuseSection } = loadImpl();
+    const parsed = parseMuseSubtree(templateText());
+    assert.ok(parsed.muse.models, 'parsed subtree must carry models');
+    assert.ok(parsed.muse.presets, 'parsed subtree must carry presets');
+    assert.deepEqual(validateMuseSection(parsed, allowList()), { ok: true });
+  });
+
+  it('parsed template subtree with an unknown route throws ConfigError naming the route', () => {
+    const { validateMuseSection } = loadImpl();
+    const text = templateText().replace('  models:\n', '  models:\n    speak: gpt-4\n');
+    assertConfigError(() => validateMuseSection(parseMuseSubtree(text), allowList()), 'speak');
+  });
+
+  it('parsed template subtree with a wrong model throws ConfigError naming the model', () => {
+    const { validateMuseSection } = loadImpl();
+    const text = templateText().replace('    reason: muse-spark-1.3', '    reason: gpt-4');
+    assertConfigError(() => validateMuseSection(parseMuseSubtree(text), allowList()), 'gpt-4');
+  });
+
+  it('parsed template subtree with an unlisted preset param throws ConfigError naming the param', () => {
+    const { validateMuseSection } = loadImpl();
+    const text = templateText().replace(
+      '        reasoning_effort: high',
+      '        reasoning_effort: high\n        evil: 1',
+    );
+    assertConfigError(() => validateMuseSection(parseMuseSubtree(text), allowList()), 'evil');
+  });
+});
