@@ -200,6 +200,52 @@ describe('TC-LIFECYCLE-003 config in place — interleaved Activity sequence', (
   });
 });
 
+describe('TC-LIFECYCLE-003 config in place — non-string change pins verbatim pass-through', () => {
+  // SECURITY PIN (FR-LIFECYCLE-003 review row 1): manager and bridge pass
+  // `change` verbatim into hub.dispatch('config:'+change) with no type check,
+  // so non-strings are coerced by the template literal (undefined→
+  // 'config:undefined', null→'config:null', 123→'config:123', {}→
+  // 'config:[object Object]') and dispatched as opaque self-loops: applied
+  // true, recreated false, state unchanged. No throw occurs at this layer —
+  // this test pins that CURRENT behavior. If a type-check fix lands (loud
+  // rejection of non-string `change`), these tests must be updated to assert
+  // the throw instead.
+  const NON_STRINGS = [undefined, null, 123, {}];
+
+  it('manager dispatches non-string change inputs as opaque self-loops without throwing', () => {
+    const { machine, hub } = createHub();
+    const seen = [];
+    hub.subscribe((event) => seen.push(event.transition));
+    const manager = createConfigManager(hub);
+    for (const change of NON_STRINGS) {
+      const before = machine.getState();
+      const result = manager.onConfigurationChanged(change);
+      assert.equal(result.applied, true);
+      assert.equal(result.recreated, false);
+      assert.equal(result.state, before);
+      assert.equal(machine.getState(), before);
+    }
+    assert.deepEqual(
+      seen,
+      NON_STRINGS.map((change) => `config:${change}`)
+    );
+  });
+
+  it('bridge dispatches non-string change inputs as opaque self-loops with state unchanged', () => {
+    // Each call uses a fresh idempotencyKey so dedup cannot mask the dispatch.
+    const { machine, hub } = createHub();
+    const bridge = createActivityBridge(hub, createMemoryStore());
+    let i = 0;
+    for (const change of NON_STRINGS) {
+      const before = machine.getState();
+      const result = bridge.onConfigurationChanged(change, `cfg-nonstring-${(i += 1)}`);
+      assert.equal(result.applied, true);
+      assert.equal(result.recreated, false);
+      assert.equal(machine.getState(), before);
+    }
+  });
+});
+
 describe('TC-LIFECYCLE-003 config in place — opaque change strings', () => {
   it('malicious-looking change strings stay opaque self-loops with state unchanged', () => {
     // ASSUMPTION (d): no validation beyond the hub; opaque names never recreate.
