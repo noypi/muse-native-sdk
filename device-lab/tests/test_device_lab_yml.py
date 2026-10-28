@@ -217,6 +217,39 @@ class TestDeviceLabWorkflowPin(unittest.TestCase):
             "device-lab job must run on ubuntu-latest",
         )
 
+    def test_top_level_permissions_contents_read(self):
+        data = parse_workflow(self, read_workflow(self))
+        permissions = data.get("permissions")
+        self.assertIsInstance(
+            permissions,
+            dict,
+            "workflow must declare top-level `permissions:`",
+        )
+        self.assertEqual(
+            permissions.get("contents"),
+            "read",
+            "top-level permissions must map `contents` to `read` "
+            "(least-privilege token)",
+        )
+
+    def test_device_lab_job_sets_timeout_minutes(self):
+        data = parse_workflow(self, read_workflow(self))
+        jobs = data.get("jobs")
+        self.assertIsInstance(jobs, dict, "workflow has no jobs mapping")
+        self.assertEqual(len(jobs), 1, "workflow must define one job")
+        job = next(iter(jobs.values()))
+        timeout = job.get("timeout-minutes")
+        self.assertIsInstance(
+            timeout,
+            int,
+            "device-lab job must set `timeout-minutes`",
+        )
+        self.assertGreater(
+            timeout,
+            0,
+            "device-lab job `timeout-minutes` must be positive",
+        )
+
     def test_avd_name_is_device_lab_api29(self):
         text = read_workflow(self)
         self.assertIn(
