@@ -5,7 +5,7 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-add_library(input STATIC src/event_model.cpp src/hit_test.cpp src/gesture_arena.cpp src/back_gesture.cpp src/focus_tree.cpp src/focus_restore.cpp src/device_harness.cpp src/stylus_history.cpp src/haptics_settings.cpp)
+add_library(input STATIC src/event_model.cpp src/hit_test.cpp src/gesture_arena.cpp src/back_gesture.cpp src/focus_tree.cpp src/focus_restore.cpp src/device_harness.cpp src/stylus_history.cpp src/haptics_settings.cpp src/haptics.cpp src/drag_drop.cpp)
 target_include_directories(input PUBLIC include)
 target_compile_options(input PRIVATE -Wall -Wextra -Wpedantic)
 
@@ -87,3 +87,17 @@ target_link_libraries(haptics_settings_test PRIVATE input)
 target_compile_options(haptics_settings_test PRIVATE -Wall -Wextra -Wpedantic)
 
 add_test(NAME haptics_settings_test COMMAND haptics_settings_test)
+
+add_executable(haptics_vocabulary_test tests/haptics_vocabulary_test.cpp)
+target_include_directories(haptics_vocabulary_test PRIVATE include)
+target_link_libraries(haptics_vocabulary_test PRIVATE input)
+target_compile_options(haptics_vocabulary_test PRIVATE -Wall -Wextra -Wpedantic)
+
+add_test(NAME haptics_vocabulary_test COMMAND haptics_vocabulary_test)
+
+add_executable(drag_drop_test tests/drag_drop_test.cpp)
+target_include_directories(drag_drop_test PRIVATE include)
+target_link_libraries(drag_drop_test PRIVATE input)
+target_compile_options(drag_drop_test PRIVATE -Wall -Wextra -Wpedantic)
+
+add_test(NAME drag_drop_test COMMAND drag_drop_test)
