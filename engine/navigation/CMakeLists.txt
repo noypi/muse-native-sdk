@@ -22,6 +22,7 @@ add_library(navigation
   src/typed_routes.cpp
   src/nested_graph.cpp
   src/result_channel.cpp
+  src/route_transition.cpp
 )
 target_include_directories(navigation PUBLIC include)
 target_compile_options(navigation PRIVATE -Wall -Wextra -Wpedantic)
@@ -128,6 +129,11 @@ add_executable(result_channel_test tests/result_channel_test.cpp)
 target_link_libraries(result_channel_test PRIVATE navigation)
 target_compile_options(result_channel_test PRIVATE -Wall -Wextra -Wpedantic)
 add_test(NAME result_channel_test COMMAND result_channel_test)
+
+add_executable(route_transition_config_test tests/route_transition_config_test.cpp)
+target_link_libraries(route_transition_config_test PRIVATE navigation)
+target_compile_options(route_transition_config_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME route_transition_config_test COMMAND route_transition_config_test)
 
 # FR-NAV-006 T2 (NAV-APPLINKS codegen invocation — documentation only, no new
 # engine target added here):
