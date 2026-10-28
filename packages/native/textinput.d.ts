@@ -50,6 +50,8 @@ export type TextInputHandle = {
   selectAll(): void;
   value: string;
   selection: { start: number; end: number };
+  insetOffset: number;
+  followInsets(): () => void;
   dispose(): void;
 };
 

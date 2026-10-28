@@ -107,9 +107,81 @@ function createTextInput(deps) {
   // (payload shape, fire-on-every-change) stands either way.
   const onSelectionChange =
     typeof safe.onSelectionChange === 'function' ? safe.onSelectionChange : null;
+  const insets = safe.insets;
   let committed = readCommittedText(editingEngine, binding);
   let disposed = false;
   const cleanups = [];
+
+  // T4 (AC-M3-013): field-only translation offset following the animated IME
+  // inset. Consumes `deps.insets` frames opaquely — the offset is always the
+  // latest `imeBottom`, applied as a translation on this field only, never as
+  // a layout pass (no engine/clipboard/binding call happens here).
+  function readInsetBottom() {
+    if (insets !== undefined && insets !== null) {
+      if (typeof insets.current === 'function') {
+        try {
+          const frame = insets.current();
+          if (
+            frame !== undefined &&
+            frame !== null &&
+            typeof frame === 'object' &&
+            typeof frame.imeBottom === 'number'
+          ) {
+            return frame.imeBottom;
+          }
+        } catch (_) {
+          // Fall through to the last known offset.
+        }
+      }
+    }
+    return null;
+  }
+
+  let insetOffset = readInsetBottom();
+  if (typeof insetOffset !== 'number') {
+    insetOffset = 0;
+  }
+
+  function followInsets() {
+    if (insets === undefined || insets === null || typeof insets.subscribe !== 'function') {
+      return () => {};
+    }
+    const rested = readInsetBottom();
+    if (typeof rested === 'number') {
+      insetOffset = rested;
+    }
+    let active = true;
+    const listener = (frame) => {
+      if (!active) {
+        return;
+      }
+      if (frame !== undefined && frame !== null && typeof frame === 'object') {
+        // Opaque per-frame contract: the offset IS the latest imeBottom.
+        insetOffset = frame.imeBottom;
+      }
+    };
+    let unsub = null;
+    try {
+      unsub = insets.subscribe(listener);
+    } catch (_) {
+      return () => {};
+    }
+    const disposeSub = () => {
+      if (!active) {
+        return;
+      }
+      active = false;
+      if (typeof unsub === 'function') {
+        try {
+          unsub();
+        } catch (_) {
+          // Unsubscribe must never throw.
+        }
+      }
+    };
+    cleanups.push(disposeSub);
+    return disposeSub;
+  }
 
   function currentText() {
     if (
@@ -330,6 +402,7 @@ function createTextInput(deps) {
     paste,
     selectAll,
     dispose,
+    followInsets,
   };
 
   Object.defineProperty(handle, 'value', {
@@ -342,6 +415,12 @@ function createTextInput(deps) {
     enumerable: true,
     get() {
       return getSelection();
+    },
+  });
+  Object.defineProperty(handle, 'insetOffset', {
+    enumerable: true,
+    get() {
+      return insetOffset;
     },
   });
 
