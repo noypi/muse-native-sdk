@@ -6,6 +6,6 @@
 import type { ButtonProps } from '../index';
 
 // @ts-expect-error - 'giant' is not a valid Button variant (AC-M3-003 union)
-const buttonGiant: ButtonProps = { variant: 'giant' };
+const buttonGiant: ButtonProps = { variant: 'giant', label: 'x' };
 
 export { buttonGiant };
