@@ -134,3 +134,13 @@ add_executable(ime_session_test tests/ime_session_test.cpp)
 target_link_libraries(ime_session_test PRIVATE runtime)
 target_compile_options(ime_session_test PRIVATE -Wall -Wextra -Wpedantic)
 add_test(NAME ime_session_test COMMAND ime_session_test)
+
+add_executable(inset_animation_test tests/inset_animation_test.cpp)
+target_link_libraries(inset_animation_test PRIVATE runtime)
+target_compile_options(inset_animation_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME inset_animation_test COMMAND inset_animation_test)
+
+add_executable(keyboard_animation_test tests/keyboard_animation_test.cpp)
+target_link_libraries(keyboard_animation_test PRIVATE runtime)
+target_compile_options(keyboard_animation_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME keyboard_animation_test COMMAND keyboard_animation_test)
