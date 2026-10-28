@@ -11,10 +11,15 @@ class PredictiveTransition {
   PredictiveTransition() = default;
 
   void onBackProgress(const BackProgress& p);
+  void retargetTo(float target);
   float drivenProgress() const;
   bool isCommitted() const;
+  long long lastStepMicros() const;
 
  private:
   float driven_ = 0.0f;
   bool committed_ = false;
+  float retarget_ = 0.0f;
+  bool hasRetarget_ = false;
+  long long lastStepMicros_ = 0;
 };

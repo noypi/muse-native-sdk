@@ -25,6 +25,7 @@ add_library(navigation
   src/route_transition.cpp
   src/predictive_transition.cpp
   src/entry_funnel.cpp
+  src/back_dispatch.cpp
 )
 target_include_directories(navigation PUBLIC include)
 target_compile_options(navigation PRIVATE -Wall -Wextra -Wpedantic)
@@ -142,10 +143,20 @@ target_link_libraries(predictive_progress_test PRIVATE navigation)
 target_compile_options(predictive_progress_test PRIVATE -Wall -Wextra -Wpedantic)
 add_test(NAME predictive_progress_test COMMAND predictive_progress_test)
 
+add_executable(transition_retarget_test tests/transition_retarget_test.cpp)
+target_link_libraries(transition_retarget_test PRIVATE navigation)
+target_compile_options(transition_retarget_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME transition_retarget_test COMMAND transition_retarget_test)
+
 add_executable(entry_funnel_test tests/entry_funnel_test.cpp)
 target_link_libraries(entry_funnel_test PRIVATE navigation)
 target_compile_options(entry_funnel_test PRIVATE -Wall -Wextra -Wpedantic)
 add_test(NAME entry_funnel_test COMMAND entry_funnel_test)
+
+add_executable(back_dispatch_test tests/back_dispatch_test.cpp)
+target_link_libraries(back_dispatch_test PRIVATE navigation)
+target_compile_options(back_dispatch_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME back_dispatch_test COMMAND back_dispatch_test)
 
 # FR-NAV-006 T2 (NAV-APPLINKS codegen invocation — documentation only, no new
 # engine target added here):
