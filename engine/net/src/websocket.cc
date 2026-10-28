@@ -69,16 +69,15 @@ void WebSocket::connect(std::string url) {
       reportClosed("handshake failed");
       return;
     }
-    // Negotiated subprotocol: echoed by the peer, else the first offer.
+    // Negotiated subprotocol: the peer's echo only (RFC 6455). Offering
+    // subprotocols is not negotiating: absent echo means no subprotocol
+    // was agreed, so selected_ stays empty.
     selected_.clear();
     for (const auto& hdr : resp.headers) {
       if (hdr.first == "Sec-WebSocket-Protocol" && !hdr.second.empty()) {
         selected_ = hdr.second;
         break;
       }
-    }
-    if (selected_.empty() && !cfg_.subprotocols.empty()) {
-      selected_ = cfg_.subprotocols.front();
     }
     open_ = true;
     state_ = WsState::kOpen;

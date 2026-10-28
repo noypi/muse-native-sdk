@@ -65,7 +65,7 @@ void WebTransport::connect(std::string url) {
       return;
     }
     // Fresh session: reset the stream-0 offset ledger.
-    seen_offset_.clear();
+    delivered_offsets_.clear();
     next_offset_ = 0;
     open_ = true;
     state_ = WtState::kConnected;
@@ -97,13 +97,17 @@ void WebTransport::sendDatagram(std::string d) {
       cfg_.transport->execute(req, ctx);
     } catch (...) {
     }
-    // Dedupe by stream offset: a payload already delivered at an earlier
-    // offset is a migration/flap retransmit, delivered exactly once.
-    if (seen_offset_.find(d) != seen_offset_.end()) {
+    // Dedupe by stream OFFSET (delivered-offset set), never by payload
+    // content: each sendDatagram owns its offset (next_offset_); a
+    // redelivery of an already-delivered offset (migration/flap
+    // retransmit) is absorbed, while identical payloads at different
+    // offsets each deliver.
+    const std::uint64_t my_offset = next_offset_;
+    next_offset_ += static_cast<std::uint64_t>(d.size());
+    if (delivered_offsets_.find(my_offset) != delivered_offsets_.end()) {
       return;
     }
-    seen_offset_.emplace(d, next_offset_);
-    next_offset_ += static_cast<std::uint64_t>(d.size());
+    delivered_offsets_.insert(my_offset);
     try {
       if (listener_.onDatagram) listener_.onDatagram(d);
     } catch (...) {

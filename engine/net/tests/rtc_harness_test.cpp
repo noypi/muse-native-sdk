@@ -16,13 +16,11 @@
 //   A-ERR:  `muse::net::Error` has `kTransport` (failure) and `kNone`
 //           (success) enumerators; `muse::net::StatusCode` converts to int.
 //   A-CTX:  `ExecCtx` and `ClientConfig` are default-constructible.
-//   A-CLK:  `muse::net::IClock` exposes `uint64_t nowMs() const` and is
-//           declared via `net/transport.h` (a T1 File). NOTE: the sibling
-//           run's `net/retry.h` already declares a wider `IClock` (with an
-//           additional `sleepFor`); this test binds to the T1 Interface
-//           shape (nowMs only) and does not include `net/retry.h`. If the
-//           coder unifies on the wider shape, only the FakeClock gains a
-//           `sleepFor` override — no expectation changes.
+//   A-CLK:  `muse::net::IClock` is the canonical shape declared once in
+//           `net/retry.h` (nowMs + sleepFor, included via `net/transport.h`)
+//           per the amended T1 `Interface:` line. FakeClock implements both;
+//           sleepFor advances scripted time, never the wall clock.
+#include <chrono>
 #include <cstdint>
 #include <cstdio>
 #include <exception>
@@ -73,10 +71,15 @@ Request make_get(const std::string& url) {
 }
 
 // In-process fake clock: scripted time, manual advance, no wall clock.
+// T1 unification: implements the full canonical IClock (nowMs + sleepFor);
+// sleepFor advances scripted time (never the wall clock).
 class FakeClock : public IClock {
  public:
   explicit FakeClock(std::uint64_t start_ms = 0) : now_(start_ms) {}
   std::uint64_t nowMs() const override { return now_; }
+  void sleepFor(std::chrono::milliseconds d) override {
+    now_ += static_cast<std::uint64_t>(d.count());
+  }
   void advance(std::uint64_t delta_ms) { now_ += delta_ms; }
 
  private:

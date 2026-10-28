@@ -24,9 +24,11 @@
 //           change — the header + replay behavior does not.
 //   A-SUB:  GraphQL subscription delivery is one SSE frame per update;
 //           `Subscription::next` returns true per update, false at end.
-//   A-BATCH: `enableBatching(n)` coalesces up to n queued query/mutate
-//           calls into one transport execute; observable as one FakeTransport
-//           call for two queries.
+//   A-BATCH: batching is explicit-async: `queue()` buffers one operation
+//           and `flush()` executes all buffered operations in one
+//           transport execute, returning one Result per queued operation
+//           in request order. `query()`/`mutate()` always execute a single
+//           operation immediately; `enableBatching(n)` never diverts them.
 //   A-KEY:  the normalized-cache key shape is exposed as
 //           `GraphQLClient::cacheKey(query, vars)` returning a stable
 //           non-empty string: same (query, vars) -> same key, differing
@@ -364,19 +366,94 @@ bool check_apq_hash_hit_needs_no_second_call() {
 // ---- batching cases -----------------------------------------------------------
 
 bool check_batching_coalesces_two_queries_into_one_call() {
+  // Explicit-async batching: queue()+queue()+flush() performs a single
+  // transport call and returns per-caller data in request order.
   auto f = std::make_shared<FakeLink>(std::vector<Response>{
       make_ok(R"([{"data":{"a":1}},{"data":{"b":2}}])")});
   GraphQLClient c(f);
-  GraphQLClient::Result r1{"", "unset"}, r2{"", "unset"};
+  std::vector<GraphQLClient::Result> out;
   try {
     c.enableBatching(2);
-    r1 = c.query("{ a }", "{}");
-    r2 = c.query("{ b }", "{}");
+    c.queue("{ a }", "{}");
+    c.queue("{ b }", "{}");
+    out = c.flush();
   } catch (...) {
     return false;
   }
   if (f->calls() != 1) return false;
-  return r1.error.empty() && r2.error.empty();
+  if (out.size() != 2) return false;
+  if (!out[0].error.empty() || !out[1].error.empty()) return false;
+  // Per-caller data arrives in request order: first result carries the
+  // first query's payload, second carries the second's.
+  if (out[0].data.find("\"a\":1") == std::string::npos) return false;
+  if (out[1].data.find("\"b\":2") == std::string::npos) return false;
+  return true;
+}
+
+bool check_query_ignores_batching_single_call_unchanged() {
+  // Non-batched query() keeps its already-green behavior identically:
+  // one call, one operation, even with batching enabled.
+  auto f = std::make_shared<FakeLink>(
+      std::vector<Response>{make_ok(R"({"data":{"solo":1}})")});
+  GraphQLClient c(f);
+  GraphQLClient::Result r{"", "unset"};
+  try {
+    c.enableBatching(2);
+    r = c.query("{ solo }", "{}");
+  } catch (...) {
+    return false;
+  }
+  if (f->calls() != 1) return false;
+  if (!r.error.empty()) return false;
+  return r.data.find("\"solo\":1") != std::string::npos;
+}
+
+bool check_resume_with_non_numeric_ids_dedupes_by_string_equality() {
+  // uuid-style ids: stored id "a-2" drops the replay prefix up to and
+  // including "a-2" by string equality (no numeric fast-path involved),
+  // so only later events deliver with zero duplicates.
+  auto f1 = std::make_shared<FakeLink>(std::vector<Response>{make_ok(
+      sse_stream({{"next", "u1", "a-1"}, {"next", "u2", "a-2"}}))});
+  GraphQLClient c1(f1);
+  auto s1 = c1.subscribe("subscription { ticks }", "{}");
+  if (!s1) return false;
+  for (int i = 0; i < 2; ++i) {
+    GraphQLClient::Result r{"", ""};
+    if (!s1->next(&r)) return false;
+  }
+  std::string resume_id = LastEventId(*s1);
+  if (resume_id != "a-2") return false;
+
+  auto f2 = std::make_shared<FakeLink>(std::vector<Response>{make_ok(
+      sse_stream({{"next", "u1", "a-1"},
+                  {"next", "u2", "a-2"},
+                  {"next", "u3", "a-3"},
+                  {"next", "u4", "a-4"}}))});
+  GraphQLClient c2(f2);
+  try {
+    c2.setLastEventId(resume_id);
+  } catch (...) {
+    return false;
+  }
+  auto s2 = c2.subscribe("subscription { ticks }", "{}");
+  if (!s2) return false;
+  if (f2->calls() < 1) return false;
+  bool resume_header = false;
+  for (const auto& h : f2->call_at(0).headers) {
+    if (h.first == "Last-Event-ID" && h.second == "a-2") resume_header = true;
+  }
+  if (!resume_header) return false;
+  std::vector<std::string> got;
+  for (int i = 0; i < 2; ++i) {
+    GraphQLClient::Result r{"", ""};
+    if (!s2->next(&r)) return false;
+    if (!r.error.empty()) return false;
+    got.push_back(r.data);
+  }
+  // Zero duplicates: the replayed prefix is dropped, nothing extra remains.
+  GraphQLClient::Result tail{"", ""};
+  if (s2->next(&tail)) return false;
+  return got == std::vector<std::string>{"u3", "u4"};
 }
 
 // ---- subscription + resume cases -------------------------------------------------
@@ -562,6 +639,8 @@ int main() {
   RUN_CASE(check_apq_sends_hash_first_then_full_on_not_found);
   RUN_CASE(check_apq_hash_hit_needs_no_second_call);
   RUN_CASE(check_batching_coalesces_two_queries_into_one_call);
+  RUN_CASE(check_query_ignores_batching_single_call_unchanged);
+  RUN_CASE(check_resume_with_non_numeric_ids_dedupes_by_string_equality);
   RUN_CASE(check_subscription_delivers_ordered_updates);
   RUN_CASE(check_last_event_id_tracks_latest);
   RUN_CASE(check_resume_replays_only_missed_in_order_no_dupes);

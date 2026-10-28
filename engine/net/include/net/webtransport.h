@@ -11,9 +11,11 @@
 // migrate() return.
 //
 // Dedupe by stream offset: every sendDatagram carries one stream-0 datagram
-// and is assigned the next byte offset in send order; a payload already
-// delivered at an earlier offset is a flap retransmit and is delivered to
-// Listener::onDatagram exactly once.
+// and is assigned its byte offset in send order. Delivery is keyed by
+// OFFSET (delivered-offset set), never by payload content: identical
+// payloads at different offsets each deliver; the same offset redelivered
+// (flap retransmit) is absorbed and Listener::onDatagram fires once per
+// offset.
 //
 // Error shape: every failure surfaces as onState(WtState::kClosed, reason)
 // with a non-empty reason and never escapes as an exception. Migration
@@ -23,7 +25,7 @@
 #include <functional>
 #include <memory>
 #include <string>
-#include <unordered_map>
+#include <unordered_set>
 
 #include "net/transport.h"
 
@@ -59,8 +61,10 @@ class WebTransport {
   bool open_ = false;
   std::string url_;
   std::string network_;
-  // Stream-0 offset ledger: payload -> byte offset of first delivery.
-  std::unordered_map<std::string, std::uint64_t> seen_offset_;
+  // Stream-0 offset ledger: set of delivered byte offsets. Keyed by
+  // OFFSET, never by payload content: identical payloads at different
+  // offsets each deliver; the same offset twice delivers once.
+  std::unordered_set<std::uint64_t> delivered_offsets_;
   std::uint64_t next_offset_ = 0;
 };
 

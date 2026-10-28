@@ -16,6 +16,7 @@
 #include <string>
 #include <vector>
 
+#include "net/retry.h"
 #include "net/types.h"
 
 namespace muse {
@@ -54,13 +55,8 @@ class HttpClient {
   std::vector<Interceptor> interceptors_;
 };
 
-// Injected clock seam (plan T1 Interface line, verbatim). Scripted time
-// only: tests substitute an in-process fake with manual advance; production
-// passes a wall-clock adapter. Never sleeps.
-struct IClock {
-  virtual ~IClock() = default;
-  virtual std::uint64_t nowMs() const = 0;
-};
+// Canonical IClock is defined once in net/retry.h (wider nowMs + sleepFor
+// shape). This header includes it and owns no second definition.
 
 // T3 dispatch-budget unit probe (FR-NET-004 / AC-NET-007 unit half).
 // RecordDispatchNanos is a pure observation hook: it never throws, never

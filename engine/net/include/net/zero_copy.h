@@ -35,6 +35,17 @@ inline constexpr uint16_t kExpectedAbiVersion = 1;
 // copying. Returns an empty view when the envelope identity does not
 // match or payloadLen exceeds the mapping. Never throws, never reads
 // OOB, performs no heap allocation.
+//
+// SharedRing storage model (test double, not real shm accounting):
+// place() COPIES the payload into ring-owned storage and returns a view
+// of that copy — "zero-copy" holds only for the consume path (views into
+// the original mapping / retained storage, zero copies beyond the initial
+// map/place). Views returned by place()/consume() are valid only until
+// the record is evicted by wrap-around or the ring is destroyed; holding
+// a view across further place() calls that overflow capacity (or across
+// destruction) dangles. consume() of an evicted or never-placed token
+// returns an empty view. capacity counts PAYLOAD bytes only (envelope and
+// std::string overhead excluded).
 std::string_view ConsumeInPlace(const Envelope& e,
                                 std::string_view mapped) noexcept;
 

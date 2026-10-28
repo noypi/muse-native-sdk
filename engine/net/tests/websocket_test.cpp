@@ -26,10 +26,9 @@
 //   A-SUB:  the offer is asserted on the handshake request the client
 //           sends over `httpHandshake` (RFC 6455 Sec-WebSocket-Protocol,
 //           observable through the committed ITransport seam — no invented
-//           API). The T2 Interface line exposes no selected-value
-//           accessor, so the negotiated value itself is NOT asserted here;
-//           see contract T2.md Conflicts (coder-added accessor reconciles
-//           by adding one case, changing none).
+//           API). The negotiated value is asserted via the production
+//           `selectedSubprotocol()` accessor: absent peer echo means no
+//           subprotocol was agreed, so the value stays empty.
 //   A-REQ:  Request is default-constructible with assignable `method`,
 //           `url` (std::string), `body` (std::string) and `headers`
 //           (a vector<pair<string,string>> supporting emplace_back).
@@ -171,6 +170,33 @@ bool check_handshake_carries_offered_subprotocols() {
     }
   }
   return offered;
+}
+
+bool check_no_echo_handshake_leaves_selected_subprotocol_empty() {
+  // Offering subprotocols is not negotiating: when the handshake accept
+  // carries no Sec-WebSocket-Protocol echo, selectedSubprotocol() stays
+  // empty. The echo_script() accept has no such header.
+  auto hs = std::make_shared<FakeHandshake>(echo_script());
+  WebSocketConfig cfg;
+  cfg.permessageDeflate = false;
+  cfg.subprotocols = {"graphql-ws", "json"};
+  cfg.httpHandshake = hs;
+  WebSocket ws(cfg);
+  Captured c;
+  ws.setListener(capture_into(&c));
+  try {
+    ws.connect("wss://echo.test.invalid/graphql");
+  } catch (...) {
+    return false;
+  }
+  if (!c.opened) return false;
+  std::string selected;
+  try {
+    selected = ws.selectedSubprotocol();
+  } catch (...) {
+    return false;
+  }
+  return selected.empty();
 }
 
 bool check_ordered_text_binary_echo_deflate_on() {
@@ -357,6 +383,7 @@ int main() {
   int failures = 0;
   RUN_CASE(check_connect_emits_open);
   RUN_CASE(check_handshake_carries_offered_subprotocols);
+  RUN_CASE(check_no_echo_handshake_leaves_selected_subprotocol_empty);
   RUN_CASE(check_ordered_text_binary_echo_deflate_on);
   RUN_CASE(check_deflate_off_matches_deflate_on_bytes);
   RUN_CASE(check_close_emits_kClosed_with_reason);

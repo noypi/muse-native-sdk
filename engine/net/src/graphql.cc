@@ -379,20 +379,25 @@ GraphQLClient::Result GraphQLClient::executeSingle(const std::string& query,
   return r;
 }
 
-GraphQLClient::Result GraphQLClient::flushBatch() {
+std::vector<GraphQLClient::Result> GraphQLClient::flushBatch() {
   // One transport call for every queued operation; results split back in
-  // request order. Callers that buffered earlier already returned a
-  // provisional success; the flushing call returns its own element.
-  Result fallback;
+  // request order.
+  std::vector<Result> results;
   if (pending_.empty()) {
+    Result fallback;
     fallback.error = "graphql: empty batch";
-    return fallback;
+    results.push_back(fallback);
+    return results;
   }
   const std::vector<Pending> batch = pending_;
   pending_.clear();
   if (transport_ == nullptr) {
-    fallback.error = "graphql: null transport";
-    return fallback;
+    for (std::size_t i = 0; i < batch.size(); ++i) {
+      Result e;
+      e.error = "graphql: null transport";
+      results.push_back(e);
+    }
+    return results;
   }
   std::string body = "[";
   for (std::size_t i = 0; i < batch.size(); ++i) {
@@ -403,25 +408,28 @@ GraphQLClient::Result GraphQLClient::flushBatch() {
   bool failed = false;
   Response resp = PostOnce(transport_, "/graphql", body, {}, &failed);
   if (failed) {
-    fallback.error = "graphql: transport error";
-    return fallback;
+    for (std::size_t i = 0; i < batch.size(); ++i) {
+      Result e;
+      e.error = "graphql: transport error";
+      results.push_back(e);
+    }
+    return results;
   }
   const std::vector<std::string> elements = SplitTopLevelArray(resp.body);
   if (elements.size() != batch.size()) {
     // Unsplitable batch body: success only when the whole body carries
-    // data and no errors.
+    // data and no errors; every caller shares the outcome.
+    Result shared;
     if (HasErrors(resp.body)) {
-      fallback.error = ExtractGraphQLError(resp.body);
-      return fallback;
+      shared.error = ExtractGraphQLError(resp.body);
+    } else if (HasData(resp.body)) {
+      shared.data = resp.body;
+    } else {
+      shared.error = "graphql: unexpected batch response";
     }
-    if (HasData(resp.body)) {
-      fallback.data = resp.body;
-      return fallback;
-    }
-    fallback.error = "graphql: unexpected batch response";
-    return fallback;
+    for (std::size_t i = 0; i < batch.size(); ++i) results.push_back(shared);
+    return results;
   }
-  Result mine;
   for (std::size_t i = 0; i < elements.size(); ++i) {
     Result e;
     if (HasErrors(elements[i])) {
@@ -429,27 +437,36 @@ GraphQLClient::Result GraphQLClient::flushBatch() {
     } else {
       e.data = elements[i];
     }
-    if (i + 1 == elements.size()) mine = e;
+    results.push_back(e);
   }
-  return mine;
+  return results;
+}
+
+void GraphQLClient::queue(std::string q, std::string vars) {
+  try {
+    pending_.push_back(Pending{std::move(q), std::move(vars)});
+  } catch (...) {
+    // Never let buffering throw; the flush will surface the failure.
+  }
+}
+
+std::vector<GraphQLClient::Result> GraphQLClient::flush() {
+  try {
+    return flushBatch();
+  } catch (...) {
+    std::vector<Result> results;
+    Result r;
+    r.error = "graphql: internal error";
+    results.push_back(r);
+    return results;
+  }
 }
 
 GraphQLClient::Result GraphQLClient::query(std::string q, std::string vars) {
   try {
-    const std::string invalid = queryError(q);
-    if (!invalid.empty()) {
-      Result r;
-      r.error = invalid;
-      return r;
-    }
-    if (batching_ && !apq_ && batch_max_ > 0) {
-      pending_.push_back(Pending{q, vars});
-      if (pending_.size() >= batch_max_) return flushBatch();
-      // Queued: provisional success; the flushing call carries this
-      // operation in the single coalesced execute.
-      Result r;
-      return r;
-    }
+    // Non-batched behavior is unconditional: batching never diverts
+    // query() into a provisional success. Batched work goes through
+    // queue() + flush().
     return executeSingle(q, vars);
   } catch (...) {
     Result r;
@@ -460,7 +477,7 @@ GraphQLClient::Result GraphQLClient::query(std::string q, std::string vars) {
 
 GraphQLClient::Result GraphQLClient::mutate(std::string m, std::string vars) {
   try {
-    return query(std::move(m), std::move(vars));
+    return executeSingle(std::move(m), std::move(vars));
   } catch (...) {
     Result r;
     r.error = "graphql: internal error";
@@ -497,23 +514,45 @@ std::unique_ptr<GraphQLClient::Subscription> GraphQLClient::subscribe(
       return std::unique_ptr<Subscription>(
           new Subscription({}, {}, "graphql: transport error"));
     }
-    std::vector<std::string> payloads;
-    std::vector<std::string> ids;
-    for (const auto& f : detail::ParseSseFrames(resp.body)) {
-      const std::string& id = std::get<2>(f);
-      // Resume filtering: when resuming from a stored id, only events
-      // after it are new; the replayed prefix is dropped so delivery
-      // has zero duplicates.
-      if (!last_event_id_.empty() && !id.empty()) {
-        long long resume = 0;
-        long long seen = 0;
-        if (ParseWholeNumber(last_event_id_, &resume) &&
-            ParseWholeNumber(id, &seen) && seen <= resume) {
-          continue;
+    const auto frames = detail::ParseSseFrames(resp.body);
+    // Resume filtering: drop everything up to and including the stored
+    // id, matched by string equality (numeric fast-path: when both the
+    // stored id and a replayed id parse as whole numbers, the replayed
+    // prefix with value <= stored is also dropped). Absent-id policy:
+    // when the stored id appears nowhere in the replay, nothing is
+    // dropped — the full replay delivers (fail-open, never silent loss).
+    std::size_t drop_until = 0;
+    bool found = false;
+    if (!last_event_id_.empty()) {
+      long long resume = 0;
+      const bool resume_numeric = ParseWholeNumber(last_event_id_, &resume);
+      for (std::size_t i = 0; i < frames.size(); ++i) {
+        const std::string& id = std::get<2>(frames[i]);
+        if (!id.empty() && id == last_event_id_) {
+          drop_until = i + 1;
+          found = true;
+          break;
+        }
+        if (resume_numeric && !id.empty()) {
+          long long seen = 0;
+          if (ParseWholeNumber(id, &seen) && seen <= resume) {
+            drop_until = i + 1;
+            found = true;
+          }
         }
       }
-      payloads.push_back(std::get<1>(f));
-      ids.push_back(id);
+      // Numeric-prefix drop must not swallow events that follow the
+      // covered prefix: keep scanning — the loop above already extends
+      // drop_until only across the leading covered prefix since a
+      // non-covered id (seen > resume or non-numeric, non-equal) simply
+      // stops extending it.
+      if (!found) drop_until = 0;
+    }
+    std::vector<std::string> payloads;
+    std::vector<std::string> ids;
+    for (std::size_t i = drop_until; i < frames.size(); ++i) {
+      payloads.push_back(std::get<1>(frames[i]));
+      ids.push_back(std::get<2>(frames[i]));
     }
     return std::unique_ptr<Subscription>(
         new Subscription(std::move(payloads), std::move(ids), ""));

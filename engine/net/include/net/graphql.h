@@ -5,13 +5,20 @@
 // request batching, and a normalized-cache key shape
 // (FR-NET-009 / AC-NET-017 / RULE-NET-003).
 //
-// Every failure surfaces as a non-empty Result::error — empty query,
-// oversized input, transport failure/throw, GraphQL errors, malformed
-// bodies — and nothing here throws. Resume replays only missed events:
-// setLastEventId(id) stores the id, subscribe() sends it as the
-// `Last-Event-ID` request header, and the server replays what follows.
+// Resume replays only missed events: setLastEventId(id) stores the id,
+// subscribe() sends it as the `Last-Event-ID` request header, and events
+// up to and including the stored id (matched by string equality) are
+// dropped so delivery has zero duplicates. Absent-id policy: when the
+// stored id is not present in the replayed stream, nothing is dropped —
+// the full replay delivers (fail-open, never a silent loss).
 // Cache integration is the key shape only (GraphQLClient::cacheKey);
 // the NET-001 normalized cache itself is not rebuilt here.
+//
+// Batching is explicit-async: query()/mutate() always execute a single
+// operation immediately (batching never changes their behavior); batched
+// work goes through queue() + flush(), where flush() performs one
+// transport call and returns per-caller Results in request order. There
+// is no provisional empty success.
 
 #include <cstddef>
 #include <memory>
@@ -66,6 +73,14 @@ class GraphQLClient {
   void enableApq(bool enabled);
   void enableBatching(std::size_t max);
 
+  // Batching split: buffer one operation for the next flush(). Never
+  // executes I/O; never returns a provisional success.
+  void queue(std::string q, std::string vars);
+  // Execute all queued operations in one transport call, returning one
+  // Result per queued operation in request order. Empty queue → single
+  // Result with a non-empty error. Never throws.
+  std::vector<Result> flush();
+
   // Resume seed: sent as the `Last-Event-ID` header by subscribe().
   void setLastEventId(std::string id);
 
@@ -80,7 +95,7 @@ class GraphQLClient {
   };
 
   Result executeSingle(const std::string& query, const std::string& vars);
-  Result flushBatch();
+  std::vector<Result> flushBatch();
   static std::string queryError(const std::string& query);
 
   std::shared_ptr<ITransport> transport_;

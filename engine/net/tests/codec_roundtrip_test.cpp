@@ -50,6 +50,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <memory>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -257,6 +258,61 @@ bool registry_install_get_round_trip() {
   return g_failed_checks == 0;
 }
 
+bool check_encode_malformed_returns_empty_for_all_codecs() {
+  // Documented contract: encode of malformed input returns "" ("invalid
+  // input, nothing emitted") for all five codecs — never throws.
+  const CodecId ids[] = {CodecId::kJson, CodecId::kProtobuf,
+                         CodecId::kFlatBuffers, CodecId::kCbor,
+                         CodecId::kMsgPack};
+  for (CodecId id : ids) {
+    CodecRegistry reg;
+    Codec* c = nullptr;
+    try {
+      c = &reg.get(id);
+    } catch (...) {
+      std::printf("    get() threw for codec %d\n", (int)id);
+      return false;
+    }
+    if (c == nullptr) return false;
+    for (const std::string& bad : MalformedCorpus()) {
+      std::string wire;
+      bool threw = false;
+      try {
+        wire = c->encode(bad);
+      } catch (...) {
+        threw = true;
+      }
+      CHECK(!threw);
+      if (threw) return false;
+      CHECK(wire.empty());
+    }
+  }
+  return g_failed_checks == 0;
+}
+
+bool check_get_bad_id_throws_out_of_range() {
+  // Documented contract: get on an out-of-range id throws
+  // std::out_of_range.
+  CodecRegistry reg;
+  for (int raw : {99, -1, 5}) {
+    bool threw = false;
+    try {
+      (void)reg.get(static_cast<CodecId>(raw));
+    } catch (const std::out_of_range&) {
+      threw = true;
+    } catch (...) {
+      std::printf("    get(%d) threw non-out_of_range\n", raw);
+      return false;
+    }
+    CHECK(threw);
+    if (!threw) {
+      std::printf("    get(%d) did not throw\n", raw);
+      return false;
+    }
+  }
+  return g_failed_checks == 0;
+}
+
 bool codegen_black_box_golden() {
   // The plan names `tools/net_codegen/codegen.py --schema <file>
   // --out-cpp <dir> --out-ts <dir>`. This case invokes it as a black
@@ -265,22 +321,41 @@ bool codegen_black_box_golden() {
   // golden paths, so the goldens live here — see A-CODEGEN).
   // Resolve codegen.py without depending on the process CWD: ctest
   // runs binaries with CWD set to the build dir, so a bare relative
-  // `tools/...` path only works when launched from the repo root (and
-  // __FILE__ may itself be relative under this CMake layout). Probe a
-  // short list of candidate relative paths and use the first that
-  // exists.
+  // `tools/...` path only works when launched from the repo root.
+  // Anchor on __FILE__ (this test's own path under the repo) first and
+  // keep the old relative candidates only as a fallback. The script is
+  // always invoked via `python3` so no exec bit is required.
+  std::string codegen;
+  {
+    const std::string here = __FILE__;
+    const std::string anchor = "engine/net/tests/codec_roundtrip_test.cpp";
+    const std::size_t pos = here.rfind(anchor);
+    if (pos != std::string::npos) {
+      const std::string cand =
+          here.substr(0, pos) + "tools/net_codegen/codegen.py";
+      if (std::FILE* f = std::fopen(cand.c_str(), "r")) {
+        std::fclose(f);
+        codegen = cand;
+      }
+    }
+  }
   static const char* kCandidates[] = {
       "tools/net_codegen/codegen.py",
       "../tools/net_codegen/codegen.py",
       "../../tools/net_codegen/codegen.py",
   };
-  std::string codegen;
-  for (const char* c : kCandidates) {
-    if (std::FILE* f = std::fopen(c, "r")) {
-      std::fclose(f);
-      codegen = c;
-      break;
+  if (codegen.empty()) {
+    for (const char* c : kCandidates) {
+      if (std::FILE* f = std::fopen(c, "r")) {
+        std::fclose(f);
+        codegen = c;
+        break;
+      }
     }
+  }
+  if (codegen.empty()) {
+    std::printf("    codegen.py not found from CWD or __FILE__\n");
+    return false;
   }
   const std::string probe =
       "python3 \"" + codegen + "\" --help >/dev/null 2>&1";
@@ -328,6 +403,8 @@ int main() {
   RUN_CASE(validate_enforces_size_caps);
   RUN_CASE(validate_rejects_malformed_with_field_path);
   RUN_CASE(registry_install_get_round_trip);
+  RUN_CASE(check_encode_malformed_returns_empty_for_all_codecs);
+  RUN_CASE(check_get_bad_id_throws_out_of_range);
   RUN_CASE(codegen_black_box_golden);
   // Silence unused-function warning path for the helper kept for the
   // coder's reference (documents the A-JSON encode/decode pairing).

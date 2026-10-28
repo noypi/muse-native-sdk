@@ -229,6 +229,37 @@ bool check_ring_wrap_around() {
   return g_failed_checks == 0;
 }
 
+bool check_ring_consume_after_eviction_is_empty() {
+  // Evicted records are gone: after wrap-around, consuming an evicted
+  // token returns an empty view (never OOB, never throws) while the
+  // newest record stays intact.
+  SharedRing ring(64);  // tiny on purpose
+  try {
+    for (int i = 0; i < 30; ++i) {
+      char buf[16];
+      std::snprintf(buf, sizeof(buf), "m%02d", i);
+      Envelope e{1, 1, 1, 3};
+      (void)ring.place(e, std::string_view(buf, 3));
+    }
+    std::string_view evicted;
+    bool threw = false;
+    try {
+      evicted = ring.consume(0);  // long evicted by the 30-record overflow
+    } catch (...) {
+      threw = true;
+    }
+    CHECK(!threw);
+    if (threw) return false;
+    CHECK(evicted.empty());
+    std::string_view last = ring.consume(29);
+    CHECK(last == "m29");
+  } catch (...) {
+    std::printf("    ring eviction threw\n");
+    return false;
+  }
+  return g_failed_checks == 0;
+}
+
 bool check_ring_consume_zero_allocs() {
   SharedRing ring(4096);
   Envelope e{1, 1, 1, 4};
@@ -275,6 +306,7 @@ int main() {
   RUN_CASE(check_version_mismatch_never_oob);
   RUN_CASE(check_ring_place_consume_order);
   RUN_CASE(check_ring_wrap_around);
+  RUN_CASE(check_ring_consume_after_eviction_is_empty);
   RUN_CASE(check_ring_consume_zero_allocs);
   if (failures > 0) {
     std::printf("zero_copy_payload_test: %d failing\n", failures);

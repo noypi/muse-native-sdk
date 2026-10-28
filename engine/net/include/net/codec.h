@@ -39,8 +39,12 @@ struct DecodeResult {
 
 // Codec boundary: encode takes canonical JSON text and returns the wire
 // bytes as std::string; decode inverts it back to canonical JSON text in
-// `payload`. Both ends are exception-safe (malformed input → structured
-// DecodeResult, never a throw).
+// `payload`. The never-throw promise covers encode/decode/Validate only:
+// encode of malformed input returns "" ("invalid input, nothing emitted";
+// note this is indistinguishable from encoding the empty string) and
+// decode/Validate report malformed input as DecodeResult{ok:false}, never
+// by throwing. Registry lookup is NOT part of the never-throw surface
+// (see CodecRegistry::get).
 class Codec {
  public:
   virtual ~Codec() = default;
@@ -49,7 +53,9 @@ class Codec {
 };
 
 // Registry of the five production codecs. Default-constructed it serves
-// every CodecId; install() replaces the entry for `id`.
+// every CodecId; install() replaces the entry for `id`. get() throws
+// std::out_of_range on an out-of-range id or an empty (uninstalled) slot;
+// callers that cannot prove the id valid must catch or pre-validate.
 class CodecRegistry {
  public:
   CodecRegistry();

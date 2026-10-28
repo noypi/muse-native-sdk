@@ -24,9 +24,11 @@
 //           bytes/state order do not change.
 //   A-DEDUP: `sendDatagram(std::string)` carries one stream-0 datagram;
 //           the dedupe key is (stream=0, offset=byte position in send
-//           order). A redelivered identical payload at an already-seen
-//           offset is a duplicate and must be delivered to onDatagram
-//           exactly once. Observable purely through the listener.
+//           order), never payload content. A redelivery of an
+//           already-seen offset (migration/flap retransmit) is absorbed
+//           and reaches onDatagram exactly once; identical payloads at
+//           different offsets are distinct datagrams and each delivers.
+//           Observable purely through the listener.
 //   A-REQ:  Request is default-constructible with assignable `method`,
 //           `url` (std::string), `body` (std::string) and `headers`
 //           (a vector<pair<string,string>> supporting emplace_back).
@@ -220,6 +222,9 @@ bool check_inflight_across_flap_neither_lost_nor_duplicated() {
 }
 
 bool check_duplicate_redelivery_deduped() {
+  // Offset semantics: a flap retransmit of an already-delivered offset is
+  // absorbed, so each unique datagram still reaches the listener exactly
+  // once across the Wi-Fi→cellular migration.
   auto h3 = std::make_shared<FakeH3>(session_script());
   WebTransportConfig cfg;
   cfg.transport = h3;
@@ -229,13 +234,35 @@ bool check_duplicate_redelivery_deduped() {
   try {
     wt.connect("https://edge.test.invalid/session");
     wt.sendDatagram("dg-1");
-    wt.sendDatagram("dg-1");  // retransmit at an already-seen offset
+    h3->set_flap(true);  // migration retransmits the in-flight offset
+    wt.migrate("cellular");
+    wt.sendDatagram("dg-2");
   } catch (...) {
     return false;
   }
-  // Exactly-once delivery: the duplicate must not reach the listener.
-  if (c.datagrams.size() != 1) return false;
-  return c.datagrams[0] == "dg-1";
+  // Exactly-once delivery: the same-offset replay must not duplicate.
+  if (c.datagrams.size() != 2) return false;
+  return c.datagrams[0] == "dg-1" && c.datagrams[1] == "dg-2";
+}
+
+bool check_identical_payloads_at_different_offsets_each_deliver() {
+  // Content is never the dedupe key: identical payloads sent as separate
+  // datagrams own different offsets and each one delivers.
+  auto h3 = std::make_shared<FakeH3>(session_script());
+  WebTransportConfig cfg;
+  cfg.transport = h3;
+  WebTransport wt(cfg);
+  Captured c;
+  wt.setListener(capture_into(&c));
+  try {
+    wt.connect("https://edge.test.invalid/session");
+    wt.sendDatagram("same-bytes");
+    wt.sendDatagram("same-bytes");  // different offset, same content
+  } catch (...) {
+    return false;
+  }
+  if (c.datagrams.size() != 2) return false;
+  return c.datagrams[0] == "same-bytes" && c.datagrams[1] == "same-bytes";
 }
 
 bool check_send_before_connect_reports_kClosed_never_throws() {
@@ -377,6 +404,7 @@ int main() {
   RUN_CASE(check_datagrams_delivered_in_order);
   RUN_CASE(check_inflight_across_flap_neither_lost_nor_duplicated);
   RUN_CASE(check_duplicate_redelivery_deduped);
+  RUN_CASE(check_identical_payloads_at_different_offsets_each_deliver);
   RUN_CASE(check_send_before_connect_reports_kClosed_never_throws);
   RUN_CASE(check_failing_handshake_reports_kClosed_never_throws);
   RUN_CASE(check_empty_url_connect_reports_kClosed_never_throws);
