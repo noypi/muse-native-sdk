@@ -3,7 +3,7 @@
 #include <cstdint>
 #include <string>
 
-constexpr uint32_t kNavStateVersion = 1;
+constexpr uint32_t kNavStateVersion = 2;
 
 // T6 owns this definition (plan named an undefined `NavGraphState` member
 // type): the graph is carried as a string blob in T1's canonical

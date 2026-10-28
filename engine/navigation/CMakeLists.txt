@@ -60,6 +60,16 @@ target_link_libraries(snapshot_scroll_focus_test PRIVATE navigation)
 target_compile_options(snapshot_scroll_focus_test PRIVATE -Wall -Wextra -Wpedantic)
 add_test(NAME snapshot_scroll_focus_test COMMAND snapshot_scroll_focus_test)
 
+add_executable(snapshot_truncation_test tests/snapshot_truncation_test.cpp)
+target_link_libraries(snapshot_truncation_test PRIVATE navigation)
+target_compile_options(snapshot_truncation_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME snapshot_truncation_test COMMAND snapshot_truncation_test)
+
+add_executable(restore_test tests/restore_test.cpp)
+target_link_libraries(restore_test PRIVATE navigation)
+target_compile_options(restore_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME restore_test COMMAND restore_test)
+
 add_executable(router_bridge_test tests/router_bridge_test.cpp)
 target_link_libraries(router_bridge_test PRIVATE navigation)
 target_compile_options(router_bridge_test PRIVATE -Wall -Wextra -Wpedantic)

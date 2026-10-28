@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <functional>
 #include <string>
 
@@ -14,6 +15,7 @@ struct SnapshotResult {
   bool ok = false;
   std::string blob;
   SnapshotError error = SnapshotError::CORRUPT;
+  bool truncated = false;
 };
 
 // Provider callables keyed by route id. Empty return = destination opted out
@@ -21,6 +23,10 @@ struct SnapshotResult {
 // and function pointers bind at call sites.
 using ScrollProvider = std::function<std::string(const std::string& routeId)>;
 using FocusProvider = std::function<std::string(const std::string& routeId)>;
+// Telemetry sink for truncation events. std::function form so both lambdas
+// and function pointers bind at call sites (same pattern as T2 providers).
+using TelemetrySink =
+    std::function<void(const std::string& event, const std::string& detail)>;
 
 // Captures the full nested/tab/modal snapshot of `graph` into a versioned
 // blob. The blob is the `NavGraph::serialize()` canonical envelope
@@ -39,5 +45,17 @@ SnapshotResult captureSnapshot(const NavGraph& graph) noexcept;
 // it restores directly. Error shape matches T1 (NONE/CORRUPT); TRUNCATED is
 // never produced here. Never throws.
 SnapshotResult captureSnapshotWithContent(const NavGraph& graph,
-                                          ScrollProvider scroll,
-                                          FocusProvider focus) noexcept;
+                                           ScrollProvider scroll,
+                                           FocusProvider focus) noexcept;
+
+// Oversize truncation by priority with telemetry (AC-NAV-027). Drops content
+// sections first (focus, then scroll), then deepest stack entries, never the
+// home root. The structural prefix is never cut: content is stripped at
+// `;content=` and stack entries are removed by rebuilding the canonical
+// `NAV1;v=1;...` envelope, so truncated output still restores via
+// `NavGraph::restore`. Emits one `nav.snapshot.truncated` event per dropped
+// section; a null/empty sink is ignored. Returns {ok=true, blob<=maxBytes,
+// truncated=true} on success, or {ok=false, error=CORRUPT} when the blob is
+// malformed/empty or even the home root exceeds budget. Never throws.
+SnapshotResult truncateSnapshot(const std::string& blob, size_t maxBytes,
+                                TelemetrySink sink) noexcept;
