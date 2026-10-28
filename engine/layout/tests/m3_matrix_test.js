@@ -130,4 +130,36 @@ describe('TC-LAYOUT-027 — completeness matrix has no gaps and every link resol
     assert.equal(typeof matrix.tokenSnapshot, 'string', 'tokenSnapshot pin missing');
     assert.ok(matrix.tokenSnapshot.length > 0, 'tokenSnapshot must resolve');
   });
+
+  it('rejects the flat-map shape (regression: envelope is the only accepted shape)', () => {
+    const matrix = loadMatrix();
+    // Envelope keys present; legacy flat keys absent at top level.
+    assert.equal(matrix.schemaVersion, 1, 'envelope schemaVersion missing');
+    assert.equal(typeof matrix.tokenSnapshot, 'string', 'envelope tokenSnapshot missing');
+    assert.ok(Array.isArray(matrix.components), 'envelope components array missing');
+    assert.equal(matrix.snapshot, undefined, 'flat-map `snapshot` key must not exist');
+    assert.equal(matrix.cadence, undefined, 'flat-map `cadence` key must not exist');
+    // Every live row uses goldenTest (never bare golden) and never motionTokens.
+    const entries = entriesOf(matrix);
+    assert.ok(entries.length > 0, 'matrix must contain component entries');
+    for (const [name, entry] of entries) {
+      assert.equal(typeof entry.goldenTest, 'string', `${name}: goldenTest link must be a string`);
+      assert.equal(entry.golden, undefined, `${name}: flat-map bare \`golden\` key must not exist`);
+      assert.equal(entry.motionTokens, undefined, `${name}: motionTokens belongs to TC-LAYOUT-026, not matrix rows`);
+    }
+    // Closed gate: a re-flattened entry fails the row contract by construction.
+    assert.throws(
+      () =>
+        assertEntryLinks('FlatButton', {
+          primitive: 'M3NativeButton',
+          tokens: ['md.comp.button.container'],
+          motionTokens: ['motion.durations.short-2'],
+          semantics: 'S',
+          golden: 'G',
+          ledgers: { clone: 'C', competitive: 'K' },
+        }),
+      /goldenTest|states|adaptive|status/,
+      'flat-map entry must fail the envelope row contract'
+    );
+  });
 });
