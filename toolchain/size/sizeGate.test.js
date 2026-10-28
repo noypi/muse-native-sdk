@@ -310,4 +310,65 @@ describe('T8 — fail-closed inputs (security pin)', () => {
     assert.equal(result.pass, false);
     assert.ok(result.deltas.some((d) => d.name === 'asset-pack-hero'));
   });
+
+  it('null report envelope fails closed naming <report> with NaN delta', () => {
+    // SECURITY Finding 1: malformed envelope must not silently pass.
+    const checkSizeGate = gateOf(loadImpl());
+    const result = checkSizeGate(null);
+    assert.equal(result.pass, false);
+    assert.equal(result.deltas.length, 1);
+    assert.equal(result.deltas[0].name, '<report>');
+    assert.ok(Number.isNaN(result.deltas[0].delta));
+  });
+
+  it('undefined report envelope fails closed naming <report> with NaN delta', () => {
+    const checkSizeGate = gateOf(loadImpl());
+    const result = checkSizeGate(undefined);
+    assert.equal(result.pass, false);
+    assert.equal(result.deltas.length, 1);
+    assert.equal(result.deltas[0].name, '<report>');
+    assert.ok(Number.isNaN(result.deltas[0].delta));
+  });
+
+  it('empty-object envelope ({}) fails closed naming <report> with NaN delta', () => {
+    const checkSizeGate = gateOf(loadImpl());
+    const result = checkSizeGate({});
+    assert.equal(result.pass, false);
+    assert.equal(result.deltas.length, 1);
+    assert.equal(result.deltas[0].name, '<report>');
+    assert.ok(Number.isNaN(result.deltas[0].delta));
+  });
+
+  it('a well-formed empty report ({ rows: [] }) still passes — pin the distinction', () => {
+    // An absent envelope is not an empty report: only `{ rows: [] }` passes.
+    const checkSizeGate = gateOf(loadImpl());
+    const result = checkSizeGate({ rows: [] });
+    assert.equal(result.pass, true);
+    assert.deepEqual(result.deltas, []);
+  });
+});
+
+describe('T8 — negative-size delta magnitude is sane (security pin, Finding 3)', () => {
+  it('negative installBytes reports delta === installBytes (finite), never a negative overrun', () => {
+    const checkSizeGate = gateOf(loadImpl());
+    const result = checkSizeGate({
+      rows: [{ name: 'asset-pack-hero', installBytes: -3, budget: 25 }],
+    });
+    assert.equal(result.pass, false);
+    const hit = result.deltas.find((d) => d.name === 'asset-pack-hero');
+    assert.ok(hit, `deltas must name the artifact, got: ${JSON.stringify(result.deltas)}`);
+    assert.equal(hit.delta, -3);
+    assert.ok(Number.isFinite(hit.delta));
+  });
+
+  it('non-finite installBytes reports a NaN delta', () => {
+    const checkSizeGate = gateOf(loadImpl());
+    const result = checkSizeGate({
+      rows: [{ name: 'asset-pack-hero', installBytes: NaN, budget: 25 }],
+    });
+    assert.equal(result.pass, false);
+    const hit = result.deltas.find((d) => d.name === 'asset-pack-hero');
+    assert.ok(hit, `deltas must name the artifact, got: ${JSON.stringify(result.deltas)}`);
+    assert.ok(Number.isNaN(hit.delta));
+  });
 });

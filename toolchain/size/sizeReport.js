@@ -43,8 +43,9 @@ function recordSizes(artifacts, budgets) {
     const { downloadBytes, installBytes } = artifact;
     const validDownload = isValidSize(downloadBytes);
     const validInstall = isValidSize(installBytes);
+    const validBudget = isValidSize(budget);
     let over = false;
-    if (!validDownload || !validInstall) {
+    if (!validDownload || !validInstall || !validBudget) {
       over = true;
     } else if (downloadBytes > budget || installBytes > budget) {
       over = true;
@@ -52,8 +53,8 @@ function recordSizes(artifacts, budgets) {
     rows.push({ name, downloadBytes, installBytes, budget, over });
     if (over) {
       const worst = Math.max(
-        validDownload ? downloadBytes - budget : NaN,
-        validInstall ? installBytes - budget : NaN
+        validDownload && validBudget ? downloadBytes - budget : NaN,
+        validInstall && validBudget ? installBytes - budget : NaN
       );
       const delta = Number.isFinite(worst) && worst > 0 ? ` (+${worst} bytes over ${budget} budget)` : ' (invalid size)';
       failures.push(`${name} exceeds budget${delta}`);

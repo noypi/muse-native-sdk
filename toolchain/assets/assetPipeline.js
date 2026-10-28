@@ -25,7 +25,7 @@ function convertRaster(input, opts) {
     throw new AssetError('invalid-quality', 'invalid-quality: input must be a Buffer');
   }
   const format = opts && opts.format;
-  if (format !== 'avif' && format !== 'webp') {
+  if (!SUPPORTED_FORMATS.has(format)) {
     throw new AssetError('unsupported-format', `unsupported-format: '${String(format)}'`);
   }
   const quality = opts ? opts.quality : undefined;

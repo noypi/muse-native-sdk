@@ -48,10 +48,10 @@ function checkSizes(artifacts, budgets) {
 // budget }); budgets remain caller input, never redefined here. Fail closed:
 // non-finite/negative installBytes is an overrun naming the artifact.
 function checkSizeGate(report) {
-  const rows =
-    report && typeof report === 'object' && Array.isArray(report.rows)
-      ? report.rows
-      : [];
+  if (!report || typeof report !== 'object' || !Array.isArray(report.rows)) {
+    return { pass: false, deltas: [{ name: '<report>', delta: NaN }] };
+  }
+  const rows = report.rows;
   const deltas = [];
   for (const row of rows) {
     const name =
@@ -68,15 +68,7 @@ function checkSizeGate(report) {
     ) {
       deltas.push({
         name,
-        delta:
-          typeof installBytes === 'number' &&
-          typeof budget === 'number' &&
-          Number.isFinite(installBytes) &&
-          Number.isFinite(budget)
-            ? installBytes - budget
-            : Number.isFinite(installBytes)
-              ? installBytes
-              : NaN,
+        delta: Number.isFinite(installBytes) ? installBytes : NaN,
       });
       continue;
     }

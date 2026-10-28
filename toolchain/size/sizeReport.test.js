@@ -215,4 +215,38 @@ describe('T5 — invalid sizes fail closed (security pin)', () => {
     assert.equal(result.rows[0].over, true);
     assert.ok(result.failures.some((f) => f.includes('base.aab')));
   });
+
+  it('string budget fails closed: row over and named in failures', () => {
+    // SECURITY Finding 2: non-numeric budget must not silently pass.
+    const { recordSizes } = loadImpl();
+    const budgets = { ...PERF_BUDGETS, 'base.aab': 'huge' };
+    const result = recordSizes(
+      [{ name: 'base.aab', downloadBytes: 1000, installBytes: 1000 }],
+      budgets
+    );
+    assert.equal(result.rows[0].over, true);
+    assert.ok(result.failures.some((f) => f.includes('base.aab')));
+  });
+
+  it('NaN budget fails closed: row over and named in failures', () => {
+    const { recordSizes } = loadImpl();
+    const budgets = { ...PERF_BUDGETS, 'base.aab': NaN };
+    const result = recordSizes(
+      [{ name: 'base.aab', downloadBytes: 1000, installBytes: 1000 }],
+      budgets
+    );
+    assert.equal(result.rows[0].over, true);
+    assert.ok(result.failures.some((f) => f.includes('base.aab')));
+  });
+
+  it('negative budget fails closed: row over and named in failures', () => {
+    const { recordSizes } = loadImpl();
+    const budgets = { ...PERF_BUDGETS, 'base.aab': -5 };
+    const result = recordSizes(
+      [{ name: 'base.aab', downloadBytes: 1000, installBytes: 1000 }],
+      budgets
+    );
+    assert.equal(result.rows[0].over, true);
+    assert.ok(result.failures.some((f) => f.includes('base.aab')));
+  });
 });
