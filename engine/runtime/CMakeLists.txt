@@ -140,7 +140,27 @@ target_link_libraries(inset_animation_test PRIVATE runtime)
 target_compile_options(inset_animation_test PRIVATE -Wall -Wextra -Wpedantic)
 add_test(NAME inset_animation_test COMMAND inset_animation_test)
 
+add_executable(autofill_test tests/autofill_test.cpp)
+target_link_libraries(autofill_test PRIVATE runtime)
+target_compile_options(autofill_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME autofill_test COMMAND autofill_test)
+
 add_executable(keyboard_animation_test tests/keyboard_animation_test.cpp)
 target_link_libraries(keyboard_animation_test PRIVATE runtime)
 target_compile_options(keyboard_animation_test PRIVATE -Wall -Wextra -Wpedantic)
 add_test(NAME keyboard_animation_test COMMAND keyboard_animation_test)
+
+add_executable(cursor_rect_test tests/cursor_rect_test.cpp)
+target_link_libraries(cursor_rect_test PRIVATE runtime)
+target_compile_options(cursor_rect_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME cursor_rect_test COMMAND cursor_rect_test)
+
+add_executable(clipboard_test tests/clipboard_test.cpp)
+target_link_libraries(clipboard_test PRIVATE runtime)
+target_compile_options(clipboard_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME clipboard_test COMMAND clipboard_test)
+
+add_executable(ime_depth_test tests/ime_depth_test.cpp)
+target_link_libraries(ime_depth_test PRIVATE runtime)
+target_compile_options(ime_depth_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME ime_depth_test COMMAND ime_depth_test)
