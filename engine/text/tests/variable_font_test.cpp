@@ -16,6 +16,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
 #include <string>
 #include <vector>
 
@@ -85,6 +86,53 @@ bool advances_differ(const std::vector<float>& a,
     if (a[i] != b[i]) return true;
   }
   return false;
+}
+
+// Local replica of the layout_cache.cpp VariationHash (FNV-1a 64-bit over
+// the variation vector: count, then per-entry axis_tag + float bit pattern).
+// Used ONLY to locate a zero-residue probe vector deterministically at run
+// time; all behavior assertions below go through the public entry points
+// (shapeRun / shapeRunWithVariations) and observable advance vectors.
+std::uint64_t variation_hash_replica(const muse::text::FontVariation* vars,
+                                     std::size_t n) {
+  std::uint64_t hash = 1469598103934665603ull;
+  const auto mix = [&hash](std::uint64_t word) {
+    hash ^= word;
+    hash *= 1099511628211ull;
+  };
+  mix(static_cast<std::uint64_t>(n));
+  for (std::size_t i = 0; i < n; ++i) {
+    mix(static_cast<std::uint64_t>(vars[i].axis_tag));
+    std::uint32_t bits = 0;
+    std::memcpy(&bits, &vars[i].value, sizeof(bits));
+    mix(static_cast<std::uint64_t>(bits));
+  }
+  return hash;
+}
+
+// Deterministically sweeps single-axis 'wght' vectors until one hits the
+// zero-delta residue (hash % 200001 == 100000). Residue density is 1/200001
+// so a bounded sweep of 300000 values guarantees a hit. Returns true and
+// fills *out on success.
+bool find_zero_residue_vector(muse::text::FontVariation* out) {
+  for (int i = 0; i < 300000; ++i) {
+    muse::text::FontVariation probe = {kWght, 100.0f + static_cast<float>(i)};
+    if (variation_hash_replica(&probe, 1) % 200001u == 100000u) {
+      *out = probe;
+      return true;
+    }
+  }
+  return false;
+}
+
+std::vector<float> advances_plain() {
+  muse::text::FontHandle font{3};
+  muse::text::TextStyle style{};
+  auto result = muse::text::shapeRun(
+      reinterpret_cast<const uint8_t*>(kText.data()), kText.size(), font,
+      style);
+  if (!result.ok()) return {};
+  return (*result).advances;
 }
 
 }  // namespace
@@ -188,8 +236,31 @@ static bool check_feature_axes_passthrough() {
   }
 }
 
-static bool check_empty_variation_vector_ok() {
+// TC-TEXT-025 / BUG-TEXT-002: zero-residue vectors must still perturb.
+// Finds a variation vector with VariationHash % 200001 == 100000 (the
+// residue that yields delta == 0.0f pre-fix) and asserts its advances
+// pairwise-differ from the unperturbed shapeRun baseline and from a
+// regular (non-zero-residue) variation vector. Pre-fix this fails: the
+// zero residue perturbs by exactly 0, so the run collides with the plain
+// baseline. Post-fix the residue maps to one epsilon step and all three
+// advance sets are pairwise distinct.
+static bool check_zero_delta_residue_distinct() {
   try {
+    muse::text::FontVariation zero{};
+    if (!find_zero_residue_vector(&zero)) return false;
+    std::vector<float> probed = advances_for(&zero, 1);
+    std::vector<float> baseline = advances_plain();
+    const muse::text::FontVariation kOther[] = {{kWght, 400.0f}};
+    std::vector<float> other = advances_for(kOther, 1);
+    if (probed.empty() || baseline.empty() || other.empty()) return false;
+    return advances_differ(probed, baseline) &&
+           advances_differ(probed, other) && advances_differ(baseline, other);
+  } catch (...) {
+    return false;
+  }
+}
+
+static bool check_empty_variation_vector_ok() {  try {
     std::vector<float> none = advances_for(nullptr, 0);
     return !none.empty();
   } catch (...) {
@@ -349,6 +420,7 @@ int main() {
   RUN_CASE(check_opsz_changes_advances);
   RUN_CASE(check_slnt_changes_advances);
   RUN_CASE(check_feature_axes_passthrough);
+  RUN_CASE(check_zero_delta_residue_distinct);
   RUN_CASE(check_empty_variation_vector_ok);
   RUN_CASE(check_malformed_utf8_invalid_input);
   RUN_CASE(check_empty_input_ok_empty);
