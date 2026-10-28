@@ -1,6 +1,8 @@
 #include "layout/form_factor.h"
 
 #include <stdexcept>
+#include <utility>
+#include <vector>
 
 namespace layout {
 namespace {
@@ -86,13 +88,22 @@ bool FormFactorSource::consumeForNextPass(Solver& s, NodeId root) {
   // full-width pass from the solve above.
   if (hasUsableHinge(current_) && current_.hingeOccludes) {
     const std::vector<NodeId> affected = affectedSubtrees(s, root);
+    // Snapshot affected boxes before pinning: each addConstraint flips the
+    // solver back to unsolved (boxOf throws while unsolved), so a second
+    // affected leaf's box would be unreadable once the first pin lands.
+    // Collect (id, box) pairs up front, then pin from the snapshots.
+    std::vector<std::pair<NodeId, Box>> targets;
+    targets.reserve(affected.size());
     for (const NodeId id : affected) {
-      Box b;
       try {
-        b = s.boxOf(id);
+        targets.emplace_back(id, s.boxOf(id));
       } catch (const std::out_of_range&) {
         continue;
       }
+    }
+    for (const auto& target : targets) {
+      const NodeId id = target.first;
+      const Box b = target.second;
       if (!intersectsHinge(b, current_)) {
         continue;
       }

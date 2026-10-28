@@ -55,3 +55,7 @@ add_executable(batch_test tests/batch_test.cpp)
 target_link_libraries(batch_test PRIVATE layout)
 target_compile_options(batch_test PRIVATE -Wall -Wextra -Wpedantic -Werror)
 add_test(NAME batch_test COMMAND batch_test)
+
+add_executable(m3_matrix_check tests/m3_matrix_check.cpp)
+target_compile_options(m3_matrix_check PRIVATE -Wall -Wextra -Wpedantic -Werror)
+add_test(NAME m3_matrix_check COMMAND m3_matrix_check ${CMAKE_CURRENT_SOURCE_DIR}/m3_matrix.json)

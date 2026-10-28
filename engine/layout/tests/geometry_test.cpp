@@ -470,6 +470,323 @@ static bool check_fold_unchanged_state_consume_false() {
   return !src.consumeForNextPass(solver, t.root);
 }
 
+// ==================== Integration section (T10, AC-LAYOUT-013 full) ======
+// Binds ONLY to the T10 `Interface:` line (verbatim in unit-tests/T10.md):
+// `none — integration coverage over T4/T5/T6 interfaces; asserts composed
+// behavior only.` No new production surface is touched; the tree below
+// composes the T4 sliver section, the T5 masonry section, and the T6 fold
+// seam in one solve.
+//
+// Topology (single tree): solve root R 720x800 with direct children
+// [T toolbar, C content, P pinned-header] (the T4 positional convention);
+// C doubles as the T5 masonry container with 4 items i0..i3 (estimates
+// [100,60,80,120]). Masonry (2 cols, gaps 8/8) is registered at C FIRST so
+// the inner delegate claims its items; sliver (collapsed 56 / expanded 200
+// / pinned 48) is registered at R SECOND for the outer positional frames.
+//
+// ASSUMPTION A-INT-1 (dispatch specificity): the composed tree needs the
+// inner registration to frame its own nodes while the outer delegate keeps
+// framing the shared container C positionally. The `Interface:` lines pin
+// no dispatch-priority rule; the cases below pin the composed FRAMES, and
+// the coder owns the dispatch/flex mechanics that produce them (T1.10
+// reconcile path stays open).
+//
+// ASSUMPTION A-INT-2 (fold split rule): flat→half-opened with a FULL hinge
+// extends the T6 pin rule to affected leaf items (b.x < hingeX ⇒ shrink w
+// to the hinge edge; at/inside the hinge ⇒ shift x past it), while
+// delegate-root frames stay delegate-owned and stable. Touched-set ⊆
+// affectedSubtrees is asserted structurally (changed nodes must be members
+// of the pre-fold affected set), so it holds under either choice for C.
+//
+// Fixture (offset 72 → fraction 0.5 → toolbarH 128; C origin (0,128)):
+//   T {0,0,720,128}  C {0,128,720,600}  P {0,128,720,48}
+//   colW = (720-8)/2 = 356, stride 364; columns {0,1,1,0}:
+//   i0 {0,128,356,100}  i1 {364,128,356,60}
+//   i2 {364,196,356,80}  i3 {0,236,356,120}
+// Fold hinge: x 360..400, y 200..800, FULL occlusion. Strict-overlap check:
+//   T y0..128 vs 200..800 → no; P y128..176 → no; C → yes;
+//   i0 x0..356: 360 < 356 false → no; i1 y128..188: 200 < 188 false → no;
+//   i2 x364..720 y196..276 → yes; i3 x0..356 → no.
+// Hence affectedSubtrees(R) == {C, i2} exactly (id order: C < i2).
+// Post-fold (A-INT-2): only i2 moves → {400,196,356,80}; every other box is
+// byte-identical; touched == {i2} ⊆ {C, i2}; no item/sliver box intersects
+// the hinge (C spans it as the shared container — asserted stable, not
+// split); the JS-bridge stub sink stays 0 throughout.
+//
+// ASSUMPTION A-INT-3 (fold fixture): hinge rect, posture states, and the
+// kEps float discipline mirror the T6 fold section; no device profile is
+// needed (TC-LAYOUT-043 external stays out of scope).
+
+namespace integration {
+
+int g_jsBridgeCalls = 0;  // Stub sink: no seam takes a JS callback, stays 0.
+
+struct JsBridgeStub {
+  static void notify() { ++g_jsBridgeCalls; }
+};
+
+struct Tree {
+  layout::NodeId root = layout::kInvalidNodeId;
+  layout::NodeId toolbar = layout::kInvalidNodeId;
+  layout::NodeId container = layout::kInvalidNodeId;
+  layout::NodeId pinned = layout::kInvalidNodeId;
+  layout::NodeId items[4];
+};
+
+constexpr float kItemHeights[4] = {100.0f, 60.0f, 80.0f, 120.0f};
+constexpr int kItemColumns[4] = {0, 1, 1, 0};
+
+Tree build_tree(layout::Solver& solver, layout::SliverDelegate& sliver,
+                layout::MasonryDelegate& masonry) {
+  Tree t;
+  t.root = solver.addNode(layout::Backend::Flex, layout::kInvalidNodeId);
+  solver.setFlex(t.root, 720.0f, 800.0f, 0.0f);
+  t.toolbar = solver.addNode(layout::Backend::Flex, t.root);
+  solver.setFlex(t.toolbar, 720.0f, 200.0f, 0.0f);
+  t.container = solver.addNode(layout::Backend::Flex, t.root);
+  solver.setFlex(t.container, 720.0f, 600.0f, 0.0f);
+  t.pinned = solver.addNode(layout::Backend::Flex, t.root);
+  solver.setFlex(t.pinned, 720.0f, 48.0f, 0.0f);
+  for (int i = 0; i < 4; ++i) {
+    t.items[i] = solver.addNode(layout::Backend::Flex, t.container);
+    solver.setFlex(t.items[i], 356.0f, kItemHeights[i], 0.0f);
+    masonry.setEstimatedHeight(t.items[i], kItemHeights[i]);
+  }
+  // Inner-first registration (A-INT-1).
+  if (!layout::registerDelegate(solver, t.container, &masonry)) return t;
+  if (!layout::registerDelegate(solver, t.root, &sliver)) return t;
+  return t;
+}
+
+layout::SliverConfig sliver_config() {
+  layout::SliverConfig c;
+  c.collapsedH = 56.0f;
+  c.expandedH = 200.0f;
+  c.pinnedH = 48.0f;
+  return c;
+}
+
+layout::MasonryConfig masonry_config() {
+  layout::MasonryConfig c;
+  c.columns = 2;
+  c.columnGap = 8.0f;
+  c.itemGap = 8.0f;
+  return c;
+}
+
+layout::FormFactorState flat_state() {
+  layout::FormFactorState s;
+  s.posture = layout::Posture::Flat;
+  s.hasHinge = false;
+  s.hingeOccludes = false;
+  s.orientation = 1;
+  return s;
+}
+
+layout::FormFactorState half_opened_state() {
+  layout::FormFactorState s;
+  s.posture = layout::Posture::HalfOpened;
+  s.hasHinge = true;
+  s.hingeX = 360.0f;
+  s.hingeY = 200.0f;
+  s.hingeW = 40.0f;
+  s.hingeH = 600.0f;
+  s.hingeOccludes = true;  // FULL occlusion.
+  s.orientation = 1;
+  return s;
+}
+
+bool box_intersects_hinge(const layout::Box& b) {
+  return b.x < 360.0f + 40.0f && 360.0f < b.x + b.w && b.y < 200.0f + 600.0f &&
+         200.0f < b.y + b.h;
+}
+
+}  // namespace integration
+
+// Named case: scroll offsets drive the composed tree — offset 0 expands the
+// toolbar and offset 72 interpolates it, with sliver + masonry frames exact.
+static bool check_integration_sliver_scroll_frames() {
+  layout::Solver solver;
+  layout::SliverDelegate sliver(integration::sliver_config());
+  layout::MasonryDelegate masonry(integration::masonry_config());
+  integration::Tree t = integration::build_tree(solver, sliver, masonry);
+
+  sliver.setScrollOffset(0.0f);
+  solver.solve(t.root);
+  if (!near_box(solver.boxOf(t.toolbar), 0.0f, 0.0f, 720.0f, 200.0f))
+    return false;
+  if (!near_box(solver.boxOf(t.container), 0.0f, 200.0f, 720.0f, 600.0f))
+    return false;
+  if (!near_box(solver.boxOf(t.pinned), 0.0f, 200.0f, 720.0f, 48.0f))
+    return false;
+
+  sliver.setScrollOffset(72.0f);
+  if (!near(sliver.collapseFraction(), 0.5f)) return false;
+  solver.solve(t.root);
+  if (!near_box(solver.boxOf(t.toolbar), 0.0f, 0.0f, 720.0f, 128.0f))
+    return false;
+  if (!near_box(solver.boxOf(t.container), 0.0f, 128.0f, 720.0f, 600.0f))
+    return false;
+  if (!near_box(solver.boxOf(t.pinned), 0.0f, 128.0f, 720.0f, 48.0f))
+    return false;
+  return integration::g_jsBridgeCalls == 0;
+}
+
+// Named case: masonry columns stay greedy-stable inside the composed tree
+// with exact staggered frames at offset 72.
+static bool check_integration_masonry_columns_stable() {
+  layout::Solver solver;
+  layout::SliverDelegate sliver(integration::sliver_config());
+  layout::MasonryDelegate masonry(integration::masonry_config());
+  integration::Tree t = integration::build_tree(solver, sliver, masonry);
+  sliver.setScrollOffset(72.0f);
+  solver.solve(t.root);
+  for (int i = 0; i < 4; ++i) {
+    if (masonry.columnOf(t.items[i]) != integration::kItemColumns[i])
+      return false;
+  }
+  if (!near_box(solver.boxOf(t.items[0]), 0.0f, 128.0f, 356.0f, 100.0f))
+    return false;
+  if (!near_box(solver.boxOf(t.items[1]), 364.0f, 128.0f, 356.0f, 60.0f))
+    return false;
+  if (!near_box(solver.boxOf(t.items[2]), 364.0f, 196.0f, 356.0f, 80.0f))
+    return false;
+  if (!near_box(solver.boxOf(t.items[3]), 0.0f, 236.0f, 356.0f, 120.0f))
+    return false;
+  return integration::g_jsBridgeCalls == 0;
+}
+
+// Named case: the FULL hinge selects exactly the container + the one
+// intersecting right-column item.
+static bool check_integration_fold_affected_set() {
+  layout::Solver solver;
+  layout::SliverDelegate sliver(integration::sliver_config());
+  layout::MasonryDelegate masonry(integration::masonry_config());
+  integration::Tree t = integration::build_tree(solver, sliver, masonry);
+  sliver.setScrollOffset(72.0f);
+  solver.solve(t.root);
+
+  layout::FormFactorSource src;
+  src.onWindowLayoutChanged(integration::flat_state());
+  src.consumeForNextPass(solver, t.root);
+  src.onWindowLayoutChanged(integration::half_opened_state());
+  std::vector<layout::NodeId> got = src.affectedSubtrees(solver, t.root);
+  if (got.size() != 2) return false;
+  if (got[0] != t.container || got[1] != t.items[2]) return false;
+  return integration::g_jsBridgeCalls == 0;
+}
+
+// Named case: flat→half-opened re-solves only the hinge-affected item —
+// sliver frames, the container, and the other columns are byte-identical,
+// i2 shifts past the FULL hinge, touched ⊆ affected, no JS observes.
+static bool check_integration_fold_scoped_resolve() {
+  layout::Solver solver;
+  layout::SliverDelegate sliver(integration::sliver_config());
+  layout::MasonryDelegate masonry(integration::masonry_config());
+  integration::Tree t = integration::build_tree(solver, sliver, masonry);
+  sliver.setScrollOffset(72.0f);
+  solver.solve(t.root);
+
+  layout::FormFactorSource src;
+  src.onWindowLayoutChanged(integration::flat_state());
+  src.consumeForNextPass(solver, t.root);
+  src.onWindowLayoutChanged(integration::half_opened_state());
+  const std::vector<layout::NodeId> affected =
+      src.affectedSubtrees(solver, t.root);
+  if (affected.size() != 2) return false;
+
+  // Snapshot pre-fold frames of every node.
+  const layout::Box pre_toolbar = solver.boxOf(t.toolbar);
+  const layout::Box pre_container = solver.boxOf(t.container);
+  const layout::Box pre_pinned = solver.boxOf(t.pinned);
+  layout::Box pre_items[4];
+  for (int i = 0; i < 4; ++i) pre_items[i] = solver.boxOf(t.items[i]);
+
+  src.onWindowLayoutChanged(integration::half_opened_state());
+  if (!src.consumeForNextPass(solver, t.root)) return false;
+
+  // Unaffected boxes are byte-identical (sliver section + other columns).
+  const layout::Box& post_toolbar = solver.boxOf(t.toolbar);
+  const layout::Box& post_container = solver.boxOf(t.container);
+  const layout::Box& post_pinned = solver.boxOf(t.pinned);
+  if (!near_box(post_toolbar, pre_toolbar.x, pre_toolbar.y, pre_toolbar.w,
+                pre_toolbar.h))
+    return false;
+  if (!near_box(post_container, pre_container.x, pre_container.y,
+                pre_container.w, pre_container.h))
+    return false;
+  if (!near_box(post_pinned, pre_pinned.x, pre_pinned.y, pre_pinned.w,
+                pre_pinned.h))
+    return false;
+  for (int i = 0; i < 4; ++i) {
+    if (i == 2) continue;
+    const layout::Box& b = solver.boxOf(t.items[i]);
+    if (!near_box(b, pre_items[i].x, pre_items[i].y, pre_items[i].w,
+                  pre_items[i].h))
+      return false;
+  }
+  // Hinge-column split: i2 shifts past the FULL hinge (A-INT-2).
+  if (!near_box(solver.boxOf(t.items[2]), 400.0f, 196.0f, 356.0f, 80.0f))
+    return false;
+  // Columns never rebind across the fold.
+  for (int i = 0; i < 4; ++i) {
+    if (masonry.columnOf(t.items[i]) != integration::kItemColumns[i])
+      return false;
+  }
+  // Touched-set ⊆ hinge-affected subtrees.
+  auto is_affected = [&](layout::NodeId id) {
+    for (layout::NodeId a : affected) {
+      if (a == id) return true;
+    }
+    return false;
+  };
+  auto changed = [&](const layout::Box& post, const layout::Box& pre) {
+    return !near_box(post, pre.x, pre.y, pre.w, pre.h);
+  };
+  if (changed(post_toolbar, pre_toolbar) && !is_affected(t.toolbar))
+    return false;
+  if (changed(post_container, pre_container) && !is_affected(t.container))
+    return false;
+  if (changed(post_pinned, pre_pinned) && !is_affected(t.pinned))
+    return false;
+  for (int i = 0; i < 4; ++i) {
+    if (changed(solver.boxOf(t.items[i]), pre_items[i]) &&
+        !is_affected(t.items[i]))
+      return false;
+  }
+  // No item or sliver-section box keeps content under the FULL hinge.
+  if (integration::box_intersects_hinge(post_toolbar)) return false;
+  if (integration::box_intersects_hinge(post_pinned)) return false;
+  for (int i = 0; i < 4; ++i) {
+    if (integration::box_intersects_hinge(solver.boxOf(t.items[i])))
+      return false;
+  }
+  // The shared container spans the fold region by construction (sliver owns
+  // its frame; the split is expressed at the column level per A-INT-2).
+  return integration::g_jsBridgeCalls == 0;
+}
+
+// Named case: repeating the identical half-opened state is a no-op pass —
+// frames frozen and no JS observes.
+static bool check_integration_fold_repeat_noop() {
+  layout::Solver solver;
+  layout::SliverDelegate sliver(integration::sliver_config());
+  layout::MasonryDelegate masonry(integration::masonry_config());
+  integration::Tree t = integration::build_tree(solver, sliver, masonry);
+  sliver.setScrollOffset(72.0f);
+  solver.solve(t.root);
+
+  layout::FormFactorSource src;
+  src.onWindowLayoutChanged(integration::half_opened_state());
+  if (!src.consumeForNextPass(solver, t.root)) return false;
+  const layout::Box before = solver.boxOf(t.items[2]);
+  src.onWindowLayoutChanged(integration::half_opened_state());
+  if (src.consumeForNextPass(solver, t.root)) return false;
+  const layout::Box& after = solver.boxOf(t.items[2]);
+  if (!near_box(after, before.x, before.y, before.w, before.h)) return false;
+  return integration::g_jsBridgeCalls == 0;
+}
+
 #define RUN_CASE(name)                     \
   do {                                     \
     if (!(name)()) {                       \
@@ -499,6 +816,12 @@ int main() {
   RUN_CASE(check_fold_hinge_selects_only_intersected_column);
   RUN_CASE(check_fold_resolve_scoped_no_content_under_hinge_no_js);
   RUN_CASE(check_fold_unchanged_state_consume_false);
+  // Integration section (T10).
+  RUN_CASE(check_integration_sliver_scroll_frames);
+  RUN_CASE(check_integration_masonry_columns_stable);
+  RUN_CASE(check_integration_fold_affected_set);
+  RUN_CASE(check_integration_fold_scoped_resolve);
+  RUN_CASE(check_integration_fold_repeat_noop);
   if (failures > 0) {
     std::printf("geometry_test: %d failing\n", failures);
     return 1;

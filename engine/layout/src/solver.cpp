@@ -125,6 +125,41 @@ Box Solver::solve(NodeId root) {
 
   solved_ = true;
   dispatchDelegates(root);
+  // Delegate-aware pin pass: constraints target delegate-owned leaf items
+  // (e.g. FULL-hinge pins from FormFactorSource) that the pre-dispatch
+  // projection skips and whose delegate frames would otherwise overwrite the
+  // pin. Re-apply those pins post-dispatch so they win on handled leaves.
+  // Registered delegate roots keep their delegate-owned frames (the shared
+  // container stays stable; the split is expressed at the leaf/column
+  // level), so pins targeting a delegate root itself are skipped here.
+  for (const Constraint* c : ordered) {
+    if (!isHandled(c->node)) {
+      continue;
+    }
+    bool ownRoot = false;
+    for (const auto& entry : delegates_) {
+      if (entry.first == c->node && entry.second != nullptr) {
+        ownRoot = true;
+        break;
+      }
+    }
+    if (ownRoot) {
+      // Registered delegate roots keep their delegate-owned frames.
+      continue;
+    }
+    Box& box = boxes_[static_cast<std::size_t>(c->node)];
+    float* channel = nullptr;
+    switch (c->attribute) {
+      case 0: channel = &box.x; break;
+      case 1: channel = &box.y; break;
+      case 2: channel = &box.w; break;
+      case 3: channel = &box.h; break;
+      default: break;
+    }
+    if (channel != nullptr) {
+      *channel = c->constant;
+    }
+  }
   return boxes_.at(static_cast<std::size_t>(root));
 }
 
@@ -244,23 +279,47 @@ void Solver::dispatchDelegates(NodeId root) {
       availW = boxes_.at(static_cast<std::size_t>(parent)).w;
       availH = boxes_.at(static_cast<std::size_t>(parent)).h;
     }
+    // Composed dispatch: a node that is itself a registered delegate root
+    // (the shared container) is framed positionally by the outer delegate,
+    // while inner delegates frame the nodes they own. Probe outer
+    // registrations (entry.first != id) before the node's own registration
+    // so the outer positional write-back wins on the shared container;
+    // non-root nodes keep first-match (inner/registration) order.
+    bool selfRooted = false;
     for (const auto& entry : delegates_) {
-      LayoutDelegate* d = entry.second;
-      if (d == nullptr) {
-        continue;
+      if (entry.first == id && entry.second != nullptr) {
+        selfRooted = true;
+        break;
       }
-      if ((id == entry.first || isInSubtree(id, entry.first)) &&
-          d->handles(id)) {
-        // T4 sliver write-back: handled nodes skip the built-in backends, so
-        // their boxes are still default-constructed at this point. A
-        // SliverDelegate computes exact frames as a pure function of
-        // (config, scroll offset); install them before measure/arrange so
-        // the bounds forwarded to arrange() equal boxOf(id) (the T3
-        // arrange-bounds invariant) and boxOf() reports sliver geometry
-        // afterwards. Non-sliver delegates keep the pass-through behavior.
-        if (SliverDelegate* sliver = dynamic_cast<SliverDelegate*>(d)) {
-          const Box& rootBox =
-              boxes_.at(static_cast<std::size_t>(entry.first));
+    }
+    bool dispatched = false;
+    for (int pass = 0; pass < 2 && !dispatched; ++pass) {
+      for (const auto& entry : delegates_) {
+        LayoutDelegate* d = entry.second;
+        if (d == nullptr) {
+          continue;
+        }
+        // Pass 0: on self-rooted (shared container) nodes only outer
+        // registrations frame; pass 1: everything else in order. For
+        // non-root nodes pass 0 matches immediately (no self root).
+        if (selfRooted && pass == 0 && entry.first == id) {
+          continue;
+        }
+        if (selfRooted && pass == 1 && entry.first != id) {
+          continue;
+        }
+        if ((id == entry.first || isInSubtree(id, entry.first)) &&
+            d->handles(id)) {
+          // T4 sliver write-back: handled nodes skip the built-in backends,
+          // so their boxes are still default-constructed at this point. A
+          // SliverDelegate computes exact frames as a pure function of
+          // (config, scroll offset); install them before measure/arrange so
+          // the bounds forwarded to arrange() equal boxOf(id) (the T3
+          // arrange-bounds invariant) and boxOf() reports sliver geometry
+          // afterwards. Non-sliver delegates keep the pass-through behavior.
+          if (SliverDelegate* sliver = dynamic_cast<SliverDelegate*>(d)) {
+            const Box& rootBox =
+                boxes_.at(static_cast<std::size_t>(entry.first));
           int childIndex = -1;
           float naturalW = 0.0f;
           float naturalH = 0.0f;
@@ -326,7 +385,9 @@ void Solver::dispatchDelegates(NodeId root) {
         }
         d->measure(id, availW, availH);
         d->arrange(id, boxes_.at(static_cast<std::size_t>(id)));
+        dispatched = true;
         break;  // One delegate owns each node: the first match wins.
+        }  // if handles: one delegate owns each node
       }
     }
   }
