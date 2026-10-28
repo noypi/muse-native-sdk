@@ -55,9 +55,14 @@ function runBuild(appDir, rest) {
     return;
   }
   const resolved = path.resolve(appDir);
-  // T3 (AC-SAMPLE-035): require the target's own `muse-native.yaml`. A
-  // parent-dir (workspace-root) file never substitutes: only
-  // `<target>/muse-native.yaml` satisfies the build.
+  // T3 (AC-SAMPLE-035): every buildable project owns its own
+  // `muse-native.yaml`. Resolution order when the canonical file is absent:
+  // the deprecated alias (`muse.config.ts` / `capo.config.ts`) is still
+  // honoured exactly as before T3; a target dir that looks like a project
+  // (owns `package.json` or `src/App.tsx`) fails closed naming its own
+  // `<target>/muse-native.yaml`; anything else (empty tmp dir, nonexistent
+  // path, `--print-config` flows) keeps the pre-T3 behavior. A parent-dir
+  // (workspace-root) file never substitutes.
   const projectConfigPath = resolveProjectConfig(resolved);
   let projectStat = null;
   try {
@@ -66,9 +71,43 @@ function runBuild(appDir, rest) {
     projectStat = null;
   }
   if (!projectStat || !projectStat.isFile()) {
-    process.stderr.write(`Error: missing muse-native.yaml for target '${appDir}' at '${projectConfigPath}'\n`);
-    process.exitCode = 1;
-    return;
+    // Canonical file absent: consult the existing deprecated-alias lookup.
+    // `readFileLayer` checks the canonical file first, so any file it finds
+    // here must be an alias — use it exactly as before T3. A parse error is
+    // also an alias hit: fall through and let `resolveConfig` report it.
+    let aliasFile = '';
+    try {
+      const layer = config.readFileLayer(resolved);
+      if (layer && layer.file) aliasFile = layer.file;
+    } catch (_) {
+      aliasFile = 'alias-parse-error';
+    }
+    if (!aliasFile) {
+      let looksLikeProject = false;
+      try {
+        const dirStat = fs.statSync(resolved);
+        if (dirStat && dirStat.isDirectory()) {
+          for (const marker of ['package.json', path.join('src', 'App.tsx')]) {
+            try {
+              const markerStat = fs.statSync(path.join(resolved, marker));
+              if (markerStat && markerStat.isFile()) {
+                looksLikeProject = true;
+                break;
+              }
+            } catch (_) {
+              // Marker absent — try the next one.
+            }
+          }
+        }
+      } catch (_) {
+        // Target dir itself absent — not a project; keep pre-T3 behavior.
+      }
+      if (looksLikeProject) {
+        process.stderr.write(`Error: missing muse-native.yaml for target '${appDir}' at '${projectConfigPath}'\n`);
+        process.exitCode = 1;
+        return;
+      }
+    }
   }
   // `--stage <name>` runs one stage only; anything else after <appDir>
   // stays flags for config resolution. Unknown stage values fail here,
