@@ -11,6 +11,7 @@ add_library(layout
   src/delegate.cpp
   src/sliver.cpp
   src/masonry.cpp
+  src/form_factor.cpp
 )
 target_include_directories(layout PUBLIC include)
 target_compile_options(layout PRIVATE -Wall -Wextra -Wpedantic -Werror)
@@ -37,3 +38,8 @@ add_executable(geometry_test tests/geometry_test.cpp)
 target_link_libraries(geometry_test PRIVATE layout)
 target_compile_options(geometry_test PRIVATE -Wall -Wextra -Wpedantic -Werror)
 add_test(NAME geometry_test COMMAND geometry_test)
+
+add_executable(form_factor_test tests/form_factor_test.cpp)
+target_link_libraries(form_factor_test PRIVATE layout)
+target_compile_options(form_factor_test PRIVATE -Wall -Wextra -Wpedantic -Werror)
+add_test(NAME form_factor_test COMMAND form_factor_test)
