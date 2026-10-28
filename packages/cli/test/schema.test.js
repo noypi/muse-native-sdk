@@ -13,11 +13,9 @@
 // ASSUMPTIONS (contract genuinely silent, most defensible behavior tested):
 // - A-T2a: schema owns at least `name: string` / `version: string`; a
 //   numeric yaml scalar for `name` is the wrong-type case.
-// - A-T2b: out-of-scope target/severity keys (`withSample`, `strict`, `abi`,
-//   `release`, `modules`, `output`, `archs`, `packaging`) are unknown to the
-//   schema in this run and are rejected as unknown keys, per plan Out of
-//   Scope ("rejected as unknown or ignored" — rejection tested as the
-//   fail-closed reading).
+// - A-T2b: `withSample`/`strict` are in-scope schema keys (FR-WORKFLOW-003/
+//   005, T1); genuinely unknown keys (`bogusKey`, `abi` when not in schema,
+//   hostile path keys) are still rejected as unknown keys fail-closed.
 
 const { describe, it, afterEach } = require('node:test');
 const assert = require('node:assert/strict');
@@ -81,18 +79,32 @@ describe('TC-WORKFLOW-003 — unknown key / wrong type fails before compilation'
     assert.match(r.stderr, /string/, 'stderr must state the expected type');
   });
 
-  it('out-of-scope target key is rejected as unknown, never half-implemented', () => {
+  it('in-scope target key withSample is accepted and resolves as boolean (AC-WORKFLOW-007)', () => {
     const appDir = mkTmp('muse-schema-');
-    writeApp(appDir, 'name: bad-app\nwithSample: true\n');
-    const r = runCli(['build', appDir]);
-    assertFailsClosed(r, 'withSample');
+    writeApp(appDir, 'name: good-app\nwithSample: true\n');
+    const r = runCli(['build', appDir, '--print-config']);
+    assert.equal(r.status, 0, `withSample:true must validate, got exit ${r.status}: ${r.stderr}`);
+    const parsed = JSON.parse(r.stdout.trim());
+    assert.equal(parsed.config.withSample, true, 'withSample:true must resolve as boolean true');
+    const defDir = mkTmp('muse-schema-');
+    writeApp(defDir, 'name: good-app\nversion: 0.0.1\n');
+    const d = runCli(['build', defDir, '--print-config']);
+    assert.equal(d.status, 0, `default config must exit 0, got ${d.status}: ${d.stderr}`);
+    assert.equal(JSON.parse(d.stdout.trim()).config.withSample, false, 'withSample must default to false');
   });
 
-  it('out-of-scope severity key is rejected as unknown', () => {
+  it('in-scope severity key strict is accepted and resolves as boolean (AC-WORKFLOW-014)', () => {
     const appDir = mkTmp('muse-schema-');
-    writeApp(appDir, 'name: bad-app\nstrict: true\n');
-    const r = runCli(['build', appDir]);
-    assertFailsClosed(r, 'strict');
+    writeApp(appDir, 'name: good-app\nstrict: true\n');
+    const r = runCli(['build', appDir, '--print-config']);
+    assert.equal(r.status, 0, `strict:true must validate, got exit ${r.status}: ${r.stderr}`);
+    const parsed = JSON.parse(r.stdout.trim());
+    assert.equal(parsed.config.strict, true, 'strict:true must resolve as boolean true');
+    const defDir = mkTmp('muse-schema-');
+    writeApp(defDir, 'name: good-app\nversion: 0.0.1\n');
+    const d = runCli(['build', defDir, '--print-config']);
+    assert.equal(d.status, 0, `default config must exit 0, got ${d.status}: ${d.stderr}`);
+    assert.equal(JSON.parse(d.stdout.trim()).config.strict, false, 'strict must default to false');
   });
 
   it('failure happens before compilation: no dist/ artefacts are written (no partial config)', () => {

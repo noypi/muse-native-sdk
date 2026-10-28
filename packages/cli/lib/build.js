@@ -55,6 +55,23 @@ function runBuild(appDir, rest) {
     return;
   }
   const resolved = path.resolve(appDir);
+  // T2 (AC-WORKFLOW-009): missing/unknown target fails closed at configure,
+  // before any config resolution, compilation, or `dist/` write. Names the
+  // target and the expected path; exit 2 (config-error) via getExitCode.
+  // (No-arg `build` with no <appDir> above stays exit 1 usage error.)
+  // Returns early when the dir is absent, so the project-config gate below
+  // never sees a nonexistent dir.
+  let targetStat = null;
+  try {
+    targetStat = fs.statSync(resolved);
+  } catch (_) {
+    targetStat = null;
+  }
+  if (!targetStat || !targetStat.isDirectory()) {
+    process.stderr.write(`Error: target '${appDir}' not found. Expected directory at '${resolved}'.\n`);
+    process.exitCode = getExitCode('config');
+    return;
+  }
   // T3 (AC-SAMPLE-035): every buildable project owns its own
   // `muse-native.yaml`. Resolution order when the canonical file is absent:
   // the deprecated alias (`muse.config.ts` / `capo.config.ts`) is still
@@ -133,8 +150,16 @@ function runBuild(appDir, rest) {
   // compilation or artefact writes (no partial config, no dist/ writes).
   // `restArgs` holds the flags after <appDir> minus `--stage`; argv for
   // resolveConfig keeps the positional so `--<key> <value>` pairs parse
-  // the same either way.
+  // the same either way. The positional `examples/m3-gallery` target selects
+  // the sample (equivalent to `--with-sample`); selection honoring itself
+  // is T3, here we only ensure the flag reaches resolution.
   const argv = [appDir].concat(restArgs);
+  if (
+    (appDir === 'examples/m3-gallery' || resolved.endsWith(path.join('examples', 'm3-gallery'))) &&
+    !argv.includes('--with-sample')
+  ) {
+    argv.push('--with-sample');
+  }
   let resolvedConfig;
   try {
     resolvedConfig = config.resolveConfig(argv, process.env, resolved);
@@ -175,18 +200,25 @@ function runBuild(appDir, rest) {
     process.exitCode = getExitCode('ok');
     return;
   }
-  let stat = null;
-  try {
-    stat = fs.statSync(resolved);
-  } catch (err) {
-    process.stderr.write(`Error: directory '${appDir}' does not exist.\n`);
-    process.exitCode = 1;
-    return;
-  }
-  if (!stat.isDirectory()) {
-    process.stderr.write(`Error: '${appDir}' is not a directory.\n`);
-    process.exitCode = 1;
-    return;
+  // T3 (AC-WORKFLOW-007): a selected sample target must exist before any
+  // compilation or `dist/` write. Fails closed with exit 2 (config-error),
+  // naming the target and the expected path. `--print-config` above stays
+  // a pure resolution print and never fails on an absent sample.
+  if (stages.isSampleSelected(resolvedConfig.config)) {
+    const sampleDir = stages.resolveSampleDir(resolved);
+    let sampleStat = null;
+    try {
+      sampleStat = fs.statSync(sampleDir);
+    } catch (_) {
+      sampleStat = null;
+    }
+    if (!sampleStat || !sampleStat.isDirectory()) {
+      process.stderr.write(
+        `Error: sample target 'examples/m3-gallery' not found. Expected directory at '${sampleDir}'.\n`,
+      );
+      process.exitCode = getExitCode('config');
+      return;
+    }
   }
   // Dispatch through the seven stages (or the one named by `--stage`).
   // Per-stage outcome lines go to stdout; a failure also mirrors the error

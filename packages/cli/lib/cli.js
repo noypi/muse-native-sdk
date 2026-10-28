@@ -33,22 +33,22 @@ function loadStages() {
   return ['configure', 'typecheck', 'compile', 'emit', 'native-build', 'package', 'install'];
 }
 
-const ACCEPTED_OPTIONS = '--stage, --print-config, --name, --version, --help';
+const ACCEPTED_OPTIONS = '--stage, --print-config, --name, --version, --help, --with-sample, --abi, --release, --modules, --output, --strict';
 
 // Validate the option layer (`--` flags) of an argv array. Positional
-// operands (the command, `<appDir>`) and `-h`/`--help` are skipped — help
+// operands (the command, `<appDir>`, and the one target operand
+// `examples/m3-gallery`) and `-h`/`--help` are skipped — help
 // and `--print-config` handling is unaffected. Throws OptionError naming
 // the option and the accepted values for: unknown options (including
-// out-of-scope `--with-sample`, `--strict`, `--abi`, `--release`,
-// `--modules`, `--output`, `--archs`, `--packaging`), `--flag=value` form
+// out-of-scope `--archs`, `--packaging`), `--flag=value` form
 // (only `--<name> <value>` is accepted), and a missing/invalid `--stage`
 // value. Never validates config keys — unknown CONFIG keys stay ConfigError
 // (T1/T2).
 function validateOptions(argv) {
   const args = Array.isArray(argv) ? argv : [];
   const STAGES = loadStages();
-  const VALUE_FLAGS = new Set(['--stage', '--name', '--version']);
-  const BOOL_FLAGS = new Set(['--print-config', '--help', '-h']);
+  const VALUE_FLAGS = new Set(['--stage', '--name', '--version', '--abi', '--modules', '--output']);
+  const BOOL_FLAGS = new Set(['--print-config', '--help', '-h', '--with-sample', '--release', '--strict']);
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
     if (typeof arg !== 'string' || arg.length === 0) continue;

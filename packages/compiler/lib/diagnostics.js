@@ -40,4 +40,47 @@ function checkLiteralAgainstTokens(literal, loc, knownTokenValues) {
   }
 }
 
-module.exports = { checkLiteralAgainstTokens };
+// Error thrown for an invalid explicit severity. Mirrors the shape of
+// `ConfigError` in `packages/cli/lib/config.js` (the compiler must not
+// depend on the CLI layer): carries the diagnostic code, the config label,
+// and the accepted values. Message reads
+// `Error: <code> in <config>: expected error|warn|off`.
+class ConfigError extends Error {
+  constructor(key, file, expected) {
+    super(`Error: ${key} in ${file}: expected ${expected}`);
+    this.name = 'ConfigError';
+    this.key = key;
+    this.file = file;
+    this.expected = expected;
+  }
+}
+
+const SEVERITIES = new Set(['error', 'warn', 'off']);
+
+// T4 (AC-WORKFLOW-013): effective severity for a diagnostic code.
+//
+// Precedence: an explicit `configured` value wins when it validates
+// (`error|warn|off`, else throws `ConfigError(code, '<config>',
+// 'error|warn|off')`); otherwise the default is `error` when
+// `packageType === 'library'`, else `warn`. Never throws on unknown
+// `code` — the default applies. Pure, no I/O.
+function resolveSeverity(code, configured, packageType) {
+  if (configured !== undefined) {
+    if (!SEVERITIES.has(configured)) {
+      throw new ConfigError(code, '<config>', 'error|warn|off');
+    }
+    return configured;
+  }
+  return packageType === 'library' ? 'error' : 'warn';
+}
+
+// T5 (AC-WORKFLOW-014): `--strict` promotes warnings to errors.
+//
+// Maps `warn` to `error` when `strict === true`, identity otherwise.
+// Pure, no I/O, never throws (unknown severities pass through unchanged).
+function applyStrict(severity, strict) {
+  if (strict === true && severity === 'warn') return 'error';
+  return severity;
+}
+
+module.exports = { checkLiteralAgainstTokens, resolveSeverity, applyStrict, ConfigError };

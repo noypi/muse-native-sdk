@@ -13,11 +13,25 @@ const path = require('node:path');
 const SCHEMA = {
   name: 'string',
   version: 'string',
+  withSample: 'boolean',
+  abi: 'string',
+  release: 'boolean',
+  modules: 'string',
+  output: 'string',
+  strict: 'boolean',
+  diagnostics: 'object',
 };
 
 const DEFAULTS = {
   name: 'hello-app',
   version: '0.0.1',
+  withSample: false,
+  abi: undefined,
+  release: false,
+  modules: undefined,
+  output: undefined,
+  strict: false,
+  diagnostics: undefined,
 };
 
 const ENV_PREFIX = 'MUSE_NATIVE_';
@@ -55,6 +69,22 @@ function validateConfig(raw, file) {
     const expected = SCHEMA[key];
     if (typeof raw[key] !== expected) {
       throw new ConfigError(key, where, expected);
+    }
+  }
+  // T4 (AC-WORKFLOW-013): every `diagnostics` map entry must name an
+  // accepted severity. A bad value throws ConfigError naming the code and
+  // `error|warn|off`, at configure time before anything merges. Plain
+  // objects only — other shapes are already rejected by the typeof check
+  // above (or never arise from the scalar file parse).
+  const diag = raw.diagnostics;
+  if (diag !== undefined && diag !== null && typeof diag === 'object' && !Array.isArray(diag)) {
+    for (const code of Object.keys(diag)) {
+      if (code === '__proto__' || code === 'constructor' || code === 'prototype') {
+        throw new ConfigError(code, where, 'rejected dangerous key');
+      }
+      if (diag[code] !== 'error' && diag[code] !== 'warn' && diag[code] !== 'off') {
+        throw new ConfigError(code, where, 'error|warn|off');
+      }
     }
   }
 }
@@ -161,7 +191,29 @@ function readFileLayer(cwd) {
   const values = {};
   const museLines = [];
   let inMuse = false;
+  // T4 file form for the one map key: a top-level `diagnostics:` block with
+  // an empty value opens a nested map for the deeper-indented lines below it
+  // (`CAPO0012: warn`), and flat `diagnostics.CAPO0012: warn` leaves fold into
+  // the same map. Either form lands in `values.diagnostics` as an object so
+  // `validateConfig` per-code `error|warn|off` check can fire on real files.
+  let inDiagnostics = false;
   for (const line of text.split('\n')) {
+    if (inDiagnostics) {
+      if (/^[ \t]/.test(line)) {
+        const trimmedInner = line.trim();
+        if (trimmedInner === '' || trimmedInner.startsWith('#')) continue;
+        const parsedInner = parseLine(trimmedInner);
+        if (parsedInner) {
+          if (parsedInner.key === '__proto__' || parsedInner.key === 'constructor' || parsedInner.key === 'prototype') {
+            throw new ConfigError(parsedInner.key, full, 'rejected dangerous key');
+          }
+          if (typeof values.diagnostics !== 'object' || values.diagnostics === null) values.diagnostics = {};
+          values.diagnostics[parsedInner.key] = parsedInner.value;
+        }
+        continue;
+      }
+      inDiagnostics = false;
+    }
     if (inMuse) {
       const trimmed = line.trim();
       if (trimmed === '' || trimmed.startsWith('#') || /^[ \t]/.test(line)) {
@@ -181,10 +233,52 @@ function readFileLayer(cwd) {
       if (rest === '' || rest.startsWith('#')) inMuse = true;
       continue;
     }
+    // Top-level `diagnostics:` with an empty value opens the nested map;
+    // an inline scalar value stays fail-closed via validateConfig below.
+    if (!/^[ \t]/.test(line) && /^diagnostics\s*:/.test(trimmed)) {
+      const rest = trimmed.slice(trimmed.indexOf(':') + 1).trim();
+      if (rest === '' || rest.startsWith('#')) {
+        if (typeof values.diagnostics !== 'object' || values.diagnostics === null) values.diagnostics = {};
+        inDiagnostics = true;
+        continue;
+      }
+    }
     const parsed = parseLine(line);
-    if (parsed) values[parsed.key] = parsed.value;
+    if (parsed) {
+      if (parsed.key === '__proto__' || parsed.key === 'constructor' || parsed.key === 'prototype') {
+        throw new ConfigError(parsed.key, full, 'rejected dangerous key');
+      }
+      // Flat `diagnostics.CODE: <severity>` file form folds into the map.
+      if (parsed.key === 'diagnostics' || parsed.key.startsWith('diagnostics.')) {
+        if (parsed.key.startsWith('diagnostics.')) {
+          const code = parsed.key.slice('diagnostics.'.length);
+          if (code) {
+            if (code === '__proto__' || code === 'constructor' || code === 'prototype') {
+              throw new ConfigError(code, full, 'rejected dangerous key');
+            }
+            if (typeof values.diagnostics !== 'object' || values.diagnostics === null) values.diagnostics = {};
+            values.diagnostics[code] = parsed.value;
+            continue;
+          }
+        }
+      }
+      values[parsed.key] = parsed.value;
+    }
   }
   return { values, file: full, muse: museLines.length ? parseMuseSubtree(museLines.join('\n'), full) : undefined };
+}
+
+// Boolean keys accept a bare `--<key>` flag meaning true (ASSUMPTION A1);
+// value keys use `--<key> <value>` space form.
+const BOOL_KEYS = new Set(['withSample', 'release', 'strict']);
+
+// Normalize an env/CLI boolean-ish value to a real boolean when it names
+// one (`true`/`false` in either string or boolean form); anything else
+// passes through untouched so the merge/validation layer decides.
+function normalizeBooleanValue(value) {
+  if (value === true || value === 'true') return true;
+  if (value === false || value === 'false') return false;
+  return value;
 }
 
 // Collect `--<key> <value>` pairs from argv. Positional operands and the
@@ -197,9 +291,32 @@ function readCliLayer(argv) {
     const arg = args[i];
     if (typeof arg !== 'string' || !arg.startsWith('--')) continue;
     if (arg === '--print-config') continue;
-    const key = arg.slice(2);
+    const rawKey = arg.slice(2);
+    // Accept kebab-case on the CLI (`--with-sample`) for camelCase keys.
+    const key = rawKey.replace(/-([a-z])/g, (_, c) => c.toUpperCase());
     if (!Object.prototype.hasOwnProperty.call(SCHEMA, key)) {
       throw new ConfigError(key, '<argv>', 'unknown key, expected one of: ' + Object.keys(SCHEMA).join(', '));
+    }
+    if (BOOL_KEYS.has(key)) {
+      const next = args[i + 1];
+      if (typeof next !== 'string' || next.startsWith('--')) {
+        values[key] = true;
+        continue;
+      }
+      if (next === 'true') {
+        values[key] = true;
+        i++;
+        continue;
+      }
+      if (next === 'false') {
+        values[key] = false;
+        i++;
+        continue;
+      }
+      // A bare boolean flag takes no value: a trailing non-flag token that
+      // is not `true`/`false` is a typo'd value, not a positional. Fail
+      // closed naming the option instead of silently dropping the token.
+      throw new ConfigError(key, '<argv>', 'boolean');
     }
     const value = args[i + 1];
     if (typeof value !== 'string' || value.startsWith('--')) {
@@ -217,7 +334,14 @@ function readEnvLayer(env) {
   for (const key of Object.keys(SCHEMA)) {
     const name = envNameFor(key);
     if (Object.prototype.hasOwnProperty.call(source, name) && source[name] !== undefined) {
-      values[key] = String(source[name]);
+      // Boolean keys resolve to real booleans so `config.strict === true`
+      // (boolean) per the ResolvedConfig type; `isSampleSelected` keeps
+      // accepting both forms downstream regardless.
+      if (SCHEMA[key] === 'boolean') {
+        values[key] = normalizeBooleanValue(source[name]);
+      } else {
+        values[key] = String(source[name]);
+      }
     }
   }
   return values;
@@ -246,9 +370,14 @@ function resolveConfig(argv, env, cwd) {
   for (const layer of layers) {
     for (const key of Object.keys(layer.values)) {
       const expected = SCHEMA[key];
-      if (typeof layer.values[key] !== expected) {
-        throw new ConfigError(key, layer.file, expected);
-      }
+      const actual = typeof layer.values[key];
+      if (actual === expected) continue;
+      // Env values arrive via String() and CLI booleans use bare flags:
+      // allow the string passthrough for boolean/object keys across the
+      // CLI/env layers (file layer stays strictly typed via validateConfig).
+      if (expected === 'boolean' && actual === 'string') continue;
+      if (expected === 'object' && actual === 'string') continue;
+      throw new ConfigError(key, layer.file, expected);
     }
   }
 
@@ -256,10 +385,10 @@ function resolveConfig(argv, env, cwd) {
   const winningLayer = {};
   for (const key of Object.keys(SCHEMA)) {
     if (Object.prototype.hasOwnProperty.call(cliValues, key)) {
-      config[key] = cliValues[key];
+      config[key] = SCHEMA[key] === 'boolean' ? normalizeBooleanValue(cliValues[key]) : cliValues[key];
       winningLayer[key] = 'cli';
     } else if (Object.prototype.hasOwnProperty.call(envValues, key)) {
-      config[key] = envValues[key];
+      config[key] = SCHEMA[key] === 'boolean' ? normalizeBooleanValue(envValues[key]) : envValues[key];
       winningLayer[key] = 'env';
     } else if (Object.prototype.hasOwnProperty.call(fileValues, key)) {
       config[key] = fileValues[key];

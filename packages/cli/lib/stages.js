@@ -77,26 +77,128 @@ function assertAppDir(ctx) {
   }
 }
 
+// Sample target (FR-WORKFLOW-003): `examples/m3-gallery`. Resolved by
+// `resolveSampleDir` without depending on the process cwd (see below);
+// selected builds compile/package its sources into the same artefacts;
+// default builds never touch it.
+const SAMPLE_TARGET = path.join('examples', 'm3-gallery');
+
+function isSampleSelected(config) {
+  const v = config && config.withSample;
+  return v === true || v === 'true';
+}
+
+// Resolve the sample dir without depending on the process cwd. Candidates
+// in order: (1) the appDir itself when it is the sample (ends with
+// `examples/m3-gallery`); (2) a sibling `<parent-of-appDir>/examples/m3-gallery`;
+// (3) walk up from this lib dir (__dirname) to the first ancestor containing
+// `examples/m3-gallery` (covers the repo-root layout regardless of caller
+// cwd). Returns the first existing directory; when none exists, reports the
+// repo-root-anchored expected path so callers fail closed naming it.
+function resolveSampleDir(appDir) {
+  const expectedSuffix = path.join('examples', 'm3-gallery');
+  const repoRootGuess = path.resolve(__dirname, '..', '..', '..');
+  const resolved = path.resolve(appDir || '');
+  if (resolved.endsWith(expectedSuffix)) {
+    try {
+      if (fs.statSync(resolved).isDirectory()) return resolved;
+    } catch (_) {
+      // Not present — try the remaining candidates below.
+    }
+  }
+  const sibling = path.join(path.dirname(resolved), 'examples', 'm3-gallery');
+  try {
+    if (fs.statSync(sibling).isDirectory()) return sibling;
+  } catch (_) {
+    // Fall through to the ancestor walk below.
+  }
+  let dir = __dirname;
+  let found = null;
+  let foundRoot = null;
+  for (;;) {
+    const candidate = path.join(dir, 'examples', 'm3-gallery');
+    try {
+      if (fs.statSync(candidate).isDirectory()) {
+        found = candidate;
+        foundRoot = dir;
+        break;
+      }
+    } catch (_) {
+      // Keep walking up.
+    }
+    const parent = path.dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  // Only honor the checkout-anchored candidate when the build target lives
+  // inside the same checkout (resolved under foundRoot, or is the sample
+  // itself). Otherwise a hermetic out-of-tree build (e.g. a tmp fake repo)
+  // would leak this checkout's committed sample instead of failing closed.
+  if (found !== null && (resolved === found || resolved.startsWith(foundRoot + path.sep))) return found;
+  // Fail closed naming an expected path: the repo-root-anchored one for
+  // in-checkout targets, else the app-anchored sibling so out-of-tree
+  // builds report a path near the app (which does not exist here).
+  const anchorRoot = foundRoot !== null ? foundRoot : repoRootGuess;
+  if (resolved === anchorRoot || resolved.startsWith(anchorRoot + path.sep)) {
+    return path.join(anchorRoot, SAMPLE_TARGET);
+  }
+  return sibling;
+}
+
+// Assert the resolved `withSample` selection's target is present. Throws a
+// stage failure naming the target and the expected path.
+function assertSampleTargetOrThrow(appDir) {
+  const dir = resolveSampleDir(appDir);
+  let stat = null;
+  try {
+    stat = fs.statSync(dir);
+  } catch (_) {
+    stat = null;
+  }
+  if (!stat || !stat.isDirectory()) {
+    throw stageError(`sample target 'examples/m3-gallery' not found. Expected directory at '${dir}'.`, dir);
+  }
+  return dir;
+}
+
+// Effective sources for a build: app sources, plus the sample sources when
+// `withSample` selects them. Fails closed (no partial return) when the
+// sample is selected but absent.
+function loadEffectiveSourcesOrThrow(ctx) {
+  const appSources = loadSourcesOrThrow(ctx.appDir);
+  if (!isSampleSelected(ctx && ctx.config)) return appSources;
+  const sampleDir = assertSampleTargetOrThrow(ctx.appDir);
+  let sampleSources;
+  try {
+    sampleSources = ir.loadSources(sampleDir);
+  } catch (err) {
+    const detail = err && err.message ? err.message : String(err);
+    throw stageError(`cannot read sample sources in '${sampleDir}': ${detail}`, sampleDir);
+  }
+  return appSources.concat(sampleSources);
+}
+
 async function configureStage(ctx) {
   assertAppDir(ctx);
   loadSourcesOrThrow(ctx.appDir);
+  if (isSampleSelected(ctx && ctx.config)) assertSampleTargetOrThrow(ctx.appDir);
 }
 
 async function typecheckStage(ctx) {
   assertAppDir(ctx);
-  loadSourcesOrThrow(ctx.appDir);
+  loadEffectiveSourcesOrThrow(ctx);
 }
 
 async function compileStage(ctx) {
   assertAppDir(ctx);
-  const sources = loadSourcesOrThrow(ctx.appDir);
+  const sources = loadEffectiveSourcesOrThrow(ctx);
   const lowered = lowerAndEncodeOrThrow(ctx.appDir, sources);
   ctx._tree = lowered.tree;
 }
 
 async function emitStage(ctx) {
   assertAppDir(ctx);
-  const sources = loadSourcesOrThrow(ctx.appDir);
+  const sources = loadEffectiveSourcesOrThrow(ctx);
   const lowered = lowerAndEncodeOrThrow(ctx.appDir, sources);
   const distDir = path.join(ctx.appDir, 'dist');
   const irPath = path.join(distDir, 'ir.json');
@@ -122,7 +224,7 @@ async function nativeBuildStage(ctx) {
 
 async function packageStage(ctx) {
   assertAppDir(ctx);
-  const sources = loadSourcesOrThrow(ctx.appDir);
+  const sources = loadEffectiveSourcesOrThrow(ctx);
   const lowered = lowerAndEncodeOrThrow(ctx.appDir, sources);
   const distDir = path.join(ctx.appDir, 'dist');
   const binPath = path.join(distDir, 'tree.mui.bin');
@@ -182,4 +284,4 @@ async function runStages(stageName, ctx) {
   return results;
 }
 
-module.exports = { STAGES, runStages };
+module.exports = { STAGES, runStages, SAMPLE_TARGET, isSampleSelected, resolveSampleDir };
