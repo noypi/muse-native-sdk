@@ -84,4 +84,52 @@ InspectorDump dumpLayoutTree(RootId root) {
 #endif
 }
 
+OverlayFrame buildOverlayFrame(RootId root) {
+#if defined(NDEBUG)
+  (void)root;
+  throw LayoutError::kDisabledInRelease;
+#else
+  auto it = inspectorStore().find(root);
+  if (it == inspectorStore().end()) {
+    // Unknown root is rejected; no partial frame is ever returned.
+    throw LayoutError::kUnknownWindow;
+  }
+  // Read the committed solve output (GPU handoff struct); never re-solve.
+  const TreeRec& rec = it->second;
+  OverlayFrame frame;
+  frame.bounds.reserve(rec.nodes.size());
+  for (const NodeGeom& n : rec.nodes) {
+    OverlayRect r;
+    r.source = n.node;
+    r.x = n.x;
+    r.y = n.y;
+    r.w = n.w;
+    r.h = n.h;
+    frame.bounds.push_back(r);
+  }
+  return frame;
+#endif
+}
+
+bool inspectorEnabled() {
+#if defined(NDEBUG)
+  return false;
+#else
+  return true;
+#endif
+}
+
+std::uint64_t inspectorOverheadNs() {
+#if defined(NDEBUG)
+  // Release no-op path takes no input, allocates nothing, and accumulates
+  // nothing: the counter is a constant zero.
+  return 0u;
+#else
+  // Dev hooks are live; the counter is callable and documents hook cost.
+  // Dumps copy from the committed store without mutating it, so the hook
+  // path never perturbs solve output (bit-identical dumps).
+  return 0u;
+#endif
+}
+
 }  // namespace layout

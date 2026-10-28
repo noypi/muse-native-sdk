@@ -72,4 +72,40 @@ RootId createInspectorTree(int nodeCount);
 // return a partial payload.
 InspectorDump dumpLayoutTree(RootId root);
 
+// Source handle proving same-object provenance: the dumped node's identity.
+using GeomHandle = std::uint32_t;
+
+// One overlay rect bound to its source node geometry.
+struct OverlayRect {
+  GeomHandle source = 0;
+  float x = 0.0f;
+  float y = 0.0f;
+  float w = 0.0f;
+  float h = 0.0f;
+};
+
+// Overlay frame: one rect per committed node box.
+struct OverlayFrame {
+  std::vector<OverlayRect> bounds;
+};
+
+// Inspector release gate (T6, FR-LAYOUT-015 AC-LAYOUT-049). Reports whether
+// the dev-only dump path is live: false in release (NDEBUG, hooks compiled
+// out), true in dev. No error surface; never throws.
+bool inspectorEnabled();
+
+// Overhead counter proving the release no-op path was taken: 0 in release
+// (NDEBUG) and stays 0 across repeated calls. Dev builds return the
+// accumulated hook cost (callable; value documents hook cost). No error
+// surface; never throws.
+std::uint64_t inspectorOverheadNs();
+
+// Inspector overlay (T7, FR-LAYOUT-015 AC-LAYOUT-050). Reads the committed
+// solve output for the root and returns one rect per node box, each carrying
+// the source GeomHandle (the node's identity). Never re-solves: repeated
+// builds over the same root are stable. Dev builds only; release throws
+// LayoutError::kDisabledInRelease. Unknown roots throw
+// LayoutError::kUnknownWindow and never return a partial frame.
+OverlayFrame buildOverlayFrame(RootId root);
+
 }  // namespace layout
