@@ -26,6 +26,11 @@ function normaliseRange(start, end) {
   return [a, b];
 }
 
+function clampToLength(a, b, len) {
+  const n = Number(len);
+  const limit = Number.isFinite(n) ? Math.max(0, Math.floor(n)) : 0;
+  return [Math.min(a, limit), Math.min(b, limit)];
+}
 function readCommittedText(editingEngine, binding) {
   if (binding !== undefined && binding !== null && typeof binding.value === 'string') {
     return binding.value;
@@ -94,6 +99,14 @@ function createTextInput(deps) {
   const editingEngine = safe.editingEngine;
   const clipboard = safe.clipboard;
   const binding = safe.binding;
+  // T3 (AC-M3-012): `onSelectionChange` travels in the `createTextInput`
+  // deps alongside `binding` per the unit-test contract — the handle is
+  // constructed from deps only, so there is no descriptor-props channel
+  // here. If the TSX descriptor props should also carry it, that routing
+  // is a planner/tester (GR-08 T1.10) decision; the callback behavior
+  // (payload shape, fire-on-every-change) stands either way.
+  const onSelectionChange =
+    typeof safe.onSelectionChange === 'function' ? safe.onSelectionChange : null;
   let committed = readCommittedText(editingEngine, binding);
   let disposed = false;
   const cleanups = [];
@@ -117,6 +130,31 @@ function createTextInput(deps) {
     return committed;
   }
 
+  function notifySelection(sel) {
+    if (onSelectionChange === null) {
+      return;
+    }
+    try {
+      onSelectionChange({ start: sel.start, end: sel.end });
+    } catch (_) {
+      // A throwing listener must never break the selection path.
+    }
+  }
+
+  // Single selection write path: selection state lives in one place (the
+  // injected editing engine). The normalised range is written through and
+  // the clamped read is reported, so every origin (touch, keyboard, API)
+  // produces an identical `onSelectionChange` payload + binding shape.
+  // Never throws: engine and listener failures are best-effort.
+  function writeSelection(a, b) {
+    try {
+      editingEngine.setSelection(a, b);
+    } catch (_) {
+      // A failing engine must not throw out of the handle.
+    }
+    notifySelection(getSelection());
+  }
+
   function setComposingText(s) {
     if (disposed) {
       return;
@@ -128,9 +166,18 @@ function createTextInput(deps) {
     if (disposed) {
       return;
     }
+    // Capture the stored selection first: value updates re-apply it
+    // instead of letting the engine reset the caret to 0/end.
+    const [keptA, keptB] = readSelection(editingEngine);
     editingEngine.commitText(s);
     committed = s;
     pushBinding(binding, s);
+    const [ra, rb] = clampToLength(keptA, keptB, currentText().length);
+    try {
+      editingEngine.setSelection(ra, rb);
+    } catch (_) {
+      // Selection restore is best-effort after a commit.
+    }
   }
 
   function cancelComposition() {
@@ -144,13 +191,17 @@ function createTextInput(deps) {
     if (disposed) {
       return;
     }
+    // Normalise here; the length clamp is applied on read/report so the
+    // engine always observes the write (RULE-M3-004 single store) while
+    // reported ranges never escape `[0, text.length]`.
     const [a, b] = normaliseRange(start, end);
-    editingEngine.setSelection(a, b);
+    writeSelection(a, b);
   }
 
   function getSelection() {
     const [a, b] = readSelection(editingEngine);
-    return { start: a, end: b };
+    const [ca, cb] = clampToLength(a, b, currentText().length);
+    return { start: ca, end: cb };
   }
 
   function copy() {
@@ -199,11 +250,7 @@ function createTextInput(deps) {
     }
     committed = next;
     pushBinding(binding, next);
-    try {
-      editingEngine.setSelection(sel.start, sel.start);
-    } catch (_) {
-      // Selection restore is best-effort after a cut.
-    }
+    writeSelection(sel.start, sel.start);
   }
 
   function insertPaste(pasted) {
@@ -224,11 +271,7 @@ function createTextInput(deps) {
     }
     committed = next;
     pushBinding(binding, next);
-    try {
-      editingEngine.setSelection(caret, caret);
-    } catch (_) {
-      // Selection restore is best-effort after a paste.
-    }
+    writeSelection(caret, caret);
   }
 
   function paste() {
@@ -258,11 +301,7 @@ function createTextInput(deps) {
       return;
     }
     const text = currentText();
-    try {
-      editingEngine.setSelection(0, text.length);
-    } catch (_) {
-      // Best-effort: a failing engine must not throw out of the handle.
-    }
+    writeSelection(0, text.length);
   }
 
   function dispose() {

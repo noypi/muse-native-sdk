@@ -35,6 +35,7 @@ export type TextInputDeps = {
   clipboard: PlatformClipboard;
   insets: InsetFrames;
   binding?: TwoWayBinding;
+  onSelectionChange?: (sel: { start: number; end: number }) => void;
 };
 
 export type TextInputHandle = {

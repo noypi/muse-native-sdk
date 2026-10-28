@@ -297,3 +297,142 @@ test('index.d.ts declares TextInput prop types from the manifest schema', () => 
   assert.ok(dts.includes('TextInputHandle'), 'index.d.ts must declare TextInputHandle');
   assert.ok(dts.includes('createTextInput'), 'index.d.ts must declare createTextInput');
 });
+
+// ---------------------------------------------------------------------------
+// T2 / AC-M3-011: IME composition preview/commit/cancel with bound-value sync
+// (TC-M3-011). Extends the T1 shape tests above, which stay intact.
+// Preview renders composing text without mutating the committed `value`;
+// `commitText` replaces the composing range and writes through to the bound
+// value synchronously; `cancelComposition` withdraws the preview leaving
+// committed text untouched. `handle.value` always equals visible committed
+// text after each call.
+// ---------------------------------------------------------------------------
+
+test('scripted session preview/commit/cancel yields "" -> "" -> "nihao" -> "nihao" with bound value in sync', () => {
+  const binding = fakeBinding('');
+  const deps = makeDeps({ binding });
+  const handle = createTextInput(deps);
+  const committed: string[] = [];
+  const bound: string[] = [];
+  const snap = () => {
+    committed.push(handle.value);
+    bound.push(binding.value);
+  };
+  handle.setComposingText('ni');
+  snap();
+  handle.setComposingText('nih');
+  snap();
+  handle.commitText('nihao');
+  snap();
+  handle.setComposingText('x');
+  snap();
+  handle.cancelComposition();
+  snap();
+  assert.deepEqual(
+    committed,
+    ['', '', 'nihao', 'nihao', 'nihao'],
+    'committed sequence must be "" -> "" -> "nihao" -> "nihao"',
+  );
+  assert.deepEqual(bound, committed, 'bound value must equal visible committed text after every step');
+});
+
+test('preview renders composing text without mutating the committed value', () => {
+  const binding = fakeBinding('');
+  const deps = makeDeps({ binding });
+  const handle = createTextInput(deps);
+  handle.commitText('nihao');
+  handle.setComposingText('nihao-x-preview');
+  assert.equal(handle.value, 'nihao', 'handle.value must stay the committed text during preview');
+  assert.equal(binding.value, 'nihao', 'bound value must stay the committed text during preview');
+  assert.ok(
+    deps.editingEngine.calls.some(
+      ([name, arg]) => name === 'setComposingText' && arg === 'nihao-x-preview',
+    ),
+    'preview must still reach the injected editing engine',
+  );
+});
+
+test('commitText replaces the composing range and writes through to the bound value synchronously', () => {
+  const binding = fakeBinding('');
+  const deps = makeDeps({ binding });
+  const handle = createTextInput(deps);
+  handle.setComposingText('nih');
+  handle.commitText('nihao');
+  assert.equal(handle.value, 'nihao', 'handle.value must equal the committed text');
+  assert.equal(binding.value, 'nihao', 'bound value must equal the committed text synchronously');
+  assert.deepEqual(binding.pushes, ['nihao'], 'exactly one synchronous write-through is expected');
+  assert.ok(
+    deps.editingEngine.calls.some(([name, arg]) => name === 'commitText' && arg === 'nihao'),
+    'commit must reach the injected editing engine',
+  );
+});
+
+test('commit writes through via the binding set() method form when present', () => {
+  let current = '';
+  const seen: string[] = [];
+  const methodBinding = {
+    get value() {
+      return current;
+    },
+    set value(v: string) {
+      current = v;
+    },
+    set(v: string) {
+      seen.push(v);
+      current = v;
+    },
+  };
+  const handle = createTextInput(makeDeps({ binding: methodBinding }));
+  handle.commitText('nihao');
+  assert.equal(handle.value, 'nihao');
+  assert.equal(methodBinding.value, 'nihao');
+  assert.deepEqual(seen, ['nihao'], 'write-through must use the binding set() method');
+});
+
+test('cancelComposition withdraws the preview and never leaks it into the value or binding', () => {
+  const binding = fakeBinding('');
+  const deps = makeDeps({ binding });
+  const handle = createTextInput(deps);
+  handle.commitText('nihao');
+  binding.pushes.length = 0;
+  handle.setComposingText('x');
+  handle.cancelComposition();
+  assert.equal(handle.value, 'nihao', 'committed text must be untouched by cancel');
+  assert.equal(binding.value, 'nihao', 'bound value must be untouched by cancel');
+  assert.deepEqual(binding.pushes, [], 'cancel must not push to the binding');
+  assert.ok(
+    !deps.editingEngine.calls.some(([name, arg]) => name === 'commitText' && arg === 'x'),
+    'preview text must never be committed to the engine on cancel',
+  );
+  assert.ok(
+    deps.editingEngine.calls.some(([name]) => name === 'cancelComposition'),
+    'cancel must reach the injected editing engine',
+  );
+});
+
+test('cancelComposition with no active preview is a no-op that changes nothing', () => {
+  const binding = fakeBinding('nihao');
+  const deps = makeDeps({ binding });
+  const handle = createTextInput(deps);
+  handle.commitText('nihao');
+  const callsBefore = deps.editingEngine.calls.length;
+  assert.doesNotThrow(() => handle.cancelComposition());
+  assert.equal(handle.value, 'nihao');
+  assert.equal(binding.value, 'nihao');
+  assert.equal(
+    deps.editingEngine.calls.length,
+    callsBefore + 1,
+    'only the cancelComposition delegation is expected',
+  );
+});
+
+test('committing an empty string clears the value and syncs the binding', () => {
+  const binding = fakeBinding('nihao');
+  const deps = makeDeps({ binding });
+  const handle = createTextInput(deps);
+  handle.commitText('nihao');
+  handle.setComposingText('x');
+  handle.commitText('');
+  assert.equal(handle.value, '', 'committed empty text must clear the visible value');
+  assert.equal(binding.value, '', 'bound value must clear with the committed text');
+});
