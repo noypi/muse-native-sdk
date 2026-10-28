@@ -15,6 +15,7 @@
 #   :benchmark:frameGuard   -> alias of :benchmark:frame (closest existing harness)
 #   :benchmark:powerSaver   -> benchmark.powersaver.run.measure_power_saver
 #   :benchmark:soak         -> benchmark.soak.run.measure_soak
+#   :engine:core:allocator   -> tests.test_core_allocator (arena/pool contract, TC-CORE-003)
 set -eu
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 
@@ -32,6 +33,7 @@ Tasks:
   :benchmark:frameGuard    alias of :benchmark:frame (no separate guard module)
   :benchmark:powerSaver    benchmark.powersaver.run.measure_power_saver
   :benchmark:soak          benchmark.soak.run.measure_soak
+  :engine:core:allocator   tests.test_core_allocator (arena/pool contract)
 Extra args after :benchmark:perfGate are forwarded to benchmark/gate/run.py
 as <manifest> <results-json>.
 EOF
@@ -118,6 +120,9 @@ p = os.path.join('benchmark', 'profile-check', 'check.py')
 spec = spec_from_file_location('profile_check', p)
 mod = module_from_spec(spec); spec.loader.exec_module(mod)
 print('profile active:', mod.is_profile_active(os.environ.get('BUILD_DIR', 'build')))"
+    ;;
+  :engine:core:allocator)
+    cd "$ROOT" && python3 -m unittest tests.test_core_allocator
     ;;
   *)
     echo "gradlew: unknown task '$TASK'" >&2
