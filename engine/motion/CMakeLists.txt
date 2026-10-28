@@ -16,6 +16,8 @@ add_library(motion
   src/route_transition.cpp
   src/clock.cpp
   src/recorder.cpp
+  src/trace.cpp
+  src/determinism.cpp
 )
 target_include_directories(motion PUBLIC include)
 target_compile_options(motion PRIVATE -Wall -Wextra -Wpedantic)
@@ -97,3 +99,13 @@ add_executable(replay_determinism_test tests/replay_determinism_test.cpp)
 target_link_libraries(replay_determinism_test PRIVATE motion)
 target_compile_options(replay_determinism_test PRIVATE -Wall -Wextra -Wpedantic)
 add_test(NAME replay_determinism_test COMMAND replay_determinism_test)
+
+add_executable(trace_correlation_test tests/trace_correlation_test.cpp)
+target_link_libraries(trace_correlation_test PRIVATE motion)
+target_compile_options(trace_correlation_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME trace_correlation_test COMMAND trace_correlation_test)
+
+add_executable(cross_machine_replay_test tests/cross_machine_replay_test.cpp)
+target_link_libraries(cross_machine_replay_test PRIVATE motion)
+target_compile_options(cross_machine_replay_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME cross_machine_replay_test COMMAND cross_machine_replay_test)
