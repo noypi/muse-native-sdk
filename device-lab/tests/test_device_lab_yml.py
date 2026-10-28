@@ -5,12 +5,11 @@ the hermetic-gate-first half of AC-RUNTIME-026 (T2 scope; T2 additionally
 references NFR-RUNTIME-001 / AC-RUNTIME-025 as a required dependency,
 referenced only — not implemented here).
 
-Scope is Batch 1 ONLY: AVD pin values, emulator boot presence/order, and
-the ctest hermetic gate being present, first, and unskippable. Suite order
-(T3) and fail-closed/masking checks (T4) are Batch 2 and are NOT asserted
-here; where a Batch 1 acceptance mentions suite steps that do not exist
-yet, the ordering assertion holds vacuously and is re-checked strictly by
-Batch 2.
+Scope is Batches 1+2: AVD pin values, emulator boot presence/order, the
+ctest hermetic gate being present, first, and unskippable (Batch 1), plus
+strict suite order ime-smoke/ime-inset/touch-smoke/config-change and
+fail-closed/masking checks (Batch 2: classes TestSuiteOrder,
+TestFailClosed).
 
 Hermetic: stdlib unittest only (no pytest import, no network, no device);
 static YAML/text scan of `.github/workflows/device-lab.yml`.
@@ -38,6 +37,8 @@ WORKFLOW = os.path.join(REPO_ROOT, ".github", "workflows", "device-lab.yml")
 AVD_NAME = "device-lab-api29"
 CTEST_SELECTOR = "ctest --test-dir engine/runtime/build"
 CMAKE_CONFIGURE = "cmake -S engine/runtime -B engine/runtime/build"
+SUITE_ORDER = ("ime-smoke", "ime-inset", "touch-smoke", "config-change")
+SUITE_RUN_RE = re.compile(r"device-lab/run\.sh\s+([^\s&|;'\"]+)")
 
 
 def read_workflow(testcase):
@@ -126,6 +127,53 @@ def is_ctest_step(step):
     """The hermetic gate step runs the pinned ctest selector."""
     run = step.get("run", "")
     return isinstance(run, str) and CTEST_SELECTOR in run
+
+
+def suite_name_of(step):
+    """Return the suite arg of a `device-lab/run.sh <suite>` step, else None."""
+    run = step.get("run", "")
+    if not isinstance(run, str):
+        return None
+    match = SUITE_RUN_RE.search(run)
+    return match.group(1) if match else None
+
+
+def masking_markers_in_text(text):
+    """Return the list of failure-masking markers found in raw workflow text.
+
+    Checks are line-oriented so YAML block scalars (`run: |`) never match
+    the `| true` pipe-mask pattern across line breaks.
+    """
+    found = []
+    lowered = text.lower()
+    if "continue-on-error" in lowered:
+        found.append("continue-on-error")
+    for lineno, line in enumerate(text.splitlines(), start=1):
+        stripped = line.strip()
+        if stripped.startswith("#"):
+            continue
+        if re.search(r"\|\|\s*true\b", line):
+            found.append("|| true (line %d)" % lineno)
+        if re.search(r"\|\|\s*:", line):
+            found.append("|| : (line %d)" % lineno)
+        if re.search(r"\|\s*true\b", line):
+            found.append("| true (line %d)" % lineno)
+    return found
+
+
+def bypass_conditionals_in_steps(steps):
+    """Return step indices whose `if:` bypasses fail-closed semantics."""
+    bad = []
+    for index, step in enumerate(steps):
+        if not isinstance(step, dict):
+            continue
+        condition = step.get("if")
+        if not isinstance(condition, str):
+            continue
+        lowered = condition.lower()
+        if "always()" in lowered or "failure()" in lowered:
+            bad.append(index)
+    return bad
 
 
 class TestDeviceLabWorkflowPin(unittest.TestCase):
@@ -261,6 +309,168 @@ class TestHermeticGateFirst(unittest.TestCase):
             "if",
             steps[gate],
             "ctest gate must have no `if:` conditional that could skip it",
+        )
+
+
+class TestSuiteOrder(unittest.TestCase):
+    """T3 — the four suites run in order via device-lab/run.sh fail-closed."""
+
+    def test_four_suite_steps_present_exactly_once_each(self):
+        data = parse_workflow(self, read_workflow(self))
+        steps = workflow_steps(self, data)
+        names = [
+            suite_name_of(step)
+            for step in steps
+            if isinstance(step, dict) and is_suite_step(step)
+        ]
+        for suite in SUITE_ORDER:
+            self.assertEqual(
+                names.count(suite),
+                1,
+                "suite %r must appear in exactly one run.sh step, found: %r"
+                % (suite, names),
+            )
+        self.assertEqual(
+            len(names),
+            len(SUITE_ORDER),
+            "unexpected extra run.sh suite steps: %r" % (names,),
+        )
+
+    def test_suite_steps_in_exact_order(self):
+        data = parse_workflow(self, read_workflow(self))
+        steps = workflow_steps(self, data)
+        names = [
+            suite_name_of(step)
+            for step in steps
+            if isinstance(step, dict) and is_suite_step(step)
+        ]
+        self.assertEqual(
+            [name for name in names if name in SUITE_ORDER],
+            list(SUITE_ORDER),
+            "suite steps must run ime-smoke, ime-inset, touch-smoke, "
+            "config-change in exactly that order",
+        )
+
+    def test_suites_run_after_ctest_gate_and_boot(self):
+        data = parse_workflow(self, read_workflow(self))
+        steps = workflow_steps(self, data)
+        gate = find_step_index(steps, is_ctest_step)
+        boot = find_step_index(steps, is_boot_step)
+        self.assertIsNotNone(gate, "workflow has no ctest gate step")
+        self.assertIsNotNone(boot, "workflow has no boot-wait step")
+        for suite_index in find_all_step_indices(steps, is_suite_step):
+            self.assertLess(
+                gate,
+                suite_index,
+                "ctest gate must run before every suite step",
+            )
+            self.assertLess(
+                boot,
+                suite_index,
+                "boot-wait step must precede every suite step",
+            )
+
+    def test_suite_steps_have_no_bypass_conditional(self):
+        data = parse_workflow(self, read_workflow(self))
+        steps = workflow_steps(self, data)
+        suite_indices = find_all_step_indices(steps, is_suite_step)
+        self.assertTrue(suite_indices, "workflow defines no suite steps")
+        for index in suite_indices:
+            condition = steps[index].get("if")
+            self.assertTrue(
+                not isinstance(condition, str)
+                or ("always()" not in condition.lower()
+                    and "failure()" not in condition.lower()),
+                "suite step %d must not bypass failure with `if:` %r"
+                % (index, condition),
+            )
+
+    def test_suite_run_lines_use_single_suite_arg(self):
+        data = parse_workflow(self, read_workflow(self))
+        steps = workflow_steps(self, data)
+        suite_steps = [
+            step
+            for step in steps
+            if isinstance(step, dict) and is_suite_step(step)
+        ]
+        self.assertTrue(suite_steps, "workflow defines no suite steps")
+        for step in suite_steps:
+            self.assertRegex(
+                step.get("run", ""),
+                r"device-lab/run\.sh\s+(ime-smoke|ime-inset|touch-smoke"
+                r"|config-change)\s*$",
+                "suite step must be a plain `device-lab/run.sh <suite>` line",
+            )
+
+
+class TestFailClosed(unittest.TestCase):
+    """T4 — no failure masking anywhere in the workflow."""
+
+    def test_no_continue_on_error_anywhere(self):
+        text = read_workflow(self)
+        self.assertNotIn(
+            "continue-on-error",
+            text.lower(),
+            "workflow must not mask failures with continue-on-error",
+        )
+        data = parse_workflow(self, text)
+        for index, step in enumerate(workflow_steps(self, data)):
+            self.assertTrue(
+                not isinstance(step, dict)
+                or "continue-on-error" not in {
+                    str(key).lower() for key in step
+                },
+                "step %d must not set continue-on-error" % index,
+            )
+
+    def test_no_shell_masking_operators(self):
+        text = read_workflow(self)
+        self.assertEqual(
+            masking_markers_in_text(text),
+            [],
+            "workflow must not mask failures with "
+            "`|| true`, `|| :`, or `| true`",
+        )
+
+    def test_no_always_or_failure_bypass_conditional(self):
+        data = parse_workflow(self, read_workflow(self))
+        steps = workflow_steps(self, data)
+        self.assertEqual(
+            bypass_conditionals_in_steps(steps),
+            [],
+            "no step may bypass failure with if: always()/failure()",
+        )
+
+    def test_negative_continue_on_error_copy_is_flagged(self):
+        text = read_workflow(self)
+        tainted = text.replace(
+            "run: device-lab/run.sh ime-smoke",
+            "run: device-lab/run.sh ime-smoke\n        continue-on-error: true",
+            1,
+        )
+        self.assertNotEqual(
+            tainted, text, "scratch copy must differ from the workflow"
+        )
+        self.assertNotEqual(
+            masking_markers_in_text(tainted),
+            [],
+            "scratch copy with continue-on-error must be flagged",
+        )
+
+    def test_negative_pipe_true_copy_is_flagged(self):
+        text = read_workflow(self)
+        tainted = text.replace(
+            "run: device-lab/run.sh ime-smoke",
+            "run: device-lab/run.sh ime-smoke || true",
+            1,
+        )
+        self.assertNotEqual(
+            tainted, text, "scratch copy must differ from the workflow"
+        )
+        self.assertNotEqual(
+            masking_markers_in_text(tainted),
+            [],
+            "scratch copy with `|| true` must be flagged",
         )
 
 
