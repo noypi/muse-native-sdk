@@ -26,6 +26,9 @@ add_library(motion
   src/large_motion.cpp
   src/m3_tokens.cpp
   src/spring_class.cpp
+  src/tokens.cpp
+  src/patterns.cpp
+  src/reduced_motion.cpp
 )
 target_include_directories(motion PUBLIC include)
 target_compile_options(motion PRIVATE -Wall -Wextra -Wpedantic)
@@ -192,3 +195,32 @@ file(WRITE ${CMAKE_BINARY_DIR}/check_m3_tokens.cmake
   "message(STATUS \"TC-MOTION-044: tokens/m3.json exists with non-empty version key\")\n"
 )
 add_test(NAME m3_tokens_file COMMAND ${CMAKE_COMMAND} -P ${CMAKE_BINARY_DIR}/check_m3_tokens.cmake)
+
+add_executable(motion_tokens_test tests/motion_tokens_test.cpp)
+target_link_libraries(motion_tokens_test PRIVATE motion)
+target_compile_options(motion_tokens_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME motion_tokens_test COMMAND motion_tokens_test)
+
+add_executable(implicit_test tests/implicit_test.cpp)
+target_link_libraries(implicit_test PRIVATE motion)
+target_compile_options(implicit_test PRIVATE -Wall -Wextra -Wpedantic)
+
+add_test(NAME implicit_test COMMAND implicit_test)
+
+add_executable(shared_element_test tests/shared_element_test.cpp)
+target_link_libraries(shared_element_test PRIVATE motion)
+target_compile_options(shared_element_test PRIVATE -Wall -Wextra -Wpedantic)
+
+add_test(NAME shared_element_test COMMAND shared_element_test)
+
+add_executable(patterns_test tests/patterns_test.cpp)
+target_link_libraries(patterns_test PRIVATE motion)
+target_compile_options(patterns_test PRIVATE -Wall -Wextra -Wpedantic)
+
+add_test(NAME patterns_test COMMAND patterns_test)
+
+add_executable(reduced_motion_test tests/reduced_motion_test.cpp)
+target_link_libraries(reduced_motion_test PRIVATE motion)
+target_compile_options(reduced_motion_test PRIVATE -Wall -Wextra -Wpedantic)
+
+add_test(NAME reduced_motion_test COMMAND reduced_motion_test)

@@ -12,6 +12,12 @@ namespace motion {
 // references one ignores it (done, no crash, no value).
 struct NodeId {
   std::uint32_t value = 0;
+  NodeId() = default;
+  // Implicit construction from an integer id. The T2/T3 declarative layers
+  // (motion/implicit.h, motion/shared_element.h) address graph nodes with
+  // small integer literals; an explicit ctor would reject those call sites.
+  // Purely additive: all existing brace-init uses keep working.
+  NodeId(std::uint32_t v) noexcept : value(v) {}  // NOLINT(runtime/explicit)
   bool operator==(const NodeId& other) const { return value == other.value; }
   bool operator!=(const NodeId& other) const { return value != other.value; }
   bool operator<(const NodeId& other) const { return value < other.value; }

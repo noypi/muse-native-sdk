@@ -1,6 +1,7 @@
 #ifndef MOTION_SHARED_ELEMENT_H_
 #define MOTION_SHARED_ELEMENT_H_
 
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -66,6 +67,59 @@ SharedAnchor motion_pviewAnchor(const std::string& elementId,
                                 const std::string& route,
                                 const Box& surfaceRect,
                                 float cornerRadius) noexcept;
+
+// ---- Shared-element flights (FR-MOTION-003 / AC-007, T3) ----
+//
+// Anchors match by stability key, not tree position; a late second anchor
+// (deep-link entry) still matches. Flight geometry interpolates box corners
+// through the T1 solver (advanceSpring over a SpringSpec converted from the
+// resolved token), with a smoothstep fallback for duration/easing tokens.
+// Time comes only from the caller-injected nowMs (milliseconds); production
+// call sites bridge main's VirtualClock via motion_nowNanos() / 1000000.
+//
+// Ownership: anchors and flights are stored as SharedAnchor records (single
+// anchor representation — elementId carries the stability key), so the T3
+// tables and the main match/interpolate path cannot drift apart.
+
+using ElementId = uint64_t;
+
+struct Rect {
+  float x = 0.0f;
+  float y = 0.0f;
+  float width = 0.0f;
+  float height = 0.0f;
+};
+
+enum class SurfaceKind {
+  Nav,
+  PlatformView,
+};
+
+struct Anchor {
+  ElementId id = 0;
+  std::string stabilityKey;
+  Rect box{};
+  SurfaceKind kind = SurfaceKind::Nav;
+};
+
+// Records a nav or platform-view anchor. The platform-view box comes from
+// the surface rect supplied by the caller.
+void registerAnchor(ElementId id, const char* stabilityKey, Rect box,
+                    SurfaceKind kind);
+
+// True iff at least two anchors share the key. outA/outB describe the first
+// two anchors in registration order. Null keys or null out params return
+// false; unknown or single-anchor keys return false.
+bool matchShared(const char* stabilityKey, Anchor* outA, Anchor* outB);
+
+// Starts the token-driven flight for a matched key; throws TokenError naming
+// the token when it is null or unknown (resolved via T1 resolveToken).
+void startShared(const char* stabilityKey, const char* token, uint64_t nowMs);
+
+// Current flight box under the injected clock. Sampling at or before the
+// start clamps to the first anchor box; sampling a never-started key returns
+// the zero box without throwing.
+Rect sampleShared(const char* stabilityKey, uint64_t nowMs);
 
 }  // namespace motion
 

@@ -5,6 +5,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include "motion/graph.h"
 #include "motion/solver.h"
 
 namespace motion {
@@ -93,6 +94,33 @@ class ImplicitRegistry {
 
   SpringState evaluate(const Entry& e, float tMs) const noexcept;
 };
+
+// ---- Declarative implicit transitions (FR-MOTION-002 / AC-006, T2) ----
+//
+// A restyle/reparent arrives as onPropertyChange; registered properties
+// animate from the old value to the new one with no per-frame app code.
+// Time comes only from the caller-injected nowMs (milliseconds); the OS
+// clock is never read here. Production call sites bridge main's VirtualClock
+// by passing motion_nowNanos() / 1000000. Springs evaluate through the T1
+// solver (advanceSpring over a SpringSpec converted from the resolved
+// token); duration/easing tokens fall back to a smoothstep segment, so the
+// token class selects the interpolation path (class-aware fallback).
+//
+// NodeId is main's graph handle (motion/graph.h): the implicit layer
+// addresses graph nodes, it does not fork the id type.
+
+// Registers property+token for implicit animation; throws TokenError naming
+// the token when it is null or unknown (resolved via T1 resolveToken).
+void markImplicit(NodeId id, const char* property, const char* token);
+
+// Starts (or mid-flight retargets) the transition toward toValue. No-op when
+// toValue equals the current target; never crashes on null property names.
+void onPropertyChange(NodeId id, const char* property, float toValue,
+                      uint64_t nowMs);
+
+// Current interpolated value under the injected clock. Unregistered pairs
+// sample to 0.0f; sampling at or before the start clamps to the start value.
+float sample(NodeId id, const char* property, uint64_t nowMs);
 
 }  // namespace motion
 
