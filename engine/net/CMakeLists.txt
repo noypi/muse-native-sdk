@@ -22,6 +22,13 @@ add_library(net
   src/codec_msgpack.cc
   src/codec_protobuf.cc
   src/zero_copy.cc
+  src/data_layer.cc
+  src/sqlite_store.cc
+  src/stores.cc
+  src/reactive_query.cc
+  src/outbox.cc
+  src/migration.cc
+  src/durability.cc
 )
 target_include_directories(net PUBLIC include)
 target_compile_options(net PRIVATE -Wall -Wextra -Wpedantic)
@@ -31,7 +38,7 @@ enable_testing()
 
 # One test executable per tests/*_test.cpp, linked against `net`, so the
 # plan's `cmake -S engine/net -B <dir> && cmake --build <dir> &&
-# ctest --test-dir <dir>` path runs all six suites.
+# ctest --test-dir <dir>` path runs all suites.
 foreach(TEST_SRC
     tests/transport_api_test.cpp
     tests/http_dispatch_test.cpp
@@ -47,7 +54,14 @@ foreach(TEST_SRC
     tests/graphql_subscription_test.cpp
     tests/codec_roundtrip_test.cpp
     tests/codec_fuzz_test.cpp
-    tests/zero_copy_payload_test.cpp)
+    tests/zero_copy_payload_test.cpp
+    tests/acceptance_net_test.cpp
+    tests/data_layer_test.cpp
+    tests/durability_test.cpp
+    tests/migration_test.cpp
+    tests/outbox_transaction_test.cpp
+    tests/reactive_query_test.cpp
+    tests/store_open_test.cpp)
   get_filename_component(TEST_NAME ${TEST_SRC} NAME_WE)
   add_executable(${TEST_NAME} ${TEST_SRC})
   target_link_libraries(${TEST_NAME} PRIVATE net)
