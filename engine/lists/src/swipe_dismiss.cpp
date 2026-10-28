@@ -7,7 +7,7 @@ namespace lists {
 SwipeOutcome UpdateSwipe(SwipeState& s, float dx, float velocity) {
   const float threshold = s.thresholdPx > 0.0f ? s.thresholdPx : 1.0f;
   // Commit on distance OR fling velocity.
-  if (dx >= s.thresholdPx || velocity >= s.velocityThreshold) {
+  if (dx >= threshold || velocity >= s.velocityThreshold) {
     s.active = false;
     return SwipeOutcome{SwipePhase::Committed, 1.0f};
   }

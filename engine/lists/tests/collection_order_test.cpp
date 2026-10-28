@@ -16,9 +16,9 @@
 // Reconciliation rule: if the coder names them differently, update these
 // call sites — not the expected behavior (order equality vs set equality).
 //
-// ASSUMPTION (semantics): the check compares the exposed semantics order
-// against the node's logical `items` order exactly (same keys, same order).
-// A log with the right set in the wrong order, a missing key, an extra key,
+// ASSUMPTION (semantics): the check compares the exposed semantics against
+// the node's logical `items` as the same multiset, each exactly once;
+// arrival order ignored. A missing key, an extra key, a duplicate key,
 // or an empty log against a non-empty node all return false. An empty log
 // against an empty node returns true.
 #include <cstdio>

@@ -127,6 +127,18 @@ void case_zero_dx() {
         "zero_dx_zero_progress");
 }
 
+// Boundary: non-positive threshold (0) with zero displacement must not
+// commit (clamped threshold line); expect Tracking or Cancelled.
+void case_nonpositive_threshold_no_commit() {
+  lists::SwipeState s = fresh_state();
+  s.thresholdPx = 0.0f;
+  lists::SwipeOutcome o = lists::UpdateSwipe(s, /*dx=*/0.0f,
+                                             /*velocity=*/0.0f);
+  check(o.state == lists::SwipePhase::Tracking ||
+            o.state == lists::SwipePhase::Cancelled,
+        "zero_threshold_no_commit");
+}
+
 // TC-LISTS-020 core: undo restores the item at its original index.
 void case_undo_restores_index() {
   lists::ListModel m = model_n(5);
@@ -191,6 +203,7 @@ int main() {
   case_slow_release_cancels_clean();
   case_partial_resistance();
   case_zero_dx();
+  case_nonpositive_threshold_no_commit();
   case_undo_restores_index();
   case_undo_disarmed_fails();
   case_undo_single_shot();
