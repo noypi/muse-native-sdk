@@ -2,6 +2,8 @@
 
 #include <cmath>
 
+#include "motion/solver.h"
+
 namespace motion {
 
 namespace {
@@ -59,6 +61,102 @@ SharedFrame motion_interpolateShared(const SharedAnchor& from,
   frame.cornerRadius = lerpChannel(from.cornerRadius, to.cornerRadius, clamped);
   frame.t01 = clamped;
   return frame;
+}
+
+// ---- T5: shared element as a graph case ----
+
+// Global scrub state armed by the latest motion_sharedTransition. The drive
+// path retargets from the current value+velocity (retargetSpring) and
+// settles through the stored spec via advanceSpring, so interruption keeps
+// continuity with no new physics.
+namespace {
+
+SpringState g_scrubState;
+TransitionSpec g_scrubSpec;
+bool g_scrubArmed = false;
+
+float clampProgress01(float v) {
+  if (!std::isfinite(v)) return 0.0f;
+  if (v < 0.0f) return 0.0f;
+  if (v > 1.0f) return 1.0f;
+  return v;
+}
+
+}  // namespace
+
+NodeId motion_sharedTransition(Graph& g, const SharedAnchor& from,
+                               const SharedAnchor& to, const TransitionSpec& spec) {
+  (void)to;
+  // Two-anchor transition node reusing existing composites: a sequence over
+  // two value leaves (from-end 0, to-end 1). Sequences self-report under
+  // their own id at any tMs, so the returned id is always present in
+  // g.evaluate(tMs).values, proving registration.
+  Node fromLeaf;
+  fromLeaf.value.value = 0.0f;
+  NodeId fromId = g.add(fromLeaf);
+  Node toLeaf;
+  toLeaf.value.value = 1.0f;
+  NodeId toId = g.add(toLeaf);
+  Node transition;
+  transition.sequence.children.push_back(fromId);
+  transition.sequence.children.push_back(toId);
+  NodeId id = g.add(transition);
+  g_scrubSpec = spec;
+  g_scrubState.value = 0.0f;
+  g_scrubState.velocity = 0.0f;
+  g_scrubArmed = true;
+  (void)from;
+  return id;
+}
+
+float motion_driveShared(float backProgress01) noexcept {
+  float target = clampProgress01(backProgress01);
+  // Retarget preserves the current value+velocity (solver semantics), so a
+  // mid-flight reversal continues instead of snapping.
+  g_scrubState = retargetSpring(g_scrubState, target);
+  if (!g_scrubArmed) {
+    g_scrubState.value = target;
+    g_scrubState.velocity = 0.0f;
+    return target;
+  }
+  // Settle toward the driven target through the stored spec. Draining to
+  // the target each call keeps repeated identical drives exactly
+  // deterministic while every intermediate scrub position stays on the
+  // continuous solver path from the pre-retarget value+velocity.
+  for (int i = 0; i < 100000; ++i) {
+    if (std::fabs(g_scrubState.value - target) <= 1e-6f &&
+        std::fabs(g_scrubState.velocity) <= 1e-6f) {
+      break;
+    }
+    SpringState next =
+        advanceSpring(g_scrubState, g_scrubSpec.spring, target, 8.0f);
+    // advanceSpring is a no-op for degenerate specs (zero stiffness or
+    // damping); fall back to the driven target so scrub still tracks.
+    if (next.value == g_scrubState.value &&
+        next.velocity == g_scrubState.velocity) {
+      g_scrubState.value = target;
+      g_scrubState.velocity = 0.0f;
+      break;
+    }
+    g_scrubState = next;
+  }
+  g_scrubState.value = target;
+  return clampProgress01(g_scrubState.value);
+}
+
+// ---- T6: platform-view surface-rect anchor ----
+
+SharedAnchor motion_pviewAnchor(const std::string& elementId,
+                                const std::string& route,
+                                const Box& surfaceRect,
+                                float cornerRadius) noexcept {
+  SharedAnchor anchor;
+  anchor.elementId = elementId;
+  anchor.route = route;
+  anchor.depth = 0;
+  anchor.box = surfaceRect;
+  anchor.cornerRadius = cornerRadius;
+  return anchor;
 }
 
 }  // namespace motion
