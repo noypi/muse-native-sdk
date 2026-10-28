@@ -17,10 +17,19 @@ target_compile_options(net PRIVATE -Wall -Wextra -Wpedantic)
 include(CTest)
 enable_testing()
 
-# NOTE (T1): no test executables are registered yet. The shared contract
-# test (tests/transport_api_test.cpp) includes net/http_client.h and
-# net/interceptor.h, which are T2-owned headers not yet landed, so it
-# cannot compile in this slice; tests/http_dispatch_test.cpp needs the
-# T3-owned RecordDispatchNanos/WithinBudget probe definitions. The planner
-# routes test-target registration (plus the T2 shim headers) with the
-# T2/T3 dispatches.
+# One test executable per tests/*_test.cpp, linked against `net`, so the
+# plan's `cmake -S engine/net -B <dir> && cmake --build <dir> &&
+# ctest --test-dir <dir>` path runs all six suites.
+foreach(TEST_SRC
+    tests/transport_api_test.cpp
+    tests/http_dispatch_test.cpp
+    tests/http_cache_rfc7234_test.cpp
+    tests/cache_ownership_test.cpp
+    tests/retry_idempotency_test.cpp
+    tests/resilience_test.cpp)
+  get_filename_component(TEST_NAME ${TEST_SRC} NAME_WE)
+  add_executable(${TEST_NAME} ${TEST_SRC})
+  target_link_libraries(${TEST_NAME} PRIVATE net)
+  target_compile_options(${TEST_NAME} PRIVATE -Wall -Wextra -Wpedantic)
+  add_test(NAME ${TEST_NAME} COMMAND ${TEST_NAME})
+endforeach()

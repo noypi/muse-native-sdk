@@ -129,8 +129,7 @@ bool check_coalescer_distinct_methods_are_not_merged() {
   return fetches == 2;
 }
 
-bool check_coalescer_does_not_cache_failures() {
-  RequestCoalescer coal;
+bool check_coalescer_does_not_cache_failures() {  RequestCoalescer coal;
   int fetches = 0;
   auto fail = [&]() -> Response {
     ++fetches;
@@ -146,6 +145,27 @@ bool check_coalescer_does_not_cache_failures() {
   coal.get(make_get(), fail);
   Response second = coal.get(make_get(), ok);
   return fetches == 2 && second.body == "recovered";
+}
+
+bool check_coalescer_key_is_url_only_ignores_authorization() {
+  // T7 contract pin (review MINOR): the coalescer key is URL-only per the
+  // adjudicated T7 contract — two sequential same-URL GETs with different
+  // Authorization headers collapse to one fetch and the second caller
+  // receives the first caller's body (rotated credentials do NOT re-fetch).
+  RequestCoalescer coal;
+  int fetches = 0;
+  auto fetch = [&]() -> Response {
+    ++fetches;
+    return make_ok("first-principal");
+  };
+  Request first = make_get();
+  first.headers.emplace_back("Authorization", "Bearer test-api-key-not-real");
+  Request rotated = make_get();
+  rotated.headers.emplace_back("Authorization", "Bearer rotated-dummy-key");
+  Response a = coal.get(first, fetch);
+  Response b = coal.get(rotated, fetch);
+  return fetches == 1 && a.body == "first-principal" &&
+         b.body == "first-principal";
 }
 
 bool check_breaker_starts_closed_and_allows() {
@@ -281,6 +301,7 @@ int main() {
   RUN_CASE(check_coalescer_distinct_urls_fetch_independently);
   RUN_CASE(check_coalescer_distinct_methods_are_not_merged);
   RUN_CASE(check_coalescer_does_not_cache_failures);
+  RUN_CASE(check_coalescer_key_is_url_only_ignores_authorization);
   RUN_CASE(check_breaker_starts_closed_and_allows);
   RUN_CASE(check_breaker_opens_after_threshold_consecutive_failures);
   RUN_CASE(check_open_breaker_short_circuits_without_probe);

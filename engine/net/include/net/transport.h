@@ -10,6 +10,7 @@
 // this class rather than redefine it. T2 method definitions belong in
 // T2's src/http_client.cc; T1 methods are defined in src/transport.cc.
 
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <string>
@@ -52,6 +53,14 @@ class HttpClient {
   ClientConfig config_;
   std::vector<Interceptor> interceptors_;
 };
+
+// T3 dispatch-budget unit probe (FR-NET-004 / AC-NET-007 unit half).
+// RecordDispatchNanos is a pure observation hook: it never throws, never
+// blocks, never performs I/O. WithinBudget is true iff ns < 1,000,000.
+// Defined in src/transport.cc; declared here so consumers include this
+// header instead of redeclaring the seam by hand.
+void RecordDispatchNanos(uint64_t ns);
+bool WithinBudget(uint64_t ns);
 
 }  // namespace net
 }  // namespace muse

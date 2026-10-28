@@ -1,11 +1,8 @@
 // Batch 1 contract tests — T3 dispatch-budget probe
 // (FR-NET-004 / AC-NET-007 / TC-NET-007 unit half).
 //
-// Hermetic: C++17 only, no engine headers required. The probe under test is
-// the production seam declared below; the coder provides its definition
-// (ownership: coder, any engine/net source file it chooses). Until then this
-// file compiles but does not link — that undefined-reference failure is the
-// expected red state (see unit-tests/T3.md).
+// Hermetic: C++17 + engine/net headers. The probe under test is declared in
+// net/transport.h (coder-owned definition in src/transport.cc).
 //
 // Why declarations live here: the plan lists no probe header for T3 (the
 // <1ms budget is owned by perf; T3 ships only a unit probe plus the external
@@ -26,15 +23,7 @@
 #include <cstdint>
 #include <cstdio>
 
-namespace muse {
-namespace net {
-
-// Production seam under test (coder-owned definition).
-void RecordDispatchNanos(uint64_t ns);
-bool WithinBudget(uint64_t ns);
-
-}  // namespace net
-}  // namespace muse
+#include "net/transport.h"
 
 namespace {
 

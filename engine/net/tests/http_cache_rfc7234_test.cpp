@@ -281,6 +281,53 @@ bool check_vary_match_is_served() {
   return out.fromCache && out.response.body == "en";
 }
 
+bool check_vary_multi_field_match_is_served() {
+  // Multi-field Vary: match on BOTH selecting fields → serve.
+  auto store = std::make_shared<MemoryCacheStore>();
+  HttpCache cache(store);
+  CachedEntry e = make_entry(
+      make_resp(200,
+                {{"Cache-Control", "max-age=60"},
+                 {"Vary", "Accept, Accept-Language"}},
+                "variant"),
+      {{"Accept", "text/html"}, {"Accept-Language", "en"}});
+  Request req = make_req("GET", "https://api.test.invalid/v1/multi",
+                         {{"Accept", "text/html"},
+                          {"Accept-Language", "en"}});
+  auto out = cache.handle(req, &e, Freshness::kFresh);
+  return out.fromCache && out.response.body == "variant";
+}
+
+bool check_vary_multi_field_mismatch_revalidates() {
+  // Multi-field Vary: mismatch on ONE of the fields → revalidate.
+  auto store = std::make_shared<MemoryCacheStore>();
+  HttpCache cache(store);
+  CachedEntry e = make_entry(
+      make_resp(200,
+                {{"Cache-Control", "max-age=60"},
+                 {"Vary", "Accept, Accept-Language"}},
+                "variant"),
+      {{"Accept", "text/html"}, {"Accept-Language", "en"}});
+  Request req = make_req("GET", "https://api.test.invalid/v1/multi",
+                         {{"Accept", "text/html"},
+                          {"Accept-Language", "fr"}});
+  auto out = cache.handle(req, &e, Freshness::kFresh);
+  return !out.fromCache;
+}
+
+bool check_vary_star_revalidates_on_handle() {
+  // Vary: * reaching handle() → always revalidate, even when fresh.
+  auto store = std::make_shared<MemoryCacheStore>();
+  HttpCache cache(store);
+  CachedEntry e = make_entry(
+      make_resp(200, {{"Cache-Control", "max-age=60"}, {"Vary", "*"}}, "p"),
+      {{"Accept", "text/html"}});
+  Request req = make_req("GET", "https://api.test.invalid/v1/star",
+                         {{"Accept", "text/html"}});
+  auto out = cache.handle(req, &e, Freshness::kFresh);
+  return !out.fromCache;
+}
+
 // ---- robustness / security --------------------------------------------------
 
 bool check_malformed_max_age_treated_as_stale_never_throws() {
@@ -341,6 +388,9 @@ int main() {
   RUN_CASE(check_null_hit_is_miss_with_unconditional_revalidate);
   RUN_CASE(check_vary_mismatch_is_not_served);
   RUN_CASE(check_vary_match_is_served);
+  RUN_CASE(check_vary_multi_field_match_is_served);
+  RUN_CASE(check_vary_multi_field_mismatch_revalidates);
+  RUN_CASE(check_vary_star_revalidates_on_handle);
   RUN_CASE(check_malformed_max_age_treated_as_stale_never_throws);
   RUN_CASE(check_hostile_header_values_never_throw);
   if (failures > 0) {

@@ -51,7 +51,8 @@ inline std::string Trim(const std::string& s) {
 
 // True when any header with the given (case-insensitive) name carries a
 // Cache-Control directive satisfying `pred` on the lowercased,
-// trimmed comma-token (parameters after '=' are kept for prefix match).
+// trimmed comma-token (parameters after '=' are kept in the token; name
+// predicates strip them before comparing).
 template <typename Pred>
 bool HasCacheDirective(
     const std::vector<std::pair<std::string, std::string>>& headers,
@@ -66,9 +67,9 @@ bool HasCacheDirective(
           Trim(value.substr(pos, comma == std::string::npos
                                        ? std::string::npos
                                        : comma - pos));
-      // Strip directive parameters for the name comparison only when the
-      // predicate expects a bare name; predicates match on prefix so
-      // `name=value` forms are covered too.
+      // Strip directive parameters for the name comparison; predicates
+      // match on the bare directive name so `name=value` forms are
+      // covered too.
       if (!token.empty() && pred(token)) return true;
       if (comma == std::string::npos) break;
       pos = comma + 1;
@@ -78,7 +79,12 @@ bool HasCacheDirective(
 }
 
 inline bool IsNoStoreToken(const std::string& token) {
-  return token == "no-store" || token.rfind("no-store", 0) == 0;
+  // Exact directive-name compare after stripping `=value` parameters
+  // (mirrors HasDirective in src/http_cache.cc): `no-store="..."` matches,
+  // `no-storex` / `no-storehouse` do not. Tokens arrive lowercased from
+  // HasCacheDirective; the compare itself is case-sensitive by contract.
+  std::string::size_type eq = token.find('=');
+  return Trim(token.substr(0, eq)) == "no-store";
 }
 
 inline bool IsSwrToken(const std::string& token) {
@@ -112,9 +118,22 @@ inline bool IsHttpCacheable(const Request& r, const Response& resp) {
       return false;
     }
     // Vary:* can never match a subsequent request — nothing safe to store.
+    // Fail closed when ANY comma-separated field is `*` (mirrors
+    // VaryMismatched in src/http_cache.cc): `Vary: "Accept, *"` and
+    // `Vary: " * "` are uncacheable, not just the whole-value `"*"`.
     for (const auto& h : resp.headers) {
       if (detail::AsciiLower(detail::Trim(h.first)) != "vary") continue;
-      if (detail::Trim(h.second) == "*") return false;
+      const std::string& v = h.second;
+      std::string::size_type pos = 0;
+      while (pos <= v.size()) {
+        std::string::size_type comma = v.find(',', pos);
+        std::string field = detail::Trim(
+            comma == std::string::npos ? v.substr(pos)
+                                       : v.substr(pos, comma - pos));
+        if (field == "*") return false;
+        if (comma == std::string::npos) break;
+        pos = comma + 1;
+      }
     }
     return true;
   } catch (...) {

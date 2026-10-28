@@ -181,6 +181,30 @@ bool check_vary_star_is_not_cacheable() {
   return muse::net::IsHttpCacheable(q, s) == false;
 }
 
+bool check_vary_multi_value_with_star_is_not_cacheable() {
+  // MAJOR regression (review): `*` anywhere in the Vary list fails closed.
+  Request q = make_req("GET", "https://api.test.invalid/v1/personal");
+  Response s = make_resp(
+      200, {{"Cache-Control", "max-age=60"}, {"Vary", "Accept, *"}}, "p");
+  return muse::net::IsHttpCacheable(q, s) == false;
+}
+
+bool check_vary_whitespace_star_is_not_cacheable() {
+  // Whitespace variant of the same fail-closed rule.
+  Request q = make_req("GET", "https://api.test.invalid/v1/personal");
+  Response s = make_resp(
+      200, {{"Cache-Control", "max-age=60"}, {"Vary", " * "}}, "p");
+  return muse::net::IsHttpCacheable(q, s) == false;
+}
+
+bool check_no_store_suffixed_token_is_cacheable() {
+  // MINOR regression: `no-storex` is not the `no-store` directive.
+  Request q = make_req("GET", "https://api.test.invalid/v1/x");
+  Response s =
+      make_resp(200, {{"Cache-Control", "no-storex"}}, "x");
+  return muse::net::IsHttpCacheable(q, s) == true;
+}
+
 // ---- negative boundary (runtime face of the compile-time gate) --------------
 
 bool check_no_swr_api_exists_on_http_cache() {
@@ -200,6 +224,10 @@ bool check_no_optimistic_or_query_api_exists_on_http_cache() {
 // ---- robustness / security ---------------------------------------------------
 
 bool check_hostile_inputs_never_throw_and_leak_nothing() {
+  // Robustness probe with a pinned verdict: the POST+body fixture is owned
+  // by STATE-QUERY, so IsHttpCacheable must return false (not just not
+  // throw). The try/catch inside IsHttpCacheable guarantees no-throw; the
+  // assertion below pins the ownership decision.
   Request q = make_req("POST", "https://api.test.invalid/graphql",
                        {{"Authorization", "Bearer test-api-key-not-real"},
                         {"X-Evil", "a\r\nInjected: yes"},
@@ -207,9 +235,13 @@ bool check_hostile_inputs_never_throw_and_leak_nothing() {
                        std::string(1 << 16, 'q'));
   Response s = make_resp(200, {{"Cache-Control", "max-age=99999999999999999999"}},
                          "body");
-  bool verdict = muse::net::IsHttpCacheable(q, s);
-  (void)verdict;  // the bar is no-throw; either verdict is well-formed
-  return true;
+  bool verdict = false;
+  try {
+    verdict = muse::net::IsHttpCacheable(q, s);
+  } catch (...) {
+    return false;  // must never throw
+  }
+  return verdict == false;
 }
 
 }  // namespace
@@ -235,6 +267,9 @@ int main() {
   RUN_CASE(check_request_no_store_is_not_cacheable);
   RUN_CASE(check_error_status_is_not_cacheable);
   RUN_CASE(check_vary_star_is_not_cacheable);
+  RUN_CASE(check_vary_multi_value_with_star_is_not_cacheable);
+  RUN_CASE(check_vary_whitespace_star_is_not_cacheable);
+  RUN_CASE(check_no_store_suffixed_token_is_cacheable);
   RUN_CASE(check_no_swr_api_exists_on_http_cache);
   RUN_CASE(check_no_optimistic_or_query_api_exists_on_http_cache);
   RUN_CASE(check_hostile_inputs_never_throw_and_leak_nothing);
