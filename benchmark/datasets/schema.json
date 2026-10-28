@@ -1,0 +1,35 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Performance raw dataset metadata",
+  "description": "Metadata for one claim dataset under benchmark/datasets/<claim-id>/ (NFR-PERFORMANCE-007, AC-015). Excluded samples are retained with exclusion flags.",
+  "type": "object",
+  "required": ["claim_id", "reference_app", "device", "build_type", "thermal_state", "sample_size", "samples"],
+  "properties": {
+    "claim_id": {"type": "string"},
+    "reference_app": {"type": "string"},
+    "device": {"type": "string"},
+    "build_type": {"type": "string"},
+    "thermal_state": {"type": "string"},
+    "sample_size": {"type": "string"},
+    "exclusions": {"type": "string"},
+    "samples": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["sample_id", "excluded"],
+        "properties": {
+          "sample_id": {"type": "string"},
+          "value": {"type": "number"},
+          "excluded": {
+            "type": "boolean",
+            "description": "Exclusion flag: true when this sample was excluded from the claim aggregate but retained in the raw dataset."
+          },
+          "exclusion_reason": {
+            "type": "string",
+            "description": "Reason for exclusion (e.g. harness restart, thermal drift); empty when not excluded."
+          }
+        }
+      }
+    }
+  }
+}

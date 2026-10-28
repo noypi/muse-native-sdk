@@ -396,6 +396,17 @@ class GateCliTest(unittest.TestCase):
             cleanup(manifest)
         self.assertEqual(proc.returncode, 0, msg=proc.stdout + proc.stderr)
 
+    def test_cli_usage_error_exit_two(self):
+        # Interface: CLI exits 2 on usage error (wrong argc).
+        proc = subprocess.run(
+            [sys.executable, GATE_RUN],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        self.assertEqual(proc.returncode, 2)
+
 
 if __name__ == "__main__":
     unittest.main()
