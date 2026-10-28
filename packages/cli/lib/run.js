@@ -131,6 +131,11 @@ function startStub(projectDir, port) {
     }
     process.exit(1);
   });
+  // The launcher proves the bind then exits per its contract: unref the
+  // bound server so it does not hold the event loop open. The 'error' path
+  // above still fires first on EADDRINUSE, so a taken port exits non-zero
+  // naming the port before the process could exit 0.
+  server.on('listening', () => server.unref());
   server.listen(target, '127.0.0.1');
   return server;
 }
