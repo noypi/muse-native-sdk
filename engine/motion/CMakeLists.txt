@@ -27,6 +27,8 @@ add_library(motion
   src/m3_tokens.cpp
   src/spring_class.cpp
   src/tokens.cpp
+  src/patterns.cpp
+  src/reduced_motion.cpp
 )
 target_include_directories(motion PUBLIC include)
 target_compile_options(motion PRIVATE -Wall -Wextra -Wpedantic)
@@ -210,3 +212,15 @@ target_link_libraries(shared_element_test PRIVATE motion)
 target_compile_options(shared_element_test PRIVATE -Wall -Wextra -Wpedantic)
 
 add_test(NAME shared_element_test COMMAND shared_element_test)
+
+add_executable(patterns_test tests/patterns_test.cpp)
+target_link_libraries(patterns_test PRIVATE motion)
+target_compile_options(patterns_test PRIVATE -Wall -Wextra -Wpedantic)
+
+add_test(NAME patterns_test COMMAND patterns_test)
+
+add_executable(reduced_motion_test tests/reduced_motion_test.cpp)
+target_link_libraries(reduced_motion_test PRIVATE motion)
+target_compile_options(reduced_motion_test PRIVATE -Wall -Wextra -Wpedantic)
+
+add_test(NAME reduced_motion_test COMMAND reduced_motion_test)
