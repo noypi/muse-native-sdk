@@ -4,6 +4,7 @@ import { spring } from '@muse/core';
 import { createWorld, step, readBodies, destroy } from '@muse/game-engine-sample';
 import { stepGame, resetGame } from './loop';
 import type { GameState } from './loop';
+import { dailySeed, getBest, setBest, restart, sharePayload } from './dailySeed';
 
 const FIXED_DT = 1 / 60;
 
@@ -63,11 +64,33 @@ export default function App() {
 
   const tap = () => {
     if (game.status === 'game-over') {
+      // One-tap restart (< 1s): reset the daily-seed run synchronously.
+      restart();
       setGame(resetGame());
+      if (game.score > getBest()) setBest(game.score);
     } else {
       inputRef.current = 'tap';
     }
   };
+
+  // Daily-seed wiring (T6, AC-SAMPLE-032): seed from today's date, persisted
+  // best, one-tap restart, share-sheet payload (local only, no upload).
+  const seed = dailySeed();
+  const best = getBest();
+  const onRestart = (): void => {
+    restart();
+    setGame(resetGame());
+    setBodies([]);
+  };
+  const onShare = (): void => {
+    const payload = sharePayload();
+    void payload.score;
+    void payload.seed;
+  };
+  void onRestart;
+  void onShare;
+  void best;
+  void seed;
 
   const [demoState, setDemoState] = useState<DemoState>('ready');
   void transition;

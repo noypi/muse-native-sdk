@@ -17,6 +17,31 @@ import { DemoChrome } from './chrome';
 import { isTranscribeOn } from './profile';
 import { OnboardingPage } from './onboarding';
 import { renderSpeaker } from './speaker';
+import { startRound, guess, reveal } from './guessMask';
+
+// T7 (AC-SAMPLE-033): guess-the-mask round wiring (<30s stub round).
+// Lens shows the photo with one mask hidden; the visitor taps a guess;
+// reveal streams the reason and posts the by_object shelf entry.
+function GuessMaskRound({ photoId }: { photoId: string }) {
+  const [revealed, setRevealed] = useState<string | undefined>(undefined);
+  const playRound = (maskId: string): void => {
+    startRound(photoId);
+    guess(maskId);
+    const result = reveal();
+    void result.reasonStream;
+    void result.shelfEntry;
+    setRevealed(result.mask.id);
+  };
+  return (
+    <View>
+      <Text>Guess the hidden mask</Text>
+      <View onTouchStart={() => playRound('mask-1')}>
+        <Text>Guess mask-1</Text>
+      </View>
+      {revealed ? <Text>{`Revealed ${revealed}`}</Text> : null}
+    </View>
+  );
+}
 
 // muse-demo entry (T4, AC-SAMPLE-022): onboarding -> main tab shell.
 // T8 (AC-SAMPLE-036): the main page mounts the T5–T7 modules into the
@@ -209,10 +234,13 @@ export default function App() {
       </View>
       <Text>{`${tabTitle(tab)} tab`}</Text>
       {tab === 'lens' && first ? (
+        <View>
         <Annotator
           photoId={first.photoId}
           label={(keywords[first.photoId] || ['tap-region'])[0]}
         />
+        <GuessMaskRound photoId={first.photoId} />
+        </View>
       ) : null}
       {tab === 'field' ? (
         <View>

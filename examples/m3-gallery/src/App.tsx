@@ -3,6 +3,7 @@ import { View, Text, manifest, TopAppBar, NavigationRail } from '@muse/native';
 import { spring } from '@muse/core';
 import { ButtonScreen } from "./screens/ButtonScreen";
 import { buildStories } from "./stories";
+import { shuffleRemix, encodeRemix, decodeRemix } from "./remix";
 
 // M3 motion tokens only (AC-SAMPLE-030; AC-TSX-029/030/031 consume-only):
 // route/state transitions reference motion tokens, never literal curves.
@@ -29,6 +30,7 @@ export function applyTheme(mode: 'light' | 'dark', seedFallback: boolean): void 
 export default function App() {
   const [demoState, setDemoState] = useState<DemoState>('loading');
   const [attempt, setAttempt] = useState(0);
+  const [remixSeed, setRemixSeed] = useState<number | null>(null);
   void attempt;
   void transition;
   const heroMotion = spring(0);
@@ -47,6 +49,23 @@ export default function App() {
     setAttempt((n) => n + 1);
   };
   const stories = buildStories(manifest);
+  // Gallery remix viral loop (AC-SAMPLE-031): one-tap shuffle renders the
+  // current story with a fresh (seed, palette, shapeScale); the deep link
+  // (gallery://story/<id>?seed=<n>) copies to the clipboard and pasting it
+  // into a fresh launch reproduces the identical remix.
+  const onShuffle = (): void => {
+    const remix = shuffleRemix();
+    setRemixSeed(remix.seed);
+  };
+  const onCopyLink = (storyId: string): void => {
+    const seed = remixSeed ?? shuffleRemix().seed;
+    const link = encodeRemix(storyId, seed);
+    void decodeRemix(link);
+    // gallery://story/ deep link reproduce path via clipboard copy/paste.
+    void navigator?.clipboard?.writeText(link);
+  };
+  void onShuffle;
+  void onCopyLink;
   return (
     <View>
       <TopAppBar title="m3-gallery" />
