@@ -55,8 +55,22 @@ void Solver::addConstraint(const Constraint& c) {
   if (static_cast<std::size_t>(c.node) >= nodes_.size()) {
     throw std::out_of_range("unknown constraint node id");
   }
+  if (c.attribute < 0 || c.attribute > 3) {
+    throw std::invalid_argument("unknown constraint attribute");
+  }
   constraints_.push_back(c);
   solved_ = false;
+}
+
+std::size_t Solver::constraintCount() const noexcept {
+  return constraints_.size();
+}
+
+void Solver::truncateConstraints(std::size_t n) noexcept {
+  if (n < constraints_.size()) {
+    constraints_.resize(n);
+    solved_ = false;
+  }
 }
 
 Box Solver::solve(NodeId root) {

@@ -217,6 +217,37 @@ static bool check_solve_is_deterministic() {
          same(solver.boxOf(a).w, 100.0f);
 }
 
+// Named case (Stage 3 regression, review MINOR): unknown constraint
+// attribute (99) throws std::invalid_argument; the solver is unaffected
+// afterwards (a valid pin still applies and solve succeeds).
+static bool check_unknown_attribute_throws_and_solve_unaffected() {
+  layout::Solver solver;
+  layout::NodeId root =
+      solver.addNode(layout::Backend::Flex, layout::kInvalidNodeId);
+  solver.setFlex(root, 100.0f, 50.0f, 0.0f);
+  layout::NodeId child = solver.addNode(layout::Backend::Constraint, root);
+  layout::Constraint bad;
+  bad.node = child;
+  bad.attribute = 99;
+  bad.constant = 5.0f;
+  bad.weight = 1.0f;
+  try {
+    solver.addConstraint(bad);
+  } catch (const std::invalid_argument&) {
+    layout::Constraint good;
+    good.node = child;
+    good.attribute = 2;
+    good.constant = 40.0f;
+    good.weight = 1.0f;
+    solver.addConstraint(good);
+    solver.solve(root);
+    return same(solver.boxOf(child).w, 40.0f);
+  } catch (...) {
+    return false;
+  }
+  return false;
+}
+
 #define RUN_CASE(name)                     \
   do {                                     \
     if (!(name)()) {                       \
@@ -239,6 +270,7 @@ int main() {
   RUN_CASE(check_constraint_unknown_node_throws);
   RUN_CASE(check_solve_unknown_root_throws);
   RUN_CASE(check_solve_is_deterministic);
+  RUN_CASE(check_unknown_attribute_throws_and_solve_unaffected);
   if (failures > 0) {
     std::printf("solver_test: %d failing\n", failures);
     return 1;

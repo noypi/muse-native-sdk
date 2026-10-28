@@ -185,6 +185,46 @@ static bool check_nullptr_sink_restores_counting_default() {
   return layout::invalidationCount() == base2 + 1 && second.calls == 1;
 }
 
+// Named case (Stage 3 regression, review MAJOR): two-tree interleave is
+// isolated per tree. Tree A opens a scope and queues 50× on one node;
+// tree B opens/closes its own scope in between. B's close must flush only
+// B's entries, and A's batch must still coalesce to exactly delta 1 with
+// no cross-tree leak (per-tree scope chain: closing one tree's scope never
+// flushes another tree's queued work).
+static bool check_two_tree_interleave_isolated() {
+  layout::PropertyTree treeA;
+  layout::PropertyTree treeB;
+  CountingSink sink;
+  SinkGuard guard(&sink);
+  const layout::PropHandle w = layout::prop("width");
+  const std::uint64_t base = layout::invalidationCount();
+  {
+    layout::BatchScope scopeA(treeA);
+    for (int i = 0; i < 50; ++i)
+      layout::setBatched(treeA, 1, w, static_cast<float>(i));
+    {
+      layout::BatchScope scopeB(treeB);
+      layout::setBatched(treeB, 7, w, 1.0f);
+    }  // B closes: flushes only B's entry.
+    if (layout::invalidationCount() != base + 1) return false;
+    if (sink.calls != 1) return false;
+    if (sink.roots.size() != 1 || sink.roots[0] != 7) return false;
+    // A's work is still queued, untouched by B's close.
+    if (scopeA.pendingCount() != 1) return false;
+  }  // A closes: flushes only A's coalesced entry.
+  if (layout::invalidationCount() != base + 2) return false;
+  if (sink.calls != 2) return false;
+  if (sink.roots.size() != 2) return false;
+  // A's 50× batch yielded exactly delta 1 (one delivery naming node 1)
+  // and B's entry did not leak into it.
+  bool sawA = false, sawB = false;
+  for (layout::NodeId r : sink.roots) {
+    if (r == 1) sawA = true;
+    if (r == 7) sawB = true;
+  }
+  return sawA && sawB;
+}
+
 }  // namespace
 
 #define RUN_CASE(name)                 \
@@ -204,6 +244,7 @@ int main() {
   RUN_CASE(check_batched_no_per_mutation_allocation);
   RUN_CASE(check_pending_count_tracks_queued_work);
   RUN_CASE(check_nullptr_sink_restores_counting_default);
+  RUN_CASE(check_two_tree_interleave_isolated);
   if (failures > 0) {
     std::printf("batch_test: %d failing\n", failures);
     return 1;

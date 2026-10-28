@@ -16,7 +16,9 @@ namespace layout {
 // children, in insertion (id) order, are the masonry items. Item heights
 // arrive via setEstimatedHeight/setMeasuredHeight (estimates until measured
 // values arrive); items never estimated fall back to the natural flex size
-// the Solver supplies at frame time.
+// the Solver supplies at frame time. Precondition: items without an
+// estimate or measurement share the calling node's natural height as their
+// fallback.
 //
 //   columnW = (containerW - (columns - 1) * columnGap) / columns
 //   x(item) = column * (columnW + columnGap)

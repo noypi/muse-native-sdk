@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <utility>
 #include <vector>
@@ -18,7 +19,8 @@ enum class Backend { Flex, Constraint };
 
 // Linear pin on one box channel: attribute 0=x, 1=y, 2=w, 3=h.
 // `constant` is the target value; `weight` is the stay weight used to
-// order conflicting pins (stronger weights win).
+// order conflicting pins (stronger weights win). Values outside 0..3 are
+// invalid: addConstraint rejects them with std::invalid_argument.
 struct Constraint {
   NodeId node = kInvalidNodeId;
   int attribute = 0;
@@ -41,6 +43,17 @@ class Solver {
   NodeId addNode(Backend b, NodeId parent);
   void setFlex(NodeId id, float w, float h, float flexGrow);
   void addConstraint(const Constraint& c);
+  // Attribute channel encoding: 0=x, 1=y, 2=w, 3=h. Any other attribute
+  // value is rejected with std::invalid_argument (never silently ignored).
+  //
+  // Hinge-pin lifetime (T6): FormFactorSource appends transient pins via
+  // addConstraint and snapshots constraintCount() before doing so; on the
+  // next pass it restores the snapshot with truncateConstraints() before
+  // re-solving so stale pins never survive hinge removal. Pins are owned
+  // as a trailing run: constraints appended after the snapshot by other
+  // callers are dropped by the truncation.
+  std::size_t constraintCount() const noexcept;
+  void truncateConstraints(std::size_t n) noexcept;
   Box solve(NodeId root);
   const Box& boxOf(NodeId id) const;
 

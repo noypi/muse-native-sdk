@@ -32,6 +32,46 @@ bool intersectsHinge(const Box& b, const FormFactorState& s) {
          b.y < s.hingeY + s.hingeH && s.hingeY < b.y + b.h;
 }
 
+// Hinge-pin lifetime: pins appended via Solver::addConstraint persist in
+// the Solver's constraint list, so each pass first truncates the trailing
+// run pinned by the previous pass (snapshot/restore of the constraint
+// count). Without this a removed hinge would keep shifting/shrinking
+// leaves after unfold-back, and repeated toggles would grow the list
+// without bound. Records are keyed by Solver address in a bounded,
+// allocation-free table; a full table degrades to the old behavior (pins
+// stay until a slot frees) rather than allocating.
+constexpr std::size_t kMaxPinnedSolvers = 8;
+
+struct HingePinRecord {
+  const Solver* solver = nullptr;
+  std::size_t mark = 0;
+  bool live = false;
+};
+
+HingePinRecord g_hingePins[kMaxPinnedSolvers];
+
+HingePinRecord* findHingePins(const Solver* s) noexcept {
+  for (auto& r : g_hingePins) {
+    if (r.solver == s) {
+      return &r;
+    }
+  }
+  return nullptr;
+}
+
+HingePinRecord* claimHingePins(const Solver* s) noexcept {
+  if (HingePinRecord* r = findHingePins(s)) {
+    return r;
+  }
+  for (auto& r : g_hingePins) {
+    if (r.solver == nullptr) {
+      r.solver = s;
+      return &r;
+    }
+  }
+  return nullptr;
+}
+
 }  // namespace
 
 void FormFactorSource::onWindowLayoutChanged(
@@ -80,6 +120,15 @@ bool FormFactorSource::consumeForNextPass(Solver& s, NodeId root) {
   if (hasApplied_ && statesEqual(current_, applied_)) {
     return false;
   }
+  // Drop this solver's hinge pins from the previous pass before solving:
+  // Solver::solve projects every accumulated pin, so stale pins would
+  // otherwise keep the post-fold frames after the hinge is gone.
+  if (HingePinRecord* prev = findHingePins(&s)) {
+    if (prev->live) {
+      s.truncateConstraints(prev->mark);
+      prev->live = false;
+    }
+  }
   s.solve(root);
   // FULL-occlusion hinge: move affected subtrees off the hinge rect via
   // constraint pins (public Solver API; the pins apply inside the second
@@ -87,6 +136,7 @@ bool FormFactorSource::consumeForNextPass(Solver& s, NodeId root) {
   // from the fixed input sizes). Non-occluding or absent hinges keep the
   // full-width pass from the solve above.
   if (hasUsableHinge(current_) && current_.hingeOccludes) {
+    const std::size_t pinMark = s.constraintCount();
     const std::vector<NodeId> affected = affectedSubtrees(s, root);
     // Snapshot affected boxes before pinning: each addConstraint flips the
     // solver back to unsolved (boxOf throws while unsolved), so a second
@@ -132,6 +182,12 @@ bool FormFactorSource::consumeForNextPass(Solver& s, NodeId root) {
     }
     if (!affected.empty()) {
       s.solve(root);
+      // The pins above form a trailing run starting at pinMark: remember
+      // it so the next pass truncates exactly these pins before solving.
+      if (HingePinRecord* rec = claimHingePins(&s)) {
+        rec->mark = pinMark;
+        rec->live = true;
+      }
     }
   }
   applied_ = current_;

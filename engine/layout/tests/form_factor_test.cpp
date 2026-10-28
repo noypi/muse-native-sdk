@@ -36,6 +36,7 @@
 // that airtight: it can only be incremented by a cross-boundary call, no
 // such call exists on this path, and the fold cases assert it stays 0.
 #include <algorithm>
+#include <cstddef>
 #include <cstdio>
 #include <vector>
 
@@ -252,6 +253,56 @@ static bool check_fold_resolves_only_affected_subtrees_no_js() {
   return g_jsObserverCalls == 0;
 }
 
+// Named case (Stage 3 regression, review BLOCKER): flat → half-opened FULL
+// hinge → flat again on a long-lived Solver restores every child frame to
+// its pre-fold value (stale hinge pins must not survive hinge removal).
+static bool check_unfold_roundtrip_restores_frames() {
+  layout::Solver solver;
+  ThreeCol t = build_three_col(solver);
+  solver.solve(t.root);
+  const layout::Box pre0 = solver.boxOf(t.cols[0]);
+  const layout::Box pre1 = solver.boxOf(t.cols[1]);
+  const layout::Box pre2 = solver.boxOf(t.cols[2]);
+
+  layout::FormFactorSource src;
+  src.onWindowLayoutChanged(flat_no_hinge());
+  src.consumeForNextPass(solver, t.root);
+  src.onWindowLayoutChanged(half_opened_middle_hinge());
+  if (!src.consumeForNextPass(solver, t.root)) return false;
+  src.onWindowLayoutChanged(flat_no_hinge());
+  src.consumeForNextPass(solver, t.root);
+
+  const layout::Box& post0 = solver.boxOf(t.cols[0]);
+  const layout::Box& post1 = solver.boxOf(t.cols[1]);
+  const layout::Box& post2 = solver.boxOf(t.cols[2]);
+  auto same = [](const layout::Box& a, const layout::Box& b) {
+    return near(a.x, b.x) && near(a.y, b.y) && near(a.w, b.w) &&
+           near(a.h, b.h);
+  };
+  return same(post0, pre0) && same(post1, pre1) && same(post2, pre2);
+}
+
+// Named case (Stage 3 regression, review BLOCKER): repeated fold/unfold
+// toggles must not grow the constraint count (hinge pins have a defined
+// lifetime via the constraintCount snapshot/truncate rule).
+static bool check_repeated_toggles_do_not_grow_constraints() {
+  layout::Solver solver;
+  ThreeCol t = build_three_col(solver);
+  solver.solve(t.root);
+
+  layout::FormFactorSource src;
+  src.onWindowLayoutChanged(flat_no_hinge());
+  src.consumeForNextPass(solver, t.root);
+  const std::size_t base = solver.constraintCount();
+  for (int i = 0; i < 12; ++i) {
+    src.onWindowLayoutChanged(half_opened_middle_hinge());
+    src.consumeForNextPass(solver, t.root);
+    src.onWindowLayoutChanged(flat_no_hinge());
+    src.consumeForNextPass(solver, t.root);
+  }
+  return solver.constraintCount() == base;
+}
+
 #define RUN_CASE(name)                 \
   do {                                 \
     if (!(name)()) {                   \
@@ -272,6 +323,8 @@ int main() {
   RUN_CASE(check_hinge_outside_content_returns_empty);
   RUN_CASE(check_unknown_posture_no_hinge_no_split);
   RUN_CASE(check_fold_resolves_only_affected_subtrees_no_js);
+  RUN_CASE(check_unfold_roundtrip_restores_frames);
+  RUN_CASE(check_repeated_toggles_do_not_grow_constraints);
   if (failures > 0) {
     std::printf("form_factor_test: %d failing\n", failures);
     return 1;
