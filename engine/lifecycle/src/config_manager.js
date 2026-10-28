@@ -27,8 +27,9 @@ const CONFIG_CHANGES = Object.freeze([
 
 const CANONICAL_ORDER = Object.freeze(['layout', 'resources', 'fonts', 'theme']);
 
-// Minimal invalidation sets per plan Detail. Stored as plain arrays; every
-// entry is already in canonical order so getInvalidation only copies.
+// Minimal invalidation sets per plan Detail. Stored as plain arrays;
+// getInvalidation projects through CANONICAL_ORDER so output order is
+// enforced programmatically rather than by entry convention.
 const INVALIDATION_MAP = Object.freeze({
   orientation: ['layout'],
   screenSize: ['layout'],
@@ -57,7 +58,7 @@ function getInvalidation(change) {
   if (typeof change !== 'string' || !KNOWN_CHANGES.has(change)) {
     throw unknownChangeError();
   }
-  return { targets: [...INVALIDATION_MAP[change]] };
+  return { targets: CANONICAL_ORDER.filter((t) => INVALIDATION_MAP[change].includes(t)) };
 }
 
 function createConfigManager(hub) {

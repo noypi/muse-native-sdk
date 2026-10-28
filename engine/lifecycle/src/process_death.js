@@ -179,7 +179,7 @@ function createProcessDeathHarness(deps) {
     try {
       fourResult = freshIntegration.verifyRestored(four);
     } catch (_err) {
-      return { restored: true, result: { identical: false, diff: presentSlots(expected) } };
+      return { restored: false, result: { identical: false, diff: presentSlots(expected) } };
     }
     const diff = Array.isArray(fourResult.diff) ? [...fourResult.diff] : [];
     if (Object.prototype.hasOwnProperty.call(expected, ENGINE_KEY)) {
