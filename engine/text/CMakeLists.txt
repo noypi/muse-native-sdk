@@ -20,6 +20,9 @@ add_library(muse_text STATIC
   ink/ink_stroke_pipeline.cpp
   ink/palm_rejector.cpp
   ink/handwriting_committer.cpp
+  edit/selection_controller.cpp
+  edit/edit_undo.cpp
+  edit/plain_exporter.cpp
 )
 target_include_directories(muse_text PUBLIC include)
 target_compile_options(muse_text PRIVATE -Wall -Wextra -Wpedantic)
@@ -104,6 +107,22 @@ add_executable(handwriting_test ink/tests/handwriting_test.cpp)
 target_link_libraries(handwriting_test PRIVATE muse_text)
 target_compile_options(handwriting_test PRIVATE -Wall -Wextra -Wpedantic)
 
+add_executable(selection_parity_test edit/tests/selection_parity_test.cpp)
+target_link_libraries(selection_parity_test PRIVATE muse_text)
+target_compile_options(selection_parity_test PRIVATE -Wall -Wextra -Wpedantic)
+
+add_executable(undo_test edit/tests/undo_test.cpp)
+target_link_libraries(undo_test PRIVATE muse_text)
+target_compile_options(undo_test PRIVATE -Wall -Wextra -Wpedantic)
+
+add_executable(plain_degrade_test edit/tests/plain_degrade_test.cpp)
+target_link_libraries(plain_degrade_test PRIVATE muse_text)
+target_compile_options(plain_degrade_test PRIVATE -Wall -Wextra -Wpedantic)
+
+add_executable(gesture_script_test edit/tests/gesture_script_test.cpp)
+target_link_libraries(gesture_script_test PRIVATE muse_text)
+target_compile_options(gesture_script_test PRIVATE -Wall -Wextra -Wpedantic)
+
 add_executable(rich_buffer_test tests/rich_buffer_test.cpp)
 target_link_libraries(rich_buffer_test PRIVATE muse_text)
 target_compile_options(rich_buffer_test PRIVATE -Wall -Wextra -Wpedantic)
@@ -150,6 +169,10 @@ add_test(NAME stylus_samples_test COMMAND stylus_samples_test)
 add_test(NAME stylus_axes_test COMMAND stylus_axes_test)
 add_test(NAME palm_rejection_test COMMAND palm_rejection_test)
 add_test(NAME handwriting_test COMMAND handwriting_test)
+add_test(NAME selection_parity_test COMMAND selection_parity_test)
+add_test(NAME undo_test COMMAND undo_test)
+add_test(NAME plain_degrade_test COMMAND plain_degrade_test)
+add_test(NAME gesture_script_test COMMAND gesture_script_test)
 add_test(NAME rich_buffer_test COMMAND rich_buffer_test)
 add_test(NAME nonlinear_scale_test COMMAND nonlinear_scale_test)
 add_test(NAME scale_remeasure_test COMMAND scale_remeasure_test)
