@@ -1,36 +1,27 @@
 'use strict';
-// TC-PKG-001 (AC-PKG-001) — Batch 1 (T1 contract).
+// TC-PKG-001 (AC-PKG-001) — Batch 1 (T1/T2/T3 contracts, BUG-PKG-002).
 // Hermetic: node:test + node:assert/strict only. Inline manifests/file lists;
-// no network, no secrets, no live services, no fs fixtures.
-// Binds ONLY to the pinned T1 `Interface:` lines, never to an implementation.
-// Resolution: `../lib/manifest.js` + `../lib/layout.js` once they land, else the
-// `../index.js` shim, so every behavior case below fails until T1 lands.
+// temp fixture dirs under os.tmpdir() (same convention as integrity.test.ts);
+// no network, no secrets, no live services, no real .so open.
+// Binds ONLY to the pinned T1/T2 `Interface:` lines, never to an implementation.
 
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
 
-let manifestMod = {};
-let layoutMod = {};
-try {
-  manifestMod = require('../lib/manifest.js');
-} catch {
+function tryRequire(path) {
   try {
-    manifestMod = require('../index.js');
+    return require(path);
   } catch {
-    manifestMod = {};
+    return {};
   }
 }
-try {
-  layoutMod = require('../lib/layout.js');
-} catch {
-  try {
-    layoutMod = require('../index.js');
-  } catch {
-    layoutMod = {};
-  }
-}
+
+const manifestMod = tryRequire('../lib/manifest.js');
+const layoutMod = tryRequire('../lib/layout.js');
+const loaderMod = tryRequire('../lib/loader.js');
 const { validateManifest } = manifestMod;
 const { validateLayout } = layoutMod;
+const { loadPackage } = loaderMod;
 
 function validManifest(overrides = {}) {
   return {
@@ -67,13 +58,7 @@ function assertPkgError(fn, expectedCode, expectedPathPart) {
 }
 
 // ---------------------------------------------------------------------------
-// validateManifest — T1 contract:
-// `validateManifest(manifest: object): { name: string, version: string,
-//  museApi: string, entry: { form: "prebuilt" | "source", main: string,
-//  types: string }, abis: string[], engineAbi: string,
-//  exports: ExportEntry[], capabilities: string[] }`
-// throws `PkgError{ code: "E_MANIFEST" | "E_LAYOUT" | "E_ENTRY_FORM",
-//  path: string, expected: string }`
+// validateManifest — unchanged pins (AC-PKG-001 manifest leg).
 // ---------------------------------------------------------------------------
 describe('TC-PKG-001 — validateManifest (AC-PKG-001)', () => {
   it('accepts a canonical manifest and returns the normalized fields', () => {
@@ -113,8 +98,10 @@ describe('TC-PKG-001 — validateManifest (AC-PKG-001)', () => {
 // ---------------------------------------------------------------------------
 // validateLayout — T1 contract:
 // `validateLayout(files: string[], manifest: object): void`
-// throws `PkgError{ code: "E_LAYOUT" | "E_ENTRY_FORM",
-//  path: string, expected: string }`
+// throws `PkgError{ code: "E_LAYOUT", path: string, expected: string }`
+// when `muse-package.json` is absent (including when only
+// `capo-package.json` is present); `ROOT_FILES` no longer contains any
+// `capo` name; `ALIAS_MANIFESTS` export removed.
 // ---------------------------------------------------------------------------
 describe('TC-PKG-001 — validateLayout (AC-PKG-001)', () => {
   const PREBUILT_FILES = [
@@ -143,13 +130,102 @@ describe('TC-PKG-001 — validateLayout (AC-PKG-001)', () => {
     assertPkgError(() => validateLayout(files, validManifest()), 'E_LAYOUT', 'extra.txt');
   });
 
-  it('accepts the deprecated capo-package.json alias manifest (ASSUMPTION per plan A3)', () => {
+  it('rejects a capo-only root with E_LAYOUT naming capo-package.json (BUG-PKG-002 fail-closed)', () => {
     const files = ['capo-package.json', 'src/index.js', 'src/index.d.ts', 'integrity.json'];
-    assert.doesNotThrow(() => validateLayout(files, validManifest()));
+    assertPkgError(() => validateLayout(files, validManifest()), 'E_LAYOUT', 'capo-package.json');
+  });
+
+  it('rejects a file list with neither manifest with E_LAYOUT naming muse-package.json', () => {
+    const files = ['src/index.js', 'src/index.d.ts', 'integrity.json'];
+    assertPkgError(() => validateLayout(files, validManifest()), 'E_LAYOUT', 'muse-package.json');
+  });
+
+  it('ROOT_FILES no longer contains any capo name', () => {
+    assert.ok(layoutMod.ROOT_FILES, 'layout must export ROOT_FILES');
+    for (const entry of layoutMod.ROOT_FILES) {
+      assert.ok(
+        !String(entry).includes('capo'),
+        `ROOT_FILES must not contain a capo name, got: ${entry}`,
+      );
+    }
+  });
+
+  it('ALIAS_MANIFESTS export is removed', () => {
+    assert.equal(
+      layoutMod.ALIAS_MANIFESTS,
+      undefined,
+      'layout must not export ALIAS_MANIFESTS',
+    );
   });
 
   it('rejects a path-traversal entry naming the path (security: traversal)', () => {
     const files = [...PREBUILT_FILES, '../outside.js'];
     assertPkgError(() => validateLayout(files, validManifest()), 'E_LAYOUT', '../outside.js');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// loadPackage — T2 contract:
+// `loadPackage(pkgDir: string, opts?: object): { dir: string, manifest: object,
+//  files: string[] }`
+// throws `PkgError{ code: "E_LAYOUT", path: "muse-package.json",
+//  expected: string }` when `muse-package.json` is absent even if
+// `capo-package.json` exists; reads and parses only `muse-package.json`.
+// ---------------------------------------------------------------------------
+describe('TC-PKG-001 — loadPackage capo fail-closed (AC-PKG-001, loader leg)', () => {
+  const fs = require('node:fs');
+  const os = require('node:os');
+  const nodePath = require('node:path');
+  const { createHash } = require('node:crypto');
+
+  const OPTS = { engineAbi: 'deadbeef', deviceAbi: 'arm64-v8a', grantedCapabilities: [] };
+
+  function sha256(buf) {
+    return createHash('sha256').update(buf).digest('hex');
+  }
+
+  function writeFixtureDir(manifestName, manifestOverrides = {}) {
+    const manifest = validManifest(manifestOverrides);
+    const dir = fs.mkdtempSync(nodePath.join(os.tmpdir(), 'pkg-layout-'));
+    fs.mkdirSync(nodePath.join(dir, 'src'), { recursive: true });
+    const files = {
+      [manifestName]: Buffer.from(JSON.stringify(manifest)),
+      'src/index.js': Buffer.from('module.exports = {};'),
+      'src/index.d.ts': Buffer.from('export {};'),
+    };
+    const integrity = {};
+    for (const [rel, buf] of Object.entries(files)) {
+      fs.writeFileSync(nodePath.join(dir, rel), buf);
+      integrity[rel] = sha256(buf);
+    }
+    fs.writeFileSync(nodePath.join(dir, 'integrity.json'), JSON.stringify(integrity));
+    return dir;
+  }
+
+  function withFixtureDir(manifestName, manifestOverrides, fn) {
+    const dir = writeFixtureDir(manifestName, manifestOverrides);
+    try {
+      fn(dir);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  }
+
+  it('rejects a capo-only package dir with E_LAYOUT naming muse-package.json', () => {
+    assert.equal(typeof loadPackage, 'function', 'loadPackage must exist');
+    withFixtureDir('capo-package.json', {}, (dir) => {
+      assertPkgError(() => loadPackage(dir, OPTS), 'E_LAYOUT', 'muse-package.json');
+    });
+  });
+
+  it('loads a canonical muse-package.json package unchanged', () => {
+    assert.equal(typeof loadPackage, 'function', 'loadPackage must exist');
+    withFixtureDir('muse-package.json', {}, (dir) => {
+      const out = loadPackage(dir, OPTS);
+      assert.equal(out.dir, String(dir));
+      assert.ok(Array.isArray(out.files), 'result must carry a files list');
+      assert.ok(out.files.includes('muse-package.json'), 'files must list muse-package.json');
+      assert.equal(out.manifest.name, 'acme-engine');
+    });
   });
 });

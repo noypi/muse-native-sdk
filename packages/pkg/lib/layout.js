@@ -3,8 +3,7 @@
 const { PkgError } = require('./errors.js');
 
 const CANONICAL_MANIFEST = 'muse-package.json';
-const ALIAS_MANIFESTS = ['capo-package.json'];
-const ROOT_FILES = ['muse-package.json', 'capo-package.json', 'integrity.json'];
+const ROOT_FILES = ['muse-package.json', 'integrity.json'];
 const ROOT_DIRS = ['src/', 'native/', 'assets/'];
 
 function isTraversal(file) {
@@ -29,7 +28,7 @@ function checkTraversal(files) {
 }
 
 function hasManifest(files) {
-  return files.some((file) => file === CANONICAL_MANIFEST || ALIAS_MANIFESTS.includes(file));
+  return files.some((file) => file === CANONICAL_MANIFEST);
 }
 
 function checkRoots(files) {
@@ -89,6 +88,7 @@ function validateLayout(files, manifest) {
     throw new PkgError('E_LAYOUT', CANONICAL_MANIFEST, 'package file list must be an array of paths');
   }
   checkTraversal(files);
+  checkRoots(files);
   if (!hasManifest(files)) {
     throw new PkgError(
       'E_LAYOUT',
@@ -96,7 +96,6 @@ function validateLayout(files, manifest) {
       'package must contain muse-package.json at the root',
     );
   }
-  checkRoots(files);
   checkEntryForm(files, manifest);
 }
 
@@ -104,7 +103,6 @@ module.exports = {
   validateLayout,
   checkEntryForm,
   CANONICAL_MANIFEST,
-  ALIAS_MANIFESTS,
   ROOT_FILES,
   ROOT_DIRS,
 };
