@@ -154,6 +154,24 @@ describe('T3 — retry-with-resume (failing-first-attempt fixture)', () => {
   });
 });
 
+describe('BUG-BUILD-001 — monitorPack first-poll pending sequence', () => {
+  it('ok mode polls pending/0 then downloading/50 then ready/100', () => {
+    const { requestPack, monitorPack } = loadImpl();
+    const { handle } = requestPack('fake-pack-not-real');
+    assert.deepEqual(monitorPack(handle), { state: 'pending', pct: 0 });
+    assert.deepEqual(monitorPack(handle), { state: 'downloading', pct: 50 });
+    assert.deepEqual(monitorPack(handle), { state: 'ready', pct: 100 });
+  });
+
+  it('retry fixture first attempt polls pending/0 then downloading/50 then failed/50', () => {
+    const { requestPack, monitorPack } = loadImpl();
+    const { handle } = requestPack('fake-pack-retry-not-real');
+    assert.deepEqual(monitorPack(handle), { state: 'pending', pct: 0 });
+    assert.deepEqual(monitorPack(handle), { state: 'downloading', pct: 50 });
+    assert.deepEqual(monitorPack(handle), { state: 'failed', pct: 50 });
+  });
+});
+
 describe('T3 — mountPack contract shape', () => {
   it('a ready pack mounts to an existing mountPoint directory', () => {
     const { requestPack, monitorPack, mountPack } = loadImpl();
