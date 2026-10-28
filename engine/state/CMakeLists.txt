@@ -5,9 +5,15 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-add_library(state src/atom.cpp src/store.cpp src/provenance.cpp src/frame.cpp query/src/query_client.cpp query/src/query_core.cpp query/src/cache.cpp persist/src/snapshot.cpp persist/src/corruption.cpp persist/src/rehydrate.cpp persist/src/restore.cpp)
-target_include_directories(state PUBLIC include query/include persist/include)
+add_library(state src/atom.cpp src/store.cpp src/provenance.cpp src/frame.cpp query/src/query_client.cpp query/src/query_core.cpp query/src/cache.cpp persist/src/snapshot.cpp persist/src/corruption.cpp persist/src/rehydrate.cpp persist/src/restore.cpp sync/src/mutation_queue.cpp sync/src/crdt.cpp sync/src/epoch.cpp sync/src/sync_scheduler.cpp sync/src/delta.cpp devtools/src/devtools.cpp serverui/src/serverui.cpp serverui/src/verify.cpp serverui/src/sandbox.cpp serverui/src/fallback.cpp)
+target_include_directories(state PUBLIC include query/include persist/include sync/include devtools/include serverui/include)
 target_compile_options(state PRIVATE -Wall -Wextra -Wpedantic)
+# Devtools compiled in for dev configurations only (AC-STATE-033): only
+# Debug and empty-CONFIG (dev) builds compile devtools.cpp with
+# MUSE_STATE_DEVTOOLS=1. Every other configuration (Release,
+# RelWithDebInfo, MinSizeRel, ...) gets MUSE_STATE_DEVTOOLS=0 so no
+# DevTimeline/Snapshot/Dag symbols ship in release artifacts.
+set_source_files_properties(devtools/src/devtools.cpp PROPERTIES COMPILE_DEFINITIONS "$<$<OR:$<CONFIG:Debug>,$<CONFIG:>>:MUSE_STATE_DEVTOOLS=1>$<$<NOT:$<OR:$<CONFIG:Debug>,$<CONFIG:>>>:MUSE_STATE_DEVTOOLS=0>")
 
 add_executable(atom_core_test tests/atom_core_test.cpp)
 target_link_libraries(atom_core_test PRIVATE state)
@@ -71,3 +77,85 @@ add_executable(restore_test persist/tests/restore_test.cpp)
 target_link_libraries(restore_test PRIVATE state)
 target_compile_options(restore_test PRIVATE -Wall -Wextra -Wpedantic)
 add_test(NAME restore_test COMMAND restore_test)
+
+add_executable(queue_durability_test sync/tests/queue_durability_test.cpp)
+target_link_libraries(queue_durability_test PRIVATE state)
+target_compile_options(queue_durability_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME queue_durability_test COMMAND queue_durability_test)
+
+add_executable(crdt_property_test sync/tests/crdt_property_test.cpp)
+target_link_libraries(crdt_property_test PRIVATE state)
+target_compile_options(crdt_property_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME crdt_property_test COMMAND crdt_property_test)
+
+add_executable(epoch_test sync/tests/epoch_test.cpp)
+target_link_libraries(epoch_test PRIVATE state)
+target_compile_options(epoch_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME epoch_test COMMAND epoch_test)
+
+add_executable(background_sync_test sync/tests/background_sync_test.cpp)
+target_link_libraries(background_sync_test PRIVATE state)
+target_compile_options(background_sync_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME background_sync_test COMMAND background_sync_test)
+
+add_executable(convergence_test sync/tests/convergence_test.cpp)
+target_link_libraries(convergence_test PRIVATE state)
+target_compile_options(convergence_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME convergence_test COMMAND convergence_test)
+
+# Dev-only test (T6): time_travel_test needs DevTimeline, which only exists
+# when the lib compiles devtools.cpp with MUSE_STATE_DEVTOOLS=1 (Debug /
+# empty-config dev builds, see gate above). Release-like builds strip those
+# symbols, so linking this binary would fail (undefined
+# DevTimeline::present); skip it there by design. Multi-config generators
+# still define it but exclude it from default Release-like builds and
+# register the test for the Debug configuration only.
+if(CMAKE_CONFIGURATION_TYPES)
+  add_executable(time_travel_test devtools/tests/time_travel_test.cpp)
+  target_link_libraries(time_travel_test PRIVATE state)
+  target_compile_options(time_travel_test PRIVATE -Wall -Wextra -Wpedantic)
+  target_compile_definitions(time_travel_test PRIVATE MUSE_STATE_DEVTOOLS=1)
+  set_target_properties(time_travel_test PROPERTIES
+    EXCLUDE_FROM_DEFAULT_BUILD_RELEASE TRUE
+    EXCLUDE_FROM_DEFAULT_BUILD_RELWITHDEBINFO TRUE
+    EXCLUDE_FROM_DEFAULT_BUILD_MINSIZEREL TRUE)
+  add_test(NAME time_travel_test COMMAND time_travel_test)
+  set_tests_properties(time_travel_test PROPERTIES CONFIGURATIONS Debug)
+elseif(CMAKE_BUILD_TYPE STREQUAL "" OR CMAKE_BUILD_TYPE STREQUAL "Debug")
+  add_executable(time_travel_test devtools/tests/time_travel_test.cpp)
+  target_link_libraries(time_travel_test PRIVATE state)
+  target_compile_options(time_travel_test PRIVATE -Wall -Wextra -Wpedantic)
+  target_compile_definitions(time_travel_test PRIVATE MUSE_STATE_DEVTOOLS=1)
+  add_test(NAME time_travel_test COMMAND time_travel_test)
+endif()
+
+add_executable(disabled_overhead_test devtools/tests/disabled_overhead_test.cpp)
+target_link_libraries(disabled_overhead_test PRIVATE state)
+target_compile_options(disabled_overhead_test PRIVATE -Wall -Wextra -Wpedantic)
+target_compile_definitions(disabled_overhead_test PRIVATE MUSE_STATE_DEVTOOLS=0)
+add_test(NAME disabled_overhead_test COMMAND disabled_overhead_test)
+
+add_executable(descriptor_component_test serverui/tests/descriptor_component_test.cpp)
+target_link_libraries(descriptor_component_test PRIVATE state)
+target_compile_options(descriptor_component_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME descriptor_component_test COMMAND descriptor_component_test)
+
+add_executable(descriptor_signature_test serverui/tests/descriptor_signature_test.cpp)
+target_link_libraries(descriptor_signature_test PRIVATE state)
+target_compile_options(descriptor_signature_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME descriptor_signature_test COMMAND descriptor_signature_test)
+
+add_executable(descriptor_sandbox_test serverui/tests/descriptor_sandbox_test.cpp)
+target_link_libraries(descriptor_sandbox_test PRIVATE state)
+target_compile_options(descriptor_sandbox_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME descriptor_sandbox_test COMMAND descriptor_sandbox_test)
+
+add_executable(descriptor_fallback_test serverui/tests/descriptor_fallback_test.cpp)
+target_link_libraries(descriptor_fallback_test PRIVATE state)
+target_compile_options(descriptor_fallback_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME descriptor_fallback_test COMMAND descriptor_fallback_test)
+
+# Release-artifact check (TC-STATE-033): devtools.cpp compiled as release
+# (MUSE_STATE_DEVTOOLS=0) must expose no DevTimeline/Snapshot/Dag symbols.
+add_test(NAME devtools_disabled_no_symbols
+  COMMAND sh -c "c++ -std=c++17 -DMUSE_STATE_DEVTOOLS=0 -I ${CMAKE_CURRENT_SOURCE_DIR}/include -I ${CMAKE_CURRENT_SOURCE_DIR}/devtools/include -c ${CMAKE_CURRENT_SOURCE_DIR}/devtools/src/devtools.cpp -o ${CMAKE_CURRENT_BINARY_DIR}/devtools_disabled_check.o && (nm -C ${CMAKE_CURRENT_BINARY_DIR}/devtools_disabled_check.o | grep -E 'DevTimeline|Snapshot|exportDag' && exit 1 || exit 0)")
