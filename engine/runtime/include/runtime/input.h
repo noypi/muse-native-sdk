@@ -13,12 +13,9 @@ namespace runtime {
 //
 // The implementation lives inline here (same pattern as runtime/host.h)
 // so the dispatch seam stays usable without extra linkage; src/input.cpp
-// keeps the conventional TU compiled and checked. host.h/host.cpp are
-// frozen by the H1 stage, so dispatch state is TU-local static: the
-// hermetic tests create, use, and destroy a single host per case in
-// sequence and compare relatively (before vs after), which this holds
-// for. If H1 later gains per-host input state, move these counters onto
-// Host (see coder report).
+// keeps the conventional TU compiled and checked. Dispatch state is
+// per-host on Host (button_fire_count / list_scroll_offset) so two hosts
+// never share counts.
 struct TouchEvent {
   enum class Kind { Tap, Drag };
   Kind kind = Kind::Tap;
@@ -42,16 +39,7 @@ constexpr float kButtonY1 = 100.0f;
 constexpr float kTouchSlopPx = 8.0f;
 
 constexpr int kButtonNode = 1;
-
-inline int& button_fire_count() {
-  static int n = 0;
-  return n;
-}
-
-inline float& list_scroll() {
-  static float offset = 0.0f;
-  return offset;
-}
+constexpr int kListId = 7;
 
 inline bool hit_button(float x, float y) {
   return x >= kButtonX0 && x <= kButtonX1 && y >= kButtonY0 && y <= kButtonY1;
@@ -63,17 +51,16 @@ inline bool hit_button(float x, float y) {
 // A drag past touch-slop scrolls the list; a sub-slop drag does not; a
 // drag never fires the tap handler.
 inline void dispatch_touch(Host& h, const TouchEvent& e) {
-  (void)h;
   switch (e.kind) {
     case TouchEvent::Kind::Tap:
       if (touch_detail::hit_button(e.x, e.y)) {
-        ++touch_detail::button_fire_count();
+        ++h.button_fire_count;
       }
       break;
     case TouchEvent::Kind::Drag: {
       const float magnitude = std::hypot(e.dx, e.dy);
       if (magnitude >= touch_detail::kTouchSlopPx) {
-        touch_detail::list_scroll() += e.dy;
+        h.list_scroll_offset += e.dy;
       }
       break;
     }
@@ -81,17 +68,17 @@ inline void dispatch_touch(Host& h, const TouchEvent& e) {
 }
 
 inline int handler_fire_count(const Host& h, int node_id) {
-  (void)h;
   if (node_id != touch_detail::kButtonNode) {
     return 0;
   }
-  return touch_detail::button_fire_count();
+  return h.button_fire_count;
 }
 
 inline float list_scroll_offset(const Host& h, int list_id) {
-  (void)h;
-  (void)list_id;
-  return touch_detail::list_scroll();
+  if (list_id != touch_detail::kListId) {
+    return 0.0f;
+  }
+  return h.list_scroll_offset;
 }
 
 }  // namespace runtime

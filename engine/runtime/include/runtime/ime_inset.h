@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cmath>
+
 namespace runtime {
 
 // IME inset seam (FR-RUNTIME-004 / AC-RUNTIME-010). Hermetic: animated
@@ -13,9 +15,15 @@ struct LayoutViewport {
 };
 
 // Record the inset height for frame_id. Negative heights clamp to 0 (hidden
-// keyboard is represented by a 0 height). Never throws.
+// keyboard is represented by a 0 height). Non-finite heights (NaN, +Inf,
+// -Inf) clamp to 0: no finite maximum inset is defined for the viewport, so
+// +Inf maps to 0.0f per plan A3. Never throws.
 inline void apply_ime_inset(LayoutViewport& v, float inset_height, int frame_id) {
-  v.ime_inset_height = inset_height < 0.0f ? 0.0f : inset_height;
+  if (!std::isfinite(inset_height) || inset_height < 0.0f) {
+    v.ime_inset_height = 0.0f;
+  } else {
+    v.ime_inset_height = inset_height;
+  }
   v.applied_frame = frame_id;
 }
 

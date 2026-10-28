@@ -14,6 +14,11 @@ add_library(runtime
   src/vulkan_baseline.cpp
   src/renderer.cpp
   src/jni_bridge.cpp
+  src/host.cpp
+  src/input.cpp
+  src/ime_inset.cpp
+  src/text.cpp
+  src/text_field.cpp
 )
 target_include_directories(runtime PUBLIC include)
 target_compile_options(runtime PRIVATE -Wall -Wextra -Wpedantic)

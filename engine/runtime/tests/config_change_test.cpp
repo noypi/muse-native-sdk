@@ -85,6 +85,42 @@ static bool check_foreground_without_background_is_noop() {
   return ok;
 }
 
+// T3 (BUG-RUNTIME-001 hardening): bg -> config-change stays backgrounded
+// with a dead surface and an intact tree; foreground then restores.
+static bool check_config_change_while_backgrounded_stays_dead() {
+  runtime::Host h = runtime::create_host(runtime::Surface{});
+  const std::size_t before = runtime::live_tree_nodes(h);
+  runtime::to_background(h);
+  runtime::simulate_config_change(h);
+  const bool during = h.backgrounded && !runtime::surface_valid(h) &&
+                      runtime::tree_intact(h) &&
+                      runtime::live_tree_nodes(h) == before;
+  runtime::to_foreground(h);
+  const bool ok = during && !h.backgrounded && runtime::surface_valid(h) &&
+                  runtime::tree_intact(h) &&
+                  runtime::live_tree_nodes(h) == before;
+  runtime::destroy_host(h);
+  return ok;
+}
+
+// T3: repeated config-changes while backgrounded stay stable.
+static bool check_repeated_bg_config_changes_stay_stable() {
+  runtime::Host h = runtime::create_host(runtime::Surface{});
+  const std::size_t before = runtime::live_tree_nodes(h);
+  runtime::to_background(h);
+  runtime::simulate_config_change(h);
+  runtime::simulate_config_change(h);
+  const bool during = h.backgrounded && !runtime::surface_valid(h) &&
+                      runtime::tree_intact(h) &&
+                      runtime::live_tree_nodes(h) == before;
+  runtime::to_foreground(h);
+  const bool ok = during && runtime::surface_valid(h) &&
+                  runtime::tree_intact(h) &&
+                  runtime::live_tree_nodes(h) == before;
+  runtime::destroy_host(h);
+  return ok;
+}
+
 #define RUN_CASE(name)                                       \
   do {                                                       \
     if (!(name)()) {                                         \
@@ -105,6 +141,8 @@ int main() {
   RUN_CASE(check_repeated_config_changes_keep_ids_stable);
   RUN_CASE(check_background_twice_does_not_blank);
   RUN_CASE(check_foreground_without_background_is_noop);
+  RUN_CASE(check_config_change_while_backgrounded_stays_dead);
+  RUN_CASE(check_repeated_bg_config_changes_stay_stable);
   if (failures > 0) {
     std::printf("config_change_test: %d failing\n", failures);
     return 1;

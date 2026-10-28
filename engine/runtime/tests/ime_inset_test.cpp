@@ -11,7 +11,9 @@
 // public `int inset_announced_frame` (keyboard-announced frame, default 0).
 // `inset_applied_frame(const LayoutViewport&)` reports the frame id of the
 // last `apply_ime_inset` call.
+#include <cmath>
 #include <cstdio>
+#include <limits>
 
 #include "runtime/ime_inset.h"
 
@@ -69,6 +71,30 @@ bool check_animated_steps_stay_within_one_frame() {
   return true;
 }
 
+// T2 (BUG-RUNTIME-001 hardening): NaN clamps to 0, frame still recorded.
+bool check_nan_inset_clamps_to_zero() {
+  runtime::LayoutViewport v;
+  runtime::apply_ime_inset(v, std::numeric_limits<float>::quiet_NaN(), 11);
+  return v.ime_inset_height == 0.0f &&
+         runtime::inset_applied_frame(v) == 11;
+}
+
+// T2: +Inf clamps to a finite height, frame still recorded.
+bool check_positive_inf_inset_clamps_to_finite() {
+  runtime::LayoutViewport v;
+  runtime::apply_ime_inset(v, std::numeric_limits<float>::infinity(), 12);
+  return std::isfinite(v.ime_inset_height) &&
+         runtime::inset_applied_frame(v) == 12;
+}
+
+// T2: -Inf clamps to 0, frame still recorded.
+bool check_negative_inf_inset_clamps_to_zero() {
+  runtime::LayoutViewport v;
+  runtime::apply_ime_inset(v, -std::numeric_limits<float>::infinity(), 13);
+  return v.ime_inset_height == 0.0f &&
+         runtime::inset_applied_frame(v) == 13;
+}
+
 }  // namespace
 
 #define RUN_CASE(name)                      \
@@ -89,6 +115,9 @@ int main() {
   RUN_CASE(check_negative_inset_clamps_to_zero);
   RUN_CASE(check_zero_inset_hides_keyboard);
   RUN_CASE(check_animated_steps_stay_within_one_frame);
+  RUN_CASE(check_nan_inset_clamps_to_zero);
+  RUN_CASE(check_positive_inf_inset_clamps_to_finite);
+  RUN_CASE(check_negative_inf_inset_clamps_to_zero);
   if (failures > 0) {
     std::printf("ime_inset_test: %d failing\n", failures);
     return 1;
