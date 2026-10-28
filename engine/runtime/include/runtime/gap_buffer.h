@@ -101,6 +101,25 @@ class GapBuffer {
     spans_.push_back(Span{lo, hi, span_kind});
   }
 
+  void clear_spans_of_kind(uint32_t span_kind) {
+    spans_.erase(std::remove_if(spans_.begin(), spans_.end(),
+                                [span_kind](const Span& sp) {
+                                  return sp.kind == span_kind;
+                                }),
+                 spans_.end());
+  }
+
+  std::vector<std::pair<size_t, size_t>> spans_of_kind(
+      uint32_t span_kind) const {
+    std::vector<std::pair<size_t, size_t>> out;
+    for (const auto& sp : spans_) {
+      if (sp.kind == span_kind) {
+        out.emplace_back(sp.lo, sp.hi);
+      }
+    }
+    return out;
+  }
+
  private:
   struct Span {
     size_t lo = 0;

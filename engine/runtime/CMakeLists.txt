@@ -124,3 +124,13 @@ add_executable(alooper_bridge_test tests/alooper_bridge_test.cpp)
 target_link_libraries(alooper_bridge_test PRIVATE runtime)
 target_compile_options(alooper_bridge_test PRIVATE -Wall -Wextra -Wpedantic)
 add_test(NAME alooper_bridge_test COMMAND alooper_bridge_test)
+
+add_executable(composition_roundtrip_test tests/composition_roundtrip_test.cpp)
+target_link_libraries(composition_roundtrip_test PRIVATE runtime)
+target_compile_options(composition_roundtrip_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME composition_roundtrip_test COMMAND composition_roundtrip_test)
+
+add_executable(ime_session_test tests/ime_session_test.cpp)
+target_link_libraries(ime_session_test PRIVATE runtime)
+target_compile_options(ime_session_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME ime_session_test COMMAND ime_session_test)
