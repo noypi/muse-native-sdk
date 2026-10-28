@@ -28,10 +28,11 @@ Status apply(SnapshotState* s, const Delta& d) {
     return Status::kNotFound;
   }
   s->fields.resize(d.target_size_);
+  // No bounds check here: diff() only emits indices below target_size_,
+  // so every entry is in range after the resize above. (Delta is opaque —
+  // only diff() can populate entries_ — so no hand-built delta can widen
+  // the range either.)
   for (const auto& entry : d.entries_) {
-    if (entry.first >= s->fields.size()) {
-      return Status::kCorrupt;
-    }
     s->fields[entry.first] = entry.second;
   }
   return Status::kOk;

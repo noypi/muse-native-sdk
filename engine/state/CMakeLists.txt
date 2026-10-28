@@ -8,7 +8,11 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 add_library(state src/atom.cpp src/store.cpp src/provenance.cpp src/frame.cpp query/src/query_client.cpp query/src/query_core.cpp query/src/cache.cpp persist/src/snapshot.cpp persist/src/corruption.cpp persist/src/rehydrate.cpp persist/src/restore.cpp sync/src/mutation_queue.cpp sync/src/crdt.cpp sync/src/epoch.cpp sync/src/sync_scheduler.cpp sync/src/delta.cpp devtools/src/devtools.cpp serverui/src/serverui.cpp serverui/src/verify.cpp serverui/src/sandbox.cpp serverui/src/fallback.cpp)
 target_include_directories(state PUBLIC include query/include persist/include sync/include devtools/include serverui/include)
 target_compile_options(state PRIVATE -Wall -Wextra -Wpedantic)
-set_source_files_properties(devtools/src/devtools.cpp PROPERTIES COMPILE_DEFINITIONS "MUSE_STATE_DEVTOOLS=1")
+# Devtools compiled in for dev configurations only (AC-STATE-033): Release
+# builds compile devtools.cpp with MUSE_STATE_DEVTOOLS=0 so no
+# DevTimeline/Snapshot/Dag symbols ship in release artifacts. The default
+# (empty CONFIG, dev) build keeps devtools enabled so T6 stays green.
+set_source_files_properties(devtools/src/devtools.cpp PROPERTIES COMPILE_DEFINITIONS "$<$<CONFIG:Release>:MUSE_STATE_DEVTOOLS=0>$<$<NOT:$<CONFIG:Release>>:MUSE_STATE_DEVTOOLS=1>")
 
 add_executable(atom_core_test tests/atom_core_test.cpp)
 target_link_libraries(atom_core_test PRIVATE state)

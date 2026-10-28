@@ -53,6 +53,9 @@ class Dag {
 // record() appends; rewind(n)/forward(n) move a cursor over the delta log;
 // present() replays the in-scope prefix. Out-of-range navigation returns a
 // non-kOk Status and leaves present() bit-identical; nothing here throws.
+// Bounded: at most kMaxEntries_ deltas are retained; when a record lands on
+// a full buffer the oldest entry is evicted (overwrite-oldest), so long dev
+// sessions grow memory O(cap), not O(records).
 class DevTimeline {
  public:
   DevTimeline() = default;
@@ -69,6 +72,9 @@ class DevTimeline {
     TypedValue before;
     TypedValue after;
   };
+  // Fixed capacity: large enough that T6-scale navigation never evicts,
+  // small enough that a runaway dev session cannot grow without bound.
+  static constexpr std::size_t kMaxEntries_ = 4096;
   std::vector<Delta> entries_;
   std::size_t cursor_ = 0;
 };

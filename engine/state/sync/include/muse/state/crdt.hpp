@@ -13,9 +13,11 @@ namespace state {
 // Per-entity conflict-resolution policy (FR-STATE-005, assumption A1).
 // LWW-Register is the default; RGA backs ordered collections (chat);
 // OR-Set backs tag-like sets. On the single-field FieldState projection
-// below all three policies resolve to the same convergent join
-// (higher dot/version wins, higher value breaks ties); the policy tag
-// records which entity family the merge was invoked for.
+// below, higher version always wins and the policy tag selects the
+// equal-version tie-break (LWW/OR-Set: higher value; RGA: lower value,
+// favoring the earlier sequence position). Full RGA interleave and OR-Set
+// remove/tombstone semantics need multi-element state the projection does
+// not carry; the tag is load-bearing through the tie-break.
 enum class CrdtPolicy {
   kLwwRegister,
   kOrSet,
@@ -46,8 +48,9 @@ class FieldState {
 };
 
 // Convergent merge: commutative, associative, and idempotent for every
-// policy. Higher version wins; equal versions resolve to the higher
-// value so the join stays deterministic regardless of argument order.
+// policy. Higher version wins; equal versions resolve per policy
+// (LWW/OR-Set: higher value; RGA: lower value) so the join stays
+// deterministic regardless of argument order.
 StatusOr<FieldState> merge(CrdtPolicy p, const FieldState& a,
                            const FieldState& b);
 

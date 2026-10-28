@@ -11,6 +11,11 @@ namespace state {
 
 void DevTimeline::record(AtomId id, TypedValue before, TypedValue after) {
   if (cursor_ < entries_.size()) entries_.resize(cursor_);
+  // Bounded ring: evict the oldest entry when a full-buffer append lands.
+  if (entries_.size() == kMaxEntries_) {
+    entries_.erase(entries_.begin());
+    if (cursor_ > 0) --cursor_;
+  }
   entries_.push_back(Delta{id, before, after});
   cursor_ = entries_.size();
 }
