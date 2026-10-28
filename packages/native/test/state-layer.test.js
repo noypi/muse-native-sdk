@@ -8,11 +8,11 @@ const assert = require('node:assert/strict');
 
 const { components } = require('../index.js');
 
-// ASSUMPTION: interactive subset wired through withStateLayer by T3.
-// Manifest names (run checkout): View, Text, Image, ScrollView, TextInput,
-// Button, FlatList, TouchableOpacity, Modal. T3 wires these three;
-// the rest keep verbatim passthrough.
-const INTERACTIVE = ['Button', 'TouchableOpacity', 'TextInput'];
+// Interactive subset wired through withStateLayer (index.js):
+// Surface, Ripple, TextFieldEditCore. Real shape is
+// `{ type, props: { ...next, stateLayer } }` — stateLayer lives on
+// `desc.props`, produced by driveState(name, state).
+const INTERACTIVE = ['Surface', 'Ripple', 'TextFieldEditCore'];
 
 for (const name of INTERACTIVE) {
   describe(`${name} state prop`, () => {
@@ -28,20 +28,21 @@ for (const name of INTERACTIVE) {
       const desc = components[name]({});
       assert.ok(desc);
       assert.equal(desc.type, name);
-      assert.ok(!('stateLayer' in desc));
+      assert.ok(desc.props && !('stateLayer' in desc.props));
     });
 
     it('returns descriptor with no stateLayer and no throw for undefined props', () => {
       const desc = components[name]();
       assert.ok(desc);
       assert.equal(desc.type, name);
-      assert.ok(!('stateLayer' in desc));
+      assert.ok(desc.props && !('stateLayer' in desc.props));
     });
 
     it('yields a stateLayer for valid state "hover"', () => {
       const desc = components[name]({ state: 'hover' });
       assert.ok(desc);
-      assert.ok('stateLayer' in desc, 'expected stateLayer on descriptor');
+      assert.ok(desc.props && 'stateLayer' in desc.props, 'expected stateLayer on descriptor props');
+      assert.equal(desc.props.stateLayer.state, 'hover');
     });
   });
 }
