@@ -2,8 +2,9 @@
 # scan-keys.sh — CI gate proving no embedded secret keys in client-packaged sources.
 #
 # Usage: scan-keys.sh [--strict] [dir]
-#   --strict   fail (exit 1) on any forbidden key pattern (default behavior also
-#              fails; the flag exists for the CI gate invocation).
+#   --strict   CI gate invocation marker. Both modes fail (exit 1) on any
+#              forbidden key pattern; --strict only changes the summary log
+#              line so CI output shows the gate ran in strict mode.
 #   dir        target tree to scan; defaults to the repo root (script dir/..).
 #              The test harness passes a hermetic fixture dir here.
 #
@@ -60,7 +61,10 @@ PAT_XAI='xai-[A-Za-z0-9][A-Za-z0-9_.-]{7,}'
 PAT_PK='BEGIN PRIVATE KEY'
 PATTERN="${PAT_SK}|${PAT_MUSE}|${PAT_XAI}|${PAT_PK}"
 
-# Allow-listed Muse model IDs — matched lines carrying only these are not keys.
+# Allow-listed Muse model IDs (never keys, never flagged). Informational:
+# model IDs never match the key EREs above, so no content is filtered on
+# these — they are listed here so the gate stays auditable. (Former ALLOW
+# grep -v filter removed as dead code; every key-pattern hit fails.)
 ALLOW='sam-3\.1|muse-spark-1\.3|muse-voice-transcribe-1\.0|muse-image'
 
 failures=0
@@ -89,16 +93,9 @@ while IFS= read -r file; do
   [ -f "$file" ] || continue
   hits="$(grep -I -E -n -e "$PATTERN" "$file" 2>/dev/null || true)"
   [ -n "$hits" ] || continue
-  # Drop lines that only carry allow-listed Muse model IDs without key material.
-  # (Model IDs never match the key EREs above; this is defense in depth.)
-  filtered="$(printf '%s\n' "$hits" | grep -E -v -e "$ALLOW" || true)"
-  if [ -z "$filtered" ]; then
-    # Every hit was an allow-listed model ID line — but only report clean if no
-    # hit carries key material beyond the ID. Re-check: a line with both an ID
-    # and a key pattern still fails (it survived only if ALL hits filtered).
-    # Since all hits filtered, this file is clean.
-    continue
-  fi
+  # Every key-pattern hit fails; model IDs alone never match the key EREs,
+  # so there is nothing to filter (see ALLOW note above).
+  filtered="$hits"
   # Name the offending file+pattern for an actionable gate message.
   printf '%s\n' "$filtered" | while IFS= read -r line; do
     pat_label="sk-"

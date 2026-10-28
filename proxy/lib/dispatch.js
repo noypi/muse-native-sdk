@@ -19,8 +19,10 @@ const ALLOW_PARAMS = {
 
 // Presets shaped as raw non-Muse model ids map to non-muse-model;
 // any other unknown key maps to unknown-preset.
-const NON_MUSE_PRESET_RE = /^(gpt[-\d]|o1[-\.]|openai|meta-(seamless|tts))/i;
-const KNOWN_PRESETS = new Set([]);
+// Family list mirrors the T6 forbidden-marker list.
+const NON_MUSE_PRESET_RE = /^(gpt[-\d]|o1[-\.]|openai|meta-(seamless|tts)|claude|gemini|llama|mistral|grok|whisper|dall-e)/i;
+// Valid Muse presets (muse-native.yaml:muse.presets). Forward upstream.
+const KNOWN_PRESETS = new Set(['reason-default', 'lens-fast']);
 
 let cachedConfig;
 function getConfig() {

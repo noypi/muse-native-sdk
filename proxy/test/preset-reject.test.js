@@ -161,3 +161,71 @@ describe('T4 behavioral — dispatch preset rejection pre-upstream (AC-MUSE-036)
     assert.equal(err.retryable, false, 'validation failures are not retryable');
   });
 });
+
+// ---------------------------------------------------------------------------
+// Review fix (code-reviewer pass 1, MAJOR "No valid-preset-forward test"):
+// valid presets MUST forward upstream instead of rejecting unknown-preset.
+// RED-for-coder while KNOWN_PRESETS is empty (dispatch.js) — expected.
+// ---------------------------------------------------------------------------
+describe('T4 valid presets forward upstream (AC-MUSE-036; review BLOCKER fix)', () => {
+  it('forwards reason-default on reason upstream (not unknown-preset)', async () => {
+    const { dispatch } = require('../lib/dispatch.js');
+    const upstream = recordingUpstream([{ status: 200, body: { ok: true } }]);
+    const res = await dispatch(
+      { route: 'reason', params: {}, preset: 'reason-default' },
+      { injectKey: () => 'test-key-not-real', upstream },
+    );
+    assert.equal(res.status, 200);
+    assert.equal(upstream.calls.length, 1, 'valid preset must forward to upstream');
+    assert.equal(upstream.calls[0].body.preset, 'reason-default');
+  });
+
+  it('forwards lens-fast on segment upstream (not unknown-preset)', async () => {
+    const { dispatch } = require('../lib/dispatch.js');
+    const upstream = recordingUpstream([{ status: 200, body: { ok: true } }]);
+    const res = await dispatch(
+      { route: 'segment', params: {}, preset: 'lens-fast' },
+      { injectKey: () => 'test-key-not-real', upstream },
+    );
+    assert.equal(res.status, 200);
+    assert.equal(upstream.calls.length, 1, 'valid preset must forward to upstream');
+    assert.equal(upstream.calls[0].body.preset, 'lens-fast');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Review fix (code-reviewer pass 1, MAJOR "Non-Muse preset regex too narrow"):
+// every non-Muse family must map to non-muse-model (not unknown-preset),
+// each with zero upstream calls. gpt/openai already held (green pin); the
+// claude/gemini/llama/mistral/grok/whisper/dall-e families are RED-for-coder
+// until NON_MUSE_PRESET_RE is broadened.
+// ---------------------------------------------------------------------------
+describe('T4 non-Muse model families map to non-muse-model (AC-MUSE-036/RULE-MUSE-006)', () => {
+  const NON_MUSE_PRESETS = [
+    'claude-3-opus',
+    'gemini-1.5-pro',
+    'llama-3-70b',
+    'mistral-large',
+    'grok-1',
+    'whisper-1',
+    'dall-e-3',
+    'gpt-4o',
+    'openai-o1-preview',
+  ];
+  for (const preset of NON_MUSE_PRESETS) {
+    it(`rejects preset '${preset}' with non-muse-model and zero upstream calls`, async () => {
+      const { dispatch } = require('../lib/dispatch.js');
+      const upstream = recordingUpstream([{ status: 200, body: { ok: true } }]);
+      const err = await assertProxyError(
+        dispatch(
+          { route: 'reason', params: {}, preset },
+          { injectKey: () => 'test-key-not-real', upstream },
+        ),
+        'non-muse-model',
+        'reason',
+      );
+      assert.equal(err.retryable, false, 'validation failures are not retryable');
+      assert.equal(upstream.calls.length, 0, `preset '${preset}' must not reach upstream`);
+    });
+  }
+});
