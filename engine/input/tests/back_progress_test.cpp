@@ -179,6 +179,103 @@ void case_null_sink_is_noop() {
   check(true, "null_sink_is_noop");
 }
 
+// T5 contract tests — FR-INPUT-006 / AC-INPUT-011 (unit proxy for
+// TC-INPUT-011 device-lab/predictive-back, external reference only).
+// Binds to the T5 `Interface:` line (plan.md verbatim):
+//   `bool BackGestureStream::PollSettled(int32_t frameId, float* outResidual);`
+// Frame-stamp plumbing inside `engine/input/src/back_gesture.cpp` is
+// CODER-OWNED — this file only extends cases against the published
+// interface; if the plumbing is missing the cases below fail to compile
+// (expected RED, not a malformed test).
+//
+// ASSUMPTION (PollSettled semantics): the plan settles only the signature,
+// not the return/residual contract. This test defines:
+//   - returns false while no terminal (Cancel/Commit) has been delivered;
+//   - returns true once a terminal has been delivered and the settled state
+//     is visible at `frameId`;
+//   - on true, writes `*outResidual` with the residual transform, which must
+//     be `0.0f` exactly after cancel AND after commit;
+//   - a null `outResidual` is tolerated (returns the bool, writes nothing).
+// ASSUMPTION (frame model): the stream stamps emission against a stubbed
+// VSYNC frame id starting at 0; the settled state is visible at the emission
+// frame itself and at emission+1 (i.e. within one frame id of emission).
+// These tests therefore poll frame 0 (emission frame) and frame 1 and require
+// both to report settled. If the coder wires an explicit frame feed (e.g. an
+// OnEvent overload or SetFrame), update these call sites — not the expected
+// behavior (visible within one frame; exact-zero residual).
+// ASSUMPTION (no-events poll): with no terminal delivered, PollSettled
+// returns false (residual untouched when outResidual is null; when non-null
+// the value is not asserted — only the false return is).
+void case_poll_false_before_terminal() {
+  StubNavSink sink;
+  input::BackGestureStream stream(&sink);
+  stream.OnEvent(input::BackPhase::Start, 0.0f);
+  stream.OnEvent(input::BackPhase::Progress, 0.5f);
+  float residual = -1.0f;
+  check(stream.PollSettled(0, &residual) == false,
+        "poll_false_before_terminal");
+}
+
+// Cancel leaves exactly zero residual, already visible at the emission
+// frame (frame 0) — the one-frame unit proxy for TC-INPUT-011.
+void case_cancel_zero_residual_same_frame() {
+  StubNavSink sink;
+  input::BackGestureStream stream(&sink);
+  stream.OnEvent(input::BackPhase::Start, 0.0f);
+  stream.OnEvent(input::BackPhase::Progress, 0.5f);
+  stream.OnEvent(input::BackPhase::Cancel, 0.5f);
+  float residual = -1.0f;
+  check(stream.PollSettled(0, &residual) == true && residual == 0.0f,
+        "cancel_zero_residual_same_frame");
+}
+
+// Commit leaves exactly zero residual, already visible at the emission
+// frame (frame 0).
+void case_commit_zero_residual_same_frame() {
+  StubNavSink sink;
+  input::BackGestureStream stream(&sink);
+  stream.OnEvent(input::BackPhase::Start, 0.0f);
+  stream.OnEvent(input::BackPhase::Progress, 0.75f);
+  stream.OnEvent(input::BackPhase::Commit, 1.0f);
+  float residual = -1.0f;
+  check(stream.PollSettled(0, &residual) == true && residual == 0.0f,
+        "commit_zero_residual_same_frame");
+}
+
+// Settled state stays visible within one frame id of emission: polling at
+// emission frame (0) and at frame 1 both report settled with exact-zero
+// residual after cancel.
+void case_settled_visible_within_one_frame() {
+  StubNavSink sink;
+  input::BackGestureStream stream(&sink);
+  stream.OnEvent(input::BackPhase::Start, 0.0f);
+  stream.OnEvent(input::BackPhase::Progress, 0.4f);
+  stream.OnEvent(input::BackPhase::Cancel, 0.4f);
+  float r0 = -1.0f, r1 = -1.0f;
+  const bool s0 = stream.PollSettled(0, &r0);
+  const bool s1 = stream.PollSettled(1, &r1);
+  check(s0 && s1 && r0 == 0.0f && r1 == 0.0f,
+        "settled_visible_within_one_frame");
+}
+
+// Boundary: no events at all — poll reports not-settled.
+void case_poll_no_events_false() {
+  StubNavSink sink;
+  input::BackGestureStream stream(&sink);
+  (void)stream;
+  check(stream.PollSettled(0, nullptr) == false, "poll_no_events_false");
+}
+
+// Boundary/error: null outResidual never crashes; the settled bool is
+// still reported after a terminal.
+void case_poll_null_residual_safe() {
+  StubNavSink sink;
+  input::BackGestureStream stream(&sink);
+  stream.OnEvent(input::BackPhase::Start, 0.0f);
+  stream.OnEvent(input::BackPhase::Commit, 1.0f);
+  check(stream.PollSettled(0, nullptr) == true, "poll_null_residual_safe");
+}
+
 }  // namespace
 
 int main() {
@@ -190,6 +287,12 @@ int main() {
   case_progress_without_start_still_forwarded();
   case_no_events_no_sink_calls();
   case_null_sink_is_noop();
+  case_poll_false_before_terminal();
+  case_cancel_zero_residual_same_frame();
+  case_commit_zero_residual_same_frame();
+  case_settled_visible_within_one_frame();
+  case_poll_no_events_false();
+  case_poll_null_residual_safe();
   if (g_failures == 0) {
     std::printf("ALL PASS\n");
     return 0;

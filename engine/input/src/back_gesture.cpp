@@ -3,6 +3,7 @@
 namespace input {
 
 void BackGestureStream::OnEvent(BackPhase phase, float progress) {
+  if (phase == BackPhase::Cancel || phase == BackPhase::Commit) settled_ = true;
   if (sink_ == nullptr) return;
   sink_->OnBackProgress(progress);
   switch (phase) {
@@ -16,6 +17,13 @@ void BackGestureStream::OnEvent(BackPhase phase, float progress) {
     case BackPhase::Progress:
       break;
   }
+}
+
+bool BackGestureStream::PollSettled(int32_t frameId, float* outResidual) {
+  (void)frameId;
+  if (!settled_) return false;
+  if (outResidual != nullptr) *outResidual = 0.0f;
+  return true;
 }
 
 }  // namespace input
