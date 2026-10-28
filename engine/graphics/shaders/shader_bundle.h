@@ -15,7 +15,7 @@ struct SpirvBlob {
   std::vector<uint32_t> words;
 };
 
-// Build flavour. Default is DEV; tests override via set_build_type_for_test.
+// Build flavour. Default is RELEASE (fail-closed); tests override via set_build_type_for_test.
 enum class BuildType { DEV, PROFILE, RELEASE };
 
 // Thrown when a GLSL source compile is attempted in a release build.

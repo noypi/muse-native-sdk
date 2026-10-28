@@ -24,7 +24,7 @@ const std::map<std::string, SpirvBlob>& bundled_shaders() {
 }
 
 BuildType& mutable_build_type() {
-  static BuildType type = BuildType::DEV;
+  static BuildType type = BuildType::RELEASE;
   return type;
 }
 
