@@ -19,6 +19,8 @@ enum class HeightClass {
 enum class Status {
   kOk,
   kInvalidMetrics,
+  kUnsupportedProperty,
+  kUnknownLayout,
 };
 
 struct WindowMetrics {
