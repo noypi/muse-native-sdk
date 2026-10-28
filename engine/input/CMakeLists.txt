@@ -5,7 +5,7 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-add_library(input STATIC src/event_model.cpp src/hit_test.cpp src/gesture_arena.cpp src/back_gesture.cpp)
+add_library(input STATIC src/event_model.cpp src/hit_test.cpp src/gesture_arena.cpp src/back_gesture.cpp src/focus_tree.cpp src/focus_restore.cpp src/device_harness.cpp)
 target_include_directories(input PUBLIC include)
 target_compile_options(input PRIVATE -Wall -Wextra -Wpedantic)
 
@@ -38,3 +38,38 @@ target_link_libraries(inset_ownership_test PRIVATE input)
 target_compile_options(inset_ownership_test PRIVATE -Wall -Wextra -Wpedantic)
 
 add_test(NAME inset_ownership_test COMMAND inset_ownership_test)
+
+add_executable(focus_traversal_test tests/focus_traversal_test.cpp)
+target_include_directories(focus_traversal_test PRIVATE include)
+target_link_libraries(focus_traversal_test PRIVATE input)
+target_compile_options(focus_traversal_test PRIVATE -Wall -Wextra -Wpedantic)
+
+add_test(NAME focus_traversal_test COMMAND focus_traversal_test)
+
+add_executable(focus_group_test tests/focus_group_test.cpp)
+target_include_directories(focus_group_test PRIVATE include)
+target_link_libraries(focus_group_test PRIVATE input)
+target_compile_options(focus_group_test PRIVATE -Wall -Wextra -Wpedantic)
+
+add_test(NAME focus_group_test COMMAND focus_group_test)
+
+add_executable(device_coverage_test tests/device_coverage_test.cpp)
+target_include_directories(device_coverage_test PRIVATE include)
+target_link_libraries(device_coverage_test PRIVATE input)
+target_compile_options(device_coverage_test PRIVATE -Wall -Wextra -Wpedantic)
+
+add_test(NAME device_coverage_test COMMAND device_coverage_test)
+
+add_executable(focus_restore_test tests/focus_restore_test.cpp)
+target_include_directories(focus_restore_test PRIVATE include)
+target_link_libraries(focus_restore_test PRIVATE input)
+target_compile_options(focus_restore_test PRIVATE -Wall -Wextra -Wpedantic)
+
+add_test(NAME focus_restore_test COMMAND focus_restore_test)
+
+add_executable(focus_rebuild_test tests/focus_rebuild_test.cpp)
+target_include_directories(focus_rebuild_test PRIVATE include)
+target_link_libraries(focus_rebuild_test PRIVATE input)
+target_compile_options(focus_rebuild_test PRIVATE -Wall -Wextra -Wpedantic)
+
+add_test(NAME focus_rebuild_test COMMAND focus_rebuild_test)
