@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "scripts": {
     "check": "node scripts/check-manifest.js && node scripts/check-composites.js && node scripts/check-props.js && node scripts/check-tokens.js --scope lib",
-    "check:types": "tsc --noEmit",
+    "check:types": "node scripts/check-types.js",
     "prebuild": "node scripts/check-manifest.js && node scripts/check-composites.js && node scripts/check-props.js && node scripts/check-tokens.js --scope lib",
     "test": "node --test test/*.test.js 2>/dev/null || test ! -d test",
     "test:manifest": "node --test test/manifest.test.ts test/manifest-schema.test.ts",
