@@ -7,15 +7,26 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 add_library(motion
   src/solver.cpp
+  src/spring.cpp
   src/graph.cpp
   src/gesture_binding.cpp
   src/arbitration.cpp
   src/layout_adapter.cpp
   src/implicit.cpp
   src/route_transition.cpp
+  src/clock.cpp
+  src/recorder.cpp
+  src/trace.cpp
+  src/determinism.cpp
+  src/asset.cpp
+  src/asset_prepare.cpp
+  src/asset_scale.cpp
+  src/svg_import.cpp
 )
 target_include_directories(motion PUBLIC include)
 target_compile_options(motion PRIVATE -Wall -Wextra -Wpedantic)
+find_package(Threads REQUIRED)
+target_link_libraries(motion PUBLIC Threads::Threads)
 
 add_executable(spring_solver_test tests/spring_solver_test.cpp)
 target_link_libraries(spring_solver_test PRIVATE motion)
@@ -79,3 +90,48 @@ add_executable(security_hardening_test tests/security_hardening_test.cpp)
 target_link_libraries(security_hardening_test PRIVATE motion)
 target_compile_options(security_hardening_test PRIVATE -Wall -Wextra -Wpedantic)
 add_test(NAME security_hardening_test COMMAND security_hardening_test)
+
+add_executable(retarget_test tests/retarget_test.cpp)
+target_link_libraries(retarget_test PRIVATE motion)
+target_compile_options(retarget_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME retarget_test COMMAND retarget_test)
+
+add_executable(virtual_clock_test tests/virtual_clock_test.cpp)
+target_link_libraries(virtual_clock_test PRIVATE motion)
+target_compile_options(virtual_clock_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME virtual_clock_test COMMAND virtual_clock_test)
+
+add_executable(replay_determinism_test tests/replay_determinism_test.cpp)
+target_link_libraries(replay_determinism_test PRIVATE motion)
+target_compile_options(replay_determinism_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME replay_determinism_test COMMAND replay_determinism_test)
+
+add_executable(trace_correlation_test tests/trace_correlation_test.cpp)
+target_link_libraries(trace_correlation_test PRIVATE motion)
+target_compile_options(trace_correlation_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME trace_correlation_test COMMAND trace_correlation_test)
+
+add_executable(cross_machine_replay_test tests/cross_machine_replay_test.cpp)
+target_link_libraries(cross_machine_replay_test PRIVATE motion)
+target_compile_options(cross_machine_replay_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME cross_machine_replay_test COMMAND cross_machine_replay_test)
+
+add_executable(asset_control_test tests/asset_control_test.cpp)
+target_link_libraries(asset_control_test PRIVATE motion)
+target_compile_options(asset_control_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME asset_control_test COMMAND asset_control_test)
+
+add_executable(asset_seek_test tests/asset_seek_test.cpp)
+target_link_libraries(asset_seek_test PRIVATE motion)
+target_compile_options(asset_seek_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME asset_seek_test COMMAND asset_seek_test)
+
+add_executable(asset_scale_test tests/asset_scale_test.cpp)
+target_link_libraries(asset_scale_test PRIVATE motion)
+target_compile_options(asset_scale_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME asset_scale_test COMMAND asset_scale_test)
+
+add_executable(asset_prepare_thread_test tests/asset_prepare_thread_test.cpp)
+target_link_libraries(asset_prepare_thread_test PRIVATE motion)
+target_compile_options(asset_prepare_thread_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME asset_prepare_thread_test COMMAND asset_prepare_thread_test)
