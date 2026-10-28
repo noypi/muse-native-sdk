@@ -8,6 +8,8 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 add_library(net
   src/transport.cc
   src/http_cache.cc
+  src/retry.cc
+  src/resilience.cc
 )
 target_include_directories(net PUBLIC include)
 target_compile_options(net PRIVATE -Wall -Wextra -Wpedantic)
