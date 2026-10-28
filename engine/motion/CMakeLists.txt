@@ -10,6 +10,8 @@ add_library(motion
   src/graph.cpp
   src/gesture_binding.cpp
   src/arbitration.cpp
+  src/layout_adapter.cpp
+  src/implicit.cpp
 )
 target_include_directories(motion PUBLIC include)
 target_compile_options(motion PRIVATE -Wall -Wextra -Wpedantic)
@@ -36,3 +38,18 @@ add_executable(arbitration_test tests/arbitration_test.cpp)
 target_link_libraries(arbitration_test PRIVATE motion)
 target_compile_options(arbitration_test PRIVATE -Wall -Wextra -Wpedantic)
 add_test(NAME arbitration_test COMMAND arbitration_test)
+
+add_executable(layout_interpolation_test tests/layout_interpolation_test.cpp)
+target_link_libraries(layout_interpolation_test PRIVATE motion)
+target_compile_options(layout_interpolation_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME layout_interpolation_test COMMAND layout_interpolation_test)
+
+add_executable(implicit_property_test tests/implicit_property_test.cpp)
+target_link_libraries(implicit_property_test PRIVATE motion)
+target_compile_options(implicit_property_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME implicit_property_test COMMAND implicit_property_test)
+
+add_executable(implicit_retarget_test tests/implicit_retarget_test.cpp)
+target_link_libraries(implicit_retarget_test PRIVATE motion)
+target_compile_options(implicit_retarget_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME implicit_retarget_test COMMAND implicit_retarget_test)
