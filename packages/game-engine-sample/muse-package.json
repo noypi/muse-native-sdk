@@ -1,0 +1,19 @@
+{
+  "name": "@muse/game-engine-sample",
+  "version": "1.0.0",
+  "museApi": "1",
+  "entry": {
+    "form": "prebuilt",
+    "main": "src/index.js",
+    "types": "src/index.d.ts"
+  },
+  "abis": ["arm64-v8a", "x86_64"],
+  "engineAbi": "b2physics001",
+  "exports": [
+    { "name": "createWorld", "arity": 0, "argKinds": [], "returnKind": "handle" },
+    { "name": "step", "arity": 2, "argKinds": ["handle", "number"], "returnKind": "void" },
+    { "name": "readBodies", "arity": 1, "argKinds": ["handle"], "returnKind": "array" },
+    { "name": "destroy", "arity": 1, "argKinds": ["handle"], "returnKind": "void" }
+  ],
+  "capabilities": []
+}

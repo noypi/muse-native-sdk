@@ -1,0 +1,22 @@
+{
+  "name": "@muse/pkg",
+  "version": "0.0.0",
+  "main": "index.js",
+  "scripts": {
+    "test": "node --test test/*.test.ts",
+    "test:layout": "node --test test/layout.test.ts",
+    "test:entry-form": "node --test test/entry-form.test.ts",
+    "test:integrity": "node --test test/integrity.test.ts",
+    "test:abi": "node --test test/abi-coverage.test.ts",
+    "test:engineabi": "node --test test/engine-abi.test.ts",
+    "test:exports": "node --test test/exports.test.ts",
+    "test:types": "node --test test/types.test.ts",
+    "test:unlisted": "node --test test/unlisted-symbol.test.ts",
+    "test:jsonly": "node --test test/js-only.test.ts",
+    "test:jsonlyexports": "node --test test/js-only-exports.test.ts",
+    "test:failclosed": "node --test test/fail-closed.test.ts",
+    "test:capabilities": "node --test test/capabilities.test.ts",
+    "test:entryform": "node --test test/entry-form.test.ts",
+    "test:norender": "node --test test/no-render.test.ts"
+  }
+}
