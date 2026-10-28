@@ -103,11 +103,31 @@ target_link_libraries(convergence_test PRIVATE state)
 target_compile_options(convergence_test PRIVATE -Wall -Wextra -Wpedantic)
 add_test(NAME convergence_test COMMAND convergence_test)
 
-add_executable(time_travel_test devtools/tests/time_travel_test.cpp)
-target_link_libraries(time_travel_test PRIVATE state)
-target_compile_options(time_travel_test PRIVATE -Wall -Wextra -Wpedantic)
-target_compile_definitions(time_travel_test PRIVATE MUSE_STATE_DEVTOOLS=1)
-add_test(NAME time_travel_test COMMAND time_travel_test)
+# Dev-only test (T6): time_travel_test needs DevTimeline, which only exists
+# when the lib compiles devtools.cpp with MUSE_STATE_DEVTOOLS=1 (Debug /
+# empty-config dev builds, see gate above). Release-like builds strip those
+# symbols, so linking this binary would fail (undefined
+# DevTimeline::present); skip it there by design. Multi-config generators
+# still define it but exclude it from default Release-like builds and
+# register the test for the Debug configuration only.
+if(CMAKE_CONFIGURATION_TYPES)
+  add_executable(time_travel_test devtools/tests/time_travel_test.cpp)
+  target_link_libraries(time_travel_test PRIVATE state)
+  target_compile_options(time_travel_test PRIVATE -Wall -Wextra -Wpedantic)
+  target_compile_definitions(time_travel_test PRIVATE MUSE_STATE_DEVTOOLS=1)
+  set_target_properties(time_travel_test PROPERTIES
+    EXCLUDE_FROM_DEFAULT_BUILD_RELEASE TRUE
+    EXCLUDE_FROM_DEFAULT_BUILD_RELWITHDEBINFO TRUE
+    EXCLUDE_FROM_DEFAULT_BUILD_MINSIZEREL TRUE)
+  add_test(NAME time_travel_test COMMAND time_travel_test)
+  set_tests_properties(time_travel_test PROPERTIES CONFIGURATIONS Debug)
+elseif(CMAKE_BUILD_TYPE STREQUAL "" OR CMAKE_BUILD_TYPE STREQUAL "Debug")
+  add_executable(time_travel_test devtools/tests/time_travel_test.cpp)
+  target_link_libraries(time_travel_test PRIVATE state)
+  target_compile_options(time_travel_test PRIVATE -Wall -Wextra -Wpedantic)
+  target_compile_definitions(time_travel_test PRIVATE MUSE_STATE_DEVTOOLS=1)
+  add_test(NAME time_travel_test COMMAND time_travel_test)
+endif()
 
 add_executable(disabled_overhead_test devtools/tests/disabled_overhead_test.cpp)
 target_link_libraries(disabled_overhead_test PRIVATE state)
