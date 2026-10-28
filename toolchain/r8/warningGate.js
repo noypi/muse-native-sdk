@@ -17,14 +17,19 @@ function releaseAccept(warnings, matrix, mapping) {
   if (!Array.isArray(warnings)) {
     reasons.push(`warnings: expected array of {kind, count} rows (got ${typeof warnings})`);
   } else {
-    warnings.forEach((entry) => {
+    warnings.forEach((entry, index) => {
       if (entry === null || typeof entry !== 'object' || Array.isArray(entry)) {
+        reasons.push(`warnings: malformed entry at index ${index}, expected {kind, count}`);
         return;
       }
       if (!BLOCKER_KINDS.has(entry.kind)) {
         return;
       }
-      if (typeof entry.count === 'number' && entry.count > 0) {
+      if (typeof entry.count !== 'number' || !Number.isFinite(entry.count)) {
+        reasons.push(`warnings: malformed entry for '${entry.kind}', expected finite count (got ${JSON.stringify(entry.count)})`);
+        return;
+      }
+      if (entry.count > 0) {
         reasons.push(`${entry.kind}: R8 warning blocks minified release (count ${entry.count})`);
       }
     });
@@ -49,6 +54,10 @@ function releaseAccept(warnings, matrix, mapping) {
       }
       if (typeof row.passed !== 'boolean') {
         reasons.push(`${row.suite}: matrix row malformed passed flag, expected boolean`);
+        return;
+      }
+      if (row.signal !== undefined && row.signal !== null && typeof row.signal !== 'string') {
+        reasons.push(`${row.suite}: malformed shrink signal, expected string`);
         return;
       }
       const signal = typeof row.signal === 'string' ? row.signal : '';

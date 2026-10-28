@@ -196,3 +196,50 @@ describe('T11 — each failing leg fails naming that leg', () => {
     assert.equal(releaseAccept(warnings, matrix, null).ok, false);
   });
 });
+
+describe('T11 — fail-closed hardening (Stage 3 review MAJOR fix)', () => {
+  it('blocker-kind with string count fails closed', () => {
+    const { releaseAccept } = loadImpl();
+    const { matrix, mapping } = greenArgs();
+    const result = releaseAccept(
+      [{ kind: 'missing-class', count: '2' }],
+      matrix,
+      mapping
+    );
+    assert.equal(result.ok, false);
+    assert.ok(result.reasons.length > 0);
+  });
+
+  it('blocker-kind with missing/NaN count fails closed', () => {
+    const { releaseAccept } = loadImpl();
+    const { matrix, mapping } = greenArgs();
+    assert.equal(
+      releaseAccept([{ kind: 'missing-class' },], matrix, mapping).ok,
+      false
+    );
+    assert.equal(
+      releaseAccept([{ kind: 'invalid-keep', count: NaN }], matrix, mapping).ok,
+      false
+    );
+  });
+
+  it('null warning entry fails closed', () => {
+    const { releaseAccept } = loadImpl();
+    const { matrix, mapping } = greenArgs();
+    const result = releaseAccept([null], matrix, mapping);
+    assert.equal(result.ok, false);
+    assert.ok(result.reasons.length > 0);
+  });
+
+  it('non-string signal fails closed', () => {
+    const { releaseAccept } = loadImpl();
+    const { warnings, mapping } = greenArgs();
+    const result = releaseAccept(
+      warnings,
+      [{ suite: 'minified-smoke', passed: true, signal: 42 }],
+      mapping
+    );
+    assert.equal(result.ok, false);
+    assert.ok(result.reasons.length > 0);
+  });
+});
