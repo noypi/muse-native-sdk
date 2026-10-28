@@ -71,6 +71,19 @@ function validateConfig(raw, file) {
       throw new ConfigError(key, where, expected);
     }
   }
+  // T4 (AC-WORKFLOW-013): every `diagnostics` map entry must name an
+  // accepted severity. A bad value throws ConfigError naming the code and
+  // `error|warn|off`, at configure time before anything merges. Plain
+  // objects only — other shapes are already rejected by the typeof check
+  // above (or never arise from the scalar file parse).
+  const diag = raw.diagnostics;
+  if (diag !== undefined && diag !== null && typeof diag === 'object' && !Array.isArray(diag)) {
+    for (const code of Object.keys(diag)) {
+      if (diag[code] !== 'error' && diag[code] !== 'warn' && diag[code] !== 'off') {
+        throw new ConfigError(code, where, 'error|warn|off');
+      }
+    }
+  }
 }
 
 function envNameFor(key) {
