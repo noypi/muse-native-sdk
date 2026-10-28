@@ -86,7 +86,8 @@ function createScope(parent) {
       // order, so a disposable double is disposed and never leaks — even
       // when the override is installed before any `get`.
       trackKey(key);
-      return overrides.get(key);
+      var stack = overrides.get(key);
+      return stack[stack.length - 1];
     }
     if (instances.has(key)) {
       return instances.get(key);
@@ -128,7 +129,13 @@ function createScope(parent) {
       var seen = [];
       var candidates = [];
       if (overrides.has(key)) {
-        candidates.push(overrides.get(key));
+        // Drain the shadowing stack top-first so every stacked double is
+        // disposed (stacked `overrideForTest` on one key must not leak the
+        // intermediate double), then the originally constructed value.
+        var stack = overrides.get(key);
+        for (var s = stack.length - 1; s >= 0; s -= 1) {
+          candidates.push(stack[s]);
+        }
       }
       if (instances.has(key)) {
         candidates.push(instances.get(key));
@@ -167,7 +174,11 @@ function overrideForTest(scope, key, double) {
   if (state === undefined) {
     throw new TypeError("overrideForTest(scope, key, double): scope must be created by createScope");
   }
-  state.overrides.set(key, double);
+  if (state.overrides.has(key)) {
+    state.overrides.get(key).push(double);
+  } else {
+    state.overrides.set(key, [double]);
+  }
   // The override enters teardown order immediately, so `dispose` drains it
   // even when no `get` ever ran for the key (override-before-get).
   if (state.order.indexOf(key) === -1) {

@@ -315,3 +315,52 @@ describe('T6 — kill/restart via save→fresh-store→load→fail still rolls b
     assert.ok(reparsed.idempotencyKey.length > 0);
   });
 });
+
+describe('T6 — restorePending rejects foreign/malformed payloads with MUSE_STATE_NO_PENDING (security hardening, AC-STATE-012)', () => {
+  it('foreign payload {"action":123} throws MUSE_STATE_NO_PENDING with state untouched', () => {
+    const s = createStore(
+      () => ({ n: state(1) }),
+      {},
+      syncSeam,
+    );
+    const before = snapshot(s.state);
+    assert.throws(() => s.restorePending('{"action":123}'), (err) => (
+      err instanceof Error && /MUSE_STATE_NO_PENDING/.test(err.message)
+    ));
+    assert.deepEqual(snapshot(s.state), before);
+  });
+
+  it('__proto__-pollution-shaped payload throws MUSE_STATE_NO_PENDING with state untouched', () => {
+    const s = createStore(
+      () => ({ n: state(1) }),
+      {},
+      syncSeam,
+    );
+    const before = snapshot(s.state);
+    // Pollution-shaped AND foreign: `action` is a non-string object hiding
+    // behind a `__proto__` key, so the fail-fast (`typeof action !== 'string'`)
+    // rejects it before any snapshot is applied.
+    assert.throws(
+      () => s.restorePending('{"action":{"__proto__":{"polluted":true}},"prev":{"n":999}}'),
+      (err) => err instanceof Error && /MUSE_STATE_NO_PENDING/.test(err.message),
+    );
+    assert.deepEqual(snapshot(s.state), before);
+    assert.equal({}.polluted, undefined);
+  });
+
+  it('malformed JSON throws MUSE_STATE_NO_PENDING (not raw SyntaxError)', () => {
+    const s = createStore(
+      () => ({ n: state(1) }),
+      {},
+      syncSeam,
+    );
+    const before = snapshot(s.state);
+    assert.throws(() => s.restorePending('{not json'), (err) => {
+      assert.ok(err instanceof Error);
+      assert.ok(/MUSE_STATE_NO_PENDING/.test(err.message));
+      assert.ok(!(err instanceof SyntaxError), 'must not leak raw SyntaxError, got: ' + err);
+      return true;
+    });
+    assert.deepEqual(snapshot(s.state), before);
+  });
+});

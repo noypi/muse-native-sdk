@@ -122,7 +122,12 @@ function createStore(init, actions, opts) {
   }
 
   function restorePending(serialized) {
-    var parsed = JSON.parse(serialized);
+    var parsed;
+    try {
+      parsed = JSON.parse(serialized);
+    } catch (err) {
+      throw new Error("MUSE_STATE_NO_PENDING");
+    }
     if (!parsed || typeof parsed !== "object" || typeof parsed.action !== "string") {
       // A cleared slot (`"null"` tombstone) or anything the store itself did
       // not produce carries no re-registerable intent: fail fast instead of

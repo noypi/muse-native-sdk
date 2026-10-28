@@ -164,6 +164,22 @@ describe('T9 — override×dispose: overridden bindings do not leak after dispos
   });
 });
 
+describe('T9 — stacked overrides dispose top-first with no leak (security hardening, AC-STATE-027)', () => {
+  it('overrideForTest(k,d1); overrideForTest(k,d2); dispose() disposes d2, d1, and the original (top-first)', () => {
+    const KEY = Symbol('stacked-k');
+    const order = [];
+    const registry = createRegistry();
+    registry.bind(KEY, () => ({ dispose() { order.push('original'); } }), 'singleton');
+    const scope = createScope(registry);
+    scope.get(KEY);
+    overrideForTest(scope, KEY, { dispose() { order.push('d1'); } });
+    overrideForTest(scope, KEY, { dispose() { order.push('d2'); } });
+    scope.dispose();
+    assert.deepEqual(order, ['d2', 'd1', 'original']);
+    assert.throws(() => { scope.get(KEY); }, (err) => err.message.startsWith('MUSE_STATE_SCOPE_DESTROYED: '));
+  });
+});
+
 describe('T9 — transient parent binding resolves fresh per scope-get', () => {
   it('transient binding is not frozen to the first value through the scope', () => {
     // ASSUMPTION: a scope does not memoize transient parent bindings into
