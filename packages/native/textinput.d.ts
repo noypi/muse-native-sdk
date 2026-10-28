@@ -65,12 +65,13 @@ export type TextInputHandle = {
   dispose(): void;
 };
 
+export type TextSelection = { start: number; end: number };
 export type TextInputProps = {
   value?: string;
-  selection?: { start: number; end: number };
+  selection?: TextSelection;
   composing?: string;
   contentType?: 'plain' | 'rich';
-  onSelectionChange?: (sel: { start: number; end: number }) => void;
+  onSelectionChange?: (TextSelection) => void;
 };
 
 export declare function createTextInput(deps: TextInputDeps): TextInputHandle;

@@ -53,6 +53,7 @@ const TIER_2 = [
   'ListItem',
   'Avatar',
   'Tooltip',
+  'TextInput',
 ] as const;
 
 const EXPECTED: ReadonlyMap<string, 1 | 2> = new Map([
@@ -60,7 +61,7 @@ const EXPECTED: ReadonlyMap<string, 1 | 2> = new Map([
   ...TIER_2.map((n): [string, 1 | 2] => [n, 2]),
 ]);
 
-const VALID_PROP_TYPES = new Set(['string', 'boolean', 'number', 'token', 'slot']);
+const VALID_PROP_TYPES = new Set(['string', 'boolean', 'number', 'token', 'slot', 'object', 'function']);
 
 // RULE-M3-005 deprecated-alias contract (ASSUMPTION A3: enforced at loader).
 const PACKAGE_ALIASES: ReadonlyMap<string, string> = new Map([
@@ -92,21 +93,21 @@ test('manifest components is an array', () => {
 });
 
 // ---------------------------------------------------------------------------
-// AC-M3-007: exactly one entry per component, no extras (26 total)
+// AC-M3-007: exactly one entry per component, no extras (27 total)
 // ---------------------------------------------------------------------------
 
-test('manifest contains exactly 26 components', () => {
+test('manifest contains exactly 27 components', () => {
   const manifest = loadManifest();
-  assert.equal(manifest.components.length, 26);
+  assert.equal(manifest.components.length, 27);
 });
 
-test('manifest contains exactly the 26 spec-named components', () => {
+test('manifest contains exactly the 27 spec-named components', () => {
   const manifest = loadManifest();
   const names = new Set(manifest.components.map((c: any) => c?.name));
   for (const expected of EXPECTED.keys()) {
     assert.ok(names.has(expected), `missing component: ${expected}`);
   }
-  assert.equal(names.size, 26, 'manifest has extra entries beyond the 26 spec-named components');
+  assert.equal(names.size, 27, 'manifest has extra entries beyond the 27 spec-named components');
 });
 
 test('manifest has no duplicate component entries', () => {

@@ -169,12 +169,13 @@ export type TooltipProps = {
 
 // FR-M3-006 — `TextInput` tier-2 component over the tier-1 text-field edit
 // core (T1). Prop keys mirror the `TextInput` manifest schema exactly.
+export type TextSelection = { start: number; end: number };
 export type TextInputProps = {
   value?: string;
-  selection?: { start: number; end: number };
+  selection?: TextSelection;
   composing?: string;
   contentType?: 'plain' | 'rich';
-  onSelectionChange?: (sel: { start: number; end: number }) => void;
+  onSelectionChange?: (TextSelection) => void;
 };
 
 export type EditingEngine = {
