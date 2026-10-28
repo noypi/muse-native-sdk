@@ -144,6 +144,24 @@ static bool check_extreme_args_never_throw() {
   return get_composition_span(buf).size() <= buf.byte_size();
 }
 
+// S4 (security LOW — window cap): `before`/`after` are each clamped to 4096
+// on a large buffer, so a hostile IME query (SIZE_MAX) returns at most 8192
+// bytes instead of the whole 100KB document. Tiny buffers (existing
+// `check_extreme_args_never_throw`) are unaffected.
+static bool check_huge_window_args_capped_on_large_buffer() {
+  GapBuffer buf;
+  buf.insert(0, std::string_view(std::string(100 * 1024, 'a')));
+  const size_t huge = static_cast<size_t>(-1);
+  SurroundingText st;
+  try {
+    st = get_surrounding_text(buf, huge, huge);
+  } catch (...) {
+    return false;
+  }
+  if (st.text.size() > 8192) return false;
+  return st.sel_lo <= st.text.size() && st.sel_hi <= st.text.size();
+}
+
 #define RUN_CASE(name)                           \
   do {                                           \
     if (!(name)()) {                             \
@@ -171,6 +189,7 @@ int main() {
   RUN_CASE(check_no_composing_region_empty_span);
   RUN_CASE(check_compose_query_commit_query_roundtrip);
   RUN_CASE(check_extreme_args_never_throw);
+  RUN_CASE(check_huge_window_args_capped_on_large_buffer);
   if (failures > 0) {
     std::printf("composition_roundtrip_test: %d failing\n", failures);
     return 1;

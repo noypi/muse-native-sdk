@@ -27,6 +27,8 @@ inline constexpr uint32_t kComposingKind = 0x434F4D50u;
 inline SurroundingText get_surrounding_text(const GapBuffer& buf, size_t before,
                                             size_t after) {
   try {
+    before = (std::min)(before, static_cast<size_t>(4096));
+    after = (std::min)(after, static_cast<size_t>(4096));
     const size_t size = buf.byte_size();
     if (size == 0) {
       return SurroundingText{};

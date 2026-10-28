@@ -23,6 +23,7 @@
 #include <string>
 
 #include "runtime/clipboard.h"
+#include "runtime/composition_roundtrip.h"
 #include "runtime/gap_buffer.h"
 
 // --- harness cases (match existing test style) -----------------------------
@@ -196,6 +197,116 @@ static bool check_degrade_unchanged_with_spans() {
   return degrade_to_plain(p) == "hello";
 }
 
+// S2 (security MEDIUM — span-kind allowlist): only kinds 0–4095 except the
+// internal composing kind (0x434F4D50, "COMP") may be restored. A forged
+// composing kind must NOT create a composition span; the text still pastes.
+// NOTE: the decimal is derived from the 0x434F4D50 constant (1129270608);
+// security-review.md cites 1128740432, which is 0x43473650 — a different,
+// non-composing kind — so the literal below is built from the header's hex.
+static bool check_forged_composing_kind_not_restored() {
+  GapBuffer buf;
+  ClipPayload p;
+  p.plain = "evil";
+  p.html = "<span data-kind=\"" + std::to_string(0x434F4D50u) +
+           "\">evil</span>";
+  try {
+    paste_rich(buf, 0, p);
+  } catch (...) {
+    return false;
+  }
+  if (buf.to_string().find("evil") == std::string::npos) return false;
+  return get_composition_span(buf).empty();
+}
+
+// S2: `data-kind="-1"` wraps via stoul to 0xFFFFFFFF — outside the domain,
+// must not be restored; text still pastes.
+static bool check_negative_kind_not_restored() {
+  GapBuffer buf;
+  ClipPayload p;
+  p.plain = "evil";
+  p.html = "<span data-kind=\"-1\">evil</span>";
+  try {
+    paste_rich(buf, 0, p);
+  } catch (...) {
+    return false;
+  }
+  if (buf.to_string().find("evil") == std::string::npos) return false;
+  return buf.spans_of_kind(0xFFFFFFFFu).empty();
+}
+
+// S2: `data-kind="99999"` (>4095) is outside the serializer domain, must not
+// be restored; text still pastes.
+static bool check_out_of_domain_kind_not_restored() {
+  GapBuffer buf;
+  ClipPayload p;
+  p.plain = "evil";
+  p.html = "<span data-kind=\"99999\">evil</span>";
+  try {
+    paste_rich(buf, 0, p);
+  } catch (...) {
+    return false;
+  }
+  if (buf.to_string().find("evil") == std::string::npos) return false;
+  return buf.spans_of_kind(99999).empty();
+}
+
+// S2 boundary-preservation: the top of the allowed domain (4095) still
+// restores. Passes pre- and post-fix; guards against over-clamping.
+static bool check_top_of_domain_kind_still_restores() {
+  GapBuffer buf;
+  ClipPayload p;
+  p.plain = "hello";
+  p.html = "<span data-kind=\"4095\">hello</span>";
+  try {
+    paste_rich(buf, 0, p);
+  } catch (...) {
+    return false;
+  }
+  if (buf.to_string() != "hello") return false;
+  return !buf.spans_of_kind(4095).empty();
+}
+
+// S5 (security LOW — payload caps): total payload size (plain + html) above
+// 4MB is refused — buffer unchanged, no throw.
+static bool check_oversize_payload_refused_without_throw() {
+  GapBuffer buf;
+  buf.insert(0, "keep");
+  ClipPayload p;
+  p.plain = std::string(8 * 1024 * 1024, 'x');
+  p.html = "";
+  try {
+    paste_rich(buf, 0, p);
+  } catch (...) {
+    return false;
+  }
+  return buf.to_string() == "keep";
+}
+
+// S1 (security MEDIUM — parser depth): 200000 nested hostile opens (no
+// closers), built programmatically, must fall back to plain-text insert with
+// no crash and no throw. Cap: nesting deeper than 64 is rejected. Pre-fix
+// this exhausts the call stack (recursive `Parser::parse`) instead of
+// falling back cleanly — the crash IS the red state. Registered last so a
+// pre-fix abort cannot hide the S2/S5 results above.
+static bool check_deeply_nested_html_falls_back_to_plain() {
+  GapBuffer buf;
+  ClipPayload p;
+  p.plain = "x";
+  const std::string open = "<span data-kind=\"1\">";
+  std::string html;
+  html.reserve(open.size() * 200000);
+  for (int n = 0; n < 200000; ++n) {
+    html += open;
+  }
+  p.html = html;
+  try {
+    paste_rich(buf, 0, p);
+  } catch (...) {
+    return false;
+  }
+  return buf.to_string() == "x";
+}
+
 #define RUN_CASE(name)                      \
   do {                                      \
     if (!(name)()) {                        \
@@ -225,6 +336,12 @@ int main() {
   RUN_CASE(check_copy_html_carries_span_markup);
   RUN_CASE(check_paste_restores_spans);
   RUN_CASE(check_degrade_unchanged_with_spans);
+  RUN_CASE(check_forged_composing_kind_not_restored);
+  RUN_CASE(check_negative_kind_not_restored);
+  RUN_CASE(check_out_of_domain_kind_not_restored);
+  RUN_CASE(check_top_of_domain_kind_still_restores);
+  RUN_CASE(check_oversize_payload_refused_without_throw);
+  RUN_CASE(check_deeply_nested_html_falls_back_to_plain);
   if (failures > 0) {
     std::printf("clipboard_test: %d failing\n", failures);
     return 1;

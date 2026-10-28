@@ -7,6 +7,7 @@
 #include <utility>
 #include <vector>
 
+#include "runtime/composition_roundtrip.h"
 #include "runtime/gap_buffer.h"
 
 // Rich clipboard copy/paste (FR-TEXT-013 / AC-TEXT-035). Hermetic: payloads
@@ -163,6 +164,12 @@ inline ClipPayload copy_rich(const GapBuffer& buf, size_t lo, size_t hi) noexcep
 
 inline void paste_rich(GapBuffer& buf, size_t pos, const ClipPayload& p) noexcept {
   try {
+    // S5a: refuse oversize payloads (> 4MB plain+html total) — buffer
+    // unchanged, no throw (refuse, NOT truncation).
+    static constexpr size_t kMaxPasteBytes = 4u * 1024u * 1024u;
+    if (p.plain.size() + p.html.size() > kMaxPasteBytes) {
+      return;
+    }
     if (p.plain.empty()) {
       return;
     }
@@ -223,7 +230,31 @@ inline void paste_rich(GapBuffer& buf, size_t pos, const ClipPayload& p) noexcep
         }
         return out;
       }
-      void parse(bool nested) {
+      // S1: max nesting depth. Past the cap the parse returns ok=false so
+      // the payload falls back to plain-text insert (never recurses per
+      // attacker depth).
+      static constexpr size_t kMaxNestingDepthFn() { return 64; }
+      // S2: pasted span-kind allowlist: 0-4095 excluding the internal
+      // composing kind. NOTE: 0x434F4D50u == 1129270608, NOT 1128740432
+      // (the review's decimal is 0x43473650, a different kind).
+      static bool kind_allowed(const std::string& digits, unsigned long v) {
+        if (digits.empty()) {
+          return false;
+        }
+        for (char c : digits) {
+          if (c < '0' || c > '9') {
+            return false;  // Rejects "-1", "+1", "0x..", whitespace, etc.
+          }
+        }
+        if (v > 4095ul) {
+          return false;
+        }
+        if (static_cast<uint32_t>(v) == detail_composition::kComposingKind) {
+          return false;
+        }
+        return true;
+      }
+      void parse(bool nested, size_t depth = 0) {
         bool closed = false;
         while (ok && i < html.size()) {
           if (html.compare(i, 5, "<span") == 0 &&
@@ -243,19 +274,29 @@ inline void paste_rich(GapBuffer& buf, size_t pos, const ClipPayload& p) noexcep
               return;
             }
             unsigned long kind = 0;
+            std::string digits;
             try {
-              kind = std::stoul(html.substr(num_begin, num_end - num_begin));
+              digits = html.substr(num_begin, num_end - num_begin);
+              kind = std::stoul(digits);
             } catch (...) {
               ok = false;
               return;
             }
+            if (depth >= kMaxNestingDepthFn()) {
+              ok = false;  // S1: hostile nesting → plain fallback.
+              return;
+            }
+            const bool allowed = kind_allowed(digits, kind);
             i = open_end + 1;
             const size_t lo = text.size();
-            parse(true);
+            parse(true, depth + 1);
             if (!ok) {
               return;
             }
-            tags.push_back(Tag{lo, text.size(), static_cast<uint32_t>(kind)});
+            if (allowed) {
+              tags.push_back(Tag{lo, text.size(), static_cast<uint32_t>(kind)});
+            }
+            // S2: out-of-allowlist tag skipped (text kept, no span).
           } else if (html.compare(i, 7, "</span>") == 0) {
             if (!nested) {
               ok = false;

@@ -5,6 +5,7 @@
 // Expected red state: `runtime/gap_buffer.h` does not exist yet, so this
 // file must FAIL TO COMPILE. That is the recorded red state.
 #include <cstddef>
+#include <cstdint>
 #include <cstdio>
 #include <cstring>
 #include <string>
@@ -186,6 +187,21 @@ static bool check_tag_span_inverted_collapses_to_empty() {
   return buf.spans_of_kind(1).empty();
 }
 
+// S3 (security LOW — span bound): span storage is capped at 1024 entries
+// total (oldest-drop or refuse-new). 5000 tag operations stay bounded.
+static bool check_span_storage_bounded_across_many_tags() {
+  GapBuffer buf;
+  buf.insert(0, std::string_view("hello world"));
+  for (int n = 0; n < 5000; ++n) {
+    buf.tag_span(0, 5, static_cast<uint32_t>(n % 8));
+  }
+  size_t total = 0;
+  for (uint32_t k = 0; k < 8; ++k) {
+    total += buf.spans_of_kind(k).size();
+  }
+  return total <= 1024;
+}
+
 #define RUN_CASE(name)                           \
   do {                                           \
     if (!(name)()) {                             \
@@ -215,6 +231,7 @@ int main() {
   RUN_CASE(check_insert_at_cursors_applies_descending);
   RUN_CASE(check_insert_at_cursors_empty_is_noop);
   RUN_CASE(check_tag_span_inverted_collapses_to_empty);
+  RUN_CASE(check_span_storage_bounded_across_many_tags);
   if (failures > 0) {
     std::printf("gap_buffer_test: %d failing\n", failures);
     return 1;

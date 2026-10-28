@@ -31,6 +31,10 @@ inline bool apply_autofill_dataset(GapBuffer& buf,
       case AutofillHint::kNone:
         return false;
     }
+    static constexpr size_t kMaxAutofillValueBytes = 4u * 1024u * 1024u;
+    if (f.value.size() > kMaxAutofillValueBytes) {
+      return false;
+    }
     if (!f.value.empty()) {
       buf.insert(buf.byte_size(), f.value);
     }

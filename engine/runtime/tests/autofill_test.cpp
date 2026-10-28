@@ -169,6 +169,25 @@ static bool check_extreme_inputs_never_throw() {
   return true;
 }
 
+// S5 (security LOW — payload caps): a single autofill value above 4MB is
+// rejected — `apply_autofill_dataset` returns false, buffer unchanged, no
+// throw. The existing 64KB extreme-input case above is unaffected.
+static bool check_oversize_autofill_value_rejected() {
+  GapBuffer buf;
+  buf.insert(0, "keep");
+  AutofillField f;
+  f.field_id = 1;
+  set_autofill_hint(f, AutofillHint::kUsername);
+  f.value = std::string(8 * 1024 * 1024, 'x');
+  bool ok = true;
+  try {
+    ok = apply_autofill_dataset(buf, f);
+  } catch (...) {
+    return false;
+  }
+  return !ok && buf.to_string() == "keep";
+}
+
 #define RUN_CASE(name)                      \
   do {                                      \
     if (!(name)()) {                        \
@@ -193,6 +212,7 @@ int main() {
   RUN_CASE(check_unmapped_hint_returns_false_untouched);
   RUN_CASE(check_empty_value_on_mapped_hint);
   RUN_CASE(check_extreme_inputs_never_throw);
+  RUN_CASE(check_oversize_autofill_value_rejected);
   if (failures > 0) {
     std::printf("autofill_test: %d failing\n", failures);
     return 1;

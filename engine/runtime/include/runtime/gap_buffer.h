@@ -128,6 +128,10 @@ class GapBuffer {
       return;
     }
     push_span_undo();
+    if (spans_.size() >= kMaxSpans) {
+      // Bounded span storage (FR-TEXT-008): evict oldest to keep total ≤ cap.
+      spans_.erase(spans_.begin());
+    }
     spans_.push_back(Span{lo, hi, span_kind});
     stamp_spans_after();
   }
@@ -183,6 +187,7 @@ class GapBuffer {
 
   static constexpr size_t kInitialGap = 64;
   static constexpr size_t kUndoDepth = 100;
+  static constexpr size_t kMaxSpans = 1024;
 
   size_t clamp_pos(size_t pos) const { return (std::min)(pos, byte_size()); }
 
@@ -295,6 +300,7 @@ class GapBuffer {
         break;
     }
     spans_ = op.spans_before;
+    enforce_span_cap();
   }
 
   void apply_redo(const UndoOp& op) {
@@ -309,6 +315,13 @@ class GapBuffer {
         break;
     }
     spans_ = op.spans_after;
+    enforce_span_cap();
+  }
+
+  void enforce_span_cap() {
+    if (spans_.size() > kMaxSpans) {
+      spans_.erase(spans_.begin(), spans_.begin() + (spans_.size() - kMaxSpans));
+    }
   }
 
   void push_text_undo(UndoOp::Kind kind, size_t pos, std::string text) {
