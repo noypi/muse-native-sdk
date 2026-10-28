@@ -1,0 +1,27 @@
+# Baseline profile rules — AC-BUILD-006 bootstrap/Hermes/first-frame/initial-route
+# Generated fixture (tester-authored artifact under test). One section per path.
+# Provenance: fixture for toolchain/baseline-profile/profileRules.test.js (T2).
+
+[section:bootstrap]
+# Engine bootstrap path — classes/methods exercised during SDK engine start.
+class Lcom/muse/EngineBootstrap; {
+  void start();
+}
+
+[section:hermes-isolate]
+# Hermes isolate init path — isolate creation and configuration.
+class Lcom/muse/HermesIsolate; {
+  void init();
+}
+
+[section:first-frame]
+# First-frame render path — initial draw exercised before first frame.
+class Lcom/muse/FirstFrame; {
+  void render();
+}
+
+[section:initial-route]
+# Declared initial route — navigation destination warmed at startup.
+class Lcom/muse/InitialRoute; {
+  void open();
+}
