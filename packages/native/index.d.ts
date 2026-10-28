@@ -247,7 +247,7 @@ export declare const primitives: string[];
 export declare const components: Record<
   Tier1Name | Tier2Name,
   (props?: Record<string, unknown>) => NativeDescriptor
-> & Record<string, (props?: NativeProps) => NativeDescriptor>;
+>;
 export declare const manifest: {
   name: '@muse/native';
   components: Array<{ name: string; props: unknown }>;

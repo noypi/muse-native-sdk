@@ -4,8 +4,9 @@
 // the `{ type, props }` shape: `type` equals the primitive name and `props`
 // defaults to `{}`. Runtime passes props through (P1); accepted-key equality
 // with the manifest schema is enforced at the type layer in index.d.ts.
-// Remaining manifest entries (tier-2 until T5) stay exported via the generic
-// loop so the T2 manifest gate keeps matching exactly.
+// Remaining manifest entries are all implemented above (tier-1 + tier-2),
+// so the export is exactly the static tier maps and the T2 manifest gate
+// compares against the real definitions with no stub fallback.
 
 const manifest = require('./muse.manifest.json');
 
@@ -20,12 +21,19 @@ const STATE_OPACITY = {
 };
 
 function driveState(target, state) {
+  if (typeof state !== 'string') {
+    throw new TypeError(`Unknown state: ${String(state)}`);
+  }
+  const opacity = STATE_OPACITY[state];
+  if (opacity === undefined) {
+    throw new RangeError(`Unknown state: ${state}`);
+  }
   return {
     target,
     state,
     layer: {
       type: 'Ripple',
-      props: { color: 'primary', opacity: STATE_OPACITY[state] },
+      props: { color: 'primary', opacity },
     },
   };
 }
@@ -252,15 +260,6 @@ const tier2 = {
 };
 
 const components = { ...tier1, ...tier2 };
-for (const entry of manifest.components) {
-  const name = entry && entry.name;
-  if (typeof name !== 'string' || components[name] !== undefined) continue;
-  components[name] = (function (componentName) {
-    return function stubComponent(props) {
-      return { type: componentName, props: props === undefined ? {} : props };
-    };
-  })(name);
-}
 
 const primitives = manifest.components.map((entry) => entry.name);
 

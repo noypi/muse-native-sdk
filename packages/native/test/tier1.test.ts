@@ -262,3 +262,23 @@ test('check-tokens.js --scope lib exits 1 naming file:line for a smuggled litera
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+// ---------------------------------------------------------------------------
+// Stage 3 fix follow-up (MINOR review): driveState throws on unknown state.
+// Non-string state → TypeError; unknown string → RangeError.
+// ---------------------------------------------------------------------------
+
+test('driveState throws RangeError on unknown string state', () => {
+  const { driveState } = require('../index.js');
+  assert.throws(() => {
+    driveState('Surface', 'bogus');
+  }, RangeError);
+});
+
+test('driveState throws TypeError on non-string state', () => {
+  const { driveState } = require('../index.js');
+  assert.throws(() => {
+    driveState('Surface', 42);
+  }, TypeError);
+});
+

@@ -3,9 +3,12 @@
 // Theme change is a token property update to mounted descriptors: bodies are
 // never re-run per RULE-MCORE-001, cascade internals stay layout-owned, and
 // this file only consumes role tokens plus mode and palette input.
-// Mounted set (ASSUMPTION T8-1): components previously passed to
-// resolveTokens in-process. setTheme reports repainted equal to that count
-// with zero re-instantiation inside a single frame (plan Assumption A4).
+// Unmount path: mounted tracks live components previously passed to
+// resolveTokens. Call unmount(component) when a descriptor unmounts, or
+// clearMounted() (e.g. in test teardown) to reset. setTheme then reports
+// repainted equal to the live mounted count. Signatures and behavior of
+// setTheme/resolveTokens are unchanged; without unmount calls the set
+// remains add-only per the original T8-1 semantic.
 // Token values are derived at runtime so library sources stay token-role
 // only and the check-tokens gate keeps passing.
 
@@ -97,4 +100,12 @@ function setTheme(input) {
   };
 }
 
-module.exports = { setTheme, resolveTokens };
+module.exports = { setTheme, resolveTokens, unmount, clearMounted };
+
+function unmount(component) {
+  mounted.delete(component);
+}
+
+function clearMounted() {
+  mounted.clear();
+}
