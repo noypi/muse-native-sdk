@@ -13,6 +13,10 @@ The expected inventory below was derived read-only from
 owned by run fr-tsx-008, never modified here) together with the T7 map's
 per-component/state-change rows; each run additionally re-scans the gallery
 dir read-only so a newly added story naming an unmapped component fails.
+The component manifest ``packages/native/muse.manifest.json`` is the
+authority for which components the gallery showcases: a ``src/`` story file
+naming something absent from the manifest (another run's throwaway fixture)
+is ignored with a stdout warning naming the file instead of hard-failing.
 
 Row text is data only: the parser uses plain string splitting and never
 evals, execs, or shells out row content.
@@ -20,12 +24,14 @@ evals, execs, or shells out row content.
 
 import argparse
 import glob
+import json
 import os
 import re
 import sys
 
 DEFAULT_MAP = os.path.join("docs", "motion", "component-map.md")
 DEFAULT_GALLERY = os.path.join("examples", "m3-gallery")
+DEFAULT_MANIFEST = os.path.join("packages", "native", "muse.manifest.json")
 
 # Verified T1 token-name set, hardcoded from the docs/motion/component-map.md
 # header (scheme version 1). Name-membership only; the engine is NOT imported.
@@ -223,13 +229,54 @@ def check_coverage(rows):
               % len(missing))
 
 
-def scan_gallery(gallery_dir):
+def load_manifest_components(manifest_path):
+    """Read-only load of the manifest authority for gallery components.
+
+    Returns the normalized set of component names listed under the manifest's
+    ``components`` key (``name``/``aliases``/``components`` object), or None
+    when the manifest cannot be read or parsed (a stderr warning is emitted
+    and callers fall back to unfiltered hints, never a silent default).
+    Row text and manifest text are data only: parsed with json/string
+    splitting, never evaled, execed, or shelled out.
+    """
+    try:
+        with open(manifest_path, encoding="utf-8") as handle:
+            manifest = json.load(handle)
+    except (OSError, ValueError) as exc:
+        print("motion_map_check: warning: cannot read component manifest: %s"
+              % exc, file=sys.stderr)
+        return None
+    if not isinstance(manifest, dict):
+        print("motion_map_check: warning: cannot read component manifest: "
+              "expected a JSON object in %r" % manifest_path, file=sys.stderr)
+        return None
+    entries = manifest.get("components")
+    if not isinstance(entries, list):
+        print("motion_map_check: warning: cannot read component manifest: "
+              "missing components list in %r" % manifest_path,
+              file=sys.stderr)
+        return None
+    names = set()
+    for entry in entries:
+        if isinstance(entry, dict) and isinstance(entry.get("name"), str):
+            names.add(_QUALIFIER_PAREN.sub("", entry["name"]).strip().lower())
+    return names
+
+
+def scan_gallery(gallery_dir, manifest_path=DEFAULT_MANIFEST):
     """Read-only scan of the gallery fixture for story component hints.
 
     Returns lowercase component-name hints derived from muse-native.yaml and
     the src/ story list without modifying anything. Unreadable gallery input
     yields no hints (the pinned EXPECTED_ROWS inventory stays authoritative).
+
+    The component manifest (``packages/native/muse.manifest.json``) is the
+    authority for which components the gallery showcases: only manifest-listed
+    components participate in the hint backstop. A src/ story file naming
+    something absent from the manifest (another run's throwaway fixture) is
+    ignored with a stdout warning naming the file instead of hard-failing.
     """
+    allowed = load_manifest_components(manifest_path)
     hints = set()
     try:
         with open(os.path.join(gallery_dir, "muse-native.yaml"),
@@ -256,7 +303,19 @@ def scan_gallery(gallery_dir):
         if base.lower().endswith("screen"):
             base = base[:-len("screen")]
         if base and base.lower() != "app":
-            hints.add(base.lower())
+            hint = base.lower()
+            if allowed is not None and \
+                    _QUALIFIER_PAREN.sub("", hint).strip().lower() \
+                    not in allowed:
+                print("motion_map_check: warning: ignoring gallery story "
+                      "file %r: component %r is not listed in the component "
+                      "manifest" % (path, base))
+                continue
+            hints.add(hint)
+    if allowed is not None:
+        hints = set(hint for hint in hints
+                    if _QUALIFIER_PAREN.sub("", hint).strip().lower()
+                    in allowed)
     return hints
 
 
@@ -290,7 +349,7 @@ def check_gallery_hints(hints, rows):
                   "component %r (no silent default applied)" % hint)
 
 
-def check_map(map_path, gallery_dir):
+def check_map(map_path, gallery_dir, manifest_path=DEFAULT_MANIFEST):
     """Run all checks; raise MapError on the first failure."""
     try:
         with open(map_path, encoding="utf-8") as handle:
@@ -302,7 +361,7 @@ def check_map(map_path, gallery_dir):
         _fail("motion_map_check: no map rows found in %r" % map_path)
     check_tokens(rows)
     check_coverage(rows)
-    check_gallery_hints(scan_gallery(gallery_dir), rows)
+    check_gallery_hints(scan_gallery(gallery_dir, manifest_path), rows)
     return len(rows)
 
 
@@ -316,10 +375,13 @@ def main(argv=None):
     parser.add_argument("--gallery", default=DEFAULT_GALLERY,
                         help="gallery fixture dir, read-only "
                              "(default: %(default)s)")
+    parser.add_argument("--manifest", default=DEFAULT_MANIFEST,
+                        help="component manifest path, read-only "
+                             "(default: %(default)s)")
     args = parser.parse_args(argv)
 
     try:
-        count = check_map(args.map, args.gallery)
+        count = check_map(args.map, args.gallery, args.manifest)
     except MapError as exc:
         print(str(exc), file=sys.stderr)
         return 1
