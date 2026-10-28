@@ -360,3 +360,40 @@ describe('BUG-TSX-010 T3 — template-file muse: subtree seam (TC-TSX-022)', () 
     assertConfigError(() => validateMuseSection(parseMuseSubtree(text), allowList()), 'evil');
   });
 });
+
+// ---------------------------------------------------------------------------
+// BUG-TSX-010 security hardening (security-review.md "Security Tests
+// Requested"): production `parseMuseSubtree` (packages/cli/lib/config.js)
+// must reject dangerous keys fail-closed with ConfigError naming the key.
+// Hermetic: node:test + node:assert/strict only; no fs, no env, no network.
+// ---------------------------------------------------------------------------
+describe('BUG-TSX-010 security — parseMuseSubtree rejects dangerous keys', () => {
+  function parseProd(text) {
+    const { parseMuseSubtree } = require('../lib/config.js');
+    return parseMuseSubtree(text);
+  }
+
+  it("parseMuseSubtree('muse:\\n  __proto__:\\n    x: 1') throws ConfigError with key __proto__", () => {
+    assert.throws(() => parseProd('muse:\n  __proto__:\n    x: 1'), (err) => {
+      assert.equal(err.name, 'ConfigError');
+      assert.equal(err.key, '__proto__');
+      return true;
+    });
+  });
+
+  it("parseMuseSubtree('muse:\\n  constructor:\\n    x: 1') throws ConfigError with key constructor", () => {
+    assert.throws(() => parseProd('muse:\n  constructor:\n    x: 1'), (err) => {
+      assert.equal(err.name, 'ConfigError');
+      assert.equal(err.key, 'constructor');
+      return true;
+    });
+  });
+
+  it("parseMuseSubtree('muse:\\n  prototype:\\n    x: 1') throws ConfigError with key prototype", () => {
+    assert.throws(() => parseProd('muse:\n  prototype:\n    x: 1'), (err) => {
+      assert.equal(err.name, 'ConfigError');
+      assert.equal(err.key, 'prototype');
+      return true;
+    });
+  });
+});

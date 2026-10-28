@@ -90,7 +90,8 @@ function parseLine(line) {
 // The leading top-level `muse:` header folds into the result, so the return
 // shape is `{ muse: {...} }` ready for `validateMuseSection`. Shared with
 // the build layer (T2); blank lines and `#` comments are ignored.
-function parseMuseSubtree(museText) {
+function parseMuseSubtree(museText, file) {
+  const where = typeof file === 'string' && file ? file : 'muse-native.yaml';
   const root = {};
   const stack = [{ indent: -1, map: root }];
   for (const rawLine of String(museText).split('\n')) {
@@ -101,6 +102,16 @@ function parseMuseSubtree(museText) {
     if (colon === -1) continue;
     const key = trimmed.slice(0, colon).trim();
     if (!key) continue;
+    // Prototype-pollution hardening: `__proto__`/`constructor`/`prototype`
+    // must never flow into `parent[key] = ...` below. A `__proto__`
+    // assignment mutates the fresh object's prototype instead of creating an
+    // own key, so the key is silently dropped past validation (own-key
+    // enumeration never sees it). Fail closed like the rest of this layer:
+    // reject the key loudly instead of mis-parsing it. Valid keys are
+    // unaffected — this guard only fires on the three dangerous names.
+    if (key === '__proto__' || key === 'constructor' || key === 'prototype') {
+      throw new ConfigError(key, where, 'rejected dangerous key');
+    }
     while (stack.length > 1 && indent <= stack[stack.length - 1].indent) stack.pop();
     const parent = stack[stack.length - 1].map;
     const rest = trimmed.slice(colon + 1).trim();
@@ -173,7 +184,7 @@ function readFileLayer(cwd) {
     const parsed = parseLine(line);
     if (parsed) values[parsed.key] = parsed.value;
   }
-  return { values, file: full, muse: museLines.length ? parseMuseSubtree(museLines.join('\n')) : undefined };
+  return { values, file: full, muse: museLines.length ? parseMuseSubtree(museLines.join('\n'), full) : undefined };
 }
 
 // Collect `--<key> <value>` pairs from argv. Positional operands and the
