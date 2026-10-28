@@ -1,3 +1,5 @@
-# Throwaway fixture owned by run fr-tsx-008; real gallery is FR-SAMPLE-001/FR-M3-007; do not extend.
+# Per-project config for the M3 gallery sample (Q-SAMPLE-001 option C).
+# This file names the gallery build target; the build resolves it as
+# <target>/muse-native.yaml with no workspace-root fallback.
 name: gallery
 version: 0.0.0
