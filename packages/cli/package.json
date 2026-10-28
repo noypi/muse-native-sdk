@@ -14,7 +14,8 @@
     "test:buildlog": "node --test test/build-log.test.ts",
     "test:init": "node --test test/init.test.ts",
     "test:init-template": "node --test test/init-template.test.ts",
-    "test:init-guard": "node --test test/init-guard.test.ts"
+    "test:init-guard": "node --test test/init-guard.test.ts",
+    "test:init-stub": "node --test test/init-stub.test.ts"
   },
   "bin": {
     "muse-native": "./bin/muse-native.js",
