@@ -20,6 +20,7 @@
 #include <vector>
 
 #include "muse/text/shaper.h"
+#include "muse/text/layout_cache.h"
 
 // ASSUMPTION (structural, pending shaper.h): the variation type and entry
 // point are declared exactly as the plan Interface line states:
@@ -253,6 +254,82 @@ static bool check_null_bytes_does_not_throw() {
   }
 }
 
+// BUG-TEXT-001 / Q-TEXT-005: bounded cardinality. Shapes 512 distinct
+// (bytes, vars) pairs — well above kVariationCacheMaxEntries (256) plus any
+// entries earlier cases inserted — then asserts the cache never holds more
+// than the cap. Pre-fix this fails (unbounded growth); post-fix it passes.
+// Order-independent: no assumption of an empty cache at case start.
+static bool check_variation_cache_bounded_after_distinct_overflow() {
+  try {
+    muse::text::FontHandle font{3};
+    muse::text::TextStyle style{};
+    for (int i = 0; i < 512; ++i) {
+      std::string bytes = "soak-" + std::to_string(i);
+      muse::text::FontVariation var = {
+          kWght, 100.0f + static_cast<float>(i)};
+      auto result = muse::text::shapeRunWithVariations(
+          reinterpret_cast<const uint8_t*>(bytes.data()), bytes.size(), font,
+          style, &var, 1);
+      if (!result.ok()) return false;
+    }
+    return muse::text::VariationCacheSize() <=
+           muse::text::kVariationCacheMaxEntries;
+  } catch (...) {
+    return false;
+  }
+}
+
+// BUG-TEXT-001: eviction is transparent (re-shape, not key collapse).
+// Re-shapes one key evicted by the overflow above and asserts it still
+// returns a valid run whose advances differ from a different variation
+// vector — eviction must cost only a re-shape, never a silent merge.
+static bool check_evicted_key_reshapes_with_distinct_advances() {
+  try {
+    muse::text::FontHandle font{3};
+    muse::text::TextStyle style{};
+    const std::string kEvicted = "soak-0";
+    const muse::text::FontVariation kOrig[] = {{kWght, 100.0f}};
+    const muse::text::FontVariation kOther[] = {{kWght, 900.0f}};
+    auto first = muse::text::shapeRunWithVariations(
+        reinterpret_cast<const uint8_t*>(kEvicted.data()), kEvicted.size(),
+        font, style, kOrig, 1);
+    auto second = muse::text::shapeRunWithVariations(
+        reinterpret_cast<const uint8_t*>(kEvicted.data()), kEvicted.size(),
+        font, style, kOther, 1);
+    if (!first.ok() || !second.ok()) return false;
+    if ((*first).advances.empty() || (*second).advances.empty()) return false;
+    return advances_differ((*first).advances, (*second).advances);
+  } catch (...) {
+    return false;
+  }
+}
+
+// BUG-TEXT-001: repeated identical shapes do not grow the cache.
+// Records the size, re-shapes one key ten times, and asserts the size is
+// unchanged (hits, not inserts). Order-independent by construction.
+static bool check_repeated_identical_shape_does_not_grow_cache() {
+  try {
+    muse::text::FontHandle font{3};
+    muse::text::TextStyle style{};
+    const std::string kKey = "stable-key";
+    const muse::text::FontVariation kVars[] = {{kWght, 500.0f}};
+    auto seed = muse::text::shapeRunWithVariations(
+        reinterpret_cast<const uint8_t*>(kKey.data()), kKey.size(), font,
+        style, kVars, 1);
+    if (!seed.ok()) return false;
+    const std::size_t before = muse::text::VariationCacheSize();
+    for (int i = 0; i < 10; ++i) {
+      auto result = muse::text::shapeRunWithVariations(
+          reinterpret_cast<const uint8_t*>(kKey.data()), kKey.size(), font,
+          style, kVars, 1);
+      if (!result.ok()) return false;
+    }
+    return muse::text::VariationCacheSize() == before;
+  } catch (...) {
+    return false;
+  }
+}
+
 #define RUN_CASE(name)                 \
   do {                                 \
     if (!(name)()) {                   \
@@ -277,6 +354,9 @@ int main() {
   RUN_CASE(check_empty_input_ok_empty);
   RUN_CASE(check_null_bytes_does_not_throw);
   RUN_CASE(check_null_vars_with_count_invalid_input);
+  RUN_CASE(check_variation_cache_bounded_after_distinct_overflow);
+  RUN_CASE(check_evicted_key_reshapes_with_distinct_advances);
+  RUN_CASE(check_repeated_identical_shape_does_not_grow_cache);
   if (failures > 0) {
     std::printf("variable_font_test: %d failing\n", failures);
     return 1;

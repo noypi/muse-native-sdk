@@ -114,10 +114,21 @@ StatusOr<ShapedRun> shapeRunWithVariations(
       run.advances[i] += delta * (1.0f + 0.001f * static_cast<float>(i));
     }
 
+    if (cache->size() >= kVariationCacheMaxEntries) {
+      cache->erase(cache->begin());
+    }
     (*cache)[std::move(key)] = run;
     return run;
   } catch (...) {
     return Status::kInvalidInput;
+  }
+}
+
+std::size_t VariationCacheSize() noexcept {
+  try {
+    return VariationCache()->size();
+  } catch (...) {
+    return 0;
   }
 }
 
