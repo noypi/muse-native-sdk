@@ -1,0 +1,26 @@
+// FR-M3-003 / AC-M3-005 — NavigationRail tier-3 composite (T2).
+// `{ type, props }` descriptor factory; `props` echoes the caller props
+// untouched and composition lives in sibling `content`. Nests tier-1/2 only
+// (Surface, Stack, Icon, Text, Ripple) with token-role-only props.
+
+export interface NavigationRailProps {
+  selected?: string;
+  enabled?: boolean;
+  content?: unknown;
+  [key: string]: unknown;
+}
+
+export function NavigationRail(props?: NavigationRailProps) {
+  const next = props === undefined ? {} : props;
+  return {
+    type: 'NavigationRail',
+    props: next,
+    content: [
+      { type: 'Surface', props: { tone: 'surface-container' } },
+      { type: 'Stack', props: { direction: 'column' } },
+      { type: 'Icon', props: { name: 'home', color: 'on-surface' } },
+      { type: 'Text', props: { variant: 'label-medium', color: 'on-surface' } },
+      { type: 'Ripple', props: { color: 'primary' } },
+    ],
+  };
+}

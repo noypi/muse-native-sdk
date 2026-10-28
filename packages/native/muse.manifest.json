@@ -274,6 +274,143 @@
         "contentType": { "type": "string", "values": ["plain", "rich"] },
         "onSelectionChange": { "type": "function" }
       }
+    },
+    {
+      "name": "TopAppBar",
+      "tier": 3,
+      "base": "Surface",
+      "props": {
+        "title": { "type": "string", "required": true },
+        "size": { "type": "string", "values": ["small", "medium", "large"] },
+        "navigationIcon": { "type": "string" },
+        "actions": { "type": "slot" }
+      }
+    },
+    {
+      "name": "NavigationBar",
+      "tier": 3,
+      "base": "Surface",
+      "props": {
+        "selected": { "type": "string", "required": true },
+        "enabled": { "type": "boolean" },
+        "content": { "type": "slot" }
+      }
+    },
+    {
+      "name": "NavigationRail",
+      "tier": 3,
+      "base": "Surface",
+      "props": {
+        "selected": { "type": "string", "required": true },
+        "enabled": { "type": "boolean" },
+        "content": { "type": "slot" }
+      }
+    },
+    {
+      "name": "NavigationDrawer",
+      "tier": 3,
+      "base": "Surface",
+      "props": {
+        "selected": { "type": "string", "required": true },
+        "enabled": { "type": "boolean" },
+        "content": { "type": "slot" }
+      }
+    },
+    {
+      "name": "SegmentedButton",
+      "tier": 3,
+      "base": "Button",
+      "props": {
+        "selected": { "type": "string", "required": true },
+        "enabled": { "type": "boolean" }
+      }
+    },
+    {
+      "name": "Dialog",
+      "tier": 3,
+      "base": "Surface",
+      "props": {
+        "open": { "type": "boolean", "required": true },
+        "title": { "type": "string", "required": true },
+        "content": { "type": "slot" },
+        "actions": { "type": "slot" }
+      }
+    },
+    {
+      "name": "BottomSheet",
+      "tier": 3,
+      "base": "Surface",
+      "props": {
+        "open": { "type": "boolean", "required": true },
+        "content": { "type": "slot" }
+      }
+    },
+    {
+      "name": "Menu",
+      "tier": 3,
+      "base": "Surface",
+      "props": {
+        "open": { "type": "boolean", "required": true },
+        "anchor": { "type": "slot" },
+        "content": { "type": "slot" }
+      }
+    },
+    {
+      "name": "SnackbarHost",
+      "tier": 3,
+      "base": "Surface",
+      "props": {
+        "message": { "type": "string", "required": true },
+        "content": { "type": "slot" }
+      }
+    },
+    {
+      "name": "SearchBar",
+      "tier": 3,
+      "base": "TextInput",
+      "props": {
+        "value": { "type": "string" },
+        "placeholder": { "type": "string" },
+        "enabled": { "type": "boolean" }
+      }
+    },
+    {
+      "name": "Carousel",
+      "tier": 3,
+      "base": "Scroll",
+      "props": {
+        "index": { "type": "number", "required": true },
+        "content": { "type": "slot" }
+      }
+    },
+    {
+      "name": "BottomAppBar",
+      "tier": 3,
+      "base": "Surface",
+      "props": {
+        "title": { "type": "string" },
+        "content": { "type": "slot" }
+      }
+    },
+    {
+      "name": "ButtonGroup",
+      "tier": 3,
+      "base": "Button",
+      "props": {
+        "selected": { "type": "string", "required": true },
+        "enabled": { "type": "boolean" },
+        "content": { "type": "slot" }
+      }
+    },
+    {
+      "name": "SplitButton",
+      "tier": 3,
+      "base": "Button",
+      "props": {
+        "label": { "type": "string", "required": true },
+        "enabled": { "type": "boolean" },
+        "icon": { "type": "string" }
+      }
     }
   ]
 }

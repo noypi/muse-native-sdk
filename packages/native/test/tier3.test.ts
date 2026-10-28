@@ -1,0 +1,388 @@
+/**
+ * TC-M3-005 / TC-M3-006 — the 14 tier-3 composites (FR-M3-003, AC-M3-005/006,
+ * RULE-M3-001/003/006) plus the T1 manifest-gate coverage for the 14 tier-3
+ * entries (FR-M3-004, AC-M3-007, RULE-M3-003).
+ *
+ * Hermetic: node:test + node:assert/strict only. Imports the components
+ * through the package public entry (index.js), reads muse.manifest.json and
+ * composites/*.tsx source text from disk. No network, no secrets, no services.
+ *
+ * ASSUMPTION C1 (composition traversal): a tier-3 descriptor is a
+ * `{ type, props }` record whose nested tier-1/2 descriptors appear as plain
+ * objects (or arrays of them) somewhere under `props` or sibling keys —
+ * e.g. `content`, `layer`, `anchor`. The test collects every string value
+ * held under a `type` key in that graph; the outer type must be the
+ * component's own name and every nested type must be a tier-1 or tier-2
+ * name — proving real composition with no new native primitive.
+ * ASSUMPTION C2 (variants are prop values): TopAppBar documents its sizes
+ * through a `size` prop whose values match the manifest schema
+ * (small|medium|large); the descriptor echoes the requested size. No
+ * `SmallTopAppBar`-style component name is exported.
+ * ASSUMPTION C3 (overlay layering): Dialog, BottomSheet, Menu and
+ * SnackbarHost render via OverlayHost, so the string "OverlayHost" appears
+ * in the JSON form of each overlay member's descriptor.
+ * ASSUMPTION G1 (manifest gate parity): check-manifest.js compares manifest
+ * entry names against the `components` export keys in both directions; the
+ * manifest/export parity tests below encode the same contract without
+ * spawning the script.
+ * ASSUMPTION G2 (import closure): tier-3 composites may import only
+ * `@muse/core` and `@muse/native`; the source-text scan below encodes the
+ * same contract the T3 build gate enforces.
+ */
+
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { readFileSync, existsSync, readdirSync } from 'node:fs';
+import { createRequire } from 'node:module';
+
+const require = createRequire(import.meta.url);
+const { components } = require('../index.js');
+const MANIFEST_URL = new URL('../muse.manifest.json', import.meta.url);
+const COMPOSITES_URL = new URL('../composites/', import.meta.url);
+
+const TIER_1 = new Set([
+  'Surface',
+  'Text',
+  'Icon',
+  'Image',
+  'Ripple',
+  'Divider',
+  'Scroll',
+  'Stack',
+  'TextFieldEditCore',
+  'OverlayHost',
+]);
+
+const TIER_2 = new Set([
+  'Button',
+  'IconButton',
+  'Fab',
+  'ExtendedFab',
+  'Card',
+  'Chip',
+  'Checkbox',
+  'Radio',
+  'Switch',
+  'Slider',
+  'Badge',
+  'LinearProgress',
+  'CircularProgress',
+  'ListItem',
+  'Avatar',
+  'Tooltip',
+  'TextInput',
+]);
+
+const TIER_3 = [
+  'TopAppBar',
+  'NavigationBar',
+  'NavigationRail',
+  'NavigationDrawer',
+  'SegmentedButton',
+  'Dialog',
+  'BottomSheet',
+  'Menu',
+  'SnackbarHost',
+  'SearchBar',
+  'Carousel',
+  'BottomAppBar',
+  'ButtonGroup',
+  'SplitButton',
+];
+
+const OVERLAY_MEMBERS = ['Dialog', 'BottomSheet', 'Menu', 'SnackbarHost'];
+
+// Minimal representative props per composite (keys must exist in the manifest).
+const REPRESENTATIVE_PROPS = {
+  TopAppBar: { size: 'small', title: 'Title' },
+  NavigationBar: { selected: 'home' },
+  NavigationRail: { selected: 'home' },
+  NavigationDrawer: { selected: 'home' },
+  SegmentedButton: { selected: 'one' },
+  Dialog: { open: true, title: 'Confirm' },
+  BottomSheet: { open: true },
+  Menu: { open: true, anchor: 'target' },
+  SnackbarHost: { message: 'Saved' },
+  SearchBar: { value: 'query' },
+  Carousel: { index: 0 },
+  BottomAppBar: { title: 'Bar' },
+  ButtonGroup: { selected: 'one' },
+  SplitButton: { label: 'Save' },
+};
+
+function loadManifest() {
+  return JSON.parse(readFileSync(MANIFEST_URL, 'utf8'));
+}
+
+// Collect every string held under a `type` key in a descriptor graph.
+function collectTypes(node, into = []) {
+  if (Array.isArray(node)) {
+    for (const item of node) collectTypes(item, into);
+  } else if (node !== null && typeof node === 'object') {
+    for (const [key, value] of Object.entries(node)) {
+      if (key === 'type' && typeof value === 'string') into.push(value);
+      else collectTypes(value, into);
+    }
+  }
+  return into;
+}
+
+// ---------------------------------------------------------------------------
+// T1 manifest gate (FR-M3-004, AC-M3-007, RULE-M3-003): 41 entries, tier-3
+// shape, manifest<->export parity
+// ---------------------------------------------------------------------------
+
+test('manifest is valid JSON with canonical package name', () => {
+  const manifest = loadManifest();
+  assert.equal(manifest.name, '@muse/native');
+});
+
+test('manifest contains exactly 41 components', () => {
+  const manifest = loadManifest();
+  assert.equal(manifest.components.length, 41);
+});
+
+test('manifest contains all 14 tier-3 composites', () => {
+  const manifest = loadManifest();
+  const names = new Set(manifest.components.map((c) => c?.name));
+  for (const name of TIER_3) {
+    assert.ok(names.has(name), `manifest entry missing for tier-3 composite: ${name}`);
+  }
+});
+
+test('manifest has no duplicate component entries', () => {
+  const manifest = loadManifest();
+  const names = manifest.components.map((c) => c?.name);
+  assert.equal(new Set(names).size, names.length);
+});
+
+for (const name of TIER_3) {
+  test(`${name} manifest entry declares tier 3 with a non-empty base and props record`, () => {
+    const manifest = loadManifest();
+    const entry = manifest.components.find((c) => c?.name === name);
+    assert.ok(entry, `manifest entry missing: ${name}`);
+    assert.equal(entry.tier, 3, `${name} tier must be 3`);
+    assert.equal(typeof entry.base, 'string', `${name} base must be a string`);
+    assert.ok(entry.base.length > 0, `${name} base must be non-empty`);
+    assert.ok(entry.props !== null && typeof entry.props === 'object', `${name} props must be a record`);
+  });
+}
+
+test('tier-3 base names compose the tier-1/2 surface, never a new native primitive', () => {
+  const manifest = loadManifest();
+  const allowed = new Set([...TIER_1, ...TIER_2]);
+  for (const entry of manifest.components.filter((c) => c?.tier === 3)) {
+    assert.ok(allowed.has(entry.base), `${entry.name} base "${entry.base}" is not a tier-1/2 name (new native primitive)`);
+    assert.notEqual(entry.base, entry.name, `${entry.name} base must not be itself`);
+  }
+});
+
+test('TopAppBar manifest schema documents size small|medium|large', () => {
+  const manifest = loadManifest();
+  const entry = manifest.components.find((c) => c?.name === 'TopAppBar');
+  assert.ok(entry, 'manifest entry missing: TopAppBar');
+  assert.deepEqual(entry.props.size.values, ['small', 'medium', 'large']);
+});
+
+test('tier-3 prop schemas use valid types with optional values and required', () => {
+  const manifest = loadManifest();
+  const valid = new Set(['string', 'boolean', 'number', 'token', 'slot', 'object', 'function']);
+  for (const entry of manifest.components.filter((c) => c?.tier === 3)) {
+    for (const [propName, schema] of Object.entries(entry.props ?? {})) {
+      assert.ok(schema && valid.has(schema.type), `${entry.name}.${propName} has invalid type`);
+      if (schema.values !== undefined) {
+        assert.ok(Array.isArray(schema.values), `${entry.name}.${propName} values must be an array`);
+        for (const v of schema.values) assert.equal(typeof v, 'string');
+      }
+      if (schema.required !== undefined) {
+        assert.equal(typeof schema.required, 'boolean', `${entry.name}.${propName} required must be boolean`);
+      }
+    }
+  }
+});
+
+test('overlay tier-3 members expose an OverlayHost-backed slot in the manifest schema', () => {
+  const manifest = loadManifest();
+  for (const name of OVERLAY_MEMBERS) {
+    const entry = manifest.components.find((c) => c?.name === name);
+    assert.ok(entry, `manifest entry missing: ${name}`);
+    const slots = Object.entries(entry.props ?? {}).filter(([, s]) => s?.type === 'slot');
+    assert.ok(slots.length > 0, `${name} manifest schema must expose a slot prop for OverlayHost layering`);
+  }
+});
+
+test('tier-3 representative prop keys exist in the manifest schemas', () => {
+  const manifest = loadManifest();
+  const byName = new Map(manifest.components.map((c) => [c.name, c]));
+  for (const name of TIER_3) {
+    assert.ok(byName.has(name), `manifest entry missing for tier-3 composite: ${name}`);
+    const schemaKeys = new Set(Object.keys(byName.get(name).props ?? {}));
+    for (const key of Object.keys(REPRESENTATIVE_PROPS[name])) {
+      assert.ok(schemaKeys.has(key), `${name}.${key} is not in the manifest schema`);
+    }
+  }
+});
+
+test('manifest entries match component exports in both directions (check-manifest.js parity)', () => {
+  const manifest = loadManifest();
+  const manifestNames = new Set(manifest.components.map((c) => c?.name));
+  const exportNames = new Set(Object.keys(components));
+  const missing = [...manifestNames].filter((n) => !exportNames.has(n));
+  const orphans = [...exportNames].filter((n) => !manifestNames.has(n));
+  assert.deepEqual(missing, [], `missing component export for manifest entries: ${missing.join(', ')}`);
+  assert.deepEqual(orphans, [], `orphan component export with no manifest entry: ${orphans.join(', ')}`);
+});
+
+// ---------------------------------------------------------------------------
+// AC-M3-005: all 14 tier-3 composites construct over tier-1/2 only
+// ---------------------------------------------------------------------------
+
+test('all 14 tier-3 composites are exported', () => {
+  for (const name of TIER_3) {
+    assert.equal(typeof components[name], 'function', `composite not exported: ${name}`);
+  }
+});
+
+for (const name of TIER_3) {
+  test(`${name} constructs a descriptor from representative props`, () => {
+    const descriptor = components[name](REPRESENTATIVE_PROPS[name]);
+    assert.equal(descriptor.type, name, `${name} descriptor type must equal its name`);
+    assert.deepEqual(descriptor.props, REPRESENTATIVE_PROPS[name]);
+  });
+}
+
+test('all 14 tier-3 composites construct with no props (props default to {})', () => {
+  for (const name of TIER_3) {
+    const descriptor = components[name]();
+    assert.equal(descriptor.type, name);
+    assert.deepEqual(descriptor.props, {});
+  }
+});
+
+for (const size of ['small', 'medium', 'large']) {
+  test(`TopAppBar constructs with size "${size}"`, () => {
+    const descriptor = components.TopAppBar({ size, title: 'Title' });
+    assert.equal(descriptor.type, 'TopAppBar');
+    assert.equal(descriptor.props.size, size);
+  });
+}
+
+for (const name of TIER_3) {
+  test(`${name} composes tier-1/2 descriptors only (no new native primitive)`, () => {
+    const descriptor = components[name](REPRESENTATIVE_PROPS[name]);
+    const types = collectTypes(descriptor);
+    assert.ok(types.length > 0, `${name} descriptor must carry a type`);
+    assert.equal(types[0], name, `${name} outer descriptor type must equal its name`);
+    const nested = types.filter((type) => type !== name);
+    assert.ok(
+      nested.length > 0,
+      `${name} descriptor must nest at least one tier-1/2 descriptor (composition over tier-1/2)`,
+    );
+    for (const type of nested) {
+      assert.ok(
+        TIER_1.has(type) || TIER_2.has(type),
+        `${name} instantiates "${type}", which is not a tier-1/2 name (new native primitive registered)`,
+      );
+    }
+  });
+}
+
+// ---------------------------------------------------------------------------
+// AC-M3-006: documented configurations render; variant/state props forward
+// ---------------------------------------------------------------------------
+
+test('variant and state props forward untouched to the descriptor', () => {
+  const bar = components.NavigationBar({ selected: 'search', enabled: false });
+  assert.equal(bar.props.selected, 'search');
+  assert.equal(bar.props.enabled, false);
+  const segmented = components.SegmentedButton({ selected: 'two', enabled: true });
+  assert.equal(segmented.props.selected, 'two');
+  assert.equal(segmented.props.enabled, true);
+  const sheet = components.BottomSheet({ open: false });
+  assert.equal(sheet.props.open, false);
+  const search = components.SearchBar({ value: 'hello', enabled: true });
+  assert.equal(search.props.value, 'hello');
+  assert.equal(search.props.enabled, true);
+});
+
+test('TopAppBar renders all three documented sizes distinctly', () => {
+  const seen = new Set();
+  for (const size of ['small', 'medium', 'large']) {
+    const descriptor = components.TopAppBar({ size, title: 'Title' });
+    assert.equal(descriptor.props.size, size);
+    seen.add(JSON.stringify(descriptor));
+  }
+  assert.equal(seen.size, 3, 'TopAppBar must render three distinct configurations');
+});
+
+test('Dialog renders open and closed configurations', () => {
+  const open = components.Dialog({ open: true, title: 'Confirm' });
+  const closed = components.Dialog({ open: false, title: 'Confirm' });
+  assert.equal(open.props.open, true);
+  assert.equal(closed.props.open, false);
+  assert.notDeepEqual(open, closed);
+});
+
+// ---------------------------------------------------------------------------
+// RULE-M3-006: overlay members layer via OverlayHost
+// ---------------------------------------------------------------------------
+
+for (const name of OVERLAY_MEMBERS) {
+  test(`${name} layers via OverlayHost`, () => {
+    const descriptor = components[name](REPRESENTATIVE_PROPS[name]);
+    assert.equal(descriptor.type, name);
+    assert.ok(
+      JSON.stringify(descriptor).includes('OverlayHost'),
+      `${name} descriptor must layer via OverlayHost`,
+    );
+  });
+}
+
+// ---------------------------------------------------------------------------
+// RULE-M3-001 import closure: composites import only @muse/core and
+// @muse/native, and register no native primitive
+// ---------------------------------------------------------------------------
+
+test('composites directory holds one TSX file per composite', () => {
+  for (const name of TIER_3) {
+    const url = new URL(`./${name}.tsx`, COMPOSITES_URL);
+    assert.ok(existsSync(url), `composite source missing: composites/${name}.tsx`);
+  }
+});
+
+test('tier-3 composite sources import only @muse/core and @muse/native', () => {
+  const allowed = new Set(['@muse/core', '@muse/native']);
+  const files = readdirSync(COMPOSITES_URL).filter((f) => f.endsWith('.tsx') || f.endsWith('.ts'));
+  assert.ok(files.length >= 14, 'composites directory must hold at least 14 sources');
+  for (const file of files) {
+    const source = readFileSync(new URL(`./${file}`, COMPOSITES_URL), 'utf8');
+    const imports = [...source.matchAll(/(?:import|require)\s*[(]?\s*['"]([^'"]+)['"]/g)].map((m) => m[1]);
+    const relative = imports.filter((s) => s.startsWith('.') || s.startsWith('/'));
+    assert.deepEqual(relative, [], `${file} must not use relative imports outside the package`);
+    for (const spec of imports) {
+      if (spec.startsWith('.') || spec.startsWith('/') || spec.startsWith('node:')) continue;
+      assert.ok(allowed.has(spec), `${file} imports "${spec}" outside @muse/core and @muse/native`);
+    }
+    assert.ok(
+      !/registerNative|registerPrimitive|NativeModules\s*\./.test(source),
+      `${file} must not register a native primitive`,
+    );
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Boundary/error: unknown variant-style names are not exported
+// ---------------------------------------------------------------------------
+
+test('unknown variant-style composite names are not exported', () => {
+  assert.equal(components.SmallTopAppBar, undefined);
+  assert.equal(components.TopAppBarSmall, undefined);
+  assert.equal(components.ModalDialog, undefined);
+  assert.equal(components.NotAComponent, undefined);
+});
+
+test('accessing an unknown tier-3 composite cannot construct a descriptor', () => {
+  assert.throws(() => {
+    components.NotAComponent({});
+  }, TypeError);
+});
