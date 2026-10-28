@@ -30,6 +30,8 @@ void validateBackend(Backend b) {
 }  // namespace
 
 NodeId Solver::addNode(Backend b, NodeId parent) {
+  // Assumption: node/constraint minting is app-gated (no untrusted
+  // principal reaches it today); revisit if a bridge lands.
   validateBackend(b);
   if (parent != kInvalidNodeId &&
       (static_cast<std::size_t>(parent) >= nodes_.size())) {

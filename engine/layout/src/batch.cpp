@@ -59,7 +59,15 @@ void releaseBatch(TreeBatch* b) noexcept {
 void emitOne(NodeId subtreeRoot) noexcept {
   ++g_count;
   InvalidationSink* s = g_sink;
-  if (s != nullptr) s->onInvalidated(subtreeRoot);
+  // Defense-in-depth: the sink contract requires `noexcept`, but a
+  // misbehaving observer must never terminate the `noexcept` batch path.
+  // Delivery still counts once per touched subtree even when the sink throws.
+  if (s != nullptr) {
+    try {
+      s->onInvalidated(subtreeRoot);
+    } catch (...) {
+    }
+  }
 }
 
 void markDirty(TreeBatch* b, NodeId subtreeRoot) noexcept {

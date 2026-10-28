@@ -25,6 +25,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
+#include <stdexcept>
 #include <type_traits>
 #include <vector>
 
@@ -225,6 +226,171 @@ static bool check_two_tree_interleave_isolated() {
   return sawA && sawB;
 }
 
+// Named case (Stage 4 security, LOW-1): a throwing sink must not
+// terminate the `noexcept` batch path. Encodes the `emitOne` guard in
+// `engine/layout/src/batch.cpp` (read-only): delivery still counts once
+// per touched subtree even when the observer throws, and the scope
+// closes cleanly. Covers both the coalesced (in-scope) and immediate
+// (out-of-scope) emit limbs.
+class ThrowingSink : public layout::InvalidationSink {
+ public:
+  void onInvalidated(layout::NodeId) override {
+    ++attempts;
+    throw std::runtime_error("hostile observer");
+  }
+  int attempts = 0;
+};
+
+static bool check_throwing_sink_does_not_terminate() {
+  layout::PropertyTree tree;
+  ThrowingSink sink;
+  SinkGuard guard(&sink);
+  const layout::PropHandle w = layout::prop("width");
+  const std::uint64_t base = layout::invalidationCount();
+  {
+    layout::BatchScope scope(tree);
+    for (int i = 0; i < 10; ++i)
+      layout::setBatched(tree, 1, w, static_cast<float>(i));
+  }  // Scope close flushes through the throwing sink: must not terminate.
+  if (layout::invalidationCount() != base + 1) return false;
+  if (sink.attempts != 1) return false;
+  // Immediate-emit limb (no open scope) with the same throwing sink.
+  layout::setBatched(tree, 2, w, 1.0f);
+  if (layout::invalidationCount() != base + 2) return false;
+  return sink.attempts == 2;
+}
+
+// Named case (Stage 4 security, LOW-2a): sink-reset protocol. The
+// documented contract in `engine/layout/include/layout/batch.h`
+// (read-only) requires the sink to outlive its installation or be reset
+// to `nullptr` first. Reset-then-destroy must be safe: later emissions
+// advance the counter with no delivery and no UAF call, and a fresh
+// sink installs cleanly afterwards (global state is not stuck).
+static bool check_sink_reset_then_destroy_no_uaf() {
+  layout::PropertyTree tree;
+  auto* doomed = new CountingSink();
+  doomed->roots.reserve(8);
+  layout::setInvalidationSink(doomed);
+  layout::setInvalidationSink(nullptr);
+  delete doomed;
+  doomed = nullptr;
+  const layout::PropHandle w = layout::prop("width");
+  const std::uint64_t base = layout::invalidationCount();
+  layout::setBatched(tree, 1, w, 1.0f);  // Would UAF-call if reset failed.
+  if (layout::invalidationCount() != base + 1) return false;
+  CountingSink second;
+  SinkGuard guard(&second);
+  layout::setBatched(tree, 2, w, 2.0f);
+  return second.calls == 1 && second.roots.size() == 1 &&
+         second.roots[0] == 2;
+}
+
+// Named case (Stage 4 security, LOW-2b): tree-slot reuse must not
+// cross-route. The contract requires a tree to outlive its open scopes;
+// once a scope closes, its table slot is released, so a later tree
+// (even one allocated at the same address) starts with a clean slot and
+// its invalidations route only to itself.
+static bool check_tree_slot_reuse_no_cross_route() {
+  CountingSink sink;
+  SinkGuard guard(&sink);
+  sink.roots.reserve(8);
+  const layout::PropHandle w = layout::prop("width");
+  const std::uint64_t base = layout::invalidationCount();
+  {
+    layout::PropertyTree treeA;
+    {
+      layout::BatchScope scopeA(treeA);
+      layout::setBatched(treeA, 1, w, 1.0f);
+    }  // Scope A closes: slot released before treeA dies.
+  }
+  {
+    layout::PropertyTree treeB;
+    layout::BatchScope scopeB(treeB);
+    if (scopeB.pendingCount() != 0) return false;  // No stale dirty.
+    layout::setBatched(treeB, 2, w, 2.0f);
+    if (scopeB.pendingCount() != 1) return false;
+  }
+  if (layout::invalidationCount() != base + 2) return false;
+  if (sink.calls != 2 || sink.roots.size() != 2) return false;
+  bool sawA = false, sawB = false;
+  for (layout::NodeId r : sink.roots) {
+    if (r == 1) sawA = true;
+    if (r == 2) sawB = true;
+  }
+  return sawA && sawB;
+}
+
+// Named case (Stage 4 security, table-limit degrade): the 512-dirty
+// bound degrades to immediate emit instead of dropping or spamming.
+// Bounded facsimile at the real limit: 600 distinct node ids in one
+// scope (512 fill the table, 88 degrade to immediate emit, 512 flush at
+// close) ⇒ exactly 600 counted deliveries — bounded, none lost, none
+// duplicated. Runs fast: 600 in-process sets, no large allocation
+// (PropertyTree holds a fixed 512 node slots; sets past capacity are
+// dropped deterministically per `property.h`).
+static bool check_dirty_table_limit_degrades_to_emit() {
+  layout::PropertyTree tree;
+  CountingSink sink;
+  SinkGuard guard(&sink);
+  sink.roots.reserve(640);
+  const layout::PropHandle w = layout::prop("width");
+  const std::uint64_t base = layout::invalidationCount();
+  {
+    layout::BatchScope scope(tree);
+    for (int i = 1; i <= 600; ++i)
+      layout::setBatched(tree, static_cast<layout::NodeId>(i), w,
+                         static_cast<float>(i));
+  }
+  if (layout::invalidationCount() != base + 600) return false;
+  return sink.calls == 600;
+}
+
+// Named case (Stage 4 security, table-limit degrade): the 8-tree bound
+// degrades to immediate emit. Bounded facsimile at the real limit: 9
+// trees scoped at once; the 9th finds no free slot, so its mutation
+// emits immediately (pending 0) while the first 8 stay queued (pending
+// 1 each). Close order flushes each tree's own entry only ⇒ total
+// delta 9, one delivery per tree, no cross-tree leak.
+static bool check_tree_table_limit_degrades_to_emit() {
+  layout::PropertyTree t0, t1, t2, t3, t4, t5, t6, t7, t8;
+  CountingSink sink;
+  SinkGuard guard(&sink);
+  sink.roots.reserve(16);
+  const layout::PropHandle w = layout::prop("width");
+  const std::uint64_t base = layout::invalidationCount();
+  {
+    layout::BatchScope s0(t0);
+    layout::BatchScope s1(t1);
+    layout::BatchScope s2(t2);
+    layout::BatchScope s3(t3);
+    layout::BatchScope s4(t4);
+    layout::BatchScope s5(t5);
+    layout::BatchScope s6(t6);
+    layout::BatchScope s7(t7);
+    layout::BatchScope s8(t8);  // No free slot: untracked.
+    layout::setBatched(t0, 1, w, 1.0f);
+    layout::setBatched(t1, 1, w, 1.0f);
+    layout::setBatched(t2, 1, w, 1.0f);
+    layout::setBatched(t3, 1, w, 1.0f);
+    layout::setBatched(t4, 1, w, 1.0f);
+    layout::setBatched(t5, 1, w, 1.0f);
+    layout::setBatched(t6, 1, w, 1.0f);
+    layout::setBatched(t7, 1, w, 1.0f);
+    layout::setBatched(t8, 1, w, 1.0f);  // Immediate emit (untracked).
+    if (layout::invalidationCount() != base + 1) return false;
+    if (sink.calls != 1) return false;
+    if (s0.pendingCount() != 1 || s1.pendingCount() != 1 ||
+        s2.pendingCount() != 1 || s3.pendingCount() != 1 ||
+        s4.pendingCount() != 1 || s5.pendingCount() != 1 ||
+        s6.pendingCount() != 1 || s7.pendingCount() != 1) {
+      return false;
+    }
+    if (s8.pendingCount() != 0) return false;
+  }
+  if (layout::invalidationCount() != base + 9) return false;
+  return sink.calls == 9;
+}
+
 }  // namespace
 
 #define RUN_CASE(name)                 \
@@ -245,6 +411,11 @@ int main() {
   RUN_CASE(check_pending_count_tracks_queued_work);
   RUN_CASE(check_nullptr_sink_restores_counting_default);
   RUN_CASE(check_two_tree_interleave_isolated);
+  RUN_CASE(check_throwing_sink_does_not_terminate);
+  RUN_CASE(check_sink_reset_then_destroy_no_uaf);
+  RUN_CASE(check_tree_slot_reuse_no_cross_route);
+  RUN_CASE(check_dirty_table_limit_degrades_to_emit);
+  RUN_CASE(check_tree_table_limit_degrades_to_emit);
   if (failures > 0) {
     std::printf("batch_test: %d failing\n", failures);
     return 1;
