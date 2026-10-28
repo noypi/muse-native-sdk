@@ -1,0 +1,9 @@
+{
+  "name": "@muse/devserver",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "test": "node --test test/hot-reload.test.js",
+    "test:hot-reload": "node --test test/hot-reload.test.js"
+  }
+}
