@@ -268,9 +268,127 @@ export type Tier1Name =
   | 'TextFieldEditCore'
   | 'OverlayHost';
 
+// FR-M3-003 / AC-M3-005 — @muse/native tier-3 prop types (T3).
+// Per-composite prop types generated from the T1 manifest schemas in
+// muse.manifest.json: `token` roles map to string, `slot` maps to unknown,
+// `values` lists map to string-literal unions, non-required props are
+// optional. Variants are prop values, not component names.
+
+export type TopAppBarProps = {
+  title: string;
+  size?: 'small' | 'medium' | 'large';
+  navigationIcon?: string;
+  actions?: unknown;
+};
+
+export type NavigationBarProps = {
+  selected: string;
+  enabled?: boolean;
+  content?: unknown;
+};
+
+export type NavigationRailProps = {
+  selected: string;
+  enabled?: boolean;
+  content?: unknown;
+};
+
+export type NavigationDrawerProps = {
+  selected: string;
+  enabled?: boolean;
+  content?: unknown;
+};
+
+export type SegmentedButtonProps = {
+  selected: string;
+  enabled?: boolean;
+};
+
+export type DialogProps = {
+  open: boolean;
+  title: string;
+  content?: unknown;
+  actions?: unknown;
+};
+
+export type BottomSheetProps = {
+  open: boolean;
+  content?: unknown;
+};
+
+export type MenuProps = {
+  open: boolean;
+  anchor?: unknown;
+  content?: unknown;
+};
+
+export type SnackbarHostProps = {
+  message: string;
+  content?: unknown;
+};
+
+export type SearchBarProps = {
+  value?: string;
+  placeholder?: string;
+  enabled?: boolean;
+};
+
+export type CarouselProps = {
+  index: number;
+  content?: unknown;
+};
+
+export type BottomAppBarProps = {
+  title?: string;
+  content?: unknown;
+};
+
+export type ButtonGroupProps = {
+  selected: string;
+  enabled?: boolean;
+  content?: unknown;
+};
+
+export type SplitButtonProps = {
+  label: string;
+  enabled?: boolean;
+  icon?: string;
+};
+
+export type Tier3Name =
+  | 'TopAppBar'
+  | 'NavigationBar'
+  | 'NavigationRail'
+  | 'NavigationDrawer'
+  | 'SegmentedButton'
+  | 'Dialog'
+  | 'BottomSheet'
+  | 'Menu'
+  | 'SnackbarHost'
+  | 'SearchBar'
+  | 'Carousel'
+  | 'BottomAppBar'
+  | 'ButtonGroup'
+  | 'SplitButton';
+
+export declare function TopAppBar(props?: TopAppBarProps): NativeDescriptor;
+export declare function NavigationBar(props?: NavigationBarProps): NativeDescriptor;
+export declare function NavigationRail(props?: NavigationRailProps): NativeDescriptor;
+export declare function NavigationDrawer(props?: NavigationDrawerProps): NativeDescriptor;
+export declare function SegmentedButton(props?: SegmentedButtonProps): NativeDescriptor;
+export declare function Dialog(props?: DialogProps): NativeDescriptor;
+export declare function BottomSheet(props?: BottomSheetProps): NativeDescriptor;
+export declare function Menu(props?: MenuProps): NativeDescriptor;
+export declare function SnackbarHost(props?: SnackbarHostProps): NativeDescriptor;
+export declare function SearchBar(props?: SearchBarProps): NativeDescriptor;
+export declare function Carousel(props?: CarouselProps): NativeDescriptor;
+export declare function BottomAppBar(props?: BottomAppBarProps): NativeDescriptor;
+export declare function ButtonGroup(props?: ButtonGroupProps): NativeDescriptor;
+export declare function SplitButton(props?: SplitButtonProps): NativeDescriptor;
+
 export declare const primitives: string[];
 export declare const components: Record<
-  Tier1Name | Tier2Name,
+  Tier1Name | Tier2Name | Tier3Name,
   (props?: Record<string, unknown>) => NativeDescriptor
 >;
 export declare const manifest: {

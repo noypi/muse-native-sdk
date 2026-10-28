@@ -1,0 +1,8 @@
+{
+  "name": "@muse/gallery",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "test:stories": "node --test test/story-coverage.test.ts"
+  }
+}

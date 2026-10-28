@@ -38,7 +38,10 @@ function collectJsFiles(root, into = []) {
     if (entry.isDirectory()) {
       if (SKIP_DIRS.has(entry.name)) continue;
       collectJsFiles(full, into);
-    } else if (entry.isFile() && entry.name.endsWith('.js')) {
+    } else if (
+      entry.isFile() &&
+      (entry.name.endsWith('.js') || entry.name.endsWith('.tsx') || entry.name.endsWith('.ts'))
+    ) {
       into.push(full);
     }
   }

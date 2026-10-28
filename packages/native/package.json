@@ -2,13 +2,14 @@
   "name": "@muse/native",
   "version": "0.0.0",
   "scripts": {
-    "check": "node scripts/check-manifest.js && node scripts/check-props.js && node scripts/check-tokens.js --scope lib",
+    "check": "node scripts/check-manifest.js && node scripts/check-composites.js && node scripts/check-props.js && node scripts/check-tokens.js --scope lib",
     "check:types": "tsc --noEmit",
-    "prebuild": "node scripts/check-manifest.js && node scripts/check-props.js && node scripts/check-tokens.js --scope lib",
+    "prebuild": "node scripts/check-manifest.js && node scripts/check-composites.js && node scripts/check-props.js && node scripts/check-tokens.js --scope lib",
     "test": "node --test test/*.test.js 2>/dev/null || test ! -d test",
     "test:manifest": "node --test test/manifest.test.ts test/manifest-schema.test.ts",
     "test:tier1": "node --test test/tier1.test.ts",
     "test:tier2": "node --test test/tier2.test.ts",
+    "test:tier3": "node --test test/tier3.test.ts",
     "test:tokens": "node --test test/tokens.test.ts",
     "test:theme": "node --test test/theme.test.ts",
     "test:textinput": "node --test test/textinput-composition.test.ts test/textinput-selection.test.ts test/textinput-insets.test.ts test/textinput-clipboard.test.ts"

@@ -266,7 +266,226 @@ const tier2 = {
   TextInput,
 };
 
-const components = { ...tier1, ...tier2 };
+// FR-M3-003 / AC-M3-005 — tier-3 composites over tier-1/2 only (T2).
+// Each tier-3 factory keeps the `{ type, props }` descriptor shape with props
+// passed through untouched, and composes tier-1/2 descriptors only (no new
+// native primitive). Composition lives in sibling keys beside `props` so the
+// echoed props stay exactly the caller's props; the C1 type-key walk observes
+// the nested tier-1/2 types across the whole descriptor graph. All nested
+// props reference token roles only (no literal colour/dimension). Overlay
+// members (Dialog, BottomSheet, Menu, SnackbarHost) compose OverlayHost per
+// RULE-M3-006. TopAppBar renders small|medium|large distinctly via a
+// size-selected title variant (ASSUMPTION C2). Mirrors composites/*.tsx.
+const TOP_APP_BAR_TITLE_VARIANT = {
+  small: 'title-large',
+  medium: 'headline-small',
+  large: 'headline-medium',
+};
+
+function TopAppBar(props) {
+  const next = props === undefined ? {} : props;
+  const size = next !== null && typeof next === 'object' && typeof next.size === 'string' ? next.size : 'small';
+  return {
+    type: 'TopAppBar',
+    props: next,
+    content: [
+      Surface({ tone: 'surface' }),
+      Text({ variant: Object.prototype.hasOwnProperty.call(TOP_APP_BAR_TITLE_VARIANT, size) ? TOP_APP_BAR_TITLE_VARIANT[size] : TOP_APP_BAR_TITLE_VARIANT.small, color: 'on-surface' }),
+      Icon({ name: 'menu', color: 'on-surface' }),
+      Divider({ orientation: 'horizontal', color: 'outline' }),
+    ],
+  };
+}
+function NavigationBar(props) {
+  const next = props === undefined ? {} : props;
+  return {
+    type: 'NavigationBar',
+    props: next,
+    content: [
+      Surface({ tone: 'surface-container' }),
+      Stack({ direction: 'row' }),
+      Icon({ name: 'home', color: 'on-surface' }),
+      Text({ variant: 'label-medium', color: 'on-surface' }),
+      Ripple({ color: 'primary' }),
+    ],
+  };
+}
+function NavigationRail(props) {
+  const next = props === undefined ? {} : props;
+  return {
+    type: 'NavigationRail',
+    props: next,
+    content: [
+      Surface({ tone: 'surface-container' }),
+      Stack({ direction: 'column' }),
+      Icon({ name: 'home', color: 'on-surface' }),
+      Text({ variant: 'label-medium', color: 'on-surface' }),
+      Ripple({ color: 'primary' }),
+    ],
+  };
+}
+function NavigationDrawer(props) {
+  const next = props === undefined ? {} : props;
+  return {
+    type: 'NavigationDrawer',
+    props: next,
+    content: [
+      Surface({ tone: 'surface-container-low' }),
+      ListItem({ tone: 'surface-container-low' }),
+      Icon({ name: 'home', color: 'on-surface' }),
+      Text({ variant: 'label-large', color: 'on-surface' }),
+      Divider({ orientation: 'horizontal', color: 'outline' }),
+    ],
+  };
+}
+function SegmentedButton(props) {
+  const next = props === undefined ? {} : props;
+  return {
+    type: 'SegmentedButton',
+    props: next,
+    content: [
+      Chip({ tone: 'surface' }),
+      Surface({ tone: 'surface' }),
+      Text({ variant: 'label-large', color: 'on-surface' }),
+      Ripple({ color: 'primary' }),
+    ],
+  };
+}
+function Dialog(props) {
+  const next = props === undefined ? {} : props;
+  return {
+    type: 'Dialog',
+    props: next,
+    layer: OverlayHost({ content: Surface({ tone: 'surface-container-high' }) }),
+    content: [
+      Surface({ tone: 'surface-container-high' }),
+      Text({ variant: 'headline-small', color: 'on-surface' }),
+      Button({ tone: 'primary' }),
+    ],
+  };
+}
+function BottomSheet(props) {
+  const next = props === undefined ? {} : props;
+  return {
+    type: 'BottomSheet',
+    props: next,
+    layer: OverlayHost({ content: Surface({ tone: 'surface-container-low' }) }),
+    content: [
+      Surface({ tone: 'surface-container-low' }),
+      Divider({ orientation: 'horizontal', color: 'outline' }),
+      Text({ variant: 'body-medium', color: 'on-surface' }),
+    ],
+  };
+}
+function Menu(props) {
+  const next = props === undefined ? {} : props;
+  return {
+    type: 'Menu',
+    props: next,
+    layer: OverlayHost({ content: Surface({ tone: 'surface-container' }) }),
+    anchor: Text({ variant: 'body-medium', color: 'on-surface' }),
+    content: [
+      Surface({ tone: 'surface-container' }),
+      ListItem({ tone: 'surface-container' }),
+      Text({ variant: 'body-large', color: 'on-surface' }),
+    ],
+  };
+}
+function SnackbarHost(props) {
+  const next = props === undefined ? {} : props;
+  return {
+    type: 'SnackbarHost',
+    props: next,
+    layer: OverlayHost({ content: Surface({ tone: 'inverse-surface' }) }),
+    content: [
+      Surface({ tone: 'inverse-surface' }),
+      Text({ variant: 'body-medium', color: 'inverse-on-surface' }),
+      Button({ tone: 'inverse-surface' }),
+    ],
+  };
+}
+function SearchBar(props) {
+  const next = props === undefined ? {} : props;
+  return {
+    type: 'SearchBar',
+    props: next,
+    content: [
+      TextInput({ tone: 'surface-container-high' }),
+      Surface({ tone: 'surface-container-high' }),
+      Icon({ name: 'search', color: 'on-surface' }),
+    ],
+  };
+}
+function Carousel(props) {
+  const next = props === undefined ? {} : props;
+  return {
+    type: 'Carousel',
+    props: next,
+    content: [
+      Scroll({ orientation: 'horizontal' }),
+      Stack({ direction: 'row' }),
+      Image({ contentFit: 'cover' }),
+      Surface({ tone: 'surface' }),
+    ],
+  };
+}
+function BottomAppBar(props) {
+  const next = props === undefined ? {} : props;
+  return {
+    type: 'BottomAppBar',
+    props: next,
+    content: [
+      Surface({ tone: 'surface-container' }),
+      IconButton({ tone: 'surface-container' }),
+      Icon({ name: 'menu', color: 'on-surface' }),
+      Text({ variant: 'title-medium', color: 'on-surface' }),
+    ],
+  };
+}
+function ButtonGroup(props) {
+  const next = props === undefined ? {} : props;
+  return {
+    type: 'ButtonGroup',
+    props: next,
+    content: [
+      Button({ tone: 'surface' }),
+      Surface({ tone: 'surface' }),
+      Text({ variant: 'label-large', color: 'on-surface' }),
+    ],
+  };
+}
+function SplitButton(props) {
+  const next = props === undefined ? {} : props;
+  return {
+    type: 'SplitButton',
+    props: next,
+    content: [
+      Button({ tone: 'primary' }),
+      IconButton({ tone: 'primary' }),
+      Icon({ name: 'expand', color: 'on-primary' }),
+      Divider({ orientation: 'vertical', color: 'on-primary' }),
+    ],
+  };
+}
+
+const tier3 = {
+  TopAppBar,
+  NavigationBar,
+  NavigationRail,
+  NavigationDrawer,
+  SegmentedButton,
+  Dialog,
+  BottomSheet,
+  Menu,
+  SnackbarHost,
+  SearchBar,
+  Carousel,
+  BottomAppBar,
+  ButtonGroup,
+  SplitButton,
+};
+
+const components = { ...tier1, ...tier2, ...tier3 };
 
 const primitives = manifest.components.map((entry) => entry.name);
 
