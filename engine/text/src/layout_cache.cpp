@@ -106,10 +106,13 @@ StatusOr<ShapedRun> shapeRunWithVariations(
     // is uniform per run (identical vectors -> identical advances) with a
     // small per-glyph slope so multi-glyph runs read as shaped output.
     const std::uint64_t hash = VariationHash(vars, var_count);
-    const float delta =
+    float delta =
         static_cast<float>(static_cast<std::int64_t>(hash % 200001u) -
                            100000) *
         0.0001f;
+    // BUG-TEXT-002: remap the single zero residue so no variation vector
+    // yields a zero perturbation; identical vectors still hit identically.
+    if (delta == 0.0f) delta = 0.0001f;
     for (std::size_t i = 0; i < run.advances.size(); ++i) {
       run.advances[i] += delta * (1.0f + 0.001f * static_cast<float>(i));
     }
