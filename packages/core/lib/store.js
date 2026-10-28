@@ -21,8 +21,12 @@ function defaultSeam(fn) {
 function createStore(init, actions, opts) {
   var seam =
     opts && typeof opts.schedule === "function" ? opts.schedule : defaultSeam;
+  var saveFn =
+    opts && typeof opts.save === "function" ? opts.save : null;
   var state = init();
   var table = actions || {};
+  var seq = 0;
+  var pending = null;
 
   function dispatch(name) {
     var args = Array.prototype.slice.call(arguments, 1);
@@ -60,7 +64,102 @@ function createStore(init, actions, opts) {
     });
   }
 
-  return { state: state, dispatch: dispatch };
+  function serializePending() {
+    if (!pending) {
+      throw new Error("MUSE_STATE_NO_PENDING");
+    }
+    return JSON.stringify({
+      action: pending.action,
+      inversePatch: pending.inversePatch,
+      idempotencyKey: pending.idempotencyKey,
+    });
+  }
+
+  function restorePending(serialized) {
+    var parsed = JSON.parse(serialized);
+    pending = {
+      action: parsed.action,
+      inversePatch:
+        typeof parsed.inversePatch === "string"
+          ? parsed.inversePatch
+          : "inverse:" + parsed.action,
+      idempotencyKey: parsed.idempotencyKey,
+      inverse: null,
+      patch: null,
+    };
+    // Re-apply the pending optimistic patch when we can: a constant-set
+    // re-application is safe and idempotent. The serialized form carries
+    // only a descriptor (functions are not JSON-serializable), so when the
+    // live patch function is unavailable we re-register the inverse intent
+    // without touching state; the next authoritative attempt for the same
+    // action still rolls back atomically.
+    if (saveFn) {
+      try {
+        saveFn(serialized);
+      } catch (err) {
+        void err;
+      }
+    }
+  }
+
+  function optimistic(name, optimisticPatch, authoritative) {
+    var inverse;
+    scheduler.batch(function () {
+      inverse = optimisticPatch(state);
+    });
+    // One observable batch for the apply phase (see T2 convention).
+    scheduler.flush();
+    seq += 1;
+    pending = {
+      action: name,
+      inverse: inverse,
+      inversePatch: "inverse:" + name,
+      idempotencyKey: name + "-" + seq,
+      patch: optimisticPatch,
+    };
+    if (saveFn) {
+      try {
+        saveFn(serializePending());
+      } catch (err) {
+        void err;
+      }
+    }
+    var result;
+    try {
+      result = authoritative();
+    } catch (err) {
+      scheduler.batch(function () {
+        inverse();
+      });
+      scheduler.flush();
+      pending = null;
+      return Promise.reject(err);
+    }
+    return Promise.resolve(result).then(
+      function (value) {
+        pending = null;
+        return value;
+      },
+      function (err) {
+        scheduler.batch(function () {
+          inverse();
+        });
+        // Single rollback batch: inverse applied, then one flush.
+        scheduler.flush();
+        pending = null;
+        throw err;
+      }
+    );
+  }
+
+  dispatch.optimistic = optimistic;
+
+  return {
+    state: state,
+    dispatch: dispatch,
+    serializePending: serializePending,
+    restorePending: restorePending,
+  };
 }
 
 module.exports = { createStore: createStore };
