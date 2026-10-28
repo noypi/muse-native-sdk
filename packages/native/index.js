@@ -46,7 +46,7 @@ function driveState(target, state) {
 
 function withStateLayer(name, props) {
   const next = props === undefined ? {} : props;
-  if (next !== null && typeof next === 'object' && typeof next.state === 'string') {
+  if (next !== null && typeof next === 'object' && 'state' in next && next.state !== undefined) {
     return { ...next, stateLayer: driveState(name, next.state) };
   }
   return next;
