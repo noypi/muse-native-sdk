@@ -1,0 +1,9 @@
+{
+  "name": "@muse/cli-tools",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "test": "node --test test/doctor.test.js",
+    "test:doctor": "node --test test/doctor.test.js"
+  }
+}
