@@ -20,6 +20,8 @@ add_library(navigation
   src/link_validation.cpp
   src/route_guard.cpp
   src/typed_routes.cpp
+  src/nested_graph.cpp
+  src/result_channel.cpp
 )
 target_include_directories(navigation PUBLIC include)
 target_compile_options(navigation PRIVATE -Wall -Wextra -Wpedantic)
@@ -116,6 +118,16 @@ add_executable(param_validation_test tests/param_validation_test.cpp)
 target_link_libraries(param_validation_test PRIVATE navigation)
 target_compile_options(param_validation_test PRIVATE -Wall -Wextra -Wpedantic)
 add_test(NAME param_validation_test COMMAND param_validation_test)
+
+add_executable(nested_deeplink_test tests/nested_deeplink_test.cpp)
+target_link_libraries(nested_deeplink_test PRIVATE navigation)
+target_compile_options(nested_deeplink_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME nested_deeplink_test COMMAND nested_deeplink_test)
+
+add_executable(result_channel_test tests/result_channel_test.cpp)
+target_link_libraries(result_channel_test PRIVATE navigation)
+target_compile_options(result_channel_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME result_channel_test COMMAND result_channel_test)
 
 # FR-NAV-006 T2 (NAV-APPLINKS codegen invocation — documentation only, no new
 # engine target added here):
