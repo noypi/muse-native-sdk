@@ -19,6 +19,7 @@ add_library(muse_text STATIC
   src/scale_config.cpp
   ink/ink_stroke_pipeline.cpp
   ink/palm_rejector.cpp
+  ink/handwriting_committer.cpp
 )
 target_include_directories(muse_text PUBLIC include)
 target_compile_options(muse_text PRIVATE -Wall -Wextra -Wpedantic)
@@ -99,6 +100,10 @@ add_executable(palm_rejection_test ink/tests/palm_rejection_test.cpp)
 target_link_libraries(palm_rejection_test PRIVATE muse_text)
 target_compile_options(palm_rejection_test PRIVATE -Wall -Wextra -Wpedantic)
 
+add_executable(handwriting_test ink/tests/handwriting_test.cpp)
+target_link_libraries(handwriting_test PRIVATE muse_text)
+target_compile_options(handwriting_test PRIVATE -Wall -Wextra -Wpedantic)
+
 add_executable(rich_buffer_test tests/rich_buffer_test.cpp)
 target_link_libraries(rich_buffer_test PRIVATE muse_text)
 target_compile_options(rich_buffer_test PRIVATE -Wall -Wextra -Wpedantic)
@@ -144,6 +149,7 @@ add_test(NAME font_pipeline_test COMMAND font_pipeline_test)
 add_test(NAME stylus_samples_test COMMAND stylus_samples_test)
 add_test(NAME stylus_axes_test COMMAND stylus_axes_test)
 add_test(NAME palm_rejection_test COMMAND palm_rejection_test)
+add_test(NAME handwriting_test COMMAND handwriting_test)
 add_test(NAME rich_buffer_test COMMAND rich_buffer_test)
 add_test(NAME nonlinear_scale_test COMMAND nonlinear_scale_test)
 add_test(NAME scale_remeasure_test COMMAND scale_remeasure_test)
