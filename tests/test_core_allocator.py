@@ -12,11 +12,14 @@ The sources under test are ``engine/core/mem/arena.h``,
 ``engine/core/mem/arena.cpp``, ``engine/core/mem/pool.h`` and
 ``engine/core/mem/render_alloc.h`` (created by the coder in T2).
 Assertions are static contract checks over those files (existence +
-declared-interface tokens + error-shape marker); the Gradle task wiring
-itself (``:engine:core:allocator``) is the coder's T2 build work and is
-marked EXTERNAL below — the repo's ``gradlew`` shim currently exposes
-only the ``:benchmark:*`` surface. Hermetic: stdlib unittest only, no
-network/secrets/services/config, no compilation.
+declared-interface tokens + error-shape marker) plus live behavioral
+checks that compile-and-run ``arena.cpp`` (``ArenaLiveBehavior``); the
+Gradle task wiring itself (``:engine:core:allocator``) is the coder's
+T2 build work and is marked EXTERNAL below — the repo's ``gradlew``
+shim currently exposes only the ``:benchmark:*`` surface. Hermetic:
+stdlib unittest only, no network/secrets/services/config; live checks
+use only the local C++ toolchain plus tmp dirs (fail-closed SKIP when
+no compiler is present).
 
 Expected state before T2 implementation: RED — ``engine/core/mem`` does
 not exist, so every file-existence/interface assertion fails. The
@@ -26,6 +29,8 @@ need the in-file scanner + tmp dirs).
 
 import os
 import re
+import shutil
+import subprocess
 import tempfile
 import unittest
 
@@ -62,6 +67,149 @@ def scan_heap_escapes(path):
             if HEAP_ESCAPE_RE.search(line):
                 hits.append(lineno)
     return hits
+
+
+def _find_cxx():
+    """Return a C++ compiler (c++/g++/clang++) or None when absent."""
+    for candidate in ("c++", "g++", "clang++"):
+        if shutil.which(candidate) is not None:
+            return candidate
+    return None
+
+
+_MISSING_COMPILER_SKIP = (
+    "SKIP: no C++ compiler found (c++/g++/clang++ missing) — "
+    "live Arena compile-and-run cannot run here "
+    "(fail closed, no silent pass)"
+)
+
+_ARENA_LIVE_MAIN = r"""
+#include <cstdint>
+#include <cstdio>
+#include "arena.h"
+
+int main() {
+  using muse::core::Arena;
+  int failures = 0;
+  auto check = [&](bool cond, const char* name) {
+    if (cond) {
+      std::printf("PASS: %s\n", name);
+    } else {
+      std::printf("FAIL: %s\n", name);
+      ++failures;
+    }
+  };
+  // Over-capacity request must be denied with nullptr.
+  {
+    Arena arena(8);
+    check(arena.allocate(9, 1) == nullptr,
+          "over-capacity returns nullptr");
+  }
+  // Padding-exceeds-remaining (shipped BLOCKER shape): after filling 15
+  // of 16 bytes, a 1-byte request at 32-byte alignment must be denied
+  // with nullptr whenever the alignment padding exceeds the 1 remaining
+  // byte — never an out-of-bounds pointer. The expectation is computed
+  // from a reference bump model (never from the implementation), so it
+  // holds for every possible malloc base alignment.
+  {
+    Arena arena(16);
+    void* first = arena.allocate(15, 1);
+    check(first != nullptr, "fill-then-pad setup allocation succeeds");
+    const uintptr_t base = reinterpret_cast<uintptr_t>(first);
+    const size_t pad = (32u - ((base + 15u) % 32u)) % 32u;
+    const bool expect_null = (pad >= 1);  // 15 + pad + 1 > 16 iff pad >= 1
+    void* second = arena.allocate(1, 32);
+    check((second == nullptr) == expect_null,
+          "padding-exceeds-remaining returns nullptr");
+  }
+  // Reference-model sweep: for every fill of small arenas and for
+  // probe alignments 32 and 64, a 1-byte request must return nullptr
+  // exactly when fill + padding + 1 exceeds capacity, and otherwise
+  // return exactly base + fill + padding. The expectation is computed
+  // from a reference bump model (never from the implementation), so a
+  // padding value that exceeds the remaining bytes can never be
+  // confused with a fit: the unsigned-underflow BLOCKER (padding >
+  // remaining wraps and returns an out-of-bounds pointer) is observed
+  // as a non-null return where the model demands nullptr. Pairing two
+  // capacities (16, 40) with two probe alignments (32, 64) defeats the
+  // resonance that lets one capacity hide one malloc-base residue, so
+  // the sweep is red against the pre-fix implementation on ordinary
+  // 16-aligned malloc bases.
+  {
+    bool model_ok = true;
+    const size_t kAligns[] = {32, 64};
+    const size_t kCapacities[] = {16, 40};
+    for (size_t ai = 0; ai < 2; ++ai) {
+      for (size_t ci = 0; ci < 2; ++ci) {
+        const size_t capacity = kCapacities[ci];
+        const size_t align = kAligns[ai];
+        for (size_t fill = 1; fill <= capacity; ++fill) {
+          Arena arena(capacity);
+          void* first = arena.allocate(fill, 1);
+          if (first == nullptr) {
+            // fill <= capacity with align 1 always fits; anything else
+            // is itself a denial bug.
+            std::printf("FAIL: model setup fill %u/%u denied\n",
+                        static_cast<unsigned>(fill),
+                        static_cast<unsigned>(capacity));
+            model_ok = false;
+            continue;
+          }
+          const uintptr_t base = reinterpret_cast<uintptr_t>(first);
+          const size_t pad = (align - ((base + fill) % align)) % align;
+          const bool expect_null = (fill + pad + 1 > capacity);
+          void* got = arena.allocate(1, align);
+          if (expect_null) {
+            if (got != nullptr) {
+              std::printf("FAIL: model cap=%u align=%u fill=%u pad=%u: "
+                          "expected nullptr, got out-of-bounds pointer\n",
+                          static_cast<unsigned>(capacity),
+                          static_cast<unsigned>(align),
+                          static_cast<unsigned>(fill),
+                          static_cast<unsigned>(pad));
+              model_ok = false;
+            }
+          } else if (got != reinterpret_cast<void*>(base + fill + pad)) {
+            std::printf("FAIL: model cap=%u align=%u fill=%u pad=%u: "
+                        "wrong in-bounds pointer\n",
+                        static_cast<unsigned>(capacity),
+                        static_cast<unsigned>(align),
+                        static_cast<unsigned>(fill),
+                        static_cast<unsigned>(pad));
+            model_ok = false;
+          }
+        }
+      }
+    }
+    check(model_ok, "padding reference model holds (capacities 16/40)");
+  }
+  // Exact-fit request must succeed; the arena is then exhausted.
+  {
+    Arena arena(16);
+    check(arena.allocate(16, 1) != nullptr, "exact-fit succeeds");
+    check(arena.allocate(1, 1) == nullptr,
+          "arena exhausted after exact fit");
+  }
+  // Non-power-of-two alignment must be rejected, never misaligned.
+  {
+    Arena arena(16);
+    check(arena.allocate(1, 3) == nullptr,
+          "non-power-of-two alignment returns nullptr");
+  }
+  // Sanity: normally aligned allocations succeed.
+  {
+    Arena arena(16);
+    void* first = arena.allocate(8, 8);
+    void* second = arena.allocate(8, 8);
+    check(first != nullptr && second != nullptr,
+          "aligned allocations succeed");
+  }
+  if (failures == 0) {
+    std::puts("ARENA_LIVE_ALL_PASS");
+  }
+  return failures == 0 ? 0 : 1;
+}
+"""
 
 
 def _read(path):
@@ -208,6 +356,94 @@ class EscapeScannerDenialCases(unittest.TestCase):
             "};\n"
         )
         self.assertEqual([], hits)
+
+
+class ArenaLiveBehavior(unittest.TestCase):
+    """Live behavioral tests: compile-and-run ``arena.cpp`` (T2 test gap).
+
+    Mirrors the T6 ``c++`` harness pattern: compile the production
+    ``arena.cpp`` plus a small driver with ``-std=c++20`` and run it.
+    When no compiler (``c++``/``g++``/``clang++``) is present the tests
+    fail closed with SKIP naming the missing compiler — never a silent
+    pass. Hermetic: toolchain + tmp dir only.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls._tmp = None
+        cls._exe = None
+        cls._build_stderr = ""
+        cxx = _find_cxx()
+        if cxx is None:
+            return
+        cls._tmp = tempfile.TemporaryDirectory()
+        src = os.path.join(cls._tmp.name, "arena_live_main.cpp")
+        cls._exe = os.path.join(cls._tmp.name, "arena_live")
+        with open(src, "w", encoding="utf-8") as fh:
+            fh.write(_ARENA_LIVE_MAIN)
+        proc = subprocess.run(
+            [cxx, "-std=c++20", "-I", MEM_ROOT, src, ARENA_CPP,
+             "-o", cls._exe],
+            capture_output=True,
+            text=True,
+            timeout=180,
+        )
+        cls._build_stderr = proc.stderr
+        if proc.returncode != 0:
+            cls._exe = None
+
+    @classmethod
+    def tearDownClass(cls):
+        if cls._tmp is not None:
+            cls._tmp.cleanup()
+
+    def _run_live(self):
+        if _find_cxx() is None or self._exe is None:
+            if self._exe is None and _find_cxx() is not None:
+                self.fail(
+                    "live Arena driver must compile: %s"
+                    % (self._build_stderr,)
+                )
+            self.skipTest(_MISSING_COMPILER_SKIP)
+        proc = subprocess.run(
+            [self._exe], capture_output=True, text=True, timeout=60
+        )
+        self.assertEqual(
+            proc.returncode,
+            0,
+            "live Arena driver must exit 0 (no crash, all cases hold):\n%s"
+            % (proc.stdout + proc.stderr,),
+        )
+        return proc.stdout
+
+    def test_live_overflow_returns_nullptr(self):
+        out = self._run_live()
+        self.assertIn("PASS: over-capacity returns nullptr", out)
+
+    def test_live_padding_exceeds_remaining_returns_nullptr(self):
+        out = self._run_live()
+        self.assertIn(
+            "PASS: padding-exceeds-remaining returns nullptr", out
+        )
+        self.assertIn(
+            "PASS: padding reference model holds (capacities 16/40)", out
+        )
+
+    def test_live_exact_fit_succeeds(self):
+        out = self._run_live()
+        self.assertIn("PASS: exact-fit succeeds", out)
+        self.assertIn("PASS: arena exhausted after exact fit", out)
+
+    def test_live_non_power_of_two_alignment_rejected(self):
+        out = self._run_live()
+        self.assertIn(
+            "PASS: non-power-of-two alignment returns nullptr", out
+        )
+
+    def test_live_aligned_allocations_succeed(self):
+        out = self._run_live()
+        self.assertIn("PASS: aligned allocations succeed", out)
+        self.assertIn("ARENA_LIVE_ALL_PASS", out)
 
 
 if __name__ == "__main__":

@@ -26,6 +26,9 @@ class Arena {
   // Bump-allocate n bytes with the given alignment from the store.
   // Returns nullptr (and reports CORE_ALLOC_HEAP_ESCAPE where
   // instrumented) when the request does not fit.
+  // Precondition: align is a power of two (0 is treated as 1). A
+  // non-power-of-two alignment is rejected with nullptr + escape report
+  // instead of returning a misaligned pointer.
   void* allocate(size_t n, size_t align) noexcept;
 
   // Rewind the cursor so the whole store is usable for the next frame.

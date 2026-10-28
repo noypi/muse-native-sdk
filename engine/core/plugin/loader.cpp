@@ -26,14 +26,31 @@ constexpr const char* kEntrySymbol = "MusePluginEntry";
 
 using EntryFn = const PluginDescriptor* (*)();
 
+// Length-limited copy of an abiHash field: actual points into
+// plugin-controlled memory and char abiHash[65] is not guaranteed
+// NUL-terminated, so no unbounded %s / std::string(char*) may touch it.
+std::string CopyHash(const char* hash) {
+  if (hash == nullptr) {
+    return "";
+  }
+  size_t len = 0;
+  while (len < 64 && hash[len] != '\0') {
+    ++len;
+  }
+  return std::string(hash, len);
+}
+
 std::string DescribeMismatch(const char* what, const PluginDescriptor& expected,
                              const PluginDescriptor& actual) {
+  const std::string expectedHash = CopyHash(expected.abiHash);
+  const std::string actualHash = CopyHash(actual.abiHash);
   char buf[512];
   std::snprintf(buf, sizeof(buf),
-                "plugin ABI mismatch (%s): expected major=%u minor=%u hash=%s, "
-                "actual major=%u minor=%u hash=%s",
-                what, expected.abiMajor, expected.abiMinor, expected.abiHash,
-                actual.abiMajor, actual.abiMinor, actual.abiHash);
+                "plugin ABI mismatch (%s): expected major=%u minor=%u hash=%.64s, "
+                "actual major=%u minor=%u hash=%.64s",
+                what, expected.abiMajor, expected.abiMinor,
+                expectedHash.c_str(), actual.abiMajor, actual.abiMinor,
+                actualHash.c_str());
   return buf;
 }
 
@@ -54,8 +71,8 @@ LoadResult Deny(PluginErrorCode code, const PluginDescriptor& expected,
   PluginError error;
   error.code = code;
   error.message = DescribeMismatch(what, expected, actual);
-  error.expectedHash = std::string(expected.abiHash);
-  error.actualHash = std::string(actual.abiHash);
+  error.expectedHash = CopyHash(expected.abiHash);
+  error.actualHash = CopyHash(actual.abiHash);
   if (so != nullptr) {
     dlclose(so);
   }
@@ -87,7 +104,7 @@ LoadResult loadPlugin(const char* path, PluginDescriptor expected) {
     error.message =
         std::string("plugin load failed: dlopen failed, expected=") + path +
         " actual=load-error";
-    error.expectedHash = std::string(expected.abiHash);
+    error.expectedHash = CopyHash(expected.abiHash);
     error.actualHash = "";
     return LoadResult::err(error);
   }
@@ -103,7 +120,7 @@ LoadResult loadPlugin(const char* path, PluginDescriptor expected) {
     error.message = std::string("plugin load failed: could not resolve ") +
                     kEntrySymbol + ", expected=" + kEntrySymbol +
                     " actual=missing-symbol";
-    error.expectedHash = std::string(expected.abiHash);
+    error.expectedHash = CopyHash(expected.abiHash);
     error.actualHash = "";
     dlclose(so);
     return LoadResult::err(error);

@@ -11,15 +11,21 @@ reproduced verbatim)::
 The sources under test are ``engine/core/plugin/manifest.h`` and
 ``engine/core/plugin/manifest.cpp`` (created by the coder in T5).
 Assertions are static contract checks over those files (existence +
-declared-interface tokens + deny-by-default markers); live
-parse/enforce execution is the coder's T5 build work and runs under
-``:engine:core:pluginManifest`` (marked EXTERNAL below). Hermetic:
-stdlib unittest only, no network/secrets/services/config, no
-compilation.
+declared-interface tokens + deny-by-default markers) plus live
+parse checks that compile-and-run ``manifest.cpp``
+(``ManifestLiveParse``); live parse/enforce execution is also the
+coder's T5 build work and runs under ``:engine:core:pluginManifest``
+(marked EXTERNAL below). Hermetic: stdlib unittest only, no
+network/secrets/services/config; live checks use only the local C++
+toolchain plus tmp dirs (fail-closed SKIP when no compiler is
+present).
 """
 
 import os
 import re
+import shutil
+import subprocess
+import tempfile
 import unittest
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -38,6 +44,110 @@ ERROR_CODES = (
 def _read(path):
     with open(path, encoding="utf-8") as fh:
         return fh.read()
+
+
+def _find_cxx():
+    """Return a C++ compiler (c++/g++/clang++) or None when absent."""
+    for candidate in ("c++", "g++", "clang++"):
+        if shutil.which(candidate) is not None:
+            return candidate
+    return None
+
+
+_MISSING_COMPILER_SKIP = (
+    "SKIP: no C++ compiler found (c++/g++/clang++ missing) — "
+    "live manifest compile-and-run cannot run here "
+    "(fail closed, no silent pass)"
+)
+
+_MANIFEST_LIVE_MAIN = r"""
+#include <cstdio>
+#include <string>
+#include "manifest.h"
+
+using namespace muse::core::plugin;
+
+int main(int argc, char** argv) {
+  if (argc != 2) {
+    std::puts("FAIL: usage: probe <case>");
+    return 2;
+  }
+  const std::string which = argv[1];
+  int failures = 0;
+  auto check = [&](bool cond, const char* name) {
+    if (cond) {
+      std::printf("PASS: %s\n", name);
+    } else {
+      std::printf("FAIL: %s\n", name);
+      ++failures;
+    }
+  };
+  auto check_rejected_with = [&](const ParseResult& r,
+                                 ManifestErrorCode code, const char* name) {
+    check(!r.success(), name);
+    if (!r.success()) {
+      check(r.error().code == code, name);
+      check(!r.error().message.empty(), name);
+    }
+  };
+  if (which == "explicit_false_with_later_true_substring") {
+    // Shipped BLOCKER shape: a later "true" substring (inside an fs
+    // root value) must not flip an explicit "allowNetwork": false on.
+    ParseResult r = parseManifest(
+        "{\"allowNetwork\": false, \"fsRoots\": [\"/true\"]}");
+    check(r.success(), "explicit-false manifest parses");
+    if (r.success()) {
+      check(!r.manifest().allowNetwork,
+            "explicit false with later true-substring keeps network denied");
+      PluginRequest req;
+      req.needsNetwork = true;
+      check(!enforce(r.manifest(), req),
+            "network use denied for explicit-false manifest");
+    }
+  } else if (which == "explicit_true_still_allowed") {
+    ParseResult r = parseManifest(
+        "{\"allowNetwork\": true, \"fsRoots\": []}");
+    check(r.success(), "explicit-true manifest parses");
+    if (r.success()) {
+      check(r.manifest().allowNetwork,
+            "explicit true keeps network allowed");
+    }
+  } else if (which == "unknown_capability") {
+    ParseResult r = parseManifest(
+        "{\"allowNetwork\": false, \"bogusCap\": true}");
+    check_rejected_with(r, ManifestErrorCode::UNKNOWN_CAPABILITY,
+                        "unknown capability rejected");
+  } else if (which == "relative_fs_root") {
+    ParseResult r = parseManifest(
+        "{\"allowNetwork\": false, \"fsRoots\": [\"rel/path\"]}");
+    check_rejected_with(r, ManifestErrorCode::FS_ROOT_OUTSIDE_ALLOWLIST,
+                        "relative fs root rejected");
+  } else if (which == "unqualified_jni_class") {
+    ParseResult r =
+        parseManifest("{\"jniClasses\": [\"FlatClass\"]}");
+    check_rejected_with(r, ManifestErrorCode::JNI_CLASS_DENIED,
+                        "unqualified JNI class rejected");
+  } else if (which == "invalid_affinity") {
+    ParseResult r =
+        parseManifest("{\"threadAffinity\": \"bogus-pool\"}");
+    check_rejected_with(r, ManifestErrorCode::THREAD_AFFINITY_INVALID,
+                        "invalid affinity rejected");
+  } else if (which == "non_string_affinity") {
+    // A present key with a non-string value (number) is malformed and
+    // must fail closed, never silently mean "no pinning".
+    ParseResult r = parseManifest("{\"threadAffinity\": 5}");
+    check_rejected_with(r, ManifestErrorCode::THREAD_AFFINITY_INVALID,
+                        "non-string affinity rejected");
+  } else {
+    std::printf("FAIL: unknown case %s\n", argv[1]);
+    return 2;
+  }
+  if (failures == 0) {
+    std::puts("MANIFEST_LIVE_ALL_PASS");
+  }
+  return failures == 0 ? 0 : 1;
+}
+"""
 
 
 def _both():
@@ -205,6 +315,112 @@ class EnforceScannerDenialCases(unittest.TestCase):
             "complete fixture must name all four error codes",
         )
         self.assertTrue(has_named_deny_reason(fixture))
+
+
+class ManifestLiveParse(unittest.TestCase):
+    """Live parse tests: compile-and-run ``manifest.cpp`` (T5 test gap).
+
+    Each case runs the production ``parseManifest`` (plus ``enforce``
+    for the network-denial case) against adversarial JSON. When no
+    compiler (``c++``/``g++``/``clang++``) is present the tests fail
+    closed with SKIP naming the missing compiler — never a silent
+    pass. Hermetic: toolchain + tmp dir only.
+    """
+
+    CASES = (
+        "explicit_false_with_later_true_substring",
+        "explicit_true_still_allowed",
+        "unknown_capability",
+        "relative_fs_root",
+        "unqualified_jni_class",
+        "invalid_affinity",
+        "non_string_affinity",
+    )
+
+    @classmethod
+    def setUpClass(cls):
+        cls._tmp = None
+        cls._exe = None
+        cls._build_stderr = ""
+        cxx = _find_cxx()
+        if cxx is None:
+            return
+        cls._tmp = tempfile.TemporaryDirectory()
+        src = os.path.join(cls._tmp.name, "manifest_live_main.cpp")
+        cls._exe = os.path.join(cls._tmp.name, "manifest_live")
+        with open(src, "w", encoding="utf-8") as fh:
+            fh.write(_MANIFEST_LIVE_MAIN)
+        proc = subprocess.run(
+            [cxx, "-std=c++20", "-I", PLUGIN_ROOT, src, MANIFEST_CPP,
+             "-o", cls._exe],
+            capture_output=True,
+            text=True,
+            timeout=180,
+        )
+        cls._build_stderr = proc.stderr
+        if proc.returncode != 0:
+            cls._exe = None
+
+    @classmethod
+    def tearDownClass(cls):
+        if cls._tmp is not None:
+            cls._tmp.cleanup()
+
+    def _run_case(self, case):
+        if _find_cxx() is None or self._exe is None:
+            if self._exe is None and _find_cxx() is not None:
+                self.fail(
+                    "live manifest driver must compile: %s"
+                    % (self._build_stderr,)
+                )
+            self.skipTest(_MISSING_COMPILER_SKIP)
+        proc = subprocess.run(
+            [self._exe, case], capture_output=True, text=True, timeout=60
+        )
+        self.assertEqual(
+            proc.returncode,
+            0,
+            "live manifest case %r must exit 0 (no crash, all asserts "
+            "hold):\n%s" % (case, proc.stdout + proc.stderr),
+        )
+        return proc.stdout
+
+    def test_live_explicit_false_with_later_true_substring_denied(self):
+        out = self._run_case(
+            "explicit_false_with_later_true_substring"
+        )
+        self.assertIn(
+            "PASS: explicit false with later true-substring keeps "
+            "network denied",
+            out,
+        )
+        self.assertIn(
+            "PASS: network use denied for explicit-false manifest", out
+        )
+
+    def test_live_explicit_true_still_allowed(self):
+        out = self._run_case("explicit_true_still_allowed")
+        self.assertIn("PASS: explicit true keeps network allowed", out)
+
+    def test_live_unknown_capability_rejected(self):
+        out = self._run_case("unknown_capability")
+        self.assertIn("PASS: unknown capability rejected", out)
+
+    def test_live_relative_fs_root_rejected(self):
+        out = self._run_case("relative_fs_root")
+        self.assertIn("PASS: relative fs root rejected", out)
+
+    def test_live_unqualified_jni_class_rejected(self):
+        out = self._run_case("unqualified_jni_class")
+        self.assertIn("PASS: unqualified JNI class rejected", out)
+
+    def test_live_invalid_affinity_rejected(self):
+        out = self._run_case("invalid_affinity")
+        self.assertIn("PASS: invalid affinity rejected", out)
+
+    def test_live_non_string_affinity_rejected(self):
+        out = self._run_case("non_string_affinity")
+        self.assertIn("PASS: non-string affinity rejected", out)
 
 
 if __name__ == "__main__":

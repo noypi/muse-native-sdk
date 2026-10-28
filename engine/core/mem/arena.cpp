@@ -51,13 +51,20 @@ void* Arena::allocate(size_t n, size_t align) noexcept {
   if (align == 0) {
     align = 1;
   }
+  // The mask trick below is only correct for powers of two: reject any
+  // other alignment instead of returning a misaligned pointer.
+  if ((align & (align - 1)) != 0) {
+    ReportHeapEscape(n);
+    return nullptr;
+  }
   const uintptr_t base = reinterpret_cast<uintptr_t>(base_);
   uintptr_t cursor = base + static_cast<uintptr_t>(offset_);
   const uintptr_t mask = static_cast<uintptr_t>(align) - 1;
-  // Align is a power of two on every supported render-path TU.
+  // Align is a power of two on every supported render-path TU (enforced
+  // above).
   const uintptr_t aligned = (cursor + mask) & ~mask;
   const size_t padding = static_cast<size_t>(aligned - base) - offset_;
-  if (n > capacity_ - offset_ - padding) {
+  if (padding > capacity_ - offset_ || n > capacity_ - offset_ - padding) {
     ReportHeapEscape(n);
     return nullptr;
   }

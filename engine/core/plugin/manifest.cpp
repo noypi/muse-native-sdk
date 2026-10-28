@@ -111,9 +111,37 @@ ParseResult parseManifest(const char* json) {
   }
 
   Manifest manifest{};
-  manifest.allowNetwork =
-      text.find("\"allowNetwork\"") != std::string::npos &&
-      text.find("true", text.find("\"allowNetwork\"")) != std::string::npos;
+  // Parse the actual JSON value of the allowNetwork key: skip whitespace
+  // after the ':', then match the literal true/false token. Anything
+  // else (absent key, false, non-boolean) denies network (deny-by-default).
+  manifest.allowNetwork = false;
+  const std::string::size_type allowKey = text.find("\"allowNetwork\"");
+  if (allowKey != std::string::npos) {
+    std::string::size_type colon = text.find(':', allowKey);
+    if (colon != std::string::npos) {
+      std::string::size_type value = colon + 1;
+      while (value < text.size() &&
+             (text[value] == ' ' || text[value] == '\t' ||
+              text[value] == '\n' || text[value] == '\r')) {
+        ++value;
+      }
+      // Match the literal token with a JSON value boundary so that e.g.
+      // "truex" is not accepted as true.
+      auto atToken = [&](const char* token) {
+        const std::string tok(token);
+        if (text.compare(value, tok.size(), tok) != 0) return false;
+        const std::string::size_type end = value + tok.size();
+        return end >= text.size() ||
+               text[end] == ',' || text[end] == '}' ||
+               text[end] == ']' || text[end] == ' ' ||
+               text[end] == '\t' || text[end] == '\n' ||
+               text[end] == '\r';
+      };
+      if (atToken("true")) {
+        manifest.allowNetwork = true;
+      }
+    }
+  }
 
   // Collect quoted values under fsRoots / jniClasses sections.
   auto collectArray = [&](const char* section,
@@ -135,14 +163,37 @@ ParseResult parseManifest(const char* json) {
   collectArray("\"fsRoots\"", manifest.fsRoots);
   collectArray("\"jniClasses\"", manifest.jniClasses);
 
-  // threadAffinity: first quoted value after its key.
+  // threadAffinity: the quoted string value after its key. A present key
+  // with no quoted string value (number, boolean, null, ...) is a
+  // malformed declaration and fails closed with THREAD_AFFINITY_INVALID
+  // instead of being silently treated as "no pinning".
   const std::string::size_type affinityKey = text.find("\"threadAffinity\"");
   if (affinityKey != std::string::npos) {
     const std::string::size_type colon = text.find(':', affinityKey);
-    const std::string::size_type open = text.find('"', colon);
+    if (colon == std::string::npos) {
+      return ParseResult::err(ManifestError{
+          ManifestErrorCode::THREAD_AFFINITY_INVALID,
+          "manifest: invalid thread affinity (missing value)"});
+    }
+    std::string::size_type value = colon + 1;
+    while (value < text.size() && (text[value] == ' ' || text[value] == '\t' ||
+                                   text[value] == '\n' ||
+                                   text[value] == '\r')) {
+      ++value;
+    }
+    if (value >= text.size() || text[value] != '"') {
+      return ParseResult::err(ManifestError{
+          ManifestErrorCode::THREAD_AFFINITY_INVALID,
+          "manifest: invalid thread affinity (expected string value)"});
+    }
+    const std::string::size_type open = value;
     const std::string::size_type close = text.find('"', open + 1);
-    if (open != std::string::npos && close != std::string::npos) {
+    if (close != std::string::npos) {
       manifest.threadAffinity = text.substr(open + 1, close - open - 1);
+    } else {
+      return ParseResult::err(ManifestError{
+          ManifestErrorCode::THREAD_AFFINITY_INVALID,
+          "manifest: invalid thread affinity (unterminated string)"});
     }
   }
 

@@ -2,7 +2,8 @@
 # T6 verification harness (AC-CORE-010): hidden-visibility check.
 #
 # Verifies the benchmark plugin built with hidden visibility exposes only
-# its declared symbol set, using `llvm-nm --defined-only` allowlist diff.
+# its declared symbol set, using `llvm-nm -g --defined-only` (extern
+# symbols only) allowlist diff.
 # Fails closed with "llvm-nm not found" when the tool is absent (plan A3);
 # never passes silently.
 #
@@ -27,7 +28,7 @@ if [ ! -f "$PLUGIN_SO" ]; then
   exit 1
 fi
 
-DEFINED="$(llvm-nm --defined-only "$PLUGIN_SO" | awk '{print $NF}')"
+DEFINED="$(llvm-nm -g --defined-only "$PLUGIN_SO" | awk '{print $NF}')"
 
 STATUS=0
 for sym in $DEFINED; do

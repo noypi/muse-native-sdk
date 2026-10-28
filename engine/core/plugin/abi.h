@@ -26,6 +26,14 @@ struct PluginDescriptor {
 
 // Mismatch codes for the load-time handshake. Minor mismatch is a hard
 // reject, not a warning/compat path.
+//
+// NOTE: the published contract fixes exactly these three codes, so
+// load-environment failures that are not descriptor mismatches — dlopen
+// failure, a missing MusePluginEntry symbol, a null descriptor — are
+// deliberately reported as ABI_HASH_MISMATCH (fail closed with
+// expected-vs-actual diagnostics) rather than a distinct ABI_LOAD_ERROR.
+// Telemetry keyed on this code must treat it as "plugin not loadable",
+// not necessarily "hashes differ".
 enum class PluginErrorCode {
   ABI_MAJOR_MISMATCH,
   ABI_MINOR_MISMATCH,

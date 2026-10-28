@@ -141,6 +141,8 @@ print('profile active:', mod.is_profile_active(os.environ.get('BUILD_DIR', 'buil
       || { echo "FAIL: visibility harness must fail closed on missing llvm-nm" >&2; exit 1; }
     grep -q 'ALLOWLIST="MusePluginEntry"' "$T6DIR/visibility_check.sh" \
       || { echo "FAIL: visibility harness allowlist must be MusePluginEntry" >&2; exit 1; }
+    grep -q "llvm-nm -g --defined-only" "$T6DIR/visibility_check.sh" \
+      || { echo "FAIL: visibility harness must diff extern symbols only (llvm-nm -g --defined-only)" >&2; exit 1; }
     grep -q "noexcept" "$T6DIR/frame_timing_noexcept.cpp" \
       || { echo "FAIL: frame-timing harness must be noexcept" >&2; exit 1; }
     grep -q "renderPathViolation" "$T6DIR/frame_timing_noexcept.cpp" \
@@ -174,7 +176,7 @@ print('profile active:', mod.is_profile_active(os.environ.get('BUILD_DIR', 'buil
     T6TMP="$(mktemp -d)" || exit 1
     # (d1) incompatible-plugin TU compiles against T3 abi.h; linked driver
     # proves wrong-major descriptor is rejected with a clear error, no crash.
-    "$CXX" -std=c++17 -c "$T6DIR/abi_incompatible_plugin.cpp" -o "$T6TMP/abi_incompat.o" \
+    "$CXX" -std=c++20 -c "$T6DIR/abi_incompatible_plugin.cpp" -o "$T6TMP/abi_incompat.o" \
       || { echo "FAIL: abi_incompatible_plugin.cpp does not compile" >&2; rm -rf "$T6TMP"; exit 1; }
     cat > "$T6TMP/abi_check_main.cpp" <<'EOF'
 #include <cstdio>
@@ -192,13 +194,13 @@ int main() {
   return 0;
 }
 EOF
-    "$CXX" -std=c++17 -I"$ROOT" "$T6TMP/abi_check_main.cpp" "$T6TMP/abi_incompat.o" -o "$T6TMP/abi_check" \
+    "$CXX" -std=c++20 -I"$ROOT" "$T6TMP/abi_check_main.cpp" "$T6TMP/abi_incompat.o" -o "$T6TMP/abi_check" \
       || { echo "FAIL: abi rejection driver does not link" >&2; rm -rf "$T6TMP"; exit 1; }
     "$T6TMP/abi_check" || { rm -rf "$T6TMP"; exit 1; }
     # (d2) noexcept TU links under -fno-exceptions and passes frame timing.
-    "$CXX" -std=c++17 -fno-exceptions -c "$T6DIR/frame_timing_noexcept.cpp" -o "$T6TMP/frame_timing.o" \
+    "$CXX" -std=c++20 -fno-exceptions -c "$T6DIR/frame_timing_noexcept.cpp" -o "$T6TMP/frame_timing.o" \
       || { echo "FAIL: frame_timing_noexcept.cpp does not compile under -fno-exceptions" >&2; rm -rf "$T6TMP"; exit 1; }
-    "$CXX" -std=c++17 -fno-exceptions -c engine/core/render_path_tu.cpp -o "$T6TMP/render_path_tu.o" \
+    "$CXX" -std=c++20 -fno-exceptions -c engine/core/render_path_tu.cpp -o "$T6TMP/render_path_tu.o" \
       || { echo "FAIL: render_path_tu.cpp does not compile under -fno-exceptions" >&2; rm -rf "$T6TMP"; exit 1; }
     cat > "$T6TMP/timing_main.cpp" <<'EOF'
 #include <cstdio>
@@ -213,7 +215,7 @@ int main() {
   return 0;
 }
 EOF
-    "$CXX" -std=c++17 -fno-exceptions "$T6TMP/timing_main.cpp" "$T6TMP/frame_timing.o" "$T6TMP/render_path_tu.o" -o "$T6TMP/timing_check" \
+    "$CXX" -std=c++20 -fno-exceptions "$T6TMP/timing_main.cpp" "$T6TMP/frame_timing.o" "$T6TMP/render_path_tu.o" -o "$T6TMP/timing_check" \
       || { echo "FAIL: noexcept timing driver does not link under -fno-exceptions" >&2; rm -rf "$T6TMP"; exit 1; }
     "$T6TMP/timing_check" || { rm -rf "$T6TMP"; exit 1; }
     rm -rf "$T6TMP"

@@ -12,15 +12,21 @@ The sources under test are ``engine/core/plugin/abi.h``,
 ``engine/core/plugin/loader.h`` and ``engine/core/plugin/loader.cpp``
 (created by the coder in T3). Assertions are static contract checks over
 those files (existence + declared-interface tokens + handshake/deny
-markers); live ``dlopen`` load/reject execution is the coder's T3 build
-work and runs under ``:engine:core:pluginAbi`` (marked EXTERNAL below —
-the repo's ``gradlew`` shim currently exposes only the ``:benchmark:*``
-and ``:engine:core:allocator`` surface). Hermetic: stdlib unittest only,
-no network/secrets/services/config, no compilation.
+markers) plus live load/reject checks that compile ``loader.cpp``,
+build real ``.so`` plugins with crafted descriptors, and drive
+``loadPlugin`` against them (``LoaderLiveLoad``); the Gradle task
+wiring itself (``:engine:core:pluginAbi``) is the coder's T3 build work
+and runs under that task (marked EXTERNAL below). Hermetic: stdlib
+unittest only, no network/secrets/services/config; live checks use
+only the local C++ toolchain plus tmp dirs (fail-closed SKIP when no
+compiler is present).
 """
 
 import os
 import re
+import shutil
+import subprocess
+import tempfile
 import unittest
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -34,6 +40,132 @@ MISMATCH_CODES = (
     "ABI_MINOR_MISMATCH",
     "ABI_HASH_MISMATCH",
 )
+
+
+def _find_cxx():
+    """Return a C++ compiler (c++/g++/clang++) or None when absent."""
+    for candidate in ("c++", "g++", "clang++"):
+        if shutil.which(candidate) is not None:
+            return candidate
+    return None
+
+
+_MISSING_COMPILER_SKIP = (
+    "SKIP: no C++ compiler found (c++/g++/clang++ missing) — "
+    "live loader compile-and-run cannot run here "
+    "(fail closed, no silent pass)"
+)
+
+_LOADER_LIVE_PLUGIN = r"""
+#include <cstring>
+#include "abi.h"
+
+namespace muse {
+namespace core {
+namespace plugin {
+
+namespace {
+
+PluginDescriptor MakeCrafted() {
+  PluginDescriptor d{};
+  d.abiMajor = @@MAJOR@@u;
+  d.abiMinor = @@MINOR@@u;
+  // Deliberately no NUL terminator anywhere in the 65 hash bytes: the
+  // loader diagnostic must use a length-limited copy, never an
+  // unbounded %s / std::string(char*) over plugin-controlled memory.
+  std::memset(d.abiHash, 'A', 65);
+  d.entryPoint = "MusePluginEntry";
+  return d;
+}
+
+}  // namespace
+
+extern "C" const PluginDescriptor* MusePluginEntry() {
+  static const PluginDescriptor kCrafted = MakeCrafted();
+  return &kCrafted;
+}
+
+}  // namespace plugin
+}  // namespace core
+}  // namespace muse
+"""
+
+_LOADER_LIVE_MAIN = r"""
+#include <cstdio>
+#include <cstring>
+#include <string>
+#include "loader.h"
+
+using namespace muse::core::plugin;
+
+static size_t LongestRun(const std::string& s, char c) {
+  size_t best = 0, cur = 0;
+  for (char ch : s) {
+    if (ch == c) {
+      ++cur;
+      if (cur > best) {
+        best = cur;
+      }
+    } else {
+      cur = 0;
+    }
+  }
+  return best;
+}
+
+int main(int argc, char** argv) {
+  if (argc != 3) {
+    std::puts("FAIL: usage: probe <plugin.so> <expected-code>");
+    return 2;
+  }
+  PluginDescriptor expected{};
+  expected.abiMajor = 1;
+  expected.abiMinor = 0;
+  std::memset(expected.abiHash, 'e', 64);
+  expected.abiHash[64] = '\0';
+  expected.entryPoint = "MusePluginEntry";
+  LoadResult result = loadPlugin(argv[1], expected);
+  const std::string want = argv[2];
+  int failures = 0;
+  auto check = [&](bool cond, const char* name) {
+    if (cond) {
+      std::printf("PASS: %s\n", name);
+    } else {
+      std::printf("FAIL: %s\n", name);
+      ++failures;
+    }
+  };
+  check(!result.success(), "crafted plugin rejected");
+  if (!result.success()) {
+    const PluginError& err = result.error();
+    std::string code = "UNKNOWN";
+    if (err.code == PluginErrorCode::ABI_MAJOR_MISMATCH) {
+      code = "ABI_MAJOR_MISMATCH";
+    } else if (err.code == PluginErrorCode::ABI_MINOR_MISMATCH) {
+      code = "ABI_MINOR_MISMATCH";
+    } else if (err.code == PluginErrorCode::ABI_HASH_MISMATCH) {
+      code = "ABI_HASH_MISMATCH";
+    }
+    check(code == want, "rejection carries expected code");
+    check(err.message.find("expected") != std::string::npos &&
+              err.message.find("actual") != std::string::npos,
+          "diagnostic names expected vs actual");
+    check(err.expectedHash.size() <= 64 && err.actualHash.size() <= 64,
+          "hashes bounded to 64 chars");
+    check(err.message.size() < 1024, "diagnostic bounded");
+    // The crafted hash is 65 non-NUL 'A' bytes: a length-limited copy
+    // shows at most 64 consecutive 'A's, while an unbounded %s would
+    // read past the array (65+ run) or crash the host. Reaching this
+    // line at all proves no crash on the load path.
+    check(LongestRun(err.message, 'A') <= 64,
+          "no unbounded read past non-terminated hash");
+  }
+  if (failures == 0) {
+    std::puts("LOADER_LIVE_ALL_PASS");
+  }
+  return failures == 0 ? 0 : 1;
+}
+"""
 
 
 def _read(path):
@@ -269,6 +401,124 @@ class HandshakeScannerDenialCases(unittest.TestCase):
             has_expected_actual_diagnostic("return err(PluginError{message});"),
             "a diagnostic naming neither expected nor actual must be flagged",
         )
+
+
+class LoaderLiveLoad(unittest.TestCase):
+    """Live load tests: drive ``loadPlugin`` against crafted ``.so``
+    plugins (T3 test gap).
+
+    Each plugin exports ``MusePluginEntry`` with a descriptor whose 65
+    ``abiHash`` bytes contain no NUL terminator plus wrong
+    major/minor/hash, so the handshake must return ``err(...)`` with a
+    bounded expected-vs-actual diagnostic instead of crashing on the
+    load path. When no compiler (``c++``/``g++``/``clang++``) is
+    present the tests fail closed with SKIP naming the missing
+    compiler — never a silent pass. Hermetic: toolchain + tmp dir
+    only.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls._tmp = None
+        cls._exe = None
+        cls._so = {}
+        cls._build_stderr = ""
+        cxx = _find_cxx()
+        if cxx is None:
+            return
+        cls._tmp = tempfile.TemporaryDirectory()
+        tmp = cls._tmp.name
+        variants = {
+            "hash": (1, 0, "ABI_HASH_MISMATCH"),
+            "major": (999, 888, "ABI_MAJOR_MISMATCH"),
+        }
+        for name, (major, minor, _want) in variants.items():
+            src = os.path.join(tmp, "crafted_%s.cpp" % name)
+            with open(src, "w", encoding="utf-8") as fh:
+                fh.write(
+                    _LOADER_LIVE_PLUGIN.replace("@@MAJOR@@", str(major))
+                    .replace("@@MINOR@@", str(minor))
+                )
+            so = os.path.join(tmp, "crafted_%s.so" % name)
+            proc = subprocess.run(
+                [cxx, "-std=c++20", "-shared", "-fPIC",
+                 "-I", PLUGIN_ROOT, src, "-o", so],
+                capture_output=True,
+                text=True,
+                timeout=180,
+            )
+            if proc.returncode != 0:
+                cls._build_stderr += proc.stderr
+                return
+            cls._so[name] = so
+        main_src = os.path.join(tmp, "loader_live_main.cpp")
+        with open(main_src, "w", encoding="utf-8") as fh:
+            fh.write(_LOADER_LIVE_MAIN)
+        cls._exe = os.path.join(tmp, "loader_live")
+        proc = subprocess.run(
+            [cxx, "-std=c++20", "-I", PLUGIN_ROOT, main_src,
+             LOADER_CPP, "-o", cls._exe, "-ldl"],
+            capture_output=True,
+            text=True,
+            timeout=180,
+        )
+        cls._build_stderr += proc.stderr
+        if proc.returncode != 0:
+            cls._exe = None
+
+    @classmethod
+    def tearDownClass(cls):
+        if cls._tmp is not None:
+            cls._tmp.cleanup()
+
+    def _run_load(self, variant, want_code):
+        if _find_cxx() is None or self._exe is None:
+            if self._exe is None and _find_cxx() is not None:
+                self.fail(
+                    "live loader driver must compile: %s"
+                    % (self._build_stderr,)
+                )
+            self.skipTest(_MISSING_COMPILER_SKIP)
+        self.assertIn(
+            variant,
+            self._so,
+            "crafted plugin %r must build" % (variant,),
+        )
+        proc = subprocess.run(
+            [self._exe, self._so[variant], want_code],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        self.assertEqual(
+            proc.returncode,
+            0,
+            "live load case %r must exit 0 (rejected with err(...), "
+            "no crash):\n%s" % (variant, proc.stdout + proc.stderr),
+        )
+        return proc.stdout
+
+    def test_live_hash_mismatch_with_nonterminated_hash_rejected(self):
+        out = self._run_load("hash", "ABI_HASH_MISMATCH")
+        self.assertIn("PASS: crafted plugin rejected", out)
+        self.assertIn("PASS: rejection carries expected code", out)
+        self.assertIn(
+            "PASS: diagnostic names expected vs actual", out
+        )
+        self.assertIn("PASS: hashes bounded to 64 chars", out)
+        self.assertIn(
+            "PASS: no unbounded read past non-terminated hash", out
+        )
+        self.assertIn("LOADER_LIVE_ALL_PASS", out)
+
+    def test_live_major_mismatch_with_nonterminated_hash_rejected(self):
+        out = self._run_load("major", "ABI_MAJOR_MISMATCH")
+        self.assertIn("PASS: crafted plugin rejected", out)
+        self.assertIn("PASS: rejection carries expected code", out)
+        self.assertIn(
+            "PASS: no unbounded read past non-terminated hash", out
+        )
+        self.assertIn("LOADER_LIVE_ALL_PASS", out)
 
 
 if __name__ == "__main__":
