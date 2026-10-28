@@ -29,6 +29,8 @@ add_library(net
   src/outbox.cc
   src/migration.cc
   src/durability.cc
+  src/cronet_transport.cc
+  src/transport_policy.cc
 )
 target_include_directories(net PUBLIC include)
 target_compile_options(net PRIVATE -Wall -Wextra -Wpedantic)
