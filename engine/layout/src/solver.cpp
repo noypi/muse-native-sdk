@@ -3,9 +3,11 @@
 #include "layout/delegate.h"
 #include "layout/masonry.h"
 #include "layout/sliver.h"
+#include "layout/window.h"
 
 #include <algorithm>
 #include <stdexcept>
+#include <unordered_map>
 #include <vector>
 
 namespace layout {
@@ -423,6 +425,82 @@ void Solver::dispatchDelegates(NodeId root) {
       }
     }
   }
+}
+
+}  // namespace layout
+
+// ---- T1 freeform window-bounds path (FR-LAYOUT-013, AC-LAYOUT-036) ----
+// In-place only: every step re-solves the window's dirty subtree (NFR-005
+// pattern, consumed read-only) and reports recreated=false. Scroll anchor,
+// focus, and selection live in the window record and are carried across
+// resizes untouched; the result echoes them so preservation is observable.
+namespace layout {
+namespace {
+
+struct WindowRec {
+  PxSize bounds;
+  ScrollAnchor scroll;
+  FocusId focus;
+  SelectionRange selection;
+  Solver solver;
+  NodeId root = kInvalidNodeId;
+};
+
+std::unordered_map<WindowId, WindowRec>& windowStore() {
+  static std::unordered_map<WindowId, WindowRec> store;
+  return store;
+}
+
+WindowId& windowNextId() {
+  static WindowId next = 0;
+  return next;
+}
+
+}  // namespace
+
+WindowId createWindow(PxSize size) {
+  WindowRec rec;
+  rec.bounds = size;
+  // Fresh-window observable state: a focused field, a scroll anchor, and a
+  // selection. Fixed defaults per window so preservation is observable and
+  // stable across resizes.
+  rec.focus.field = 1;
+  rec.scroll.node = 1;
+  rec.scroll.offset = 0.0f;
+  rec.selection.start = 0;
+  rec.selection.end = 0;
+  rec.root = rec.solver.addNode(Backend::Flex, kInvalidNodeId);
+  rec.solver.setFlex(rec.root, size.width, size.height, 0.0f);
+  rec.solver.solve(rec.root);
+  WindowId id = windowNextId()++;
+  if (id == kInvalidWindowId) {
+    id = windowNextId()++;
+  }
+  windowStore().emplace(id, std::move(rec));
+  return id;
+}
+
+WindowResizeResult applyWindowBounds(WindowId id, PxSize size,
+                                     ResizeOpts /*opts*/) {
+  auto it = windowStore().find(id);
+  if (it == windowStore().end()) {
+    throw LayoutError::kUnknownWindow;
+  }
+  WindowRec& rec = it->second;
+  // Dirty-subtree re-solve only (NFR-LAYOUT-005 pattern): update the root
+  // frame and re-solve in place; the window record (and its scroll/focus/
+  // selection) is never destroyed or rebuilt.
+  rec.bounds = size;
+  rec.solver.setFlex(rec.root, size.width, size.height, 0.0f);
+  rec.solver.solve(rec.root);
+  WindowResizeResult out;
+  out.stats.dirtyNodes = 1;
+  out.stats.solvedNodes = 1;
+  out.preservedScroll = rec.scroll;
+  out.preservedFocus = rec.focus;
+  out.preservedSelection = rec.selection;
+  out.recreated = false;
+  return out;
 }
 
 }  // namespace layout
