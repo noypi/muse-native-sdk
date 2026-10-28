@@ -5,8 +5,8 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-add_library(state src/atom.cpp src/store.cpp src/provenance.cpp src/frame.cpp query/src/query_client.cpp query/src/query_core.cpp query/src/cache.cpp persist/src/snapshot.cpp persist/src/corruption.cpp persist/src/rehydrate.cpp persist/src/restore.cpp sync/src/mutation_queue.cpp sync/src/crdt.cpp sync/src/epoch.cpp sync/src/sync_scheduler.cpp sync/src/delta.cpp devtools/src/devtools.cpp)
-target_include_directories(state PUBLIC include query/include persist/include sync/include devtools/include)
+add_library(state src/atom.cpp src/store.cpp src/provenance.cpp src/frame.cpp query/src/query_client.cpp query/src/query_core.cpp query/src/cache.cpp persist/src/snapshot.cpp persist/src/corruption.cpp persist/src/rehydrate.cpp persist/src/restore.cpp sync/src/mutation_queue.cpp sync/src/crdt.cpp sync/src/epoch.cpp sync/src/sync_scheduler.cpp sync/src/delta.cpp devtools/src/devtools.cpp serverui/src/serverui.cpp serverui/src/verify.cpp serverui/src/sandbox.cpp serverui/src/fallback.cpp)
+target_include_directories(state PUBLIC include query/include persist/include sync/include devtools/include serverui/include)
 target_compile_options(state PRIVATE -Wall -Wextra -Wpedantic)
 set_source_files_properties(devtools/src/devtools.cpp PROPERTIES COMPILE_DEFINITIONS "MUSE_STATE_DEVTOOLS=1")
 
@@ -109,6 +109,26 @@ target_link_libraries(disabled_overhead_test PRIVATE state)
 target_compile_options(disabled_overhead_test PRIVATE -Wall -Wextra -Wpedantic)
 target_compile_definitions(disabled_overhead_test PRIVATE MUSE_STATE_DEVTOOLS=0)
 add_test(NAME disabled_overhead_test COMMAND disabled_overhead_test)
+
+add_executable(descriptor_component_test serverui/tests/descriptor_component_test.cpp)
+target_link_libraries(descriptor_component_test PRIVATE state)
+target_compile_options(descriptor_component_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME descriptor_component_test COMMAND descriptor_component_test)
+
+add_executable(descriptor_signature_test serverui/tests/descriptor_signature_test.cpp)
+target_link_libraries(descriptor_signature_test PRIVATE state)
+target_compile_options(descriptor_signature_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME descriptor_signature_test COMMAND descriptor_signature_test)
+
+add_executable(descriptor_sandbox_test serverui/tests/descriptor_sandbox_test.cpp)
+target_link_libraries(descriptor_sandbox_test PRIVATE state)
+target_compile_options(descriptor_sandbox_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME descriptor_sandbox_test COMMAND descriptor_sandbox_test)
+
+add_executable(descriptor_fallback_test serverui/tests/descriptor_fallback_test.cpp)
+target_link_libraries(descriptor_fallback_test PRIVATE state)
+target_compile_options(descriptor_fallback_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME descriptor_fallback_test COMMAND descriptor_fallback_test)
 
 # Release-artifact check (TC-STATE-033): devtools.cpp compiled as release
 # (MUSE_STATE_DEVTOOLS=0) must expose no DevTimeline/Snapshot/Dag symbols.
