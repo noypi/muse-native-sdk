@@ -7,6 +7,7 @@
 -stdlib=libc++
 # ThinLTO:
 -flto=thin
+# thinLTO release gate: -flto=thin (NFR-BUILD-011 AC-BUILD-033)
 # Hidden visibility — only the plugin ABI surface exported.
 # Export surface uses __attribute__((visibility("default"))) / version-script; everything else stays hidden.
 -fvisibility=hidden
