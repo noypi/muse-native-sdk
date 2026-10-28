@@ -23,6 +23,8 @@ add_library(navigation
   src/nested_graph.cpp
   src/result_channel.cpp
   src/route_transition.cpp
+  src/predictive_transition.cpp
+  src/entry_funnel.cpp
 )
 target_include_directories(navigation PUBLIC include)
 target_compile_options(navigation PRIVATE -Wall -Wextra -Wpedantic)
@@ -134,6 +136,16 @@ add_executable(route_transition_config_test tests/route_transition_config_test.c
 target_link_libraries(route_transition_config_test PRIVATE navigation)
 target_compile_options(route_transition_config_test PRIVATE -Wall -Wextra -Wpedantic)
 add_test(NAME route_transition_config_test COMMAND route_transition_config_test)
+
+add_executable(predictive_progress_test tests/predictive_progress_test.cpp)
+target_link_libraries(predictive_progress_test PRIVATE navigation)
+target_compile_options(predictive_progress_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME predictive_progress_test COMMAND predictive_progress_test)
+
+add_executable(entry_funnel_test tests/entry_funnel_test.cpp)
+target_link_libraries(entry_funnel_test PRIVATE navigation)
+target_compile_options(entry_funnel_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME entry_funnel_test COMMAND entry_funnel_test)
 
 # FR-NAV-006 T2 (NAV-APPLINKS codegen invocation — documentation only, no new
 # engine target added here):
