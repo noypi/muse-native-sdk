@@ -137,20 +137,28 @@ object ConfigChangeProducer {
     }
 
     /**
-     * Background/foreground transition: moves the hosted activity through
-     * onPause/onResume (background then foreground) and re-attaches the
-     * surface, asserting the tree is preserved.
+     * Background/foreground transition: moves the hosted activity to the
+     * background and back to the foreground through the framework (which owns
+     * the lifecycle and drives onPause/onResume itself — app code must never
+     * invoke those callbacks directly per RULE-RUNTIME-004), then re-attaches
+     * the surface, asserting the tree is preserved. The suite script observes
+     * the same framework-initiated background/foreground (recents toggle via
+     * adb) and asserts tree preservation from the evidence file.
      */
     private fun performBackgroundForegroundTransition(beforeNodeIds: List<Int>): Boolean {
         val view = hostView ?: return false
         if (beforeNodeIds.isEmpty()) return false
         return try {
-            val activity = view.context as? Activity
-            // Background: pause the hosted activity (move to background).
-            activity?.onPause()
+            val activity = view.context as? Activity ?: return false
+            // Background: ask the framework to move the hosted task behind
+            // (the system drives onPause); foreground: bring the hosted
+            // activity back to the front (the system drives onResume).
+            activity.moveTaskToBack(false)
             view.clearFocus()
-            // Foreground: resume the hosted activity (return to foreground).
-            activity?.onResume()
+            val bringToFront = android.content.Intent(activity, activity.javaClass).apply {
+                addFlags(android.content.Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
+            }
+            activity.startActivity(bringToFront)
             view.requestFocus()
             recreateSurfaceForConfigChange()
             // Surface re-created without crash; tree must be preserved, not blank.
@@ -174,7 +182,7 @@ object ConfigChangeProducer {
     /** Detects a blank surface (zero-size or undrawn host view). */
     private fun isBlankSurface(view: View): Boolean {
         return try {
-            view.width <= 0 || view.height <= 0 || !view.isShown && view.alpha <= 0f
+            view.width <= 0 || view.height <= 0 || !view.isShown || view.alpha <= 0f
         } catch (_: Exception) {
             true
         }

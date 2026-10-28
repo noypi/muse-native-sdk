@@ -118,14 +118,12 @@ verify_evidence_json() {
     return 1
   fi
   # Validate evidence result content: parse json and check required keys.
+  # Suite scripts own the verdicts (run_suite runs them first); these embedded
+  # checks mirror the suite contracts exactly (fail closed on any divergence).
+  # ime-inset evidence is JSONL on disk and is validated by verify_evidence_jsonl
+  # only — there is intentionally no ime-inset branch here.
   python3 - "$local_copy" "$suite" <<'EOF'
 import json, sys
-
-def verify_inset(doc):
-    rows = doc if isinstance(doc, list) else doc.get("frames", [])
-    if not rows:
-        return False
-    return all(isinstance(r.get("latencyFrames"), int) and r["latencyFrames"] <= 1 for r in rows)
 
 path, suite = sys.argv[1], sys.argv[2]
 try:
@@ -141,8 +139,6 @@ elif suite == "touch-smoke":
     ok = doc.get("tapDispatched") is True and doc.get("dragScrolled") is True and doc.get("engineHosted") is True
 elif suite == "config-change":
     ok = all(doc.get(k) is True for k in ["rotationPreserved", "bgFgPreserved", "nodeIdsStable", "engineHosted"])
-elif suite == "ime-inset":
-    ok = verify_inset(doc)
 else:
     ok = False
 sys.exit(0 if ok else 1)
@@ -158,24 +154,53 @@ verify_evidence_jsonl() {
     echo "run.sh: missing evidence at $device_path" >&2
     return 1
   fi
-  # Verify each jsonl frame line: latencyFrames <= 1 bound check.
+  # Verify each jsonl frame line, mirroring ime_inset.sh byte-for-byte in
+  # verdict semantics: every frame carries int frame/announcedHeight/
+  # appliedHeight/latencyFrames (bool is not int), heights >= 0, latencyFrames
+  # in [0,1], and the show+hide cycle completes in order (>=1 show frame with
+  # announcedHeight > 0, then a hide frame with announcedHeight == 0).
   python3 - "$local_copy" <<'EOF'
 import json, sys
 ok_show = ok_hide = False
 try:
     with open(sys.argv[1]) as f:
-        rows = [json.loads(line) for line in f if line.strip()]
+        rows = [line for line in f if line.strip()]
 except Exception as e:
     print(f"invalid evidence jsonl: {e}", file=sys.stderr)
     sys.exit(1)
 if not rows:
     sys.exit(1)
-for r in rows:
-    if not (isinstance(r.get("latencyFrames"), int) and r["latencyFrames"] <= 1):
+for i, line in enumerate(rows):
+    try:
+        r = json.loads(line)
+    except Exception as e:
+        print(f"invalid json on line {i}: {e}", file=sys.stderr)
         sys.exit(1)
-    if r.get("phase") == "show":
+    if not isinstance(r, dict):
+        print(f"line {i}: object required", file=sys.stderr)
+        sys.exit(1)
+    for key in ("frame", "announcedHeight", "appliedHeight", "latencyFrames"):
+        if key not in r:
+            print(f"line {i}: missing key {key}", file=sys.stderr)
+            sys.exit(1)
+    frame, announced, applied, latency = (
+        r["frame"], r["announcedHeight"], r["appliedHeight"], r["latencyFrames"],
+    )
+    # Strict int checks (bool is not an int here); heights must be ints >= 0.
+    if type(frame) is not int or type(announced) is not int or type(applied) is not int:
+        print(f"line {i}: frame/heights must be ints", file=sys.stderr)
+        sys.exit(1)
+    if announced < 0 or applied < 0:
+        print(f"line {i}: negative height", file=sys.stderr)
+        sys.exit(1)
+    if type(latency) is not int or latency < 0 or latency > 1:
+        print(f"line {i}: latencyFrames must be int in [0,1]", file=sys.stderr)
+        sys.exit(1)
+    if announced > 0:
         ok_show = True
-    if r.get("phase") == "hide":
+    elif announced == 0 and ok_show:
+        # Hide counts only after a show frame: a leading zero baseline is not
+        # a sampled hide; the show+hide cycle must complete in order.
         ok_hide = True
 sys.exit(0 if (ok_show and ok_hide) else 1)
 EOF

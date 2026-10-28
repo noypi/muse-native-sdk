@@ -5,6 +5,8 @@
 
 #include "runtime/jni_bridge.h"
 
+#include <cstdint>
+
 namespace runtime {
 namespace {
 
@@ -45,4 +47,48 @@ jint JNI_OnLoad(JavaVM* vm, void* reserved) {
     return JNI_ERR;
   }
   return JNI_VERSION_1_6;
+}
+
+// JNI glue for com.muse.devicelab.EngineHost (device-lab lane).
+// Delegates to Runtime_create/Runtime_destroy with null/exception
+// fail-closed semantics: a null JNIEnv, a pending exception, or any C++
+// exception yields 0 / no-op and never lets an exception cross into the VM.
+// No engine type appears here; handles cross as opaque jlong slots.
+extern "C" jlong Java_com_muse_devicelab_EngineHost_nativeCreate(
+    JNIEnv* env, jobject thiz) {
+  (void)thiz;
+  if (env == nullptr || env->ExceptionCheck() == JNI_TRUE) {
+    return 0;
+  }
+  try {
+    void* handle = ::runtime::Runtime_create();
+    if (handle == nullptr) {
+      return 0;
+    }
+    return static_cast<jlong>(reinterpret_cast<intptr_t>(handle));
+  } catch (...) {
+    if (env->ExceptionCheck() == JNI_TRUE) {
+      env->ExceptionClear();
+    }
+    return 0;
+  }
+}
+
+extern "C" void Java_com_muse_devicelab_EngineHost_nativeDestroy(
+    JNIEnv* env, jobject thiz, jlong handle) {
+  (void)thiz;
+  if (env == nullptr || handle == 0) {
+    return;
+  }
+  if (env->ExceptionCheck() == JNI_TRUE) {
+    return;
+  }
+  try {
+    ::runtime::Runtime_destroy(
+        reinterpret_cast<void*>(static_cast<intptr_t>(handle)));
+  } catch (...) {
+    if (env->ExceptionCheck() == JNI_TRUE) {
+      env->ExceptionClear();
+    }
+  }
 }
