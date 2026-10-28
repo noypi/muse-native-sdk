@@ -474,6 +474,18 @@ bool runAdversarialPins() {
       "\"semantics\": \"S\", \"goldenTest\": \"G\", "
       "\"status\": \"present\"}]}",
       "wrong-member-types");
+  // Regressed flat-map shape (BUG-LAYOUT-001): a component-keyed map with
+  // no envelope keys (`schemaVersion` / `tokenSnapshot` / `components`) and
+  // per-entry `golden` / `ledgers` / `motionTokens` instead of the T9
+  // `goldenTest` + 7-state + `adaptive` + `status` entry contract. Must stay
+  // red by construction — the gate never accepts the envelope-less shape.
+  expectReject(
+      "{\"Button\": {\"primitive\": \"M3NativeButton\", "
+      "\"tokens\": [\"md.comp.button.container\"], "
+      "\"motionTokens\": [\"motion.durations.short-2\"], "
+      "\"semantics\": \"S\", \"golden\": \"G\", "
+      "\"ledgers\": {\"clone\": \"C\", \"competitive\": \"K\"}}}",
+      "flat-map-no-envelope");
   // Entry with status != present must not validate.
   expectReject(
       "{\"schemaVersion\": 1, \"tokenSnapshot\": \"d\", \"components\": "
