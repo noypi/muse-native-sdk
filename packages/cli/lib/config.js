@@ -13,11 +13,25 @@ const path = require('node:path');
 const SCHEMA = {
   name: 'string',
   version: 'string',
+  withSample: 'boolean',
+  abi: 'string',
+  release: 'boolean',
+  modules: 'string',
+  output: 'string',
+  strict: 'boolean',
+  diagnostics: 'object',
 };
 
 const DEFAULTS = {
   name: 'hello-app',
   version: '0.0.1',
+  withSample: false,
+  abi: undefined,
+  release: false,
+  modules: undefined,
+  output: undefined,
+  strict: false,
+  diagnostics: undefined,
 };
 
 const ENV_PREFIX = 'MUSE_NATIVE_';
@@ -187,6 +201,10 @@ function readFileLayer(cwd) {
   return { values, file: full, muse: museLines.length ? parseMuseSubtree(museLines.join('\n'), full) : undefined };
 }
 
+// Boolean keys accept a bare `--<key>` flag meaning true (ASSUMPTION A1);
+// value keys use `--<key> <value>` space form.
+const BOOL_KEYS = new Set(['withSample', 'release', 'strict']);
+
 // Collect `--<key> <value>` pairs from argv. Positional operands and the
 // `--print-config` display flag are not config keys. A missing value or an
 // unknown key throws ConfigError; never returns a partial map.
@@ -197,9 +215,30 @@ function readCliLayer(argv) {
     const arg = args[i];
     if (typeof arg !== 'string' || !arg.startsWith('--')) continue;
     if (arg === '--print-config') continue;
-    const key = arg.slice(2);
+    const rawKey = arg.slice(2);
+    // Accept kebab-case on the CLI (`--with-sample`) for camelCase keys.
+    const key = rawKey.replace(/-([a-z])/g, (_, c) => c.toUpperCase());
     if (!Object.prototype.hasOwnProperty.call(SCHEMA, key)) {
       throw new ConfigError(key, '<argv>', 'unknown key, expected one of: ' + Object.keys(SCHEMA).join(', '));
+    }
+    if (BOOL_KEYS.has(key)) {
+      const next = args[i + 1];
+      if (typeof next !== 'string' || next.startsWith('--')) {
+        values[key] = true;
+        continue;
+      }
+      if (next === 'true') {
+        values[key] = true;
+        i++;
+        continue;
+      }
+      if (next === 'false') {
+        values[key] = false;
+        i++;
+        continue;
+      }
+      values[key] = true;
+      continue;
     }
     const value = args[i + 1];
     if (typeof value !== 'string' || value.startsWith('--')) {
@@ -246,9 +285,14 @@ function resolveConfig(argv, env, cwd) {
   for (const layer of layers) {
     for (const key of Object.keys(layer.values)) {
       const expected = SCHEMA[key];
-      if (typeof layer.values[key] !== expected) {
-        throw new ConfigError(key, layer.file, expected);
-      }
+      const actual = typeof layer.values[key];
+      if (actual === expected) continue;
+      // Env values arrive via String() and CLI booleans use bare flags:
+      // allow the string passthrough for boolean/object keys across the
+      // CLI/env layers (file layer stays strictly typed via validateConfig).
+      if (expected === 'boolean' && actual === 'string') continue;
+      if (expected === 'object' && actual === 'string') continue;
+      throw new ConfigError(key, layer.file, expected);
     }
   }
 
