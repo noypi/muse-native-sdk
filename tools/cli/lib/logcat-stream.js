@@ -7,7 +7,8 @@
 const seam = require('./symbolication-seam');
 
 function toTaxonomy(level) {
-  if (level === 'error' || level === 'fatal') return 'reliability.crash';
+  const norm = typeof level === 'string' ? level.toLowerCase() : '';
+  if (norm === 'error' || norm === 'fatal') return 'reliability.crash';
   if (typeof level === 'string' && level) return `log.${level}`;
   return 'log.info';
 }
@@ -20,7 +21,8 @@ function matches(line, filter) {
     return true;
   }
   if (filter.tag !== undefined && line.tag !== filter.tag) return false;
-  if (filter.level !== undefined && line.level !== filter.level) return false;
+  if (filter.level !== undefined
+    && String(line.level).toLowerCase() !== String(filter.level).toLowerCase()) return false;
   return true;
 }
 

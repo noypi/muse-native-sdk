@@ -130,4 +130,39 @@ describe('logcat streamLogcat (T3)', () => {
       assert.ok(!('raw' in e) || e.taxonomy, 'taxonomy must be present');
     }
   });
+
+  it("level filter matches object-line levels case-insensitively ('Error' kept by {level:'error'})", async () => {
+    seedSeam({
+      symbolicate(frame) { return { frame, mappedSource: null }; },
+      readLines() {
+        return [
+          { tag: 'Muse', level: 'Error', frame: 'pc 0x1a2b Foo::bar' },
+          { tag: 'Muse', level: 'info', frame: 'pc 0x3c4d Baz::qux' },
+        ];
+      },
+    });
+    const { streamLogcat } = require(LIB);
+    const entries = await collect(streamLogcat({ level: 'error' }));
+    assert.ok(
+      entries.length > 0,
+      "object line with level:'Error' must not be filtered out by {level:'error'}",
+    );
+  });
+
+  it("capitalized error levels map to the crash taxonomy (matching string-line behavior)", async () => {
+    seedSeam({
+      symbolicate(frame) { return { frame, mappedSource: null }; },
+      readLines() {
+        return [{ tag: 'Muse', level: 'Error', frame: 'pc 0x1a2b Foo::bar' }];
+      },
+    });
+    const { streamLogcat } = require(LIB);
+    const entries = await collect(streamLogcat({}));
+    assert.equal(entries.length, 1);
+    assert.equal(
+      entries[0].taxonomy,
+      'reliability.crash',
+      `capitalized 'Error' must map to the crash taxonomy, got: ${entries[0].taxonomy}`,
+    );
+  });
 });

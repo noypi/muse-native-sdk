@@ -32,7 +32,7 @@ function toStructuredAttachError(err) {
     && typeof err.action === 'string' && err.action.length > 0) {
     return err;
   }
-  const command = (err && err.command === 'lldbAttach') ? 'lldbAttach' : 'lldbAttach';
+  const command = 'lldbAttach';
   let cause = '';
   if (err && typeof err.cause === 'string' && err.cause.length > 0) {
     cause = err.cause;
@@ -48,7 +48,6 @@ function toStructuredAttachError(err) {
   let action = (err && typeof err.action === 'string' && err.action.length > 0)
     ? err.action
     : 'Check the pid and retry attach via the DX-009 LLDB flow.';
-  void command;
   return { command: 'lldbAttach', cause, action };
 }
 
@@ -75,8 +74,10 @@ async function attachLldb(pid, deps) {
         const res = await symbolicate(entry);
         if (typeof res === 'string') symbol = res;
         else if (res && typeof res.symbol === 'string') symbol = res.symbol;
-      } catch {
-        symbol = '';
+      } catch (symErr) {
+        // Symbolication failure must reject: falling back to the raw frame
+        // would misreport the stack as symbolicated (AC-DX-040).
+        throw toStructuredAttachError(symErr);
       }
       if (!symbol) symbol = (entry && entry.symbol) || rawFrame;
       symbol = String(symbol);

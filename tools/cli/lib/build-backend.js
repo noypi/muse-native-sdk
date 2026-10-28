@@ -2,6 +2,8 @@
 // T5 — FR-DX-008 / AC-DX-037.
 // BuildBackend facade: delegates every build invocation to the injected
 // BUILD-001 implementation. No bundler/packaging internals live here.
+// NOTE: `invoke`/`run` are intentional aliases of `build` (contract names
+// only the delegating method); all three share one delegation path.
 
 function createBuildBackend(impl) {
   if (!impl || typeof impl.build !== 'function') {

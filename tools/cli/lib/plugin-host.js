@@ -1,6 +1,8 @@
 'use strict';
 // T5 — FR-DX-008 / AC-DX-036.
 // In-memory plugin registry: plugins add commands without forking the CLI.
+// NOTE: `registry` is a module-global singleton (no unregister/clear by
+// design); long-lived hosts share it across sessions.
 
 const registry = new Map();
 

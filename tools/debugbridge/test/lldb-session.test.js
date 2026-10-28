@@ -150,3 +150,33 @@ describe('jsi boundary stepping (T8 / TC-DX-040)', () => {
     assert.throws(() => mod.stepAcrossJsi(''), TypeError);
   });
 });
+
+describe('symbolication failure is a structured lldbAttach error (review MAJOR)', () => {
+  it('symbolicator-throws path rejects with {command:"lldbAttach", cause, action}', async () => {
+    const mod = fresh(LLDB_SESSION);
+    if (typeof mod.__setTraceSource === 'function') {
+      mod.__setTraceSource(async (pid) => {
+        if (pid === 1234) return fixtureTrace();
+        const err = new Error(`no such process: ${pid}`);
+        err.command = 'lldbAttach';
+        throw err;
+      });
+    }
+    // Seed a symbolicator that throws for every frame.
+    if (typeof mod.__setSymbolicator === 'function') {
+      mod.__setSymbolicator(async () => { throw new Error('dSYM missing'); });
+    }
+    await assert.rejects(
+      async () => mod.attachLldb(1234),
+      (err) => {
+        assert.equal(err.command, 'lldbAttach');
+        assert.equal(typeof err.cause, 'string');
+        assert.ok(err.cause.length > 0);
+        assert.equal(typeof err.action, 'string');
+        assert.ok(err.action.length > 0);
+        return true;
+      },
+      'a throwing symbolicator must reject with the structured lldbAttach error, never resolve a raw fallback',
+    );
+  });
+});

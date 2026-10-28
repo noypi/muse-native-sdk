@@ -226,3 +226,47 @@ describe('cdp bridge surface (T7 / TC-DX-039)', () => {
     );
   });
 });
+
+describe('cdp bridge failure-path hardening (review MAJORs)', () => {
+  it('no-transport bridge rejects resume() with a missing-transport config error', async () => {
+    const mod = fresh(BRIDGE);
+    // No transport field and no __setTransport call: an unconfigured bridge.
+    const bridge = mod.createCdpBridge({ dialect: 'hermes' });
+    let err = null;
+    try {
+      await bridge.resume();
+    } catch (e) { err = e; }
+    assert.ok(err, 'resume() on a transport-less bridge must reject, not resolve');
+    assert.ok(
+      err.cause !== 'unsupported by Hermes CDP',
+      `missing transport must not be reported as Hermes-unsupported, got cause: ${JSON.stringify(err && err.cause)}`,
+    );
+    assert.ok(
+      /transport/i.test(String(err.cause)),
+      `config error must name the missing transport, got cause: ${JSON.stringify(err && err.cause)}`,
+    );
+  });
+
+  it('stepOver with unsupported stack fetch never invents bundle.js:42 frames', async () => {
+    const mod = fresh(BRIDGE);
+    // Only Debugger.getStackTrace is unsupported; stepOver itself resolves.
+    const faulting = makeFakeTransport({ unsupportedMethods: new Set(['Debugger.getStackTrace']) });
+    const bridge = createWithFakes(fresh(BRIDGE), faulting, makeFakeSourceMap());
+    let res = null;
+    let err = null;
+    try {
+      res = await bridge.stepOver({});
+    } catch (e) { err = e; }
+    if (err) {
+      // Propagating the unsupported error is acceptable.
+      assert.equal(err.cause, 'unsupported by Hermes CDP');
+      return;
+    }
+    // Otherwise the step result must not carry invented canonical frames.
+    const text = JSON.stringify(res);
+    assert.ok(
+      !/bundle\.js:42/.test(text) && !/App\.tsx/.test(text),
+      `step result must not carry invented stack frames, got: ${text}`,
+    );
+  });
+});

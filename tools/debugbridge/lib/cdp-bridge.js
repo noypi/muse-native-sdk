@@ -56,7 +56,11 @@ function createCdpBridge(opts) {
 
   async function send(command, params) {
     if (!transport || typeof transport.send !== 'function') {
-      throw unsupportedError(command);
+      throw {
+        command,
+        cause: 'no CDP transport configured',
+        action: 'Wire a CDP transport via the `transport` option or __setTransport before sending CDP commands.',
+      };
     }
     try {
       return await transport.send(command, params);
@@ -73,21 +77,9 @@ function createCdpBridge(opts) {
   }
 
   async function fetchMappedStack() {
-    let raw = null;
-    try {
-      raw = await send('Debugger.getStackTrace', {});
-    } catch (err) {
-      // A stack fetch that Hermes cannot serve is itself an unsupported-panel
-      // signal — but stepping must still resolve with mapped frames, so fall
-      // back to the canonical fake frame shape the resolver maps.
-      if (err && err.cause === UNSUPPORTED_CAUSE) {
-        raw = {
-          callFrames: [{ functionName: '', url: 'bundle.js', lineNumber: 42, columnNumber: 0 }],
-        };
-      } else {
-        throw err;
-      }
-    }
+    // An unsupported stack fetch propagates: synthesizing frames here would
+    // mask the target's real behavior, so callers decide how to proceed.
+    const raw = await send('Debugger.getStackTrace', {});
     return withMappedStacks(raw);
   }
 
@@ -111,18 +103,21 @@ function createCdpBridge(opts) {
 
     async stepOver(params) {
       const stepResult = await send('Debugger.stepOver', params || {});
-      const stack = await fetchMappedStack();
+      let stack = null;
+      try {
+        stack = await fetchMappedStack();
+      } catch (err) {
+        // Unsupported stack fetch propagates without invented frames.
+        if (err && err.cause === UNSUPPORTED_CAUSE) throw err;
+        throw err;
+      }
       const merged = { ...stepResult };
       if (stack && Array.isArray(stack.callFrames)) {
         merged.callFrames = stack.callFrames;
-      } else if (!Array.isArray(merged.callFrames)) {
-        merged.callFrames = mapCallFrames(
-          [{ functionName: '', url: 'bundle.js', lineNumber: 42, columnNumber: 0 }],
-          sourceMap,
-        );
-      } else {
+      } else if (Array.isArray(merged.callFrames)) {
         merged.callFrames = mapCallFrames(merged.callFrames, sourceMap);
       }
+      // Otherwise return the step result as-is: never invent callFrames.
       return withMappedStacks(merged);
     },
 

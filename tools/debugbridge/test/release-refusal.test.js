@@ -251,3 +251,38 @@ describe('C++ breakpoint -> originating JSI call via Batch 3 JSI map (T10 / TC-D
     );
   });
 });
+
+describe('devserver release-stub connect behavior pin (review MINOR)', () => {
+  it("devserver connect('release') refuses with the release reason", () => {
+    const { connect } = fresh(DEVSERVER_STUB);
+    assert.equal(typeof connect, 'function');
+    const res = connect('release');
+    assert.deepEqual(Object.keys(res).sort(), ['action', 'reason', 'status']);
+    assert.equal(res.status, 'refused');
+    assert.equal(res.reason, 'debug channel not compiled in');
+    assert.equal(typeof res.action, 'string');
+    assert.ok(res.action.length > 0);
+  });
+
+  it("devserver connect('dev') pins current always-refuse behavior", () => {
+    const { connect } = fresh(DEVSERVER_STUB);
+    const res = connect('dev');
+    // PIN (review MINOR): the devserver release artifact currently refuses
+    // every buildType including 'dev'. The coder will clarify the artifact
+    // vs parameter; this test pins today's behavior so any change is explicit.
+    assert.equal(res.status, 'refused');
+    assert.equal(res.reason, 'debug channel not compiled in');
+    assert.ok(!('session' in res), 'refused result must not carry a session');
+  });
+
+  it('devserver connect with unknown/omitted buildType fails closed', () => {
+    const { connect } = fresh(DEVSERVER_STUB);
+    for (const bad of [undefined, null, 'prod', '', 42]) {
+      const res = connect(bad);
+      assert.ok(
+        res && res.status === 'refused',
+        `buildType ${String(bad)} must refuse, got: ${JSON.stringify(res)}`
+      );
+    }
+  });
+});
