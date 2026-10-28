@@ -22,7 +22,9 @@ enum class Direction {
 // Config-only layer: route ids are opaque strings with no routing behavior.
 // Each configured (route, direction) pair resolves to its configured spec;
 // any unconfigured pair falls back to the default spec. resolve() never
-// throws and returns a stable reference.
+// throws and returns a stable reference. The unconfigured-route default
+// spec is inert-by-design (zero stiffness, so leaves built from it never
+// advance); the caller must configure the pair it intends to animate.
 class RouteTransitions {
  public:
   void configure(const std::string& route, Direction dir, TransitionSpec spec);

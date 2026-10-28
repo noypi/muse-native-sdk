@@ -26,7 +26,7 @@ namespace {
 bool near(float a, float b, float eps) { return std::fabs(a - b) <= eps; }
 
 const float kRetargetPosEps = 1e-3f;
-const float kRetargetVelEps = 1e-3f;  // units/ms per plan acceptance
+const float kRetargetVelEps = 1e-3f;  // units/s per canonical convention
 const float kSettleValueEps = 0.5f;   // ASSUMPTION: M3 literal proxy
 const float kSettleVelEps = 0.5f;     // ASSUMPTION: M3 literal proxy
 

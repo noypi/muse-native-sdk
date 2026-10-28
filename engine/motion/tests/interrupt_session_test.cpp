@@ -27,7 +27,7 @@ namespace {
 bool near(float a, float b, float eps) { return std::fabs(a - b) <= eps; }
 
 const float kRetargetPosEps = 1e-3f;  // plan A3 (ASSUMPTION: M3-proxy)
-const float kRetargetVelEps = 1e-3f;  // units/ms per plan acceptance
+const float kRetargetVelEps = 1e-3f;  // units/s per canonical convention
 const float kSettleValueEps = 0.5f;   // ASSUMPTION: M3 literal proxy (T1)
 const float kSettleVelEps = 0.5f;     // ASSUMPTION: M3 literal proxy (T1)
 const float kTimeoutMs = 2000.0f;     // ASSUMPTION: M3 literal proxy (T1)
@@ -99,7 +99,7 @@ bool check_release_handoff_and_settle() {
   for (int i = 0; i < 5; ++i) {
     motion::InputSample s;
     s.position = 20.0f * static_cast<float>(i);
-    s.velocity = 1.25f;  // units/ms
+    s.velocity = 1.25f;  // units/s (canonical: gesture + solver)
     s.tMs = t;
     t += 16.0f;
     binding.onSample(s);
@@ -109,16 +109,29 @@ bool check_release_handoff_and_settle() {
   rel.velocity = 1.25f;
   rel.tMs = t;
   binding.onRelease(rel);
-  // T3 handoff: spring initial velocity equals release velocity within eps.
-  // ASSUMPTION (velocity units): gesture samples carry units/ms while the
-  // T1 solver documents units/s; the handoff converts (x1000) or the units
-  // match by convention. This test accepts either convention the coder
-  // documents, asserting continuity of the recorded drag value only, plus
-  // that the seeded spring is non-rest (carries energy from the release).
+  // T3 handoff: spring initial velocity equals the release-sample velocity
+  // within 1e-3. Canonical unit is units/s everywhere (gesture_binding.h,
+  // solver.h): no conversion, direct equality.
   if (!near(w.lastValue, 80.0f, 1e-3f)) return false;
+  motion::SpringState st = binding.springState();
+  if (!near(st.velocity, rel.velocity, 1e-3f)) return false;
+  // Fling-vs-drop: the seeded spring must start ahead of a from-rest drop
+  // toward the same target, so the test distinguishes a fling from a drop.
+  {
+    const motion::SpringSpec spec = makeSpec();
+    const float target = 300.0f;
+    motion::SpringState fling = st;
+    motion::SpringState rest;
+    rest.value = rel.position;
+    rest.velocity = 0.0f;
+    for (int i = 0; i < 5; ++i) {
+      fling = motion::advanceSpring(fling, spec, target, 16.0f);
+      rest = motion::advanceSpring(rest, spec, target, 16.0f);
+    }
+    if (!(fling.value > rest.value)) return false;
+  }
   // Settle: advance the released spring to the fling target; must settle
   // within M3 literals before the timeout.
-  motion::SpringState st = binding.springState();
   const motion::SpringSpec spec = makeSpec();
   const float target = 300.0f;
   float elapsed = 0.0f;

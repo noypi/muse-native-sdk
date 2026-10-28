@@ -144,6 +144,56 @@ bool check_empty_flow_is_noop() {
   return !threw && near(reg.get(pid(4), 5000.0f), 7.0f, 0.5f);
 }
 
+// Degenerate routing (documented in implicit.h): a single-entry registry
+// applies color to the lone entry and drops elevation — no second channel
+// exists to move.
+bool check_single_entry_theme_applies_color_drops_elevation() {
+  motion::ImplicitRegistry reg;
+  reg.markImplicit(pid(5), springSpec(180.0f, 1.0f));
+  reg.set(pid(5), 0.0f, 0.0f);
+  reg.applyTheme(/*colorFrom=*/0.0f, /*colorTo=*/1.0f, /*elevFrom=*/0.0f,
+                 /*elevTo=*/8.0f, /*tMs=*/0.0f);
+  if (!near(reg.get(pid(5), 0.0f), 0.0f, kValueEps)) return false;  // no snap
+  return near(reg.get(pid(5), 5000.0f), 1.0f, 0.05f);  // color applied
+}
+
+// Degenerate routing (documented in implicit.h): with three entries, color
+// targets the lowest id, elevation the highest, and the middle id is
+// untouched.
+bool check_three_entry_theme_leaves_middle_untouched() {
+  motion::ImplicitRegistry reg;
+  reg.markImplicit(pid(20), springSpec(180.0f, 1.0f));
+  reg.markImplicit(pid(21), springSpec(180.0f, 1.0f));
+  reg.markImplicit(pid(22), springSpec(180.0f, 1.0f));
+  reg.set(pid(20), 0.0f, 0.0f);
+  reg.set(pid(21), 42.0f, 0.0f);
+  reg.set(pid(22), 0.0f, 0.0f);
+  reg.applyTheme(/*colorFrom=*/0.0f, /*colorTo=*/1.0f, /*elevFrom=*/0.0f,
+                 /*elevTo=*/8.0f, /*tMs=*/0.0f);
+  if (!near(reg.get(pid(20), 5000.0f), 1.0f, 0.05f)) return false;  // color
+  if (!near(reg.get(pid(22), 5000.0f), 8.0f, 0.5f)) return false;   // elevation
+  return near(reg.get(pid(21), 5000.0f), 42.0f, kValueEps);  // middle intact
+}
+
+// Degenerate routing (documented in implicit.h): with zero entries,
+// applyTheme and applyLayoutFlow are no-ops — no throw, unregistered reads
+// stay 0.
+bool check_zero_entry_theme_and_flow_are_noop() {
+  motion::ImplicitRegistry reg;
+  bool threw = false;
+  try {
+    reg.applyTheme(/*colorFrom=*/0.0f, /*colorTo=*/1.0f, /*elevFrom=*/0.0f,
+                   /*elevTo=*/8.0f, /*tMs=*/0.0f);
+    reg.applyLayoutFlow(std::vector<motion::ItemMove>{}, 0.0f);
+    reg.applyLayoutFlow(
+        std::vector<motion::ItemMove>{moveItem(9, 0.0f, 3.0f)}, 0.0f);
+  } catch (...) {
+    threw = true;
+  }
+  if (threw) return false;
+  return near(reg.get(pid(9), 100.0f), 0.0f, kValueEps);
+}
+
 }  // namespace
 
 #define RUN_CASE(name)                     \
@@ -164,6 +214,9 @@ int main() {
   RUN_CASE(check_live_item_keeps_full_opacity);
   RUN_CASE(check_theme_toggle_animates);
   RUN_CASE(check_empty_flow_is_noop);
+  RUN_CASE(check_single_entry_theme_applies_color_drops_elevation);
+  RUN_CASE(check_three_entry_theme_leaves_middle_untouched);
+  RUN_CASE(check_zero_entry_theme_and_flow_are_noop);
   if (failures > 0) {
     std::printf("implicit_flow_test: %d failing\n", failures);
     return 1;

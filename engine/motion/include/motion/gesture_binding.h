@@ -13,8 +13,9 @@ class ITransformWriter {
   virtual void writeTransform(float value, float tMs) = 0;
 };
 
-// Minimal gesture sample (input-owned shape). Velocity is in units/ms,
-// matching the T1 retarget epsilon (1e-3).
+// Minimal gesture sample (input-owned shape). Velocity is in units/s,
+// matching the T1 solver state velocity (SpringState::velocity, integrated
+// with dt in seconds) and the Android VelocityTracker convention.
 struct InputSample {
   float position = 0.0f;
   float velocity = 0.0f;

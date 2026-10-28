@@ -13,8 +13,8 @@
 // (motion/solver.h); spring-only variant. Update call sites, not
 // expectations, if the coder names fields differently.
 //
-// ASSUMPTION (velocity units): plan A3 states retarget epsilon 1e-3 units/ms;
-// T1 solver.h documents velocity in units per second. Value continuity is
+// ASSUMPTION (velocity units): canonical unit is units/s everywhere
+// (gesture_binding.h, solver.h); retarget epsilon 1e-3 units/s. Value continuity is
 // asserted directly (|d value| <= 1e-3 across the retarget step); velocity
 // continuity is asserted observationally (post-retarget trajectory stays
 // within a bounded step of the pre-retarget value, i.e. no snap or kick),

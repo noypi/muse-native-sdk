@@ -13,7 +13,8 @@
 // the release-seeded spring via `const SpringState& springState() const
 // noexcept` (both in `motion::`). If the coder names the constructor/accessor
 // differently, update call sites — not expectations — per reconciliation.
-// Velocity units are units/ms, matching the T1 retarget epsilon (1e-3).
+// Velocity units are units/s everywhere, matching the T1 solver state
+// (SpringState::velocity) and the retarget epsilon (1e-3 units/s).
 //
 // ASSUMPTION (monotonicity): "non-monotonic tMs are ignored" is tested as
 // strictly-increasing required: a sample with tMs <= last accepted tMs is

@@ -58,6 +58,8 @@ struct ParallelNode {
 // then non-empty keyframe keys, then a configured spring (stiffness or
 // dampingRatio set), then a configured easing (durationMs set), then a
 // configured decay (velocity set); otherwise the node is a value leaf.
+// Multi-shape nodes resolve by kindOf() priority:
+// sequence > parallel > keyframe > spring > easing > decay > value.
 struct Node {
   ValueNode value;
   SpringNode spring;

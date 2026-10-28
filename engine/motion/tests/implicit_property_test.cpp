@@ -17,8 +17,8 @@
 // Field/type spellings are the test's proposal — update call sites, not
 // expectations, if the coder names them differently.
 //
-// ASSUMPTION (velocity units): plan A3 states retarget epsilon 1e-3 units/ms;
-// T1 solver.h documents velocity in units per second. These tests assert
+// ASSUMPTION (velocity units): canonical unit is units/s everywhere
+// (gesture_binding.h, solver.h); retarget epsilon 1e-3 units/s. These tests assert
 // value continuity only (|d value| <= 1e-3) and convergence, never raw
 // velocity units.
 #include <cmath>

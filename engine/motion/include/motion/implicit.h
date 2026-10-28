@@ -55,6 +55,10 @@ class ImplicitRegistry {
   // Theme toggle: color channel animates toward colorTo, elevation channel
   // toward elevTo. The color/elevation sources retarget from their current
   // values, so the from endpoints only document the previous theme.
+  // Routing rule: color targets the lowest implicit PropertyId holding a
+  // value and elevation targets the highest implicit PropertyId holding a
+  // value; middle ids are untouched. With a single entry only color is
+  // applied (elevation is dropped); with zero entries this is a no-op.
   void applyTheme(float colorFrom, float colorTo, float elevFrom, float elevTo,
                   float tMs);
 

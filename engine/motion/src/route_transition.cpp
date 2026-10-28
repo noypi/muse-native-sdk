@@ -10,13 +10,10 @@ void RouteTransitions::configure(const std::string& route, Direction dir,
 const TransitionSpec& RouteTransitions::resolve(
     const std::string& route, Direction dir) const noexcept {
   // Documented fallback: unconfigured (route, dir) pairs resolve to the
-  // default spec. Lookup is keyed read-only; on any failure the stable
-  // default member is returned so this never throws.
-  try {
-    auto it = entries_.find(std::make_pair(route, dir));
-    if (it != entries_.end()) return it->second;
-  } catch (...) {
-  }
+  // default spec (inert-by-design: zero stiffness, caller must configure).
+  // Lookup is a plain keyed find returning a stable reference; noexcept.
+  auto it = entries_.find(std::make_pair(route, dir));
+  if (it != entries_.end()) return it->second;
   return defaultSpec_;
 }
 

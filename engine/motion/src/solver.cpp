@@ -9,6 +9,7 @@ SpringState advanceSpring(const SpringState& state, const SpringSpec& spec,
   if (!(spec.stiffness > 0.0f)) return state;
   if (!(spec.dampingRatio > 0.0f)) return state;
   if (!(dtMs > 0.0f)) return state;
+  if (!(target == target)) return state;
 
   const float dt = dtMs / 1000.0f;
   const float omega = std::sqrt(spec.stiffness);
