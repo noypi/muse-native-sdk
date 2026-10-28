@@ -1,0 +1,23 @@
+[
+  {
+    "filename": "sunset-dock.jpg",
+    "gallery": "lake",
+    "album": "lake",
+    "photoId": "photo-001",
+    "thumbnail": "thumbs/sunset-dock.jpg"
+  },
+  {
+    "filename": "heron-reeds.jpg",
+    "gallery": "lake",
+    "album": "lake",
+    "photoId": "photo-002",
+    "thumbnail": "thumbs/heron-reeds.jpg"
+  },
+  {
+    "filename": "birthday-candles.jpg",
+    "gallery": "family",
+    "album": "family",
+    "photoId": "photo-003",
+    "thumbnail": "thumbs/birthday-candles.jpg"
+  }
+]

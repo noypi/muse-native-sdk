@@ -6,10 +6,11 @@
 #   --self-test-missing-package
 #             sandboxed failure-path proof for AC-SAMPLE-021 (see below).
 #   <target>  demo target to build (e.g. examples/m3-gallery,
-#             examples/flappy). Bare demo names are accepted too:
-#             `flappy` -> `examples/flappy`, `m3-gallery` ->
-#             `examples/m3-gallery`; anything already starting with
-#             `examples/` passes through unchanged, as does anything else
+#             examples/flappy, examples/muse-demo). Bare demo names are
+#             accepted too: `flappy` -> `examples/flappy`, `m3-gallery` ->
+#             `examples/m3-gallery`, `muse-demo` -> `examples/muse-demo`;
+#             anything already starting with `examples/` passes through
+#             unchanged, as does anything else
 #             (the CLI reports unknown targets).
 #
 # Self-test mode (`--self-test-missing-package`, TC-SAMPLE-021): shadows
@@ -129,8 +130,9 @@ if [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
 fi
 
 if [ "${1:-}" = "--list" ]; then
-  echo "examples/m3-gallery"
-  echo "examples/flappy"
+  echo "m3-gallery"
+  echo "flappy"
+  echo "muse-demo"
   exit 0
 fi
 
@@ -150,6 +152,16 @@ TARGET="$1"
 case "$TARGET" in
   flappy) TARGET="examples/flappy" ;;
   m3-gallery) TARGET="examples/m3-gallery" ;;
+  muse-demo) TARGET="examples/muse-demo" ;;
 esac
+
+# Per-project yaml gate (AC-SAMPLE-022/AC-SAMPLE-035): a target directory
+# that exists but owns no `<target>/muse-native.yaml` fails here naming
+# the yaml path. Unknown/nonexistent targets pass through to
+# `muse-native build`, which reports them.
+if [ -d "$TARGET" ] && [ ! -f "${TARGET}/muse-native.yaml" ]; then
+  echo "build-demos.sh: error: missing per-project yaml for target '${TARGET}' at '${TARGET}/muse-native.yaml'" >&2
+  exit 1
+fi
 
 exec muse-native build "$TARGET"

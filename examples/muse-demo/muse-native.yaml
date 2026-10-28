@@ -1,0 +1,5 @@
+# Per-project config for the muse-demo photo-annotator sample (FR-SAMPLE-009).
+# This file names the muse-demo build target; the build resolves it as
+# <target>/muse-native.yaml with no workspace-root fallback.
+name: muse-demo
+version: 0.0.0
