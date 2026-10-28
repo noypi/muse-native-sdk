@@ -52,4 +52,36 @@ void InsetBus::onImeFrame(float imeBottom, std::uint64_t frameId) noexcept {
 
 std::uint64_t InsetBus::imeFrameId() const noexcept { return ime_frame_id_; }
 
+// T8: per-edge UNION (component-wise MAX) of SystemBars + DisplayCutout +
+// NavigationBars. Ime/gestures/tappable/caption excluded. Recomputed only
+// when a contributor revision changed; otherwise serves the cached struct.
+EdgeInsets InsetBus::safeArea() const noexcept {
+  const std::size_t kBars = toIndex(InsetType::SystemBars);
+  const std::size_t kCutout = toIndex(InsetType::DisplayCutout);
+  const std::size_t kNav = toIndex(InsetType::NavigationBars);
+  const std::uint64_t rBars = revisions_[kBars];
+  const std::uint64_t rCutout = revisions_[kCutout];
+  const std::uint64_t rNav = revisions_[kNav];
+  if (!safe_dirty_ && rBars == safe_rev_bars_ && rCutout == safe_rev_cutout_ &&
+      rNav == safe_rev_nav_) {
+    return safe_area_;
+  }
+  const EdgeInsets& bars = insets_[kBars];
+  const EdgeInsets& cutout = insets_[kCutout];
+  const EdgeInsets& nav = insets_[kNav];
+  auto pickMax = [](float a, float b, float c) noexcept {
+    float m = a > b ? a : b;
+    return m > c ? m : c;
+  };
+  safe_area_.left = pickMax(bars.left, cutout.left, nav.left);
+  safe_area_.top = pickMax(bars.top, cutout.top, nav.top);
+  safe_area_.right = pickMax(bars.right, cutout.right, nav.right);
+  safe_area_.bottom = pickMax(bars.bottom, cutout.bottom, nav.bottom);
+  safe_rev_bars_ = rBars;
+  safe_rev_cutout_ = rCutout;
+  safe_rev_nav_ = rNav;
+  safe_dirty_ = false;
+  return safe_area_;
+}
+
 }  // namespace layout

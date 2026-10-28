@@ -42,11 +42,25 @@ class InsetBus {
   void onImeFrame(float imeBottom, std::uint64_t frameId) noexcept;
   std::uint64_t imeFrameId() const noexcept;
 
+  // T8: cached safe-area snapshot (per-edge UNION of SystemBars +
+  // DisplayCutout + NavigationBars). Recomputed only when a contributor's
+  // revision changes; cache hits touch only the cached struct. Never throws,
+  // never allocates.
+  EdgeInsets safeArea() const noexcept;
+
  private:
   static constexpr std::size_t kTypeCount = 8;
   std::array<EdgeInsets, kTypeCount> insets_{};
   std::array<std::uint64_t, kTypeCount> revisions_{};
   std::uint64_t ime_frame_id_ = 0;
+  // T8 snapshot cache: last published composite + the contributor revisions
+  // it was built from. Mutable so the const query path stays side-effect
+  // free with respect to `revision()`.
+  mutable EdgeInsets safe_area_{};
+  mutable std::uint64_t safe_rev_bars_ = 0;
+  mutable std::uint64_t safe_rev_cutout_ = 0;
+  mutable std::uint64_t safe_rev_nav_ = 0;
+  mutable bool safe_dirty_ = true;
 };
 
 }  // namespace layout

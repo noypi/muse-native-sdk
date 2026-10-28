@@ -93,3 +93,13 @@ add_executable(ime_animation_test tests/ime_animation_test.cpp)
 target_link_libraries(ime_animation_test PRIVATE layout)
 target_compile_options(ime_animation_test PRIVATE -Wall -Wextra -Wpedantic -Werror)
 add_test(NAME ime_animation_test COMMAND ime_animation_test)
+
+add_executable(safe_area_test tests/safe_area_test.cpp)
+target_link_libraries(safe_area_test PRIVATE layout)
+target_compile_options(safe_area_test PRIVATE -Wall -Wextra -Wpedantic -Werror)
+add_test(NAME safe_area_test COMMAND safe_area_test)
+
+add_executable(ime_scripted_test tests/ime_scripted_test.cpp)
+target_link_libraries(ime_scripted_test PRIVATE layout)
+target_compile_options(ime_scripted_test PRIVATE -Wall -Wextra -Wpedantic -Werror)
+add_test(NAME ime_scripted_test COMMAND ime_scripted_test)
