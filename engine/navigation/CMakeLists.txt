@@ -100,6 +100,11 @@ target_link_libraries(link_validation_test PRIVATE navigation)
 target_compile_options(link_validation_test PRIVATE -Wall -Wextra -Wpedantic)
 add_test(NAME link_validation_test COMMAND link_validation_test)
 
+add_executable(security_gate_test tests/security_gate_test.cpp)
+target_link_libraries(security_gate_test PRIVATE navigation)
+target_compile_options(security_gate_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME security_gate_test COMMAND security_gate_test)
+
 # FR-NAV-006 T2 (NAV-APPLINKS codegen invocation — documentation only, no new
 # engine target added here):
 #   Generate: python3 ../../toolchain/applinks/codegen.py
