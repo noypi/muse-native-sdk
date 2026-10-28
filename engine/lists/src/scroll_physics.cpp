@@ -35,7 +35,17 @@ PhysicsState integrate(PhysicsState s, PredictedSample sample,
   const float dt = vsync.dtS;
   // Zero-dt (or negative/NaN) frame: strict no-op, never NaN/divergent.
   if (!(dt > 0.0f)) return s;
-  if (!(s.offsetPx == s.offsetPx && s.velocityPxS == s.velocityPxS)) return s;
+  // Non-finite state recovers to rest instead of sticking: keep a finite
+  // offset (fall back to 0 when the offset itself is non-finite) and zero
+  // the velocity, so a single NaN from upstream touch prediction cannot
+  // poison the fling forever. Choice documented: {offset, 0}, not {0, 0},
+  // so a NaN velocity alone does not jump the scroll position.
+  if (!(s.offsetPx == s.offsetPx && s.velocityPxS == s.velocityPxS)) {
+    PhysicsState rest;
+    rest.offsetPx = (s.offsetPx == s.offsetPx) ? s.offsetPx : 0.0f;
+    rest.velocityPxS = 0.0f;
+    return rest;
+  }
 
   const float touchV =
       (sample.velocityPxS == sample.velocityPxS) ? sample.velocityPxS : 0.0f;

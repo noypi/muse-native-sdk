@@ -28,6 +28,7 @@
 // ASSUMPTION per GR-08 T1.2.
 #include <cmath>
 #include <cstdio>
+#include <limits>
 #include <vector>
 
 #include "lists/scroll_physics.h"
@@ -167,6 +168,35 @@ int main() {
     check(out.offsetPx == out.offsetPx && out.velocityPxS == out.velocityPxS,
           "zero_dt_no_nan");
     check(std::fabs(out.offsetPx - 50.0f) <= 1.0f, "zero_dt_no_jump");
+  }
+
+  // Review follow-up (coder choice): non-finite state clamps to rest
+  // {offset, 0} instead of sticking as NaN, so a single NaN velocity from
+  // upstream touch prediction cannot poison the fling forever. The finite
+  // offset is kept (no scroll jump); only a non-finite offset falls to 0.
+  {
+    const float kNaN = std::numeric_limits<float>::quiet_NaN();
+    lists::PredictedSample sample{};
+    lists::VsyncDeadline vsync{};
+    vsync.dtS = kDt60;
+    lists::PhysicsState poisoned{};
+    poisoned.offsetPx = 100.0f;
+    poisoned.velocityPxS = kNaN;
+    lists::PhysicsState rec = lists::integrate(
+        poisoned, sample, vsync, mkCurve(lists::CurveKind::AndroidOverscroll));
+    check(rec.offsetPx == 100.0f && rec.velocityPxS == 0.0f,
+          "nan_velocity_recovers");
+    // A subsequent integrate step moves normally again (no stuck NaN).
+    lists::PhysicsState fling{};
+    fling.offsetPx = rec.offsetPx;
+    fling.velocityPxS = 2000.0f;
+    lists::PhysicsState out =
+        lists::integrate(fling, sample, vsync,
+                         mkCurve(lists::CurveKind::AndroidOverscroll));
+    check(out.offsetPx == out.offsetPx &&
+              out.velocityPxS == out.velocityPxS &&
+              out.offsetPx > fling.offsetPx,
+          "nan_recovered_moves_normally");
   }
 
   if (g_failures == 0) std::printf("ALL TESTS PASSED\n");

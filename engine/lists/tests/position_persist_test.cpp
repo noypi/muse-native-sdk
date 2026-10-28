@@ -163,6 +163,18 @@ void case_t1_keys_consumed() {
   check(c.ok, "t1_keys_still_pass");
 }
 
+void case_dest_mismatch_restores_rest() {
+  // Review follow-up (coder choice): destination mismatch restores to rest
+  // (offset 0 / index 0 / no velocity) — a snapshot from destination A
+  // never leaks its position into destination B.
+  lists::KeyedList data = kl({"a", "b", "c"});
+  lists::Snapshot sA = lists::savePos(dest("a"), 250.0f, 2, key("c"), 0.5f);
+  lists::Restored r = lists::restorePos(dest("b"), sA, data);
+  check(r.offsetPx == 0.0f && r.index == 0 && r.velocityPxS == 0.0f,
+        "dest_mismatch_restores_rest");
+  check(r.offsetPx != sA.offsetPx, "dest_mismatch_no_offset_leak");
+}
+
 }  // namespace
 
 int main() {
@@ -176,6 +188,7 @@ int main() {
   case_negative_offset_clamped();
   case_per_destination_isolation();
   case_t1_keys_consumed();
+  case_dest_mismatch_restores_rest();
   if (g_failures == 0) {
     std::printf("ALL TESTS PASSED\n");
   } else {

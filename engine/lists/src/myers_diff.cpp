@@ -16,6 +16,20 @@ size_t Recycler::rebindCount() const { return rebinds_; }
 
 namespace {
 
+// Review fix (MAJOR Myers OOM): bounded-memory diff strategy.
+// The full Myers V-trace below costs O(D*(N+M)) memory, which OOMs on
+// large reorders (e.g. a 10k-item full reversal needs D=2N). Choice (b):
+// a documented D-cap with fallback to an index-anchored correct script.
+//  - Same-key-set inputs (pure reorders, the reversal worst case) bypass
+//    Myers entirely via an LIS-anchored move script: O(N log N) time,
+//    O(N) memory, minimal move count (N - LIS length; N-1 for a full
+//    reversal). No V-trace is built on this path.
+//  - Otherwise Myers runs with D capped at kMaxMyersD; on overflow the
+//    same index-anchored fallback produces a correct (result == new order)
+//    script with bounded memory instead of throwing std::bad_alloc.
+// Small inputs (the existing suite) always take the exact Myers path, so
+// minimality for insert/remove fixtures is unchanged.
+
 // One step of the shortest edit script, in reverse (backtrack) order:
 // 'r' removes old_[x-1], 'i' inserts new_[y-1].
 struct RawStep {
@@ -25,9 +39,16 @@ struct RawStep {
 };
 
 // Myers O(ND) greedy shortest-edit-script over stable key strings.
-// Returns raw remove/insert steps (no moves yet), forward ordered.
-std::vector<RawStep> myersSes(const std::vector<std::string>& oldKeys,
-                              const std::vector<std::string>& newKeys) {
+// Returns {raw remove/insert steps (no moves yet, forward ordered),
+// capped}: capped == true means the D-cap was hit without converging, so
+// the steps are empty and the caller must use the index-anchored fallback.
+// Maximum Myers forward depth before falling back. Bounds the V-trace at
+// kMaxMyersD snapshots of (2*(N+M)+1) ints.
+constexpr int kMaxMyersD = 512;
+
+std::pair<std::vector<RawStep>, bool> myersSes(
+    const std::vector<std::string>& oldKeys,
+    const std::vector<std::string>& newKeys) {
   const int n = static_cast<int>(oldKeys.size());
   const int m = static_cast<int>(newKeys.size());
   const int max = n + m;
@@ -37,8 +58,10 @@ std::vector<RawStep> myersSes(const std::vector<std::string>& oldKeys,
   v[off + 1] = 0;
   std::vector<std::vector<int>> trace;
   trace.reserve(static_cast<size_t>(max) + 1);
+  bool capped = false;
 
-  for (int d = 0; d <= max; ++d) {
+  const int limit = max < kMaxMyersD ? max : kMaxMyersD;
+  for (int d = 0; d <= limit; ++d) {
     bool done = false;
     for (int k = -d; k <= d; k += 2) {
       const int idx = off + k;
@@ -65,10 +88,18 @@ std::vector<RawStep> myersSes(const std::vector<std::string>& oldKeys,
     if (done) {
       break;
     }
+    if (d == limit && limit < max) {
+      // D-cap reached without converging: the trace stays bounded and the
+      // caller falls back to the index-anchored script.
+      capped = true;
+      trace.clear();
+      trace.shrink_to_fit();
+      break;
+    }
   }
-
   std::vector<RawStep> rev;
   rev.reserve(static_cast<size_t>(max));
+  if (capped) return {rev, true};  // Empty + capped: caller falls back.
   int x = n;
   int y = m;
   for (int d = static_cast<int>(trace.size()) - 1; d >= 1; --d) {
@@ -100,17 +131,148 @@ std::vector<RawStep> myersSes(const std::vector<std::string>& oldKeys,
     }
   }
   std::reverse(rev.begin(), rev.end());
-  return rev;
+  return {rev, false};
 }
 
 bool byTo(const EditOp& a, const EditOp& b) { return a.to < b.to; }
 
 bool byFrom(const EditOp& a, const EditOp& b) { return a.from < b.from; }
 
+// Index-anchored fallback script with bounded O(N+M) memory. Correct by
+// construction (out.result == newKeys): keys missing from old are
+// inserted, keys missing from new are removed, and common keys outside
+// the longest increasing subsequence of old positions become moves.
+// For pure reorders the move count (N - LIS length) is minimal: kept keys
+// are already in relative order, so each other key must move.
+EditScript anchoredScript(const std::vector<std::string>& oldKeys,
+                          const std::vector<std::string>& newKeys) {
+  std::unordered_map<std::string, size_t> oldPos;
+  oldPos.reserve(oldKeys.size());
+  for (size_t i = 0; i < oldKeys.size(); ++i) {
+    oldPos[oldKeys[i]] = i;
+  }
+  std::unordered_map<std::string, size_t> newPos;
+  newPos.reserve(newKeys.size());
+  for (size_t i = 0; i < newKeys.size(); ++i) {
+    newPos[newKeys[i]] = i;
+  }
+  // Old positions of common keys in new order; LIS = keys needing no move.
+  std::vector<size_t> seq;
+  std::vector<size_t> newIdx;
+  seq.reserve(newKeys.size());
+  newIdx.reserve(newKeys.size());
+  for (size_t j = 0; j < newKeys.size(); ++j) {
+    const auto it = oldPos.find(newKeys[j]);
+    if (it != oldPos.end()) {
+      seq.push_back(it->second);
+      newIdx.push_back(j);
+    }
+  }
+  // Patience-sorting LIS over seq, tracking predecessors for backtrack.
+  std::vector<size_t> tails;
+  std::vector<size_t> prev(seq.size(), seq.size());
+  std::vector<size_t> tailPos;
+  tails.reserve(seq.size());
+  tailPos.reserve(seq.size());
+  for (size_t i = 0; i < seq.size(); ++i) {
+    size_t lo = 0;
+    size_t hi = tails.size();
+    while (lo < hi) {
+      const size_t mid = (lo + hi) / 2;
+      if (seq[tailPos[mid]] < seq[i]) {
+        lo = mid + 1;
+      } else {
+        hi = mid;
+      }
+    }
+    if (lo > 0) prev[i] = tailPos[lo - 1];
+    if (lo == tails.size()) {
+      tails.push_back(seq[i]);
+      tailPos.push_back(i);
+    } else {
+      tails[lo] = seq[i];
+      tailPos[lo] = i;
+    }
+  }
+  std::vector<bool> kept(seq.size(), false);
+  if (!tailPos.empty()) {
+    size_t p = tailPos.back();
+    while (p < seq.size()) {
+      kept[p] = true;
+      p = prev[p];
+    }
+  }
+  EditScript out;
+  out.result = newKeys;
+  std::vector<EditOp> moves;
+  for (size_t i = 0; i < seq.size(); ++i) {
+    if (kept[i]) continue;
+    EditOp op;
+    op.type = EditType::Move;
+    op.key = newKeys[newIdx[i]];
+    op.from = seq[i];
+    op.to = newIdx[i];
+    moves.push_back(op);
+  }
+  std::vector<EditOp> removes;
+  for (size_t i = 0; i < oldKeys.size(); ++i) {
+    if (newPos.find(oldKeys[i]) == newPos.end()) {
+      EditOp op;
+      op.type = EditType::Remove;
+      op.key = oldKeys[i];
+      op.from = i;
+      removes.push_back(op);
+    }
+  }
+  std::vector<EditOp> inserts;
+  for (size_t j = 0; j < newKeys.size(); ++j) {
+    if (oldPos.find(newKeys[j]) == oldPos.end()) {
+      EditOp op;
+      op.type = EditType::Insert;
+      op.key = newKeys[j];
+      op.to = j;
+      inserts.push_back(op);
+    }
+  }
+  std::sort(moves.begin(), moves.end(), byTo);
+  std::sort(removes.begin(), removes.end(), byFrom);
+  std::sort(inserts.begin(), inserts.end(), byTo);
+  out.ops.reserve(moves.size() + removes.size() + inserts.size());
+  out.ops.insert(out.ops.end(), moves.begin(), moves.end());
+  out.ops.insert(out.ops.end(), removes.begin(), removes.end());
+  out.ops.insert(out.ops.end(), inserts.begin(), inserts.end());
+  return out;
+}
+
+// True when both lists hold the same key multiset (pure reorder).
+bool sameKeySet(const std::vector<std::string>& oldKeys,
+                const std::vector<std::string>& newKeys) {
+  if (oldKeys.size() != newKeys.size()) return false;
+  std::unordered_map<std::string, size_t> counts;
+  counts.reserve(oldKeys.size());
+  for (const auto& k : oldKeys) ++counts[k];
+  for (const auto& k : newKeys) {
+    const auto it = counts.find(k);
+    if (it == counts.end() || it->second == 0) return false;
+    --it->second;
+  }
+  return true;
+}
+
 }  // namespace
 
 EditScript myersDiff(const KeyedList& oldL, const KeyedList& newL) {
-  const std::vector<RawStep> ses = myersSes(oldL.keys, newL.keys);
+  // Pure-reorder fast path: the same key set in a new order is the Myers
+  // worst case (D = 2N full-trace OOM), so bypass Myers entirely with the
+  // bounded index-anchored script, which is also move-minimal here.
+  if (sameKeySet(oldL.keys, newL.keys)) {
+    return anchoredScript(oldL.keys, newL.keys);
+  }
+  const auto sesCapped = myersSes(oldL.keys, newL.keys);
+  if (sesCapped.second) {
+    return anchoredScript(oldL.keys, newL.keys);
+  }
+  const std::vector<RawStep>& ses = sesCapped.first;
 
   // Lift same-key remove+insert pairs into single moves so a relocation
   // costs one op, keeping the script minimal for reorders. Keys are

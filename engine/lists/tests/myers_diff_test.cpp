@@ -181,6 +181,38 @@ void case_single_item_replace() {
         "single_item_replace_exact");
 }
 
+// Review follow-up (coder choice (b)): D-cap `kMaxMyersD=512` with an
+// LIS-anchored fallback; pure-reorder fast path bypasses Myers entirely.
+// A 2k-item full reversal (Myers D=2N=4000 worst case) must complete in
+// bounded memory with a minimal move script (N-1 = 1999 moves: LIS of a
+// full reversal has length 1) and apply exactly.
+void case_large_reversal_bounded_minimal() {
+  const size_t kN = 2000;
+  lists::KeyedList oldL{};
+  lists::KeyedList newL{};
+  oldL.keys.reserve(kN);
+  newL.keys.reserve(kN);
+  for (size_t i = 0; i < kN; ++i) {
+    char buf[32];
+    std::snprintf(buf, sizeof(buf), "k%05zu", i);
+    oldL.keys.emplace_back(buf);
+  }
+  newL.keys.assign(oldL.keys.rbegin(), oldL.keys.rend());
+  lists::EditScript s = lists::myersDiff(oldL, newL);
+  check(s.result == newL.keys, "large_reversal_completes");
+  size_t moves = 0;
+  size_t others = 0;
+  for (const auto& op : s.ops) {
+    if (op.type == lists::EditType::Move) {
+      ++moves;
+    } else {
+      ++others;
+    }
+  }
+  check(moves == kN - 1 && others == 0, "large_reversal_minimal_moves");
+  check(apply_is_exact(oldL, newL, s), "large_reversal_apply_exact");
+}
+
 }  // namespace
 
 int main() {
@@ -195,6 +227,7 @@ int main() {
   case_worker_thread_callable();
   case_batch_atomic_exact();
   case_single_item_replace();
+  case_large_reversal_bounded_minimal();
   if (g_failures == 0) {
     std::printf("ALL TESTS PASSED\n");
   } else {

@@ -41,6 +41,10 @@ Snapshot savePos(DestId d, float offsetPx, int index, ItemKey anchor,
 // nearest surviving index (saved index clamped to [0, size-1], empty data
 // restores index 0 / offset 0). Never returns an out-of-range index, and
 // never restores velocity.
+// Destination mismatch (`d.id != s.dest.id`) restores to rest
+// (offset 0 / index 0): one destination's snapshot never leaks into
+// another. `anchorFrac` is carried in the Snapshot for future STATE-PERSIST
+// use and is not consumed by this restore path.
 Restored restorePos(DestId d, const Snapshot& s, const KeyedList& data);
 
 }  // namespace lists

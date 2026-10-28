@@ -5,7 +5,7 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-add_library(lists STATIC src/stable_key.cpp src/myers_diff.cpp src/scroll_physics.cpp src/scroll_signal.cpp)
+add_library(lists STATIC src/stable_key.cpp src/myers_diff.cpp src/scroll_physics.cpp src/scroll_signal.cpp src/refresh_rate.cpp src/position_persist.cpp src/snap_refresh.cpp)
 target_include_directories(lists PUBLIC include)
 target_compile_options(lists PRIVATE -Wall -Wextra -Wpedantic -Werror)
 
@@ -34,20 +34,21 @@ target_compile_options(scroll_signal_test PRIVATE -Wall -Wextra -Wpedantic -Werr
 
 add_test(NAME scroll_signal_test COMMAND scroll_signal_test)
 
-add_executable(refresh_rate_test tests/refresh_rate_test.cpp src/refresh_rate.cpp)
+add_executable(refresh_rate_test tests/refresh_rate_test.cpp)
+target_link_libraries(refresh_rate_test PRIVATE lists)
 target_include_directories(refresh_rate_test PRIVATE include)
 target_compile_options(refresh_rate_test PRIVATE -Wall -Wextra -Wpedantic -Werror)
 
 add_test(NAME refresh_rate_test COMMAND refresh_rate_test)
 
-add_executable(position_persist_test tests/position_persist_test.cpp src/position_persist.cpp)
+add_executable(position_persist_test tests/position_persist_test.cpp)
 target_link_libraries(position_persist_test PRIVATE lists)
 target_include_directories(position_persist_test PRIVATE include)
 target_compile_options(position_persist_test PRIVATE -Wall -Wextra -Wpedantic -Werror)
 
 add_test(NAME position_persist_test COMMAND position_persist_test)
 
-add_executable(diff_benchmark_test tests/diff_benchmark_test.cpp src/snap_refresh.cpp)
+add_executable(diff_benchmark_test tests/diff_benchmark_test.cpp)
 target_link_libraries(diff_benchmark_test PRIVATE lists)
 target_include_directories(diff_benchmark_test PRIVATE include)
 target_compile_options(diff_benchmark_test PRIVATE -Wall -Wextra -Wpedantic -Werror)

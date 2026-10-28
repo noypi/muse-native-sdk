@@ -14,7 +14,19 @@ Snapshot savePos(DestId d, float offsetPx, int index, ItemKey anchor,
 }
 
 Restored restorePos(DestId d, const Snapshot& s, const KeyedList& data) {
-  (void)d;
+  // anchorFrac is carried in the Snapshot for future STATE-PERSIST use
+  // (sub-item anchor reconciliation); this restore path keys off the
+  // anchor key + saved index only.
+  // Destination mismatch: a snapshot from another destination never leaks
+  // its position here — restore to rest (offset 0 / index 0 / no velocity)
+  // instead of silently installing the foreign offset.
+  if (d.id != s.dest.id) {
+    Restored r;
+    r.offsetPx = 0.0f;
+    r.index = 0;
+    r.velocityPxS = 0.0f;
+    return r;
+  }
   Restored r;
   r.velocityPxS = 0.0f;
   if (data.keys.empty()) {
