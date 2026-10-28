@@ -1,5 +1,9 @@
 #include "layout/insets.h"
 
+#include "layout/window.h"
+
+#include <unordered_map>
+
 namespace layout {
 namespace {
 
@@ -82,6 +86,55 @@ EdgeInsets InsetBus::safeArea() const noexcept {
   safe_rev_nav_ = rNav;
   safe_dirty_ = false;
   return safe_area_;
+}
+
+}  // namespace layout
+
+// ---- T3 per-display metrics (FR-LAYOUT-013, AC-LAYOUT-037) ----
+// Per-window applied display metrics, keyed by WindowId so each window on
+// its own synthetic display keeps its own density and per-edge insets with
+// no cross-contamination: re-applying one window's metrics touches only
+// that window's entry. Density is stored, not validated, here — the plan's
+// T3 interface exposes only the kUnknownDisplay error channel, so there is
+// no invalid-density error to report on this path.
+namespace layout {
+namespace {
+
+// Window issuance is owned by T1's store in solver.cpp and shared here via
+// the layout::windowExists oracle. The cap below is only a fast-reject fast
+// path; the oracle is the sole gate: never-issued small ids (e.g. 500 with
+// only ids 0,1 created) throw kUnknownDisplay.
+constexpr WindowId kNeverIssuedCap = 4096;
+
+std::unordered_map<WindowId, DisplayMetrics>& displayMetricsStore() {
+  static std::unordered_map<WindowId, DisplayMetrics> store;
+  return store;
+}
+
+void requireKnownDisplay(WindowId id) {
+  if (id == kInvalidWindowId || id >= kNeverIssuedCap) {
+    throw LayoutError::kUnknownDisplay;
+  }
+  if (!windowExists(id)) {
+    throw LayoutError::kUnknownDisplay;
+  }
+}
+
+}  // namespace
+
+void applyDisplayMetrics(WindowId id, DisplayMetrics m) {
+  requireKnownDisplay(id);
+  displayMetricsStore()[id] = m;
+}
+
+DisplayMetrics displayMetricsOf(WindowId id) {
+  requireKnownDisplay(id);
+  auto& store = displayMetricsStore();
+  const auto it = store.find(id);
+  if (it == store.end()) {
+    throw LayoutError::kUnknownDisplay;
+  }
+  return it->second;
 }
 
 }  // namespace layout
