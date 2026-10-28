@@ -22,6 +22,10 @@ add_library(motion
   src/asset_prepare.cpp
   src/asset_scale.cpp
   src/svg_import.cpp
+  src/shared_element.cpp
+  src/large_motion.cpp
+  src/m3_tokens.cpp
+  src/spring_class.cpp
 )
 target_include_directories(motion PUBLIC include)
 target_compile_options(motion PRIVATE -Wall -Wextra -Wpedantic)
@@ -135,3 +139,56 @@ add_executable(asset_prepare_thread_test tests/asset_prepare_thread_test.cpp)
 target_link_libraries(asset_prepare_thread_test PRIVATE motion)
 target_compile_options(asset_prepare_thread_test PRIVATE -Wall -Wextra -Wpedantic)
 add_test(NAME asset_prepare_thread_test COMMAND asset_prepare_thread_test)
+
+add_executable(shared_identity_test tests/shared_identity_test.cpp)
+target_link_libraries(shared_identity_test PRIVATE motion)
+target_compile_options(shared_identity_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME shared_identity_test COMMAND shared_identity_test)
+
+add_executable(shared_clip_reverse_test tests/shared_clip_reverse_test.cpp)
+target_link_libraries(shared_clip_reverse_test PRIVATE motion)
+target_compile_options(shared_clip_reverse_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME shared_clip_reverse_test COMMAND shared_clip_reverse_test)
+
+add_executable(shared_pview_test tests/shared_pview_test.cpp)
+target_link_libraries(shared_pview_test PRIVATE motion)
+target_compile_options(shared_pview_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME shared_pview_test COMMAND shared_pview_test)
+
+add_executable(container_transform_test tests/container_transform_test.cpp)
+target_link_libraries(container_transform_test PRIVATE motion)
+target_compile_options(container_transform_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME container_transform_test COMMAND container_transform_test)
+
+add_executable(hinge_motion_test tests/hinge_motion_test.cpp)
+target_link_libraries(hinge_motion_test PRIVATE motion)
+target_compile_options(hinge_motion_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME hinge_motion_test COMMAND hinge_motion_test)
+
+add_executable(size_scaled_motion_test tests/size_scaled_motion_test.cpp)
+target_link_libraries(size_scaled_motion_test PRIVATE motion)
+target_compile_options(size_scaled_motion_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME size_scaled_motion_test COMMAND size_scaled_motion_test)
+
+add_executable(spring_class_test tests/spring_class_test.cpp)
+target_link_libraries(spring_class_test PRIVATE motion)
+target_compile_options(spring_class_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME spring_class_test COMMAND spring_class_test)
+
+add_executable(m3_tokens_test tests/m3_tokens_test.cpp)
+target_link_libraries(m3_tokens_test PRIVATE motion)
+target_compile_options(m3_tokens_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME m3_tokens_test COMMAND m3_tokens_test)
+
+# TC-MOTION-044: file-existence/content assertion path for tokens/m3.json.
+# Implemented WITHOUT touching the committed m3_tokens_test.cpp: a hermetic,
+# shell-free cmake -P script (generated into the build dir at configure time)
+# asserting the file exists and carries a non-empty "version" key.
+file(WRITE ${CMAKE_BINARY_DIR}/check_m3_tokens.cmake
+  "file(READ \"${CMAKE_CURRENT_SOURCE_DIR}/tokens/m3.json\" _m3_json)\n"
+  "if(NOT _m3_json MATCHES \"\\\"version\\\"[ \\t\\r\\n]*:[ \\t\\r\\n]*\\\"[^\\\"]+\\\"\")\n"
+  "  message(FATAL_ERROR \"TC-MOTION-044: tokens/m3.json missing or has empty 'version' key\")\n"
+  "endif()\n"
+  "message(STATUS \"TC-MOTION-044: tokens/m3.json exists with non-empty version key\")\n"
+)
+add_test(NAME m3_tokens_file COMMAND ${CMAKE_COMMAND} -P ${CMAKE_BINARY_DIR}/check_m3_tokens.cmake)
