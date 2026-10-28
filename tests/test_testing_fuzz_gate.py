@@ -355,5 +355,476 @@ class TestFuzzGate(unittest.TestCase):
             self.assertIn("crash", result)
 
 
+REGRESS_PY = os.path.join(FUZZ_DIR, "regress.py")
+CONTINUOUS_PY = os.path.join(FUZZ_DIR, "continuous.py")
+REGRESSIONS_DIR = os.path.join(FUZZ_DIR, "regressions")
+
+# Deterministic counter for synthetic crash ids (no wall-clock/random).
+_PROMOTE_SEQ = [0]
+
+
+def _next_crash_id(prefix):
+    _PROMOTE_SEQ[0] += 1
+    return "%s-%04d" % (prefix, _PROMOTE_SEQ[0])
+
+
+def _family_target_name(family):
+    for entry in _load_targets():
+        if entry["family"] == family:
+            return entry["name"]
+    raise AssertionError("no target for family %r (T1 registry)" % family)
+
+
+def _resolve_repo_path(path):
+    if os.path.isabs(path):
+        return path
+    return os.path.normpath(os.path.join(REPO_ROOT, path))
+
+
+def _cleanup_regression_file(regression_path):
+    full = _resolve_repo_path(regression_path)
+    try:
+        if os.path.isfile(full):
+            os.remove(full)
+    except OSError:
+        pass
+
+
+def _manifest_texts():
+    texts = []
+    if not os.path.isdir(REGRESSIONS_DIR):
+        return texts
+    for entry in sorted(os.listdir(REGRESSIONS_DIR)):
+        if entry.endswith(".json"):
+            candidate = os.path.join(REGRESSIONS_DIR, entry)
+            try:
+                with open(candidate, "r", encoding="utf-8") as fh:
+                    texts.append(fh.read())
+            except OSError:
+                pass
+    return texts
+
+
+class TestRegressFilesExist(unittest.TestCase):
+    def test_regress_module_exists(self):
+        self.assertTrue(
+            os.path.isfile(REGRESS_PY), "testing/fuzz/regress.py missing (T3)"
+        )
+
+    def test_continuous_module_exists(self):
+        self.assertTrue(
+            os.path.isfile(CONTINUOUS_PY),
+            "testing/fuzz/continuous.py missing (T4)",
+        )
+
+
+class TestPromoteCrash(unittest.TestCase):
+    def test_promote_crash_returns_regression_shape(self):
+        from testing.fuzz.regress import promote_crash
+
+        family = "css-sass"
+        crash_id = _next_crash_id("unittest-t3-shape")
+        crash_bytes = b"FUZZ-CRASH:shape-probe"
+        result = promote_crash(family, crash_bytes, crash_id)
+        try:
+            self.assertIsInstance(result, dict)
+            for key in ("regression_path", "test_name"):
+                self.assertIn(key, result)
+                self.assertIsInstance(result[key], str)
+                self.assertTrue(result[key], key + " must be non-empty")
+        finally:
+            _cleanup_regression_file(result.get("regression_path", ""))
+
+    def test_promote_crash_writes_bytes_under_family_crash_id_bin(self):
+        from testing.fuzz.regress import promote_crash
+
+        family = "layout-solver"
+        crash_id = _next_crash_id("unittest-t3-bytes")
+        crash_bytes = b"FUZZ-CRASH:bytes-probe\x00\x01"
+        result = promote_crash(family, crash_bytes, crash_id)
+        try:
+            full = _resolve_repo_path(result["regression_path"])
+            self.assertTrue(
+                os.path.isfile(full),
+                "regression file missing at %r" % result["regression_path"],
+            )
+            with open(full, "rb") as fh:
+                self.assertEqual(fh.read(), crash_bytes)
+            self.assertIn(family, result["regression_path"])
+            self.assertIn(crash_id, result["regression_path"])
+            self.assertTrue(result["regression_path"].endswith(".bin"))
+        finally:
+            _cleanup_regression_file(result.get("regression_path", ""))
+
+    def test_promote_crash_regression_path_lives_under_regressions_dir(self):
+        # Plan Detail (quoted verbatim): "writes a checked-in regression
+        # case under `testing/fuzz/regressions/<family>/<crash_id>.bin`".
+        from testing.fuzz.regress import promote_crash
+
+        family = "text-shaping"
+        crash_id = _next_crash_id("unittest-t3-layout")
+        result = promote_crash(family, b"FUZZ-CRASH:layout-probe", crash_id)
+        try:
+            full = _resolve_repo_path(result["regression_path"])
+            self.assertTrue(
+                full.startswith(REGRESSIONS_DIR + os.sep),
+                "regression path escapes testing/fuzz/regressions: %r"
+                % result["regression_path"],
+            )
+            expected_tail = os.path.join(family, crash_id + ".bin")
+            self.assertTrue(
+                result["regression_path"].replace("\\", "/").endswith(
+                    expected_tail.replace("\\", "/")
+                ),
+                "regression path must end with %r, got %r"
+                % (expected_tail, result["regression_path"]),
+            )
+        finally:
+            _cleanup_regression_file(result.get("regression_path", ""))
+
+    def test_promote_crash_is_idempotent(self):
+        # Promoting the same crash twice yields the same result and a
+        # single file (no duplicate manifest rows / files).
+        from testing.fuzz.regress import promote_crash
+
+        family = "deeplink-uri"
+        crash_id = _next_crash_id("unittest-t3-idem")
+        crash_bytes = b"FUZZ-CRASH:idempotent-probe"
+        first = promote_crash(family, crash_bytes, crash_id)
+        try:
+            second = promote_crash(family, crash_bytes, crash_id)
+            self.assertEqual(first, second)
+            full = _resolve_repo_path(first["regression_path"])
+            self.assertTrue(os.path.isfile(full))
+            with open(full, "rb") as fh:
+                self.assertEqual(fh.read(), crash_bytes)
+            hits = sum(
+                text.count(crash_id) for text in _manifest_texts()
+            )
+            # At most one manifest row per crash id (a manifest row is
+            # required by the plan; duplicates are not).
+            # (ASSUMPTION: manifest is a JSON file under
+            # testing/fuzz/regressions/ mapping crash_id to fix-status.)
+            self.assertLessEqual(hits, 1)
+        finally:
+            _cleanup_regression_file(first.get("regression_path", ""))
+
+    def test_promote_crash_records_manifest_row_with_fix_status(self):
+        # Plan Detail (quoted verbatim): "a manifest row mapping
+        # crash_id→fix-status".
+        # (ASSUMPTION: manifest is a JSON file under
+        # testing/fuzz/regressions/ mapping crash_id to fix-status.)
+        from testing.fuzz.regress import promote_crash
+
+        family = "flatbuffers"
+        crash_id = _next_crash_id("unittest-t3-manifest")
+        result = promote_crash(family, b"FUZZ-CRASH:manifest-probe", crash_id)
+        try:
+            texts = _manifest_texts()
+            self.assertTrue(
+                texts, "no manifest JSON under testing/fuzz/regressions (T3)"
+            )
+            self.assertTrue(
+                any(crash_id in text for text in texts),
+                "manifest has no row for crash %r" % crash_id,
+            )
+        finally:
+            _cleanup_regression_file(result.get("regression_path", ""))
+
+    def test_promote_crash_rerun_reproduces_crash_id(self):
+        # Plan Acceptance (quoted verbatim): "promote a synthetic crash,
+        # assert the regression file exists and re-running `run_target`
+        # on it reproduces the crash id until marked fixed."
+        from testing.fuzz.regress import promote_crash
+        from testing.fuzz.targets import run_target
+
+        family = "cbor"
+        target = _family_target_name(family)
+        crash_bytes = b"FUZZ-CRASH:repro-probe-" + family.encode("utf-8")
+        observed = run_target(target, crash_bytes, 100)
+        crash_id = observed["crash_id"]
+        result = promote_crash(family, crash_bytes, crash_id)
+        try:
+            full = _resolve_repo_path(result["regression_path"])
+            with open(full, "rb") as fh:
+                stored = fh.read()
+            rerun = run_target(target, stored, 100)
+            self.assertEqual(rerun["crash_id"], crash_id)
+        finally:
+            _cleanup_regression_file(result.get("regression_path", ""))
+
+    def test_promote_crash_unknown_family_raises_value_error(self):
+        # Plan Detail (quoted verbatim): "unknown family raises
+        # `ValueError`."
+        from testing.fuzz.regress import promote_crash
+
+        with self.assertRaises(ValueError):
+            promote_crash(
+                "no-such-family",
+                b"FUZZ-CRASH:unknown-family",
+                _next_crash_id("unittest-t3-unknown"),
+            )
+
+    def test_list_regressions_returns_list_of_strings(self):
+        from testing.fuzz.regress import list_regressions, promote_crash
+
+        family = "msgpack"
+        crash_id = _next_crash_id("unittest-t3-list")
+        result = promote_crash(family, b"FUZZ-CRASH:list-probe", crash_id)
+        try:
+            rows = list_regressions(family)
+            self.assertIsInstance(rows, list)
+            for row in rows:
+                self.assertIsInstance(row, str)
+        finally:
+            _cleanup_regression_file(result.get("regression_path", ""))
+
+    def test_list_regressions_contains_promoted_crash(self):
+        from testing.fuzz.regress import list_regressions, promote_crash
+
+        family = "protobuf"
+        crash_id = _next_crash_id("unittest-t3-contained")
+        result = promote_crash(family, b"FUZZ-CRASH:contained-probe", crash_id)
+        try:
+            rows = list_regressions(family)
+            self.assertTrue(
+                any(crash_id in row for row in rows),
+                "list_regressions(%r) omits promoted crash %r"
+                % (family, crash_id),
+            )
+        finally:
+            _cleanup_regression_file(result.get("regression_path", ""))
+
+    def test_list_regressions_unknown_family_raises_value_error(self):
+        from testing.fuzz.regress import list_regressions
+
+        with self.assertRaises(ValueError):
+            list_regressions("no-such-family")
+
+    def test_promote_crash_empty_bytes_still_records_case(self):
+        from testing.fuzz.regress import list_regressions, promote_crash
+
+        family = "image-decoders"
+        crash_id = _next_crash_id("unittest-t3-empty")
+        result = promote_crash(family, b"", crash_id)
+        try:
+            full = _resolve_repo_path(result["regression_path"])
+            self.assertTrue(os.path.isfile(full))
+            rows = list_regressions(family)
+            self.assertTrue(any(crash_id in row for row in rows))
+        finally:
+            _cleanup_regression_file(result.get("regression_path", ""))
+
+    def test_promote_crash_hostile_crash_id_does_not_escape_regressions(self):
+        # Security: a path-traversal crash id must stay inside the
+        # regressions tree (contained) or be rejected — never write
+        # outside testing/fuzz/regressions.
+        from testing.fuzz.regress import promote_crash
+
+        hostile = "../../../tmp-evil-%s" % _next_crash_id("unittest-t3")
+        try:
+            result = promote_crash(
+                "ota-manifest", b"FUZZ-CRASH:hostile-probe", hostile
+            )
+        except ValueError:
+            return
+        try:
+            full = _resolve_repo_path(result["regression_path"])
+            self.assertTrue(
+                full.startswith(REGRESSIONS_DIR + os.sep),
+                "hostile crash id escaped regressions dir: %r"
+                % result["regression_path"],
+            )
+        finally:
+            try:
+                _cleanup_regression_file(result.get("regression_path", ""))
+            except NameError:
+                pass
+
+    def test_promote_crash_oversized_bytes_do_not_raise(self):
+        # Security: oversized inputs surface as a stored case, never an
+        # unhandled exception.
+        from testing.fuzz.regress import promote_crash
+
+        family = "ota-manifest"
+        crash_id = _next_crash_id("unittest-t3-huge")
+        huge = b"\x00" * 65536 + b"FUZZ-CRASH:huge-probe"
+        result = promote_crash(family, huge, crash_id)
+        try:
+            full = _resolve_repo_path(result["regression_path"])
+            self.assertTrue(os.path.isfile(full))
+        finally:
+            _cleanup_regression_file(result.get("regression_path", ""))
+
+
+class TestContinuousFuzz(unittest.TestCase):
+    def test_schedule_entry_returns_entry_shape(self):
+        from testing.fuzz.continuous import schedule_entry
+
+        target = _load_targets()[0]["name"]
+        entry = schedule_entry(target)
+        self.assertIsInstance(entry, dict)
+        for key in ("target", "sanitizer", "owner_alias", "corpus"):
+            self.assertIn(key, entry)
+            self.assertIsInstance(entry[key], str)
+            self.assertTrue(entry[key], key + " must be non-empty")
+
+    def test_schedule_entry_target_echoes_request(self):
+        from testing.fuzz.continuous import schedule_entry
+
+        for item in _load_targets():
+            entry = schedule_entry(item["name"])
+            self.assertEqual(entry["target"], item["name"])
+
+    def test_schedule_entry_sanitizer_is_known_variant(self):
+        from testing.fuzz.continuous import schedule_entry
+
+        for item in _load_targets():
+            entry = schedule_entry(item["name"])
+            self.assertIn(entry["sanitizer"], EXPECTED_SANITIZERS)
+
+    def test_every_target_has_a_sanitizer_schedule_entry(self):
+        # Plan Acceptance (quoted verbatim): "all targets have a
+        # sanitizer schedule entry".
+        from testing.fuzz.continuous import schedule_entry
+
+        for item in _load_targets():
+            entry = schedule_entry(item["name"])
+            self.assertTrue(entry["sanitizer"])
+            self.assertTrue(entry["owner_alias"])
+            self.assertTrue(entry["corpus"])
+
+    def test_schedule_entry_unknown_target_raises(self):
+        from testing.fuzz.continuous import schedule_entry
+
+        with self.assertRaises((KeyError, ValueError)):
+            schedule_entry("no-such-fuzzer-target")
+
+    def test_file_finding_returns_finding_shape(self):
+        from testing.fuzz.continuous import file_finding, schedule_entry
+
+        item = _load_targets()[0]
+        entry = schedule_entry(item["name"])
+        crash_id = _next_crash_id("unittest-t4-finding")
+        finding = file_finding(
+            entry["owner_alias"], crash_id, item["family"]
+        )
+        try:
+            self.assertIsInstance(finding, dict)
+            for key in ("finding_id", "owner_alias", "regression_path"):
+                self.assertIn(key, finding)
+                self.assertIsInstance(finding[key], str)
+                self.assertTrue(finding[key], key + " must be non-empty")
+        finally:
+            _cleanup_regression_file(finding.get("regression_path", ""))
+
+    def test_file_finding_routes_to_owning_alias(self):
+        # Plan Acceptance (quoted verbatim): "a synthetic finding files
+        # against the owning alias and produces a regression path."
+        from testing.fuzz.continuous import file_finding, schedule_entry
+
+        item = _load_targets()[3]
+        owner = schedule_entry(item["name"])["owner_alias"]
+        crash_id = _next_crash_id("unittest-t4-owner")
+        finding = file_finding(owner, crash_id, item["family"])
+        try:
+            self.assertEqual(finding["owner_alias"], owner)
+            self.assertTrue(finding["regression_path"])
+        finally:
+            _cleanup_regression_file(finding.get("regression_path", ""))
+
+    def test_file_finding_auto_creates_t3_regression_case(self):
+        # Plan Detail (quoted verbatim): "`file_finding` routes to the
+        # owning alias and auto-creates the T3 regression case."
+        from testing.fuzz.continuous import file_finding, schedule_entry
+        from testing.fuzz.regress import list_regressions
+
+        item = _load_targets()[5]
+        owner = schedule_entry(item["name"])["owner_alias"]
+        crash_id = _next_crash_id("unittest-t4-autocreate")
+        finding = file_finding(owner, crash_id, item["family"])
+        try:
+            full = _resolve_repo_path(finding["regression_path"])
+            self.assertTrue(
+                os.path.isfile(full),
+                "finding produced no regression file at %r"
+                % finding["regression_path"],
+            )
+            rows = list_regressions(item["family"])
+            self.assertTrue(
+                any(crash_id in row for row in rows),
+                "auto-created case missing from list_regressions(%r)"
+                % item["family"],
+            )
+        finally:
+            _cleanup_regression_file(finding.get("regression_path", ""))
+
+    def test_file_finding_regression_reproduces_crash_id(self):
+        from testing.fuzz.continuous import file_finding, schedule_entry
+        from testing.fuzz.targets import run_target
+
+        item = _load_targets()[6]
+        owner = schedule_entry(item["name"])["owner_alias"]
+        crash_bytes = b"FUZZ-CRASH:t4-repro-" + item["family"].encode("utf-8")
+        crash_id = run_target(item["name"], crash_bytes, 100)["crash_id"]
+        finding = file_finding(owner, crash_id, item["family"])
+        try:
+            full = _resolve_repo_path(finding["regression_path"])
+            with open(full, "rb") as fh:
+                stored = fh.read()
+            rerun = run_target(item["name"], stored, 100)
+            self.assertEqual(rerun["crash_id"], crash_id)
+        finally:
+            _cleanup_regression_file(finding.get("regression_path", ""))
+
+    def test_file_finding_unknown_family_raises_value_error(self):
+        # (ASSUMPTION: an unknown family is rejected with ValueError,
+        # mirroring T3's "unknown family raises `ValueError`".)
+        from testing.fuzz.continuous import file_finding
+
+        with self.assertRaises(ValueError):
+            file_finding(
+                "some-owner",
+                _next_crash_id("unittest-t4-unknown"),
+                "no-such-family",
+            )
+
+    def test_file_finding_hostile_crash_id_does_not_escape(self):
+        # Security: a traversal crash id via findings must stay inside
+        # the regressions tree or be rejected.
+        from testing.fuzz.continuous import file_finding, schedule_entry
+
+        item = _load_targets()[0]
+        owner = schedule_entry(item["name"])["owner_alias"]
+        hostile = "../../../tmp-evil-%s" % _next_crash_id("unittest-t4")
+        try:
+            finding = file_finding(owner, hostile, item["family"])
+        except ValueError:
+            return
+        try:
+            full = _resolve_repo_path(finding["regression_path"])
+            self.assertTrue(
+                full.startswith(REGRESSIONS_DIR + os.sep),
+                "hostile crash id escaped regressions dir: %r"
+                % finding["regression_path"],
+            )
+        finally:
+            try:
+                _cleanup_regression_file(finding.get("regression_path", ""))
+            except NameError:
+                pass
+
+    def test_file_finding_empty_owner_alias_rejected(self):
+        # Security: findings must file against a real owning alias —
+        # an empty alias must not produce a routed finding.
+        # (ASSUMPTION: empty owner_alias raises ValueError.)
+        from testing.fuzz.continuous import file_finding
+
+        with self.assertRaises(ValueError):
+            file_finding(
+                "", _next_crash_id("unittest-t4-empty-owner"), "css-sass"
+            )
+
+
 if __name__ == "__main__":
     unittest.main()
