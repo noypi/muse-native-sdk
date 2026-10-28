@@ -12,6 +12,7 @@ add_library(layout
   src/sliver.cpp
   src/masonry.cpp
   src/form_factor.cpp
+  src/fold_signal.cpp
   src/property.cpp
   src/batch.cpp
 )
@@ -55,6 +56,16 @@ add_executable(batch_test tests/batch_test.cpp)
 target_link_libraries(batch_test PRIVATE layout)
 target_compile_options(batch_test PRIVATE -Wall -Wextra -Wpedantic -Werror)
 add_test(NAME batch_test COMMAND batch_test)
+
+add_executable(posture_test tests/posture_test.cpp)
+target_link_libraries(posture_test PRIVATE layout)
+target_compile_options(posture_test PRIVATE -Wall -Wextra -Wpedantic -Werror)
+add_test(NAME posture_test COMMAND posture_test)
+
+add_executable(fold_signal_test tests/fold_signal_test.cpp)
+target_link_libraries(fold_signal_test PRIVATE layout)
+target_compile_options(fold_signal_test PRIVATE -Wall -Wextra -Wpedantic -Werror)
+add_test(NAME fold_signal_test COMMAND fold_signal_test)
 
 add_executable(m3_matrix_check tests/m3_matrix_check.cpp)
 target_compile_options(m3_matrix_check PRIVATE -Wall -Wextra -Wpedantic -Werror)

@@ -19,6 +19,15 @@ bool statesEqual(const FormFactorState& a, const FormFactorState& b) {
          a.orientation == b.orientation;
 }
 
+bool foldingStatesEqual(const FoldingFeatureState& a,
+                        const FoldingFeatureState& b) noexcept {
+  return a.state == b.state && a.orientation == b.orientation &&
+         a.occlusion == b.occlusion &&
+         a.hingeAngleDeg == b.hingeAngleDeg &&
+         a.hasHingeAngle == b.hasHingeAngle && a.bounds.x == b.bounds.x &&
+         a.bounds.y == b.bounds.y && a.bounds.w == b.bounds.w &&
+         a.bounds.h == b.bounds.h;
+}
 bool hasUsableHinge(const FormFactorState& s) {
   return s.hasHinge && s.hingeW > 0.0f && s.hingeH > 0.0f;
 }
@@ -46,17 +55,38 @@ bool intersectsHinge(const Box& b, const FormFactorState& s) {
 
 void FormFactorSource::onWindowLayoutChanged(
     const FormFactorState& s) noexcept {
-  current_ = s;
+  current_.compat = s;
 }
 
-const FormFactorState& FormFactorSource::current() const noexcept {
+void FormFactorSource::onFoldingFeatureChanged(
+    FoldingFeatureState s) noexcept {
+  FoldingFeatureState cur;
+  cur.state = current_.state;
+  cur.orientation = current_.orientation;
+  cur.occlusion = current_.occlusion;
+  cur.hingeAngleDeg = current_.hingeAngleDeg;
+  cur.hasHingeAngle = current_.hasHingeAngle;
+  cur.bounds = current_.bounds;
+  if (foldingStatesEqual(cur, s)) {
+    return;
+  }
+  current_.state = s.state;
+  current_.orientation = s.orientation;
+  current_.occlusion = s.occlusion;
+  current_.hingeAngleDeg = s.hingeAngleDeg;
+  current_.hasHingeAngle = s.hasHingeAngle;
+  current_.bounds = s.bounds;
+}
+
+const FormFactorCombined& FormFactorSource::current() const noexcept {
   return current_;
 }
 
 std::vector<NodeId> FormFactorSource::affectedSubtrees(
     const Solver& s, NodeId root) const {
   std::vector<NodeId> out;
-  if (!hasUsableHinge(current_)) {
+  const FormFactorState& ff = current_.compat;
+  if (!hasUsableHinge(ff)) {
     return out;
   }
   // Node ids are allocated densely from 0 (Solver::addNode appends), so
@@ -75,7 +105,7 @@ std::vector<NodeId> FormFactorSource::affectedSubtrees(
     if (id == root) {
       continue;
     }
-    if (intersectsHinge(*box, current_)) {
+    if (intersectsHinge(*box, ff)) {
       out.push_back(id);
     }
     // NodeId is uint32: stop before wrap-around on pathological sizes.
@@ -87,7 +117,8 @@ std::vector<NodeId> FormFactorSource::affectedSubtrees(
 }
 
 bool FormFactorSource::consumeForNextPass(Solver& s, NodeId root) {
-  if (hasApplied_ && statesEqual(current_, applied_)) {
+  if (hasApplied_ &&
+      statesEqual(current_.compat, applied_.compat)) {
     return false;
   }
   // Drop this solver's hinge pins from the previous pass before solving:
@@ -103,7 +134,8 @@ bool FormFactorSource::consumeForNextPass(Solver& s, NodeId root) {
   // solve without shifting unaffected siblings, whose flex positions come
   // from the fixed input sizes). Non-occluding or absent hinges keep the
   // full-width pass from the solve above.
-  if (hasUsableHinge(current_) && current_.hingeOccludes) {
+  const FormFactorState& curFF = current_.compat;
+  if (hasUsableHinge(curFF) && curFF.hingeOccludes) {
     const std::size_t pinMark = s.constraintCount();
     const std::vector<NodeId> affected = affectedSubtrees(s, root);
     // Snapshot affected boxes before pinning: each addConstraint flips the
@@ -122,16 +154,16 @@ bool FormFactorSource::consumeForNextPass(Solver& s, NodeId root) {
     for (const auto& target : targets) {
       const NodeId id = target.first;
       const Box b = target.second;
-      if (!intersectsHinge(b, current_)) {
+      if (!intersectsHinge(b, curFF)) {
         continue;
       }
       Constraint pin;
       pin.node = id;
       pin.weight = 1.0f;
-      if (b.x < current_.hingeX) {
+      if (b.x < curFF.hingeX) {
         // Left segment ends at the hinge's left edge (edge contact is not
         // an intersection, so content sits exactly up against the hinge).
-        float w = current_.hingeX - b.x;
+        float w = curFF.hingeX - b.x;
         if (w < 0.0f) {
           w = 0.0f;
         }
@@ -140,7 +172,7 @@ bool FormFactorSource::consumeForNextPass(Solver& s, NodeId root) {
       } else {
         // Starts at/inside the hinge: shift past its right edge.
         pin.attribute = 0;  // x
-        pin.constant = current_.hingeX + current_.hingeW;
+        pin.constant = curFF.hingeX + curFF.hingeW;
       }
       try {
         s.addConstraint(pin);
