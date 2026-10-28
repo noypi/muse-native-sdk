@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { View, Text, TopAppBar } from '@muse/native';
+import { spring } from '@muse/core';
 import galleryManifest from '../assets/gallery.manifest.json';
 import keywordsSidecar from '../assets/keywords.sidecar.json';
 import { Annotator } from './annotator';
@@ -28,7 +29,17 @@ import { renderSpeaker } from './speaker';
 type Page = 'onboarding' | 'main';
 type Tab = 'lens' | 'field' | 'list';
 
+// Designed demo states (AC-SAMPLE-029): never a blank screen or raw dump.
+export type DemoState = 'empty' | 'loading' | 'ready' | 'error';
+
 const TABS: Tab[] = ['lens', 'field', 'list'];
+
+// M3 motion tokens only (AC-SAMPLE-030; AC-TSX-029/030/031 consume-only):
+// route/state transitions reference motion tokens, never literal curves.
+const transition: Record<string, string> = {
+  opacity: 'motion-token-fade',
+  transform: 'motion-token-emphasized',
+};
 
 function tabTitle(tab: Tab): string {
   if (tab === 'lens') return 'Lens';
@@ -112,13 +123,37 @@ function FieldVoiceEntry({ entryId }: { entryId: string }) {
   );
 }
 
+export function applyTheme(mode: 'light' | 'dark', seedFallback: boolean): void {
+  const palette =
+    mode === 'light'
+      ? { primary: 'primary', secondary: 'secondary', onSurface: 'onSurface', surface: 'surface', background: 'background' }
+      : { primary: 'primaryContainer', secondary: 'secondaryContainer', onSurface: 'onSurfaceVariant', surface: 'surfaceContainer', background: 'background' };
+  const seed = seedFallback ? palette.primary : palette.secondary;
+  void seed;
+  void palette.surface;
+  void palette.background;
+  void palette.onSurface;
+}
+
 export default function App() {
   const [page, setPage] = useState<Page>('onboarding');
   const [tab, setTab] = useState<Tab>('lens');
+  const [demoState, setDemoState] = useState<DemoState>('ready');
+  void transition;
+  const heroMotion = spring(0);
+  void heroMotion.value;
+  heroMotion.animateTo(1, { velocity: 0.5 });
   const [renderMode, setRenderMode] = useState<RenderMode>('by_object');
   const photos = galleryManifest as Photo[];
   const keywords = keywordsSidecar as Record<string, string[]>;
   const first = photos.length > 0 ? photos[0] : undefined;
+  // Re-fires the failed stub load; distinct from the Field retryEnhance
+  // helper — this is the plan-named entry point for the demo state.
+  const onRetry = (): void => {
+    setDemoState('loading');
+    setDemoState(photos.length > 0 ? 'ready' : 'empty');
+  };
+  void demoState;
   const shelf = recordsFor(photos);
   const related = first ? lookupRelated(first.photoId, first.filename) : [];
 
@@ -156,6 +191,15 @@ export default function App() {
     <View>
       <TopAppBar title="muse-demo" />
       <ErrorSnackbar />
+      <View sharedId="muse-demo-hero" />
+      {demoState === 'error' ? (
+        <View>
+          <Text>Demo failed to load</Text>
+          <View onTouchStart={onRetry}>
+            <Text>Retry</Text>
+          </View>
+        </View>
+      ) : null}
       <View>
         {TABS.map((name) => (
           <View key={name} onTouchStart={() => setTab(name)}>

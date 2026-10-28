@@ -142,7 +142,141 @@ describe('T1 muse-demo themed shell (AC-SAMPLE-027)', () => {
   });
 });
 
+// Batch 2 (T2/T3/T4) polish contract — FR-SAMPLE-011 theme/state/motion subset.
+// TC-SAMPLE-028 (AC-SAMPLE-028) is external (device-lab/demo-themes);
+// TC-SAMPLE-029 (AC-SAMPLE-029) and TC-SAMPLE-030 (AC-SAMPLE-030) are manual /
+// grep checks; this file covers their unit-verifiable half as static source
+// assertions.
+//
+// Hermetic: node:test + node:assert/strict + node:fs/node:path only. Reads
+// demo sources as text; never builds, never launches, never touches network,
+// secrets, application config, or live services. No shared mutable state.
+//
+// Binds ONLY to the plan interfaces:
+//   T2: `applyTheme(mode: 'light'|'dark', seedFallback: boolean): void` —
+//       switches palette via M3 role tokens; no hard-coded surface.
+//   T3: `DemoState='empty'|'loading'|'ready'|'error'`; `onRetry(): void`
+//       re-fires the failed load.
+//   T4: `transition: Record<AnimatableProp,MotionToken>`;
+//       `spring(initial)` handle with `value` + `animateTo(target,{velocity})`;
+//       `sharedId` on hero nodes where named — all per AC-TSX-029/030/031
+//       (consume only). Never binds to an implementation.
+//
+// ASSUMPTIONS:
+//   B1 (static shape stands in for runtime): asserting on App.tsx source text
+//       (applyTheme/DemoState/onRetry/transition/spring/sharedId identifiers)
+//       is the closest hermetic proxy; actual palette rendering, state UX, and
+//       animated transitions are manual/external TC-SAMPLE-028/029/030, owner
+//       tester/device-lab.
+//   B2 (scope): checks cover each demo's `src/App.tsx` only (the T2/T3/T4
+//       Files list); helper modules are out of scope this batch.
+//   B3 (role-token pattern): `surface`/`onSurface`/`primary`/`secondary`/
+//       `tertiary`/`background` (with `*Container`/`*Variant` variants) count
+//       as M3 role tokens in code — `//` comment tails are stripped before
+//       matching so English prose ("error surface") does not count; bare
+//       `error` is excluded because it collides with error-handling
+//       identifiers, and hex/rgb()/hsl() literals do not count.
+//   B4 (motion-literal pattern): `cubic-bezier(...)`, `easeIn*`/`easeOut*`/
+//       `ease-in*` identifiers, and `duration: <number>` literals count as
+//       literal curve/duration; motion-token references do not.
+//   B5 (sharedId conditional): `sharedId` is required on hero nodes where the
+//       demo names one; the static proxy requires the identifier in App.tsx
+//       and the coder keeps it on the hero node.
+
 const LITERAL_COLOUR = /#[0-9a-fA-F]{3,8}\b|\brgba?\s*\(|\bhsla?\s*\(/;
+const ROLE_TOKEN = /\b(surface|onSurface|primary|secondary|tertiary|background)(Container|Variant)?\b/;
+const LITERAL_MOTION = /cubic-bezier|easeIn[A-Z]|easeOut[A-Z]|ease-in|ease-out|duration\s*:\s*\d/;
+
+function roleTokenInCode(src) {
+  return src.split('\n').some((line) => ROLE_TOKEN.test(line.split('//')[0]));
+}
+
+function assertNoLiteralMotion(target) {  const src = readDemoFile(target, 'src/App.tsx');
+  const hits = src.split('\n').filter((line) => {
+    const code = line.split('//')[0];
+    return LITERAL_MOTION.test(code);
+  });
+  assert.deepEqual(hits, [], `literal curve/duration in ${target}/src/App.tsx: ${JSON.stringify(hits)}`);
+}
+
+// --- T2: light/dark/Dynamic Color seed-fallback palettes (AC-SAMPLE-028) ---
+
+for (const target of ['m3-gallery', 'flappy', 'muse-demo']) {
+  describe(`T2 ${target} theme switch (AC-SAMPLE-028)`, () => {
+    it('exposes applyTheme(mode, seedFallback)', () => {
+      const src = readDemoFile(target, 'src/App.tsx');
+      assert.match(src, /applyTheme/, `${target} App.tsx must expose applyTheme`);
+    });
+
+    it("applyTheme takes mode 'light'|'dark' plus seedFallback", () => {
+      const src = readDemoFile(target, 'src/App.tsx');
+      assert.match(src, /['"]light['"]/, `${target} App.tsx must name a 'light' mode`);
+      assert.match(src, /['"]dark['"]/, `${target} App.tsx must name a 'dark' mode`);
+      assert.match(src, /seedFallback/, `${target} App.tsx must take seedFallback`);
+    });
+
+    it('switches palette via M3 role tokens with no hard-coded surface', () => {
+      const src = readDemoFile(target, 'src/App.tsx');
+      assert.ok(roleTokenInCode(src), `${target} App.tsx must reference M3 role tokens`);
+      assertNoLiteralColours(target);
+    });
+  });
+}
+
+// --- T3: designed empty/loading/ready/error states with retry (AC-SAMPLE-029) ---
+
+for (const target of ['m3-gallery', 'flappy', 'muse-demo']) {
+  describe(`T3 ${target} demo states (AC-SAMPLE-029)`, () => {
+    it("defines DemoState 'empty'|'loading'|'ready'|'error'", () => {
+      const src = readDemoFile(target, 'src/App.tsx');
+      assert.match(src, /DemoState/, `${target} App.tsx must define DemoState`);
+      for (const state of ["'empty'", "'loading'", "'ready'", "'error'"]) {
+        assert.ok(src.includes(state), `${target} App.tsx must name DemoState ${state}`);
+      }
+    });
+
+    it('exposes onRetry() that re-fires the failed load', () => {
+      const src = readDemoFile(target, 'src/App.tsx');
+      assert.match(src, /onRetry/, `${target} App.tsx must expose onRetry`);
+    });
+
+    it('renders a retry action with no raw exception text', () => {
+      const src = readDemoFile(target, 'src/App.tsx');
+      assert.ok(
+        /[Rr]etry/.test(src) || /onRetry/.test(src),
+        `${target} App.tsx must render a retry action`,
+      );
+      assert.ok(
+        !/stack\s*trace|ENOENT|TypeError|Unhandled/.test(src),
+        `${target} App.tsx must not leak raw exception text`,
+      );
+    });
+  });
+}
+
+// --- T4: M3 motion tokens only (AC-SAMPLE-030; AC-TSX-029/030/031 consume-only) ---
+
+for (const target of ['m3-gallery', 'flappy', 'muse-demo']) {
+  describe(`T4 ${target} motion tokens (AC-SAMPLE-030)`, () => {
+    it('declares a transition token map (TC-SAMPLE-030 grep)', () => {
+      const src = readDemoFile(target, 'src/App.tsx');
+      assert.match(src, /transition\s*:/, `${target} App.tsx must declare transition`);
+    });
+
+    it('consumes spring(initial) with value + animateTo(target, { velocity })', () => {
+      const src = readDemoFile(target, 'src/App.tsx');
+      assert.match(src, /spring\s*\(/, `${target} App.tsx must consume spring(initial)`);
+      assert.match(src, /animateTo/, `${target} App.tsx must consume animateTo`);
+      assert.match(src, /velocity/, `${target} App.tsx must pass velocity`);
+    });
+
+    it('sets sharedId on hero nodes with no literal curve/duration', () => {
+      const src = readDemoFile(target, 'src/App.tsx');
+      assert.match(src, /sharedId/, `${target} App.tsx must set sharedId on hero nodes`);
+      assertNoLiteralMotion(target);
+    });
+  });
+}
 
 function assertNoLiteralColours(target) {
   const src = readDemoFile(target, 'src/App.tsx');
