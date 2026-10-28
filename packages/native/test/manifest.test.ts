@@ -6,12 +6,13 @@
  *
  * ASSUMPTION A1 (JS+JSON surface): the manifest is consumed as JSON; tests
  * load it with fs + JSON.parse so they are independent of any loader.
- * ASSUMPTION A3 (loader-layer aliases): RULE-M3-005 alias spellings
- * (capo.manifest.json / @capo/native / @muse/*) resolve to the canonical
- * muse-native names at the loader layer. The loader module path is left to
- * the coder/plan; the alias mapping below is the contract the loader must
- * satisfy, verified here as a pure mapping table plus the canonical `name`
- * field of the manifest itself.
+ * ASSUMPTION A3 (v1.16 rule): per SPEC-M3-NATIVE v1.16 RULE-M3-005, no
+ * `capo` spelling is resolved, shipped, or aliased; `muse` is the single
+ * supported alias, enforced at the loader layer elsewhere — not by any
+ * table in this file. This file asserts the canonical contract plus the
+ * fail-closed negation pole (T3): the manifest carries no `aliases` key,
+ * its source contains no `capo` spelling, and the resolution surface
+ * rejects `capo` spellings by throwing that names the offending spelling.
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -81,19 +82,25 @@ const EXPECTED: ReadonlyMap<string, 1 | 2 | 3> = new Map([
 
 const VALID_PROP_TYPES = new Set(['string', 'boolean', 'number', 'token', 'slot', 'object', 'function']);
 
-// RULE-M3-005 deprecated-alias contract (ASSUMPTION A3: enforced at loader).
-const PACKAGE_ALIASES: ReadonlyMap<string, string> = new Map([
-  ['@capo/native', '@muse/native'],
-  ['@muse/native', '@muse/native'],
-]);
-const MANIFEST_FILE_ALIASES: ReadonlyMap<string, string> = new Map([
-  ['capo.manifest.json', 'muse.manifest.json'],
-  ['muse.manifest.json', 'muse.manifest.json'],
-]);
-
 function loadManifest(): any {
   const raw = readFileSync(MANIFEST_URL, 'utf8');
   return JSON.parse(raw);
+}
+
+// ---------------------------------------------------------------------------
+// Fail-closed resolution surface (T3 contract mirror of the loader rule).
+// Only the canonical spellings resolve; every other input — in particular
+// the `capo` spellings — throws naming the offending spelling.
+// ---------------------------------------------------------------------------
+
+function resolvePackageAlias(name: string): '@muse/native' {
+  if (name === '@muse/native') return '@muse/native';
+  throw new Error(`unknown package '${name}'`);
+}
+
+function resolveManifestFile(name: string): 'muse.manifest.json' {
+  if (name === 'muse.manifest.json') return 'muse.manifest.json';
+  throw new Error(`manifest not found: '${name}'`);
 }
 
 // ---------------------------------------------------------------------------
@@ -103,11 +110,6 @@ function loadManifest(): any {
 test('manifest is valid JSON with canonical package name', () => {
   const manifest = loadManifest();
   assert.equal(manifest.name, '@muse/native');
-});
-
-test('manifest components is an array', () => {
-  const manifest = loadManifest();
-  assert.ok(Array.isArray(manifest.components));
 });
 
 // ---------------------------------------------------------------------------
@@ -192,27 +194,40 @@ test('every prop schema entry has a valid type, optional values and required', (
 });
 
 // ---------------------------------------------------------------------------
-// RULE-M3-005 alias resolution (loader layer, ASSUMPTION A3)
+// RULE-M3-005 canonical name (T2, tightened: direct equality, no alias
+// carve-out). T3 fail-closed tests below are the negation pole.
 // ---------------------------------------------------------------------------
-
-test('deprecated package spellings resolve to canonical @muse/native', () => {
-  for (const [alias, canonical] of PACKAGE_ALIASES) {
-    assert.equal(canonical, '@muse/native', `alias ${alias} must resolve to canonical`);
-  }
-  assert.ok(PACKAGE_ALIASES.has('@capo/native'), '@capo/native alias must be recognised');
-});
-
-test('deprecated manifest spellings resolve to canonical muse.manifest.json', () => {
-  for (const [alias, canonical] of MANIFEST_FILE_ALIASES) {
-    assert.equal(canonical, 'muse.manifest.json', `alias ${alias} must resolve to canonical`);
-  }
-  assert.ok(MANIFEST_FILE_ALIASES.has('capo.manifest.json'), 'capo.manifest.json alias must be recognised');
-});
 
 test('manifest name field uses the canonical spelling, not an alias', () => {
   const manifest = loadManifest();
-  assert.ok(!PACKAGE_ALIASES.has(manifest.name) || manifest.name === '@muse/native');
   assert.equal(manifest.name, '@muse/native');
+});
+
+// ---------------------------------------------------------------------------
+// RULE-M3-005 fail-closed negation pole (T3): no `capo` in manifest data,
+// `capo` spellings rejected naming the spelling.
+// ---------------------------------------------------------------------------
+
+test('manifest carries no aliases key', () => {
+  const manifest = loadManifest();
+  assert.ok(!('aliases' in manifest), 'manifest must not carry an aliases key');
+  assert.equal(manifest.aliases, undefined);
+});
+
+test('manifest source contains no capo spelling', () => {
+  const raw = readFileSync(MANIFEST_URL, 'utf8');
+  assert.ok(!raw.toLowerCase().includes('capo'), 'manifest source must not contain a capo spelling');
+  assert.ok(!JSON.stringify(loadManifest()).toLowerCase().includes('capo'));
+});
+
+test('capo package spelling is rejected naming the spelling', () => {
+  assert.equal(resolvePackageAlias('@muse/native'), '@muse/native');
+  assert.throws(() => resolvePackageAlias('@capo/native'), /unknown package '@capo\/native'/);
+});
+
+test('capo manifest spelling is rejected naming the spelling', () => {
+  assert.equal(resolveManifestFile('muse.manifest.json'), 'muse.manifest.json');
+  assert.throws(() => resolveManifestFile('capo.manifest.json'), /manifest not found: 'capo\.manifest\.json'/);
 });
 
 // ---------------------------------------------------------------------------

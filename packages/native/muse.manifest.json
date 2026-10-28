@@ -1,16 +1,5 @@
 {
   "name": "@muse/native",
-  "aliases": {
-    "packages": {
-      "@capo/native": "@muse/native",
-      "@muse/native": "@muse/native"
-    },
-    "files": {
-      "capo.manifest.json": "muse.manifest.json",
-      "muse.manifest.json": "muse.manifest.json"
-    },
-    "note": "RULE-M3-005: deprecated capo/muse spellings resolve at the loader layer to canonical @muse/native / muse.manifest.json; canonical component names are unchanged."
-  },
   "components": [
     {
       "name": "Surface",
