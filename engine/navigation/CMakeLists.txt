@@ -11,6 +11,8 @@ add_library(navigation
   src/trie.cpp
   src/predictive_back.cpp
   src/router_policy.cpp
+  src/router_bridge.cpp
+  src/cold_link.cpp
 )
 target_include_directories(navigation PUBLIC include)
 target_compile_options(navigation PRIVATE -Wall -Wextra -Wpedantic)
@@ -42,3 +44,13 @@ add_executable(state_schema_test tests/state_schema_test.cpp)
 target_link_libraries(state_schema_test PRIVATE navigation)
 target_compile_options(state_schema_test PRIVATE -Wall -Wextra -Wpedantic)
 add_test(NAME state_schema_test COMMAND state_schema_test)
+
+add_executable(router_bridge_test tests/router_bridge_test.cpp)
+target_link_libraries(router_bridge_test PRIVATE navigation)
+target_compile_options(router_bridge_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME router_bridge_test COMMAND router_bridge_test)
+
+add_executable(cold_link_perf_test tests/cold_link_perf_test.cpp)
+target_link_libraries(cold_link_perf_test PRIVATE navigation)
+target_compile_options(cold_link_perf_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME cold_link_perf_test COMMAND cold_link_perf_test)
