@@ -91,7 +91,21 @@ NestedDecision nestedClaim(NestedAxis parent, NestedAxis child) {
 }
 
 PerfReport benchDiff(size_t n, size_t edits) {
+  // Harness-only bound: benchDiff is a unit-test timing harness, never a
+  // production path — callers must not forward untrusted sizes. Clamp n to
+  // kMaxBenchN so a huge n cannot exhaust the heap via reserve/push, and
+  // degenerate (edits == 0 || n == 0) returns an empty report without
+  // touching the stride below.
+  constexpr size_t kMaxBenchN = 10000;
   PerfReport r{};
+  if (edits == 0 || n == 0) {
+    r.n = n;
+    r.edits = edits;
+    r.methodology =
+        "benchDiff degenerate (n==0 || edits==0): empty report, no diff run.";
+    return r;
+  }
+  if (n > kMaxBenchN) n = kMaxBenchN;
   r.n = n;
   r.edits = edits;
 
@@ -101,9 +115,14 @@ PerfReport benchDiff(size_t n, size_t edits) {
     oldL.keys.push_back("item-" + std::to_string(i));
   }
   KeyedList newL = oldL;
+  // Stride divisor in wrap-safe arithmetic: edits == SIZE_MAX would wrap
+  // edits+1 to 0 and divide by zero, so saturate instead. The product
+  // e*size below is bounded (e,size <= kMaxBenchN) and cannot overflow.
+  size_t denom = edits + 1;
+  if (denom == 0) denom = edits;  // edits == SIZE_MAX wrap guard.
   for (size_t e = 0; e < edits && e < newL.keys.size(); ++e) {
-    newL.keys[e * newL.keys.size() / (edits + 1)] =
-        "item-new-" + std::to_string(e);
+    const size_t idx = e * newL.keys.size() / denom;
+    newL.keys[idx] = "item-new-" + std::to_string(e);
   }
 
   const auto t0 = std::chrono::steady_clock::now();

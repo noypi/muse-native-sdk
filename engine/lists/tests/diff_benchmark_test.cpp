@@ -48,6 +48,8 @@
 // through a timer. The 10k synthetic feed below runs untimed (no timing
 // assertions): it asserts no out-of-range / blank window, not fps.
 #include <cmath>
+#include <cstddef>
+#include <cstdint>
 #include <cstdio>
 #include <string>
 #include <vector>
@@ -194,6 +196,36 @@ void case_bench_report() {
   check(r.speedupLow >= 0.0, "bench_band_nonnegative");
 }
 
+void case_bench_adversarial_args() {
+  // Security hardening (coder choice pinned: harness-only bound
+  // `kMaxBenchN=10000`; `edits == 0 || n == 0` returns an empty report;
+  // wrap-safe stride saturates `denom` when `edits == SIZE_MAX`).
+  // `edits = SIZE_MAX` must not divide by zero (`edits+1` wraps to 0);
+  // huge `n` must clamp instead of exhausting the heap. Hermetic: small
+  // synthetic shapes only, no sleeps, no timing assertions — completion
+  // itself (bounded return, finite report) is the assertion.
+  lists::PerfReport r = lists::benchDiff(100, SIZE_MAX);
+  check(std::isfinite(r.secondsCpp), "bench_edits_max_no_crash");
+  check(r.edits == SIZE_MAX, "bench_edits_max_echoes_edits");
+  lists::PerfReport big = lists::benchDiff(1000000, 5);
+  check(big.n <= 10000, "bench_huge_n_clamped");
+  check(std::isfinite(big.secondsCpp) && big.secondsCpp >= 0.0,
+        "bench_huge_n_completes_no_oom");
+}
+
+void case_pull_refreshing_drop_returns_idle() {
+  // Code-review MINOR edge, pinned as CURRENT behavior (read from
+  // `snap_refresh.cpp`: `pullRefresh` returns `Idle` for any
+  // `overscrollPx <= 0`, including from `Refreshing` — the `switch` on
+  // `Refreshing` is only reached for positive overscroll, where it
+  // sticks). So `pullRefresh(Refreshing, 0)` resets to Idle; it does
+  // NOT stick in Refreshing. If the state machine is ever changed to
+  // stick, this test — not the behavior — must be re-ruled by planner.
+  check(lists::pullRefresh(lists::RefreshState::Refreshing, 0.0f) ==
+            lists::RefreshState::Idle,
+        "pull_refreshing_zero_returns_idle");
+}
+
 }  // namespace
 
 int main() {
@@ -209,6 +241,8 @@ int main() {
   case_nested_same_axis_parent();
   case_feed_10k_no_blanks();
   case_bench_report();
+  case_bench_adversarial_args();
+  case_pull_refreshing_drop_returns_idle();
   if (g_failures == 0) {
     std::printf("ALL TESTS PASSED\n");
   } else {

@@ -1,5 +1,7 @@
 #include "lists/position_persist.h"
 
+#include <cmath>
+
 namespace lists {
 
 Snapshot savePos(DestId d, float offsetPx, int index, ItemKey anchor,
@@ -34,7 +36,9 @@ Restored restorePos(DestId d, const Snapshot& s, const KeyedList& data) {
     r.offsetPx = 0.0f;
     return r;
   }
-  r.offsetPx = s.offsetPx < 0.0f ? 0.0f : s.offsetPx;
+  // Security hardening: a corrupt snapshot with a non-finite offset (NaN
+  // passes `< 0` as false) must not leak NaN downstream — clamp to rest.
+  r.offsetPx = (s.offsetPx < 0.0f || !std::isfinite(s.offsetPx)) ? 0.0f : s.offsetPx;
   // Anchor still present: restore at its current position.
   for (size_t i = 0; i < data.keys.size(); ++i) {
     if (data.keys[i] == s.anchor.key) {

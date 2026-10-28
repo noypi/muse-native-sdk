@@ -199,6 +199,43 @@ int main() {
           "nan_recovered_moves_normally");
   }
 
+  // Security hardening (sticky-inf): a non-finite inf velocity (or
+  // offset) recovers like NaN to `{finite-offset-or-0, 0}` instead of
+  // sticking at inf forever — the rest snap below never fires for inf
+  // velocity, so without this guard one bad upstream sample poisons the
+  // fling permanently. Coder choice pinned: same `{offset, 0}` recovery as
+  // NaN (no scroll jump), via `std::isfinite` guards on state + sample.
+  {
+    const float kInf = std::numeric_limits<float>::infinity();
+    lists::PredictedSample sample{};
+    lists::VsyncDeadline vsync{};
+    vsync.dtS = kDt60;
+    lists::CurveParams curve = mkCurve(lists::CurveKind::AndroidOverscroll);
+    // inf velocity with finite offset recovers to {offset, 0}.
+    lists::PhysicsState poisoned{};
+    poisoned.offsetPx = 100.0f;
+    poisoned.velocityPxS = kInf;
+    lists::PhysicsState rec = lists::integrate(poisoned, sample, vsync, curve);
+    check(std::isfinite(rec.offsetPx) && std::isfinite(rec.velocityPxS) &&
+              rec.offsetPx == 100.0f && rec.velocityPxS == 0.0f,
+          "inf_velocity_recovers");
+    // inf offset falls back to 0 (velocity zeroed).
+    lists::PhysicsState badOff{};
+    badOff.offsetPx = kInf;
+    badOff.velocityPxS = 500.0f;
+    lists::PhysicsState rec2 = lists::integrate(badOff, sample, vsync, curve);
+    check(rec2.offsetPx == 0.0f && rec2.velocityPxS == 0.0f,
+          "inf_offset_recovers_to_rest");
+    // A subsequent integrate step moves normally again (no stuck inf).
+    lists::PhysicsState fling{};
+    fling.offsetPx = rec.offsetPx;
+    fling.velocityPxS = 2000.0f;
+    lists::PhysicsState out = lists::integrate(fling, sample, vsync, curve);
+    check(std::isfinite(out.offsetPx) && std::isfinite(out.velocityPxS) &&
+              out.offsetPx > fling.offsetPx,
+          "inf_recovered_moves_normally");
+  }
+
   if (g_failures == 0) std::printf("ALL TESTS PASSED\n");
   return g_failures == 0 ? 0 : 1;
 }

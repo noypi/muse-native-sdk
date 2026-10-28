@@ -213,6 +213,28 @@ void case_large_reversal_bounded_minimal() {
   check(apply_is_exact(oldL, newL, s), "large_reversal_apply_exact");
 }
 
+// Security hardening (width gate `kMaxMyersWidth=20000`): a wide
+// disjoint-set feed (total width over the gate, distinct keys — neither the
+// same-key-set fast path nor the small-input Myers path) skips `myersSes`
+// entirely and takes the bounded-memory `anchoredScript` path: completes
+// without the O(D*(N+M)) V-trace, `result == new order`. Synthetic and
+// fast: just over the gate (11k+11k = 22k keys), no sleeps, no timing
+// assertions.
+void case_width_gate_disjoint_bounded() {
+  const size_t kHalf = 11000;
+  lists::KeyedList oldL{};
+  lists::KeyedList newL{};
+  oldL.keys.reserve(kHalf);
+  newL.keys.reserve(kHalf);
+  for (size_t i = 0; i < kHalf; ++i) {
+    oldL.keys.push_back("old-" + std::to_string(i));
+    newL.keys.push_back("new-" + std::to_string(i));
+  }
+  lists::EditScript s = lists::myersDiff(oldL, newL);
+  check(s.result == newL.keys, "width_gate_disjoint_completes_exact");
+  check(apply_is_exact(oldL, newL, s), "width_gate_disjoint_apply_exact");
+}
+
 }  // namespace
 
 int main() {
@@ -228,6 +250,7 @@ int main() {
   case_batch_atomic_exact();
   case_single_item_replace();
   case_large_reversal_bounded_minimal();
+  case_width_gate_disjoint_bounded();
   if (g_failures == 0) {
     std::printf("ALL TESTS PASSED\n");
   } else {

@@ -262,6 +262,19 @@ bool sameKeySet(const std::vector<std::string>& oldKeys,
 }  // namespace
 
 EditScript myersDiff(const KeyedList& oldL, const KeyedList& newL) {
+  // Security hardening (width gate): the Myers V-trace below costs
+  // O(D*(N+M)) memory, so a wide disjoint-set feed would OOM before the
+  // D-cap fallback runs (e.g. 100k+100k distinct keys ~= 410MB in trace).
+  // Inputs wider than kMaxMyersWidth skip myersSes entirely and go
+  // straight to the O(N+M) anchoredScript. The bound (20000 total keys)
+  // sits comfortably above the 10k-feed / 2k-reversal envelope, so all
+  // in-contract feeds still take the exact Myers path. size_t arithmetic
+  // throughout so the width sum cannot overflow.
+  constexpr size_t kMaxMyersWidth = 20000;
+  const size_t width = oldL.keys.size() + newL.keys.size();
+  if (width > kMaxMyersWidth) {
+    return anchoredScript(oldL.keys, newL.keys);
+  }
   // Pure-reorder fast path: the same key set in a new order is the Myers
   // worst case (D = 2N full-trace OOM), so bypass Myers entirely with the
   // bounded index-anchored script, which is also move-minimal here.

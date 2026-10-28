@@ -37,18 +37,22 @@ PhysicsState integrate(PhysicsState s, PredictedSample sample,
   if (!(dt > 0.0f)) return s;
   // Non-finite state recovers to rest instead of sticking: keep a finite
   // offset (fall back to 0 when the offset itself is non-finite) and zero
-  // the velocity, so a single NaN from upstream touch prediction cannot
-  // poison the fling forever. Choice documented: {offset, 0}, not {0, 0},
-  // so a NaN velocity alone does not jump the scroll position.
-  if (!(s.offsetPx == s.offsetPx && s.velocityPxS == s.velocityPxS)) {
+  // the velocity, so a single NaN or inf from upstream touch prediction
+  // cannot poison the fling forever (inf would otherwise stick: the rest
+  // snap below never fires for inf velocity). Choice documented: {offset,
+  // 0}, not {0, 0}, so a non-finite velocity alone does not jump the
+  // scroll position.
+  if (!std::isfinite(s.offsetPx) || !std::isfinite(s.velocityPxS)) {
     PhysicsState rest;
-    rest.offsetPx = (s.offsetPx == s.offsetPx) ? s.offsetPx : 0.0f;
+    rest.offsetPx = std::isfinite(s.offsetPx) ? s.offsetPx : 0.0f;
     rest.velocityPxS = 0.0f;
     return rest;
   }
 
+  // Non-finite touch samples (NaN or inf) are treated as zero driving
+  // input so one bad upstream sample cannot poison scroll state.
   const float touchV =
-      (sample.velocityPxS == sample.velocityPxS) ? sample.velocityPxS : 0.0f;
+      std::isfinite(sample.velocityPxS) ? sample.velocityPxS : 0.0f;
 
   // Rest stays at rest: no driving touch input and no fling velocity means
   // no spontaneous motion and no phantom velocity.

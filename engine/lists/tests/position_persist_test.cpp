@@ -31,6 +31,7 @@
 // offset 0. A negative saved offset restores clamped to >= 0.
 #include <cmath>
 #include <cstdio>
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -175,6 +176,21 @@ void case_dest_mismatch_restores_rest() {
   check(r.offsetPx != sA.offsetPx, "dest_mismatch_no_offset_leak");
 }
 
+void case_nan_offset_restores_rest() {
+  // Security hardening: a corrupt snapshot with a NaN offset (e.g.
+  // carry-over from the pre-fix NaN era) must not leak NaN downstream —
+  // `NaN < 0` is false, so without the `!isfinite` clamp it took the
+  // pass-through branch. Coder choice pinned: clamp to rest offset 0,
+  // index resolved normally (anchor hit here) and in range.
+  lists::KeyedList data = kl({"a", "b", "c"});
+  lists::Snapshot s =
+      lists::savePos(dest("home"), std::numeric_limits<float>::quiet_NaN(),
+                     1, key("b"), 0.5f);
+  lists::Restored r = lists::restorePos(dest("home"), s, data);
+  check(r.offsetPx == 0.0f, "nan_offset_restores_zero");
+  check(in_range(r.index, data), "nan_offset_index_in_range");
+}
+
 }  // namespace
 
 int main() {
@@ -189,6 +205,7 @@ int main() {
   case_per_destination_isolation();
   case_t1_keys_consumed();
   case_dest_mismatch_restores_rest();
+  case_nan_offset_restores_rest();
   if (g_failures == 0) {
     std::printf("ALL TESTS PASSED\n");
   } else {
