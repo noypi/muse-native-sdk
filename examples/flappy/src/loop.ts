@@ -10,7 +10,8 @@
 // per RULE-SAMPLE-001; never a relative path into packages/): each playing
 // step opens a world, advances it once with `step(world, dt)`, and releases
 // it with `destroy(world)`. The package owns the per-frame tick; the bird /
-// pipe state below is plain data so `stepGame` stays pure and deterministic.
+// pipe state below is plain data so `stepGame` stays pure over GameState;
+// advances the package's internal world-id counter, unobservable.
 
 import { createWorld, step, destroy } from '@muse/game-engine-sample';
 
