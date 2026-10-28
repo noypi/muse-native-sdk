@@ -145,7 +145,7 @@ do_self_test_missing_abi() {
     fail "self-test failed: coverage check passed with ABI \"$victim\" removed"
   fi
   echo "build.sh: SELF-TEST-MISSING-ABI OK: correctly refused load without ABI \"$victim\"" >&2
-  return 1
+  return 0
 }
 
 do_verify_no_graphics_symbols() {
