@@ -25,7 +25,9 @@ enable_testing()
 # early (GR-08 T1.7).
 foreach(TEST_SRC
     tests/bridge_envelope_test.cpp
-    tests/bridge_mismatch_test.cpp)
+    tests/bridge_mismatch_test.cpp
+    tests/ring_buffer_test.cpp
+    tests/bridge_fuzz_test.cpp)
   get_filename_component(TEST_NAME ${TEST_SRC} NAME_WE)
   add_executable(${TEST_NAME} ${TEST_SRC})
   target_link_libraries(${TEST_NAME} PRIVATE bridge)

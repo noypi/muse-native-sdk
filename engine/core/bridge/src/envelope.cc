@@ -1,3 +1,4 @@
+#include "core/bridge/consume.h"
 #include "core/bridge/envelope.h"
 
 namespace muse {
@@ -134,6 +135,23 @@ MismatchOutcome CheckEnvelope(const Envelope& e, uint32_t expectedSchema,
     }
   }
   return out;
+}
+
+std::string_view ConsumeInPlace(const Envelope& e,
+                                std::string_view mapped) noexcept {
+  // Length gate only: identity (schema id / schema version / ABI) is
+  // rejected up front by CheckEnvelope before any buffer is
+  // interpreted, mirroring EnvelopeMatches in
+  // engine/net/src/zero_copy.cc. payloadLen is uint32_t: compare in
+  // 64-bit to avoid any truncation.
+  if (static_cast<uint64_t>(e.payloadLen) >
+      static_cast<uint64_t>(mapped.size())) {
+    return std::string_view{};
+  }
+  if (e.payloadLen == 0) return std::string_view{};
+  // Sub-span of the caller's mapping: no copy, no allocation. Bounded
+  // by the gate above, so no out-of-bounds read is possible.
+  return std::string_view(mapped.data(), e.payloadLen);
 }
 
 }  // namespace bridge
