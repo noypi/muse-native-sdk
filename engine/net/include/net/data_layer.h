@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <vector>
 
 namespace muse::net {
 
@@ -15,6 +16,8 @@ struct IExecutor {
 };
 
 struct IKeyProvider {
+  virtual bool getKey(std::vector<uint8_t>& out) = 0;
+  virtual bool invalidated() const = 0;
   virtual ~IKeyProvider() = default;
 };
 
