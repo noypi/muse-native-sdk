@@ -91,4 +91,25 @@ function mountPack(handle) {
   return { mountPoint: record.mountPoint };
 }
 
-module.exports = { requestPack, monitorPack, mountPack };
+function releasePack(handle) {
+  if (typeof handle !== 'string' || handle.length === 0) {
+    fail('unknown handle', 0);
+  }
+  const record = packsByHandle.get(handle);
+  if (!record) {
+    fail('unknown handle', 0);
+  }
+  // Best-effort tmpdir removal: a missing dir still evicts the map entry.
+  try {
+    fs.rmSync(record.mountPoint, { recursive: true, force: true });
+  } catch {
+    // Ignore — the entry eviction below is the disposal guarantee.
+  }
+  packsByHandle.delete(handle);
+  // NOTE: requestsByName retry counters are intentionally kept (not evicted):
+  // evicting would reset the retry-first-attempt fixture for that name and
+  // change retry behavior. Counters are one small integer per distinct pack
+  // name (bounded by name cardinality, not call count).
+}
+
+module.exports = { requestPack, monitorPack, mountPack, releasePack };

@@ -202,3 +202,109 @@ describe('T3 — mountPack contract shape', () => {
     assert.match(err.message, /^delivery-failed: \S.+/);
   });
 });
+
+describe('T1 — releasePack caller-owned disposal (BUG-BUILD-002)', () => {
+  function countPlayPackDirs() {
+    return fs.readdirSync(os.tmpdir()).filter((n) => n.startsWith('play-pack-')).length;
+  }
+
+  it('exports releasePack alongside requestPack, monitorPack, mountPack', () => {
+    const impl = loadImpl();
+    assert.equal(typeof impl.releasePack, 'function', 'releasePack must be exported as a function');
+    for (const name of ['requestPack', 'monitorPack', 'mountPack']) {
+      assert.equal(typeof impl[name], 'function', `${name} must remain exported`);
+    }
+  });
+
+  it('a missing handle throws delivery-failed: unknown handle with retry metadata', () => {
+    const { releasePack } = loadImpl();
+    const err = assertDeliveryFailed(() => releasePack(undefined));
+    assert.match(err.message, /^delivery-failed: unknown handle/);
+  });
+
+  it('an empty handle throws delivery-failed: unknown handle with retry metadata', () => {
+    const { releasePack } = loadImpl();
+    const err = assertDeliveryFailed(() => releasePack(''));
+    assert.match(err.message, /^delivery-failed: unknown handle/);
+  });
+
+  it('a non-string handle throws delivery-failed: unknown handle with retry metadata', () => {
+    const { releasePack } = loadImpl();
+    assertDeliveryFailed(() => releasePack(null));
+    assertDeliveryFailed(() => releasePack(42));
+  });
+
+  it('an unknown handle throws delivery-failed: unknown handle with retry metadata', () => {
+    const { releasePack } = loadImpl();
+    const err = assertDeliveryFailed(() => releasePack('no-such-handle-not-real'));
+    assert.match(err.message, /^delivery-failed: unknown handle/);
+  });
+
+  it('release removes the mountPoint dir and evicts the handle (monitor/mount throw after)', () => {
+    const { requestPack, monitorPack, mountPack, releasePack } = loadImpl();
+    const { handle } = requestPack('fake-pack-not-real');
+    const terminal = pollToTerminal(monitorPack, handle);
+    assert.equal(terminal.state, 'ready');
+    const { mountPoint } = mountPack(handle);
+    assert.ok(fs.existsSync(mountPoint), 'mountPoint must exist before release');
+    releasePack(handle);
+    assert.ok(!fs.existsSync(mountPoint), 'mountPoint dir must be removed by release');
+    const monErr = assertDeliveryFailed(() => monitorPack(handle));
+    assert.match(monErr.message, /^delivery-failed: unknown handle/);
+    const mntErr = assertDeliveryFailed(() => mountPack(handle));
+    assert.match(mntErr.message, /^delivery-failed: unknown handle/);
+  });
+
+  it('double-release throws delivery-failed: unknown handle (not a crash, not silent)', () => {
+    const { requestPack, monitorPack, releasePack } = loadImpl();
+    const { handle } = requestPack('fake-pack-not-real');
+    pollToTerminal(monitorPack, handle);
+    releasePack(handle);
+    const err = assertDeliveryFailed(() => releasePack(handle));
+    assert.match(err.message, /^delivery-failed: unknown handle/);
+  });
+
+  it('release still evicts the map entry when the dir is already gone (best-effort rm)', () => {
+    const { requestPack, monitorPack, mountPack, releasePack } = loadImpl();
+    const { handle } = requestPack('fake-pack-not-real');
+    pollToTerminal(monitorPack, handle);
+    const { mountPoint } = mountPack(handle);
+    fs.rmSync(mountPoint, { recursive: true, force: true });
+    assert.ok(!fs.existsSync(mountPoint));
+    releasePack(handle);
+    const err = assertDeliveryFailed(() => monitorPack(handle));
+    assert.match(err.message, /^delivery-failed: unknown handle/);
+  });
+
+  it('N requests driven to terminal then released leave zero net new play-pack-* dirs (single instance)', () => {
+    const { requestPack, monitorPack, releasePack } = loadImpl();
+    const before = countPlayPackDirs();
+    const N = 5;
+    const handles = [];
+    for (let i = 0; i < N; i += 1) {
+      const { handle } = requestPack('fake-pack-not-real');
+      handles.push(handle);
+    }
+    for (const handle of handles) {
+      pollToTerminal(monitorPack, handle);
+    }
+    for (const handle of handles) {
+      releasePack(handle);
+    }
+    const after = countPlayPackDirs();
+    assert.equal(after, before, `expected zero net new play-pack-* dirs (before=${before} after=${after})`);
+  });
+
+  it('retry fixture still works: first retry-name request fails, re-request reaches ready', () => {
+    const { requestPack, monitorPack, releasePack } = loadImpl();
+    const first = requestPack('fake-pack-retry-not-real');
+    const failed = pollToTerminal(monitorPack, first.handle);
+    assert.equal(failed.state, 'failed', 'first attempt must fail to exercise retry-with-resume');
+    releasePack(first.handle);
+    const second = requestPack('fake-pack-retry-not-real');
+    const terminal = pollToTerminal(monitorPack, second.handle);
+    assert.equal(terminal.state, 'ready');
+    assert.equal(terminal.pct, 100);
+    releasePack(second.handle);
+  });
+});
