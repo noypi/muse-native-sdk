@@ -213,6 +213,57 @@ static bool check_resolution_is_deterministic() {
   return same_token(a, b);
 }
 
+// Named case (security review): adversarial resolveToken inputs throw
+// without crashing; what() echoes only the queried name (or a safe
+// truncation) and carries no secret/config content.
+static bool check_adversarial_names_throw_safely() {
+  // Overlong (8KB) garbage.
+  std::string overlong(8192, 'y');
+  try {
+    motion::resolveToken(overlong.c_str());
+  } catch (const std::exception& e) {
+    const char* w = e.what();
+    if (w == nullptr || w[0] == '\0') return false;
+    if (std::strstr(w, "SUPERSECRET_CANARY") != nullptr) return false;
+    std::string head = overlong.substr(0, 32);
+    if (std::strstr(w, head.c_str()) == nullptr) return false;
+  } catch (...) {
+    return false;
+  }
+  // Format-specifier-looking payload (must be data, never interpreted).
+  const char* fmt = "%s%s%n%p%x";
+  try {
+    motion::resolveToken(fmt);
+  } catch (const std::exception& e) {
+    if (std::strstr(e.what(), fmt) == nullptr) return false;
+    if (std::strstr(e.what(), "SUPERSECRET_CANARY") != nullptr) return false;
+  } catch (...) {
+    return false;
+  }
+  // Newline / control characters.
+  const char* ctrl = "tok\nwith\r\nnewline\tand\x01ctrl";
+  try {
+    motion::resolveToken(ctrl);
+  } catch (const std::exception& e) {
+    if (e.what() == nullptr || e.what()[0] == '\0') return false;
+    if (std::strstr(e.what(), "SUPERSECRET_CANARY") != nullptr) return false;
+  } catch (...) {
+    return false;
+  }
+  // Embedded null truncates at the C boundary; must still throw, not crash.
+  std::string with_null("abc");
+  with_null.push_back('\0');
+  with_null += "def";
+  try {
+    motion::resolveToken(with_null.c_str());
+  } catch (const std::exception&) {
+    return true;
+  } catch (...) {
+    return false;
+  }
+  return false;
+}
+
 #define RUN_CASE(name)                                   \
   do {                                                   \
     if (!(name)()) {                                     \
@@ -238,6 +289,7 @@ int main() {
   RUN_CASE(check_correct_spring_classes_do_not_throw);
   RUN_CASE(check_token_scheme_version_is_pinned);
   RUN_CASE(check_resolution_is_deterministic);
+  RUN_CASE(check_adversarial_names_throw_safely);
   if (failures > 0) {
     std::printf("motion_tokens_test: %d failing\n", failures);
     return 1;

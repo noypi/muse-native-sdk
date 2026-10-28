@@ -20,6 +20,7 @@
 #include <cstdio>
 #include <cstring>
 #include <exception>
+#include <string>
 
 #include "motion/patterns.h"
 
@@ -362,6 +363,53 @@ static bool check_pattern_velocity_half_null_does_not_crash() {
   return true;
 }
 
+// Named case (security review): adversarial patternNamed inputs throw
+// without crashing; what() echoes only the queried name (or a safe
+// truncation) and carries no secret/config content.
+static bool check_adversarial_names_throw_safely() {
+  std::string overlong(8192, 'z');
+  try {
+    motion::patternNamed(overlong.c_str());
+  } catch (const std::exception& e) {
+    const char* w = e.what();
+    if (w == nullptr || w[0] == '\0') return false;
+    if (std::strstr(w, "SUPERSECRET_CANARY") != nullptr) return false;
+    std::string head = overlong.substr(0, 32);
+    if (std::strstr(w, head.c_str()) == nullptr) return false;
+  } catch (...) {
+    return false;
+  }
+  const char* fmt = "%s%s%n%p%x";
+  try {
+    motion::patternNamed(fmt);
+  } catch (const std::exception& e) {
+    if (std::strstr(e.what(), fmt) == nullptr) return false;
+    if (std::strstr(e.what(), "SUPERSECRET_CANARY") != nullptr) return false;
+  } catch (...) {
+    return false;
+  }
+  const char* ctrl = "pat\nwith\r\nnewline\tand\x01ctrl";
+  try {
+    motion::patternNamed(ctrl);
+  } catch (const std::exception& e) {
+    if (e.what() == nullptr || e.what()[0] == '\0') return false;
+    if (std::strstr(e.what(), "SUPERSECRET_CANARY") != nullptr) return false;
+  } catch (...) {
+    return false;
+  }
+  std::string with_null("ab");
+  with_null.push_back('\0');
+  with_null += "cd";
+  try {
+    motion::patternNamed(with_null.c_str());
+  } catch (const std::exception&) {
+    return true;
+  } catch (...) {
+    return false;
+  }
+  return false;
+}
+
 #define RUN_CASE(name)                             \
   do {                                             \
     if (!(name)()) {                               \
@@ -392,6 +440,7 @@ int main() {
   RUN_CASE(check_pattern_velocity_reports_motion);
   RUN_CASE(check_pattern_velocity_null_pointers_do_not_crash);
   RUN_CASE(check_pattern_velocity_half_null_does_not_crash);
+  RUN_CASE(check_adversarial_names_throw_safely);
   if (failures > 0) {
     std::printf("patterns_test: %d failing\n", failures);
     return 1;

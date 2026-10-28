@@ -21,6 +21,7 @@
 #include <cstdio>
 #include <cstring>
 #include <exception>
+#include <string>
 
 #include "motion/implicit.h"
 
@@ -202,6 +203,64 @@ static bool check_unregistered_sample_returns_rest() {
   return true;
 }
 
+// Named case (security review): unknown implicit property class stays
+// static — onPropertyChange with a property that is neither geometry nor
+// effects starts no transition; sample remains 0.0f (AC-006 fail-closed).
+static bool check_unknown_implicit_property_stays_static() {
+  const motion::NodeId id = 21;
+  const char* property = "frobnicator";
+  motion::onPropertyChange(id, property, 1.0f, 70000);
+  float at_start = motion::sample(id, property, 70000);
+  if (!approx(at_start, 0.0f, 1e-6f)) return false;
+  float later = motion::sample(id, property, 70000 + 100000);
+  return approx(later, 0.0f, 1e-6f);
+}
+
+// Named case (security review): markImplicit with hostile token names
+// throws naming the input (or a safe truncation) without crashing and
+// without leaking anything beyond the input echo.
+static bool check_mark_implicit_hostile_token_throws_safely() {
+  // Overlong (8KB) name.
+  std::string overlong(8192, 'x');
+  bool threw_overlong = false;
+  try {
+    motion::markImplicit(22, "opacity", overlong.c_str());
+  } catch (const std::exception& e) {
+    threw_overlong = true;
+    const char* w = e.what();
+    if (w == nullptr || w[0] == '\0') return false;
+    if (std::strstr(w, "SUPERSECRET_CANARY") != nullptr) return false;
+    // Must name at least a truncation of the input (first 32 chars).
+    std::string head = overlong.substr(0, 32);
+    if (std::strstr(w, head.c_str()) == nullptr) return false;
+  } catch (...) {
+    return false;
+  }
+  if (!threw_overlong) return false;  // fail-closed violation
+  // Format-specifier-looking name.
+  const char* fmt = "%s%s%n%p%x";
+  bool threw_fmt = false;
+  try {
+    motion::markImplicit(23, "opacity", fmt);
+  } catch (const std::exception& e) {
+    threw_fmt = true;
+    if (std::strstr(e.what(), fmt) == nullptr) return false;
+  } catch (...) {
+    return false;
+  }
+  if (!threw_fmt) return false;
+  // Newline / control characters.
+  const char* ctrl = "tok\nwith\r\nnewline\tand\x01ctrl";
+  try {
+    motion::markImplicit(24, "opacity", ctrl);
+  } catch (const std::exception&) {
+    return true;
+  } catch (...) {
+    return false;
+  }
+  return false;
+}
+
 #define RUN_CASE(name)                             \
   do {                                             \
     if (!(name)()) {                               \
@@ -224,6 +283,8 @@ int main() {
   RUN_CASE(check_properties_are_independent_per_node);
   RUN_CASE(check_nodes_are_independent);
   RUN_CASE(check_unregistered_sample_returns_rest);
+  RUN_CASE(check_unknown_implicit_property_stays_static);
+  RUN_CASE(check_mark_implicit_hostile_token_throws_safely);
   if (failures > 0) {
     std::printf("implicit_test: %d failing\n", failures);
     return 1;
