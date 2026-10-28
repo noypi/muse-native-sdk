@@ -17,6 +17,12 @@ add_library(muse_text STATIC
   src/font_scale.cpp
   src/scale_layout.cpp
   src/scale_config.cpp
+  ink/ink_stroke_pipeline.cpp
+  ink/palm_rejector.cpp
+  ink/handwriting_committer.cpp
+  edit/selection_controller.cpp
+  edit/edit_undo.cpp
+  edit/plain_exporter.cpp
 )
 target_include_directories(muse_text PUBLIC include)
 target_compile_options(muse_text PRIVATE -Wall -Wextra -Wpedantic)
@@ -57,6 +63,10 @@ add_executable(fallback_chain_test tests/fallback_chain_test.cpp)
 target_link_libraries(fallback_chain_test PRIVATE muse_text)
 target_compile_options(fallback_chain_test PRIVATE -Wall -Wextra -Wpedantic)
 
+add_executable(downloadable_font_test tests/downloadable_font_test.cpp)
+target_link_libraries(downloadable_font_test PRIVATE muse_text)
+target_compile_options(downloadable_font_test PRIVATE -Wall -Wextra -Wpedantic)
+
 add_executable(emoji_cluster_test tests/emoji_cluster_test.cpp)
 target_link_libraries(emoji_cluster_test PRIVATE muse_text)
 target_compile_options(emoji_cluster_test PRIVATE -Wall -Wextra -Wpedantic)
@@ -84,6 +94,34 @@ target_compile_options(font_pipeline_test PRIVATE -Wall -Wextra -Wpedantic)
 add_executable(stylus_samples_test tests/stylus_samples_test.cpp)
 target_link_libraries(stylus_samples_test PRIVATE muse_text)
 target_compile_options(stylus_samples_test PRIVATE -Wall -Wextra -Wpedantic)
+
+add_executable(stylus_axes_test ink/tests/stylus_axes_test.cpp)
+target_link_libraries(stylus_axes_test PRIVATE muse_text)
+target_compile_options(stylus_axes_test PRIVATE -Wall -Wextra -Wpedantic)
+
+add_executable(palm_rejection_test ink/tests/palm_rejection_test.cpp)
+target_link_libraries(palm_rejection_test PRIVATE muse_text)
+target_compile_options(palm_rejection_test PRIVATE -Wall -Wextra -Wpedantic)
+
+add_executable(handwriting_test ink/tests/handwriting_test.cpp)
+target_link_libraries(handwriting_test PRIVATE muse_text)
+target_compile_options(handwriting_test PRIVATE -Wall -Wextra -Wpedantic)
+
+add_executable(selection_parity_test edit/tests/selection_parity_test.cpp)
+target_link_libraries(selection_parity_test PRIVATE muse_text)
+target_compile_options(selection_parity_test PRIVATE -Wall -Wextra -Wpedantic)
+
+add_executable(undo_test edit/tests/undo_test.cpp)
+target_link_libraries(undo_test PRIVATE muse_text)
+target_compile_options(undo_test PRIVATE -Wall -Wextra -Wpedantic)
+
+add_executable(plain_degrade_test edit/tests/plain_degrade_test.cpp)
+target_link_libraries(plain_degrade_test PRIVATE muse_text)
+target_compile_options(plain_degrade_test PRIVATE -Wall -Wextra -Wpedantic)
+
+add_executable(gesture_script_test edit/tests/gesture_script_test.cpp)
+target_link_libraries(gesture_script_test PRIVATE muse_text)
+target_compile_options(gesture_script_test PRIVATE -Wall -Wextra -Wpedantic)
 
 add_executable(rich_buffer_test tests/rich_buffer_test.cpp)
 target_link_libraries(rich_buffer_test PRIVATE muse_text)
@@ -120,6 +158,7 @@ add_test(NAME emoji_test COMMAND emoji_test)
 add_test(NAME font_fallback_test COMMAND font_fallback_test)
 add_test(NAME uax_conformance_test COMMAND uax_conformance_test)
 add_test(NAME fallback_chain_test COMMAND fallback_chain_test)
+add_test(NAME downloadable_font_test COMMAND downloadable_font_test)
 add_test(NAME emoji_cluster_test COMMAND emoji_cluster_test)
 add_test(NAME script_shaping_test COMMAND script_shaping_test)
 add_test(NAME variable_font_test COMMAND variable_font_test)
@@ -127,6 +166,13 @@ add_test(NAME font_subset_guard_test COMMAND font_subset_guard_test)
 add_test(NAME golden_harness_test COMMAND golden_harness_test)
 add_test(NAME font_pipeline_test COMMAND font_pipeline_test)
 add_test(NAME stylus_samples_test COMMAND stylus_samples_test)
+add_test(NAME stylus_axes_test COMMAND stylus_axes_test)
+add_test(NAME palm_rejection_test COMMAND palm_rejection_test)
+add_test(NAME handwriting_test COMMAND handwriting_test)
+add_test(NAME selection_parity_test COMMAND selection_parity_test)
+add_test(NAME undo_test COMMAND undo_test)
+add_test(NAME plain_degrade_test COMMAND plain_degrade_test)
+add_test(NAME gesture_script_test COMMAND gesture_script_test)
 add_test(NAME rich_buffer_test COMMAND rich_buffer_test)
 add_test(NAME nonlinear_scale_test COMMAND nonlinear_scale_test)
 add_test(NAME scale_remeasure_test COMMAND scale_remeasure_test)
