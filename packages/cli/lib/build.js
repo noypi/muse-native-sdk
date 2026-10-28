@@ -67,7 +67,7 @@ function runBuild(appDir, rest) {
   }
   if (!projectStat || !projectStat.isFile()) {
     process.stderr.write(`Error: missing muse-native.yaml for target '${appDir}' at '${projectConfigPath}'\n`);
-    process.exitCode = getExitCode('config');
+    process.exitCode = 1;
     return;
   }
   // `--stage <name>` runs one stage only; anything else after <appDir>
