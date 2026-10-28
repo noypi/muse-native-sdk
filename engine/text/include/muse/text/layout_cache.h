@@ -9,16 +9,19 @@
 #include <map>
 #include <memory>
 #include <string>
+#include <vector>
 
+#include "muse/text/shaper.h"
 #include "muse/text/text_types.h"
 
 namespace muse::text {
 
 // Full cache key. Every field participates in equality: text, style,
-// width budget, scale, and font-set generation.
+// variation vector, width budget, scale, and font-set generation.
 struct LayoutKey {
   std::string textUtf8;
   TextStyle style;
+  std::vector<FontVariation> variations;
   float widthPx = 0.0f;
   float scale = 1.0f;
   std::uint64_t fontSetGen = 0;

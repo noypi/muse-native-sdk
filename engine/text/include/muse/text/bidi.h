@@ -45,4 +45,19 @@ BidiRuns resolveBidi(const std::uint8_t* utf8, std::size_t len,
 BreakOpportunities findLineBreaks(const std::uint8_t* utf8, std::size_t len,
                                   const std::string& locale) noexcept;
 
+struct BidiParagraph {
+  std::vector<BidiRun> runs;
+};
+
+struct BreakList {
+  std::vector<std::size_t> offsets;
+};
+
+StatusOr<BidiParagraph> resolveBidiParagraph(const std::uint8_t* bytes,
+                                             std::size_t len,
+                                             std::uint8_t base_dir) noexcept;
+
+StatusOr<BreakList> computeBreaks(const std::uint8_t* bytes, std::size_t len,
+                                  const char* bcp47_locale) noexcept;
+
 }  // namespace muse::text

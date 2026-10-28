@@ -279,4 +279,36 @@ BreakOpportunities findLineBreaks(const std::uint8_t* utf8, std::size_t len,
   }
 }
 
+StatusOr<BidiParagraph> resolveBidiParagraph(const std::uint8_t* bytes,
+                                             std::size_t len,
+                                             std::uint8_t base_dir) noexcept {
+  try {
+    BidiRuns legacy = resolveBidi(bytes, len, base_dir);
+    if (legacy.status != Status::kOk) {
+      return StatusOr<BidiParagraph>(legacy.status);
+    }
+    BidiParagraph out;
+    out.runs = legacy.runs;
+    return StatusOr<BidiParagraph>(out);
+  } catch (...) {
+    return StatusOr<BidiParagraph>(Status::kInvalidInput);
+  }
+}
+
+StatusOr<BreakList> computeBreaks(const std::uint8_t* bytes, std::size_t len,
+                                  const char* bcp47_locale) noexcept {
+  try {
+    const std::string locale = (bcp47_locale != nullptr) ? bcp47_locale : "";
+    BreakOpportunities legacy = findLineBreaks(bytes, len, locale);
+    if (legacy.status != Status::kOk) {
+      return StatusOr<BreakList>(legacy.status);
+    }
+    BreakList out;
+    out.offsets = legacy.offsets;
+    return StatusOr<BreakList>(out);
+  } catch (...) {
+    return StatusOr<BreakList>(Status::kInvalidInput);
+  }
+}
+
 }  // namespace muse::text

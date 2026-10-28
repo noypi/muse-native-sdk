@@ -1,0 +1,19 @@
+{
+  "suite": "text-goldens",
+  "spec": "FR-TEXT-010",
+  "acceptance": "AC-TEXT-024",
+  "note": "Host harness (golden_harness_test) asserts metrics+tofu locally. Pixel comparison across API levels runs in device-lab (TC-TEXT-024, external).",
+  "expectations": {
+    "api-29": "pixel-stable",
+    "api-33": "pixel-stable",
+    "current": "pixel-stable"
+  },
+  "corpus": [
+    {"file": "corpus/emoji_zwj.txt", "covers": ["AC-TEXT-021 ZWJ family", "AC-TEXT-022 latin"]},
+    {"file": "corpus/emoji_modifiers.txt", "covers": ["AC-TEXT-021 skin tones"]},
+    {"file": "corpus/emoji_flags_keycaps.txt", "covers": ["AC-TEXT-021 flags", "AC-TEXT-021 keycaps"]},
+    {"file": "corpus/bidi_mixed.txt", "covers": ["AC-TEXT-023 bidi paragraphs"]},
+    {"file": "corpus/arabic_joining.txt", "covers": ["AC-TEXT-022 arabic joining", "harfbuzz_ref.tsv arabic_joining"]},
+    {"file": "corpus/indic_shaping.txt", "covers": ["AC-TEXT-022 indic matras", "harfbuzz_ref.tsv devanagari+deva_matra"]}
+  ]
+}

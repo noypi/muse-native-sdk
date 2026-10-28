@@ -283,7 +283,7 @@ EmojiRun shapeEmoji(const std::uint8_t* utf8, std::size_t len,
   }
 }
 
-bool isSingleCluster(const std::uint8_t* utf8, std::size_t len) {
+bool isSingleCluster(const std::uint8_t* utf8, std::size_t len) noexcept {
   try {
     std::vector<std::pair<std::size_t, std::size_t>> ranges;
     if (!SegmentClusters(utf8, len, &ranges)) {
@@ -292,6 +292,22 @@ bool isSingleCluster(const std::uint8_t* utf8, std::size_t len) {
     return ranges.size() == 1;
   } catch (...) {
     return false;
+  }
+}
+
+StatusOr<EmojiRun> shapeEmojiRun(const std::uint8_t* utf8, std::size_t len,
+                                 FontHandle emojiFace) noexcept {
+  try {
+    if (len == 0 || utf8 == nullptr) {
+      return StatusOr<EmojiRun>(Status::kUnsupportedSequence);
+    }
+    EmojiRun run = shapeEmoji(utf8, len, emojiFace);
+    if (run.status != Status::kOk) {
+      return StatusOr<EmojiRun>(run.status);
+    }
+    return StatusOr<EmojiRun>(run);
+  } catch (...) {
+    return StatusOr<EmojiRun>(Status::kUnsupportedSequence);
   }
 }
 
