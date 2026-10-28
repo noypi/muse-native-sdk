@@ -28,13 +28,13 @@ run_case() {
   _candpath=""
   case "$_refspec" in
     MISSING:*) _refpath="${_refspec#MISSING:}" ;;
-    *) _refpath="$TMPDIR/ref.bin"; make_fixture "$_refpath" "$_refspec" ;;
+    *) _refpath="$SELFTEST_TMPDIR/ref.bin"; make_fixture "$_refpath" "$_refspec" ;;
   esac
   case "$_candspec" in
     MISSING:*) _candpath="${_candspec#MISSING:}" ;;
-    *) _candpath="$TMPDIR/cand.bin"; make_fixture "$_candpath" "$_candspec" ;;
+    *) _candpath="$SELFTEST_TMPDIR/cand.bin"; make_fixture "$_candpath" "$_candspec" ;;
   esac
-  _out="$("$0" --reference "$_refpath" --candidate "$_candpath" 2>"$TMPDIR/stderr.txt")"
+  _out="$("$0" --reference "$_refpath" --candidate "$_candpath" 2>"$SELFTEST_TMPDIR/stderr.txt")"
   _rc="$?"
   rm -f "$_refpath" "$_candpath"
   if [ "$_rc" -ne "$_expect_exit" ]; then
@@ -67,39 +67,58 @@ run_case() {
 }
 
 self_test() {
-  TMPDIR="${TMPDIR:-/tmp}/size_delta_selftest_$$"
-  mkdir -p "$TMPDIR" || { echo "self-test FAIL: cannot create TMPDIR" >&2; return 1; }
+  SELFTEST_TMPDIR="$(mktemp -d "${TMPDIR:-/tmp}/size_delta_selftest_XXXXXX")" || { echo "self-test FAIL: cannot create tmpdir" >&2; return 1; }
+  trap 'rm -rf "$SELFTEST_TMPDIR"' EXIT INT TERM
   _fail=0
+  # VERIFY-EXT-T2-A: --help exits 0 with usage, no delta line.
+  _help_out="$("$0" --help 2>&1)"; _help_rc="$?"
+  if [ "$_help_rc" -ne 0 ]; then
+    echo "self-test FAIL (--help): exit $_help_rc, expected 0" >&2; _fail=1
+  else
+    case "$_help_out" in
+      *--reference*--candidate*|*--candidate*--reference*)
+        case "$_help_out" in
+          *--self-test*) : ;;
+          *) echo "self-test FAIL (--help): usage missing --self-test" >&2; _fail=1 ;;
+        esac ;;
+      *) echo "self-test FAIL (--help): usage must name --reference and --candidate" >&2; _fail=1 ;;
+    esac
+    case "$_help_out" in
+      *"size_delta_bytes="*)
+        echo "self-test FAIL (--help): delta emitted on help path" >&2; _fail=1 ;;
+    esac
+    if [ "$_fail" -eq 0 ]; then echo "self-test ok (--help)"; fi
+  fi
   run_case "growth 100->150" 100 150 0 50 100 150 || _fail=1
   run_case "shrinkage 200->150" 200 150 0 -50 200 150 || _fail=1
   run_case "identical 128->128" 128 128 0 0 128 128 || _fail=1
   # Missing binary fails closed: no delta line, exit 1.
-  make_fixture "$TMPDIR/only.bin" 64
-  if "$0" --reference "$TMPDIR/only.bin" --candidate "$TMPDIR/nope.bin" >"$TMPDIR/out.txt" 2>/dev/null; then
+  make_fixture "$SELFTEST_TMPDIR/only.bin" 64
+  if "$0" --reference "$SELFTEST_TMPDIR/only.bin" --candidate "$SELFTEST_TMPDIR/nope.bin" >"$SELFTEST_TMPDIR/out.txt" 2>/dev/null; then
     echo "self-test FAIL (missing-candidate): exit 0, expected 1" >&2; _fail=1
   else
-    if grep -q "size_delta_bytes=" "$TMPDIR/out.txt"; then
+    if grep -q "size_delta_bytes=" "$SELFTEST_TMPDIR/out.txt"; then
       echo "self-test FAIL (missing-candidate): delta emitted" >&2; _fail=1
     else
       echo "self-test ok (missing-candidate)"
     fi
   fi
-  if "$0" --reference "$TMPDIR/nope.bin" --candidate "$TMPDIR/only.bin" >"$TMPDIR/out.txt" 2>/dev/null; then
+  if "$0" --reference "$SELFTEST_TMPDIR/nope.bin" --candidate "$SELFTEST_TMPDIR/only.bin" >"$SELFTEST_TMPDIR/out.txt" 2>/dev/null; then
     echo "self-test FAIL (missing-reference): exit 0, expected 1" >&2; _fail=1
   else
-    if grep -q "size_delta_bytes=" "$TMPDIR/out.txt"; then
+    if grep -q "size_delta_bytes=" "$SELFTEST_TMPDIR/out.txt"; then
       echo "self-test FAIL (missing-reference): delta emitted" >&2; _fail=1
     else
       echo "self-test ok (missing-reference)"
     fi
   fi
-  rm -f "$TMPDIR/only.bin" "$TMPDIR/out.txt"
+  rm -f "$SELFTEST_TMPDIR/only.bin" "$SELFTEST_TMPDIR/out.txt"
   # Incomplete args fail closed: exit 1 with usage.
   for _args in "none" "no-candidate" "no-reference"; do
     case "$_args" in
       none) _err="$("$0" 2>&1)"; _rc="$?" ;;
-      no-candidate) make_fixture "$TMPDIR/a.bin" 10; _err="$("$0" --reference "$TMPDIR/a.bin" 2>&1)"; _rc="$?"; rm -f "$TMPDIR/a.bin" ;;
-      no-reference) make_fixture "$TMPDIR/b.bin" 10; _err="$("$0" --candidate "$TMPDIR/b.bin" 2>&1)"; _rc="$?"; rm -f "$TMPDIR/b.bin" ;;
+      no-candidate) make_fixture "$SELFTEST_TMPDIR/a.bin" 10; _err="$("$0" --reference "$SELFTEST_TMPDIR/a.bin" 2>&1)"; _rc="$?"; rm -f "$SELFTEST_TMPDIR/a.bin" ;;
+      no-reference) make_fixture "$SELFTEST_TMPDIR/b.bin" 10; _err="$("$0" --candidate "$SELFTEST_TMPDIR/b.bin" 2>&1)"; _rc="$?"; rm -f "$SELFTEST_TMPDIR/b.bin" ;;
     esac
     if [ "$_rc" -eq 0 ]; then
       echo "self-test FAIL (incomplete-$_args): exit 0, expected 1" >&2; _fail=1
@@ -110,7 +129,8 @@ self_test() {
       esac
     fi
   done
-  rm -rf "$TMPDIR"
+  rm -rf "$SELFTEST_TMPDIR"
+  trap - EXIT INT TERM
   if [ "$_fail" -ne 0 ]; then
     echo "self-test FAILED" >&2
     return 1
@@ -131,7 +151,7 @@ while [ "$#" -gt 0 ]; do
     --candidate)
       [ "$#" -ge 2 ] || { usage; exit 1; }
       CAND="$2"; shift 2 ;;
-    -h|--help) usage; exit 1 ;;
+    -h|--help) usage; exit 0 ;;
     *) usage; exit 1 ;;
   esac
 done

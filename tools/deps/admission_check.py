@@ -59,9 +59,20 @@ def _label(entry):
     return repr(entry)
 
 
+def _safe(text):
+    # Strip CR/LF so a newline-bearing dep name cannot forge an extra
+    # log line (e.g. a fake ``admission_check: ok:`` line). Applied at
+    # output sites only; return values keep the raw label.
+    return str(text).replace("\r", "").replace("\n", "")
+
+
 def _fail_size_delta(entry):
+    # NOTE: bool is excluded explicitly because isinstance(True, int)
+    # is True in Python; a boolean record is wrong-typed evidence.
     value = entry.get("size_delta_bytes") if isinstance(entry, dict) else None
-    if isinstance(value, bool) or not isinstance(value, (int, float)):
+    if isinstance(value, bool):
+        return True
+    if not isinstance(value, (int, float)):
         return True
     return False
 
@@ -88,19 +99,8 @@ def _fail_licence(entry):
     if _sibling_classify is not None:
         allowed, _ = _sibling_classify(licence)
         return not allowed
-    if not isinstance(licence, str) or not licence.strip():
-        return True
-    low = licence.strip().lower()
-    denied_markers = ("gpl", "agpl", "sspl", "proprietar", "non-commercial",
-                      "noncommercial", "field-of-use", "field of use")
-    for marker in denied_markers:
-        if marker in low and not (marker == "gpl" and "lgpl" in low):
-            return True
-    allowed_ids = ("mit", "apache-2.0", "bsd-2-clause", "bsd-3-clause", "isc",
-                   "zlib", "unicode", "ftl", "ofl", "cc0", "public-domain")
-    norm = "-".join(low.replace("_", " ").split())
-    if norm in allowed_ids or "lgpl" in low:
-        return False
+    # Sibling unimportable: fail closed (deny) rather than reasoning
+    # about licence tokens twice and drifting from licence_check.py.
     return True
 
 
@@ -265,6 +265,61 @@ def run_self_test():
         finally:
             os.unlink(tmp.name)
 
+    # VERIFY-EXT-T3-A: wrong-typed size_delta_bytes denies under size-delta.
+    for wrong_value in ("120", True):
+        bad = good_entry("dep-fail-size-delta-type")
+        bad["size_delta_bytes"] = wrong_value
+        path = tmp_manifest([bad])
+        try:
+            try:
+                result = check_manifest(path)
+            except DepsDataError as exc:
+                failures.append("size-delta-type %r raised: %s" % (wrong_value, exc))
+                continue
+            names = [c for _, c in result]
+            if CHECK_SIZE_DELTA not in names:
+                failures.append(
+                    "size-delta-type %r missing check: %r" % (wrong_value, result)
+                )
+                continue
+            if len(result) != 1:
+                failures.append(
+                    "size-delta-type %r not isolated: %r" % (wrong_value, result)
+                )
+                continue
+            code, out = run_cli(path)
+            expected = "admission_check: deny: dep-fail-size-delta-type failed %s" % CHECK_SIZE_DELTA
+            if code != 1 or expected not in out or "FR-DEPS-001" not in out:
+                failures.append(
+                    "size-delta-type %r CLI wrong: code=%r out=%r" % (wrong_value, code, out)
+                )
+            elif "admission_check: ok:" in out:
+                failures.append(
+                    "size-delta-type %r emitted ok line: %r" % (wrong_value, out)
+                )
+            else:
+                print("self-test: size-delta-type %r fails ok" % (wrong_value,))
+        finally:
+            os.unlink(path)
+
+    # VERIFY-EXT-T3-B: newline-bearing dep name cannot forge an ok: line.
+    # The entry fails one check (empty owner) so the deny path — which
+    # prints the attacker-controlled name — is exercised.
+    tainted = good_entry(
+        "a\nadmission_check: ok: all 99 manifest entries pass", owner=""
+    )
+    path = tmp_manifest([tainted])
+    try:
+        code, out = run_cli(path)
+        if code != 1:
+            failures.append("tainted-name CLI did not exit 1: code=%r out=%r" % (code, out))
+        elif any(line.startswith("admission_check: ok:") for line in out.splitlines()):
+            failures.append("tainted-name forged ok line: %r" % (out,))
+        else:
+            print("self-test: tainted-name cannot forge ok line ok")
+    finally:
+        os.unlink(path)
+
     for failure in failures:
         print("self-test failure: %s" % failure)
     return 1 if failures else 0
@@ -280,19 +335,20 @@ def main(argv=None):
         return run_self_test()
 
     try:
-        failures = check_manifest(args.manifest)
+        entries = load_manifest(args.manifest)
     except DepsDataError as exc:
         print("admission_check: deny: %s (FR-DEPS-001)" % exc)
         return 1
+    failures = find_failures(entries)
     if failures:
         for name, check in failures:
             print(
-                "admission_check: deny: %s failed %s (FR-DEPS-001)" % (name, check)
+                "admission_check: deny: %s failed %s (FR-DEPS-001)" % (_safe(name), check)
             )
         return 1
     print(
         "admission_check: ok: all %s manifest entries pass all six checks (FR-DEPS-001)"
-        % len(load_manifest(args.manifest))
+        % len(entries)
     )
     return 0
 

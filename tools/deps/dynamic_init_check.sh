@@ -28,15 +28,6 @@ MANIFEST=""
 SELFTEST=0
 PROBE_OVERRIDE="${DYNAMIC_INIT_CHECK_PROBE_PATH:-}"
 
-have_tool() {
-  # have_tool NAME: true iff NAME resolves (honours probe override dir).
-  if [ -n "$PROBE_OVERRIDE" ]; then
-    [ -x "$PROBE_OVERRIDE/$1" ] && return 0
-    return 1
-  fi
-  command -v "$1" >/dev/null 2>&1
-}
-
 probe_cmd() {
   # Echo the probe binary to use, or nothing when none exists.
   if [ -n "$PROBE_OVERRIDE" ]; then
