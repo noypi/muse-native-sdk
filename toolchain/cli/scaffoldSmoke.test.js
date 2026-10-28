@@ -254,3 +254,66 @@ describe('T6 composition — scaffold→signed-AAB→mount→symbols (batch 3)',
     assert.doesNotMatch(message, /fake-secret|token|BEGIN PRIVATE KEY/);
   });
 });
+
+describe('BUG-BUILD-002 T2/T3 — delivery disposal in runScaffoldSmoke', () => {
+  function countPlayPackDirs() {
+    return fs.readdirSync(os.tmpdir()).filter((n) => n.startsWith('play-pack-')).length;
+  }
+
+  it('T2: a retry-name delivery failure releases the handle and still throws smoke-failed: delivery:', () => {
+    const { runScaffoldSmoke } = loadImplT6();
+    const root = mkTmp('smoke-disposal-');
+    const templateDir = writeTemplate(path.join(root, 'template'));
+    const workDir = path.join(root, 'work');
+    fs.mkdirSync(workDir, { recursive: true });
+    const before = countPlayPackDirs();
+    let message = '';
+    try {
+      // ASSUMPTION (plan A1/A2): first request for a name containing `retry`
+      // ends `failed`, so the delivery stage throws and must release the
+      // acquired handle best-effort before smokeFailed('delivery', err).
+      runScaffoldSmoke({ templateDir, workDir, packName: 'fake-pack-retry-not-real' });
+    } catch (err) {
+      message = err.message;
+    }
+    assert.match(message, /^smoke-failed: delivery: \S.+/, 'must throw single-prefixed delivery error');
+    assert.equal((message.match(/smoke-failed/g) || []).length, 1, 'single stage prefix only');
+    const after = countPlayPackDirs();
+    assert.equal(after, before, `failed delivery must leave zero net new play-pack-* dirs (before=${before} after=${after})`);
+  });
+
+  it('T2: success path keeps the returned mountPoint live and caller-owned', () => {
+    const { runScaffoldSmoke } = loadImplT6();
+    const root = mkTmp('smoke-disposal-ok-');
+    const templateDir = writeTemplate(path.join(root, 'template'));
+    const workDir = path.join(root, 'work');
+    fs.mkdirSync(workDir, { recursive: true });
+    const result = runScaffoldSmoke({ templateDir, workDir, packName: 'fake-pack-not-real' });
+    assert.equal(result.ok, true);
+    assert.equal(typeof result.mountPoint, 'string');
+    assert.ok(fs.existsSync(result.mountPoint), `success mountPoint must remain live: ${result.mountPoint}`);
+    assert.ok(fs.statSync(result.mountPoint).isDirectory(), 'mountPoint must be a directory');
+  });
+
+  it('T3: repeated failing deliveries do not accumulate play-pack-* dirs (single instance, no cache clear)', () => {
+    const { runScaffoldSmoke } = loadImplT6();
+    // No require.cache clear mid-test: accumulation must be exercised within
+    // this single module instance across N calls.
+    const before = countPlayPackDirs();
+    const N = 5;
+    for (let i = 0; i < N; i += 1) {
+      const root = mkTmp(`smoke-disposal-n-${i}-`);
+      const templateDir = writeTemplate(path.join(root, 'template'));
+      const workDir = path.join(root, 'work');
+      fs.mkdirSync(workDir, { recursive: true });
+      // Unique retry-fixture name per iteration so every call takes the
+      // failing-first-attempt path (counters are per name, kept per A2).
+      assert.throws(
+        () => runScaffoldSmoke({ templateDir, workDir, packName: `fake-pack-retry-accumulate-${i}-not-real` }),
+        (err) => err instanceof Error && /^smoke-failed: delivery: \S/.test(err.message)
+      );
+    }
+    const after = countPlayPackDirs();
+    assert.equal(after, before, `expected zero net new play-pack-* dirs after ${N} failed deliveries (before=${before} after=${after})`);
+  });
+});
