@@ -18,6 +18,8 @@ add_library(navigation
   src/uri_validation.cpp
   src/deferred_link.cpp
   src/link_validation.cpp
+  src/route_guard.cpp
+  src/typed_routes.cpp
 )
 target_include_directories(navigation PUBLIC include)
 target_compile_options(navigation PRIVATE -Wall -Wextra -Wpedantic)
@@ -104,6 +106,16 @@ add_executable(security_gate_test tests/security_gate_test.cpp)
 target_link_libraries(security_gate_test PRIVATE navigation)
 target_compile_options(security_gate_test PRIVATE -Wall -Wextra -Wpedantic)
 add_test(NAME security_gate_test COMMAND security_gate_test)
+
+add_executable(route_guard_test tests/route_guard_test.cpp)
+target_link_libraries(route_guard_test PRIVATE navigation)
+target_compile_options(route_guard_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME route_guard_test COMMAND route_guard_test)
+
+add_executable(param_validation_test tests/param_validation_test.cpp)
+target_link_libraries(param_validation_test PRIVATE navigation)
+target_compile_options(param_validation_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME param_validation_test COMMAND param_validation_test)
 
 # FR-NAV-006 T2 (NAV-APPLINKS codegen invocation — documentation only, no new
 # engine target added here):
