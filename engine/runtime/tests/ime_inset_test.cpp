@@ -79,11 +79,11 @@ bool check_nan_inset_clamps_to_zero() {
          runtime::inset_applied_frame(v) == 11;
 }
 
-// T2: +Inf clamps to a finite height, frame still recorded.
+// T2: +Inf clamps to 0.0f (plan A3: no finite max defined), frame recorded.
 bool check_positive_inf_inset_clamps_to_finite() {
   runtime::LayoutViewport v;
   runtime::apply_ime_inset(v, std::numeric_limits<float>::infinity(), 12);
-  return std::isfinite(v.ime_inset_height) &&
+  return v.ime_inset_height == 0.0f &&
          runtime::inset_applied_frame(v) == 12;
 }
 

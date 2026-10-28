@@ -128,7 +128,7 @@ static bool check_two_hosts_have_independent_scroll_offsets() {
   runtime::Host b = make_host_with_button_and_list();
   runtime::dispatch_touch(a, drag_by(0.0f, 48.0f));
   const bool ok = runtime::list_scroll_offset(b, kListId) == 0.0f &&
-                  runtime::list_scroll_offset(a, kListId) != 0.0f;
+                  runtime::list_scroll_offset(a, kListId) == 48.0f;
   runtime::destroy_host(a);
   runtime::destroy_host(b);
   return ok;
