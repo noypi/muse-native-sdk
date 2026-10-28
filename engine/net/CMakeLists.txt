@@ -31,6 +31,7 @@ add_library(net
   src/durability.cc
   src/cronet_transport.cc
   src/transport_policy.cc
+  src/quic_fallback.cc
 )
 target_include_directories(net PUBLIC include)
 target_compile_options(net PRIVATE -Wall -Wextra -Wpedantic)
