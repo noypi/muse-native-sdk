@@ -24,4 +24,21 @@ StatusOr<ShapedRun> shapeRun(const std::uint8_t* utf8, std::size_t len,
 // maxWidthPx (negative budgets clamp to 0).
 MeasuredLine measureLine(ShapedRunView run, float maxWidthPx);
 
+// AC-TEXT-013: profiling hook counting JNI calls on the text path. The C++
+// shaping/measuring path never touches JNI, so text_calls stays 0; the
+// counter exists so a profiled frame can assert it.
+struct JniCallCounter {
+  std::uint64_t text_calls = 0;
+};
+
+// Resets the text-path JNI counters and returns the previous snapshot.
+JniCallCounter resetTextJniCounters();
+
+// Returns true iff the shaped run holds exactly n advances and every
+// advance is within tolPx of the HarfBuzz reference table. Length mismatch
+// (including a null view vs non-empty reference) returns false; a null
+// reference table with n == 0 matches only an empty run. Never throws.
+bool advancesMatchReference(ShapedRunView a, const float* refAdvances,
+                            std::size_t n, float tolPx);
+
 }  // namespace muse::text

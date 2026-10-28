@@ -7,6 +7,8 @@
 
 #include "muse/text/shaper.h"
 
+#include <cmath>
+
 namespace muse::text {
 namespace {
 
@@ -119,6 +121,44 @@ MeasuredLine measureLine(ShapedRunView view, float maxWidthPx) {
   line.width_px = total < maxWidthPx ? total : maxWidthPx;
   line.glyph_count = view.glyph_count();
   return line;
+}
+
+namespace {
+
+// Zero-JNI text-path counters. The shaping/measuring path performs no JNI
+// calls, so these stay 0 unless a future backend records one; the hook
+// below snapshots and resets them for profiled frames.
+JniCallCounter g_text_jni_counters;
+}  // namespace
+
+JniCallCounter resetTextJniCounters() {
+  JniCallCounter previous = g_text_jni_counters;
+  g_text_jni_counters = JniCallCounter{};
+  return previous;
+}
+
+bool advancesMatchReference(ShapedRunView a, const float* refAdvances,
+                            std::size_t n, float tolPx) {
+  const std::size_t count =
+      a.run() != nullptr ? a.run()->advances.size() : 0;
+  if (count != n) {
+    return false;
+  }
+  if (n == 0) {
+    return true;
+  }
+  if (refAdvances == nullptr || a.run() == nullptr) {
+    return false;
+  }
+  if (!(tolPx >= 0.0f)) {
+    tolPx = 0.0f;
+  }
+  for (std::size_t i = 0; i < n; ++i) {
+    if (std::fabs(a.run()->advances[i] - refAdvances[i]) > tolPx) {
+      return false;
+    }
+  }
+  return true;
 }
 
 }  // namespace muse::text
