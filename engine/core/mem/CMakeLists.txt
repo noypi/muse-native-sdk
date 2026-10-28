@@ -33,3 +33,9 @@ target_link_libraries(leak_hooks_test PRIVATE core_mem)
 target_compile_options(leak_hooks_test PRIVATE -Wall -Wextra -Wpedantic)
 
 add_test(NAME leak_hooks_test COMMAND leak_hooks_test)
+
+add_executable(soak_test tests/soak_test.cpp)
+target_link_libraries(soak_test PRIVATE core_mem)
+target_compile_options(soak_test PRIVATE -Wall -Wextra -Wpedantic)
+
+add_test(NAME soak_test COMMAND soak_test)
