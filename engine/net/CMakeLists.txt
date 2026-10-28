@@ -11,6 +11,8 @@ add_library(net
   src/retry.cc
   src/resilience.cc
   src/websocket.cc
+  src/webtransport.cc
+  src/webrtc.cc
 )
 target_include_directories(net PUBLIC include)
 target_compile_options(net PRIVATE -Wall -Wextra -Wpedantic)
@@ -29,6 +31,8 @@ foreach(TEST_SRC
     tests/retry_idempotency_test.cpp
     tests/resilience_test.cpp
     tests/websocket_test.cpp
+    tests/webtransport_test.cpp
+    tests/webrtc_session_test.cpp
     tests/rtc_harness_test.cpp)
   get_filename_component(TEST_NAME ${TEST_SRC} NAME_WE)
   add_executable(${TEST_NAME} ${TEST_SRC})
