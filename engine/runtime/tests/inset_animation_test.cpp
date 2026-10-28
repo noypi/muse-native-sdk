@@ -147,6 +147,29 @@ static bool check_zero_height_advances_frame() {
          sync.last_applied_frame() == 6;
 }
 
+// F4b (review MINOR InsetSync window): 2000 sequential frames keep the
+// latest correct and early-frame queries sane (fallback, no crash). Pins
+// only no-throw + latest correctness, never eviction specifics.
+static bool check_long_window_stays_sane() {
+  InsetSync sync;
+  try {
+    const int kFrames = 2000;
+    for (int i = 1; i <= kFrames; ++i) {
+      InsetFrame f;
+      f.ime_height = static_cast<float>(i);
+      f.frame_id = i;
+      sync.on_inset(f);
+    }
+    if (sync.last_applied_frame() != 2000) return false;
+    if (sync.height_for_frame(2000) != 2000.0f) return false;
+    const float early = sync.height_for_frame(1);
+    if (early < 0.0f) return false;
+  } catch (...) {
+    return false;
+  }
+  return true;
+}
+
 #define RUN_CASE(name)                      \
   do {                                      \
     if (!(name)()) {                        \
@@ -170,6 +193,7 @@ int main() {
   RUN_CASE(check_sample_train_lag_within_one_frame);
   RUN_CASE(check_extreme_inputs_never_throw);
   RUN_CASE(check_zero_height_advances_frame);
+  RUN_CASE(check_long_window_stays_sane);
   if (failures > 0) {
     std::printf("inset_animation_test: %d failing\n", failures);
     return 1;

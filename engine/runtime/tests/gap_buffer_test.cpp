@@ -136,6 +136,56 @@ static bool check_large_insert_head() {
   return buf.to_string()[0] == 'H';
 }
 
+// F2 (review MAJOR undo full-copy + MINOR unbounded stacks): K=300
+// sequential inserts keep undo depth bounded (cap N=100). Observable pin
+// only: undo until can_undo is false counts exactly 100 undos, and the
+// resulting text equals initial + 200 edits worth (oldest 100 dropped).
+static bool check_undo_depth_bounded_at_100() {
+  GapBuffer buf;
+  const std::string initial(10 * 1024, 'a');
+  buf.insert(0, std::string_view(initial));
+  const size_t initial_size = buf.byte_size();
+  for (int i = 0; i < 300; ++i) {
+    buf.insert(buf.byte_size(), std::string_view("x"));
+  }
+  if (!buf.can_undo()) return false;
+  int undos = 0;
+  while (buf.can_undo()) {
+    buf.undo();
+    ++undos;
+  }
+  if (undos != 100) return false;
+  return buf.byte_size() == initial_size + 200;
+}
+
+// F3 (review MAJOR multi-cursor): insert_at_cursors fans out over all
+// cursors, applied at descending offsets so earlier offsets are unaffected.
+// "0123456789" + cursors {0,0},{5,5} + "x" -> "x01234x56789".
+static bool check_insert_at_cursors_applies_descending() {
+  GapBuffer buf;
+  buf.insert(0, std::string_view("0123456789"));
+  buf.set_cursors({{0, 0}, {5, 5}});
+  buf.insert_at_cursors(std::string_view("x"));
+  return buf.to_string() == "x01234x56789";
+}
+
+// F3: empty cursor set + insert_at_cursors is a no-op.
+static bool check_insert_at_cursors_empty_is_noop() {
+  GapBuffer buf;
+  buf.insert(0, std::string_view("0123456789"));
+  buf.insert_at_cursors(std::string_view("x"));
+  return buf.to_string() == "0123456789";
+}
+
+// F4a (review MINOR caps + clamp rule): tag_span with an inverted range
+// collapses to empty (aligns with set_composing_region) — no span stored.
+static bool check_tag_span_inverted_collapses_to_empty() {
+  GapBuffer buf;
+  buf.insert(0, std::string_view("hello"));
+  buf.tag_span(5, 2, 1);
+  return buf.spans_of_kind(1).empty();
+}
+
 #define RUN_CASE(name)                           \
   do {                                           \
     if (!(name)()) {                             \
@@ -161,6 +211,10 @@ int main() {
   RUN_CASE(check_cursors_roundtrip);
   RUN_CASE(check_tag_span_survives_edit);
   RUN_CASE(check_large_insert_head);
+  RUN_CASE(check_undo_depth_bounded_at_100);
+  RUN_CASE(check_insert_at_cursors_applies_descending);
+  RUN_CASE(check_insert_at_cursors_empty_is_noop);
+  RUN_CASE(check_tag_span_inverted_collapses_to_empty);
   if (failures > 0) {
     std::printf("gap_buffer_test: %d failing\n", failures);
     return 1;

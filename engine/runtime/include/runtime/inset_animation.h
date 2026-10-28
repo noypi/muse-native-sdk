@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstddef>
+#include <deque>
 #include <unordered_map>
 
 // Inset animation sync (FR-TEXT-008 / AC-TEXT-016). Hermetic: frame-tagged
@@ -23,7 +25,18 @@ class InsetSync {
   void on_inset(InsetFrame f) noexcept {
     try {
       const float height = f.ime_height < 0.0f ? 0.0f : f.ime_height;
+      const auto it = heights_.find(f.frame_id);
+      if (it == heights_.end()) {
+        order_.push_back(f.frame_id);
+      }
       heights_[f.frame_id] = height;
+      // Cap the window to the latest N frame ids; eviction is safe because
+      // height_for_frame falls back to the latest known height.
+      while (heights_.size() > kMaxFrames) {
+        const int oldest = order_.front();
+        order_.pop_front();
+        heights_.erase(oldest);
+      }
       last_frame_ = f.frame_id;
       last_height_ = height;
       has_sample_ = true;
@@ -53,6 +66,8 @@ class InsetSync {
 
  private:
   std::unordered_map<int, float> heights_;
+  std::deque<int> order_;
+  static constexpr std::size_t kMaxFrames = 512;
   int last_frame_ = 0;
   float last_height_ = 0.0f;
   bool has_sample_ = false;

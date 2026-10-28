@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <deque>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -22,12 +23,13 @@ class GapBuffer {
       return;
     }
     byte_pos = clamp_pos(byte_pos);
-    push_undo();
+    push_text_undo(UndoOp::Kind::Insert, byte_pos, std::string(s));
     move_gap(byte_pos);
     ensure_gap(s.size());
     std::copy(s.begin(), s.end(), buf_.begin() + gap_start_);
     gap_start_ += s.size();
     shift_spans_for_insert(byte_pos, s.size());
+    stamp_spans_after();
   }
 
   void erase(size_t byte_pos, size_t len) {
@@ -36,11 +38,12 @@ class GapBuffer {
       return;
     }
     len = (std::min)(len, size - byte_pos);
-    push_undo();
+    push_text_undo(UndoOp::Kind::Erase, byte_pos, read_range(byte_pos, len));
     move_gap(byte_pos);
     // Drop [gap_start_, gap_start_ + len) from the tail side by widening gap.
     gap_end_ += len;
     shift_spans_for_erase(byte_pos, len);
+    stamp_spans_after();
   }
 
   std::string to_string() const {
@@ -70,22 +73,46 @@ class GapBuffer {
 
   const std::vector<std::pair<size_t, size_t>>& cursors() const { return cursors_; }
 
+  void insert_at_cursors(std::string_view s) {
+    if (s.empty() || cursors_.empty()) {
+      return;
+    }
+    const size_t size = byte_size();
+    std::vector<size_t> positions;
+    positions.reserve(cursors_.size());
+    for (const auto& r : cursors_) {
+      positions.push_back((std::min)(r.second, size));
+    }
+    std::sort(positions.begin(), positions.end(), std::greater<size_t>());
+    for (size_t pos : positions) {
+      insert(pos, s);
+    }
+  }
+
   void undo() {
     if (undo_.empty()) {
       return;
     }
-    redo_.push_back(snapshot());
-    restore(undo_.back());
+    UndoOp op = std::move(undo_.back());
     undo_.pop_back();
+    apply_undo(op);
+    redo_.push_back(std::move(op));
+    if (redo_.size() > kUndoDepth) {
+      redo_.pop_front();
+    }
   }
 
   void redo() {
     if (redo_.empty()) {
       return;
     }
-    undo_.push_back(snapshot());
-    restore(redo_.back());
+    UndoOp op = std::move(redo_.back());
     redo_.pop_back();
+    apply_redo(op);
+    undo_.push_back(std::move(op));
+    if (undo_.size() > kUndoDepth) {
+      undo_.pop_front();
+    }
   }
 
   bool can_undo() const { return !undo_.empty(); }
@@ -96,17 +123,33 @@ class GapBuffer {
     lo = (std::min)(lo, size);
     hi = (std::min)(hi, size);
     if (lo > hi) {
-      std::swap(lo, hi);
+      // Inverted range collapses to empty: store nothing (aligns with
+      // set_composing_region's lo=hi collapse rule).
+      return;
     }
+    push_span_undo();
     spans_.push_back(Span{lo, hi, span_kind});
+    stamp_spans_after();
   }
 
   void clear_spans_of_kind(uint32_t span_kind) {
+    bool any = false;
+    for (const auto& sp : spans_) {
+      if (sp.kind == span_kind) {
+        any = true;
+        break;
+      }
+    }
+    if (!any) {
+      return;
+    }
+    push_span_undo();
     spans_.erase(std::remove_if(spans_.begin(), spans_.end(),
                                 [span_kind](const Span& sp) {
                                   return sp.kind == span_kind;
                                 }),
                  spans_.end());
+    stamp_spans_after();
   }
 
   std::vector<std::pair<size_t, size_t>> spans_of_kind(
@@ -126,12 +169,20 @@ class GapBuffer {
     size_t hi = 0;
     uint32_t kind = 0;
   };
-  struct Snapshot {
+  // Inverse-op undo record: text edits store the bytes needed for the
+  // inverse (insert<->erase); span edits store the span vector before and
+  // after so undo/redo restores span state without a full-text copy.
+  struct UndoOp {
+    enum class Kind { Insert, Erase, Spans };
+    Kind kind = Kind::Insert;
+    size_t pos = 0;
     std::string text;
-    std::vector<Span> spans;
+    std::vector<Span> spans_before;
+    std::vector<Span> spans_after;
   };
 
   static constexpr size_t kInitialGap = 64;
+  static constexpr size_t kUndoDepth = 100;
 
   size_t clamp_pos(size_t pos) const { return (std::min)(pos, byte_size()); }
 
@@ -208,27 +259,92 @@ class GapBuffer {
     return pos;
   }
 
-  Snapshot snapshot() const {
-    Snapshot s;
-    s.text = to_string();
-    s.spans = spans_;
-    return s;
-  }
-
-  void restore(const Snapshot& s) {
-    const size_t n = s.text.size();
-    buf_.assign(n + kInitialGap, '\0');
-    for (size_t i = 0; i < n; ++i) {
-      buf_[i] = s.text[i];
+  std::string read_range(size_t pos, size_t len) const {
+    std::string out;
+    out.resize(len);
+    for (size_t i = 0; i < len; ++i) {
+      size_t p = pos + i;
+      out[i] = (p < gap_start_) ? buf_[p] : buf_[gap_end_ + (p - gap_start_)];
     }
-    gap_start_ = n;
-    gap_end_ = buf_.size();
-    spans_ = s.spans;
+    return out;
   }
 
-  void push_undo() {
-    undo_.push_back(snapshot());
+  void insert_text_raw(size_t pos, std::string_view s) {
+    move_gap(pos);
+    ensure_gap(s.size());
+    std::copy(s.begin(), s.end(), buf_.begin() + gap_start_);
+    gap_start_ += s.size();
+    shift_spans_for_insert(pos, s.size());
+  }
+
+  void erase_text_raw(size_t pos, size_t len) {
+    move_gap(pos);
+    gap_end_ += len;
+    shift_spans_for_erase(pos, len);
+  }
+
+  void apply_undo(const UndoOp& op) {
+    switch (op.kind) {
+      case UndoOp::Kind::Insert:
+        erase_text_raw(op.pos, op.text.size());
+        break;
+      case UndoOp::Kind::Erase:
+        insert_text_raw(op.pos, op.text);
+        break;
+      case UndoOp::Kind::Spans:
+        break;
+    }
+    spans_ = op.spans_before;
+  }
+
+  void apply_redo(const UndoOp& op) {
+    switch (op.kind) {
+      case UndoOp::Kind::Insert:
+        insert_text_raw(op.pos, op.text);
+        break;
+      case UndoOp::Kind::Erase:
+        erase_text_raw(op.pos, op.text.size());
+        break;
+      case UndoOp::Kind::Spans:
+        break;
+    }
+    spans_ = op.spans_after;
+  }
+
+  void push_text_undo(UndoOp::Kind kind, size_t pos, std::string text) {
+    UndoOp op;
+    op.kind = kind;
+    op.pos = pos;
+    op.text = std::move(text);
+    op.spans_before = spans_;
+    undo_.push_back(std::move(op));
+    // spans_after for a text op is not known until after the edit shifts
+    // spans; fill it in lazily is complex, so recompute: the caller applies
+    // the edit right after; instead record after-state here by deferring.
+    // Simplest exact approach: refresh after the edit via fixup in
+    // insert/erase — handled by capturing in those methods below.
+    if (undo_.size() > kUndoDepth) {
+      undo_.pop_front();
+    }
     redo_.clear();
+  }
+
+  void push_span_undo() {
+    UndoOp op;
+    op.kind = UndoOp::Kind::Spans;
+    op.spans_before = spans_;
+    undo_.push_back(std::move(op));
+    if (undo_.size() > kUndoDepth) {
+      undo_.pop_front();
+    }
+    redo_.clear();
+  }
+
+  // After a span mutation, stamp spans_after on the just-pushed record.
+  void stamp_spans_after() {
+    if (!undo_.empty()) {
+      undo_.back().spans_after = spans_;
+    }
   }
 
   std::vector<char> buf_;
@@ -236,6 +352,6 @@ class GapBuffer {
   size_t gap_end_ = 0;
   std::vector<std::pair<size_t, size_t>> cursors_;
   std::vector<Span> spans_;
-  std::vector<Snapshot> undo_;
-  std::vector<Snapshot> redo_;
+  std::deque<UndoOp> undo_;
+  std::deque<UndoOp> redo_;
 };

@@ -156,6 +156,46 @@ static bool check_extreme_inputs_never_throw() {
   return true;
 }
 
+// F1 (review MAJOR — clipboard styling): html carries span markup when
+// spans overlap the copied range. Pins only: html differs from plain and
+// still contains the plain text. Does NOT pin exact tag names.
+static bool check_copy_html_carries_span_markup() {
+  GapBuffer buf;
+  buf.insert(0, "hello world");
+  buf.tag_span(0, 5, 1);
+  ClipPayload p = copy_rich(buf, 0, 5);
+  if (p.plain != "hello") return false;
+  if (p.html.empty()) return false;
+  if (p.html == p.plain) return false;
+  return p.html.find("hello") != std::string::npos;
+}
+
+// F1 (review MAJOR — clipboard styling): paste into a second buffer
+// restores spans of the same kinds (not just text). Span kinds are opaque
+// uint32 — pinned only via kinds stored through tag_span (1, 2).
+static bool check_paste_restores_spans() {
+  GapBuffer src;
+  src.insert(0, "hello world");
+  src.tag_span(0, 5, 1);
+  src.tag_span(6, 11, 2);
+  ClipPayload p = copy_rich(src, 0, src.byte_size());
+  GapBuffer dst;
+  paste_rich(dst, 0, p);
+  if (dst.to_string() != "hello world") return false;
+  if (dst.spans_of_kind(1).empty()) return false;
+  if (dst.spans_of_kind(2).empty()) return false;
+  return true;
+}
+
+// F1: degrade_to_plain is unchanged — still returns plain even with spans.
+static bool check_degrade_unchanged_with_spans() {
+  GapBuffer buf;
+  buf.insert(0, "hello world");
+  buf.tag_span(0, 5, 1);
+  ClipPayload p = copy_rich(buf, 0, 5);
+  return degrade_to_plain(p) == "hello";
+}
+
 #define RUN_CASE(name)                      \
   do {                                      \
     if (!(name)()) {                        \
@@ -182,6 +222,9 @@ int main() {
   RUN_CASE(check_empty_payload_paste_is_noop);
   RUN_CASE(check_paste_past_end_clamps);
   RUN_CASE(check_extreme_inputs_never_throw);
+  RUN_CASE(check_copy_html_carries_span_markup);
+  RUN_CASE(check_paste_restores_spans);
+  RUN_CASE(check_degrade_unchanged_with_spans);
   if (failures > 0) {
     std::printf("clipboard_test: %d failing\n", failures);
     return 1;
