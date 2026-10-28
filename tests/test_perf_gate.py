@@ -297,6 +297,68 @@ class GateInputValidationTest(unittest.TestCase):
         self.assertTrue(result.passed)
 
 
+class GateNonFiniteTest(unittest.TestCase):
+    def test_nan_scalar_raises_fail_closed(self):
+        # LOW-1: NaN scalar must raise fail-closed, never silently pass.
+        _, _, gate = import_gate()
+        manifest = write_manifest([("startup", "lifecycle", 80.0)])
+        try:
+            with self.assertRaises(Exception):
+                gate(manifest, {"startup": float("nan")})
+        finally:
+            cleanup(manifest)
+
+    def test_pos_inf_scalar_raises_fail_closed(self):
+        # LOW-1: +Inf scalar must raise fail-closed.
+        _, _, gate = import_gate()
+        manifest = write_manifest([("startup", "lifecycle", 80.0)])
+        try:
+            with self.assertRaises(Exception):
+                gate(manifest, {"startup": float("inf")})
+        finally:
+            cleanup(manifest)
+
+    def test_neg_inf_scalar_raises_fail_closed(self):
+        # LOW-1: -Inf scalar must raise fail-closed.
+        _, _, gate = import_gate()
+        manifest = write_manifest([("startup", "lifecycle", 80.0)])
+        try:
+            with self.assertRaises(Exception):
+                gate(manifest, {"startup": float("-inf")})
+        finally:
+            cleanup(manifest)
+
+    def test_nan_inside_repeats_raises_fail_closed(self):
+        # LOW-1: NaN inside a repeat list must raise fail-closed.
+        _, _, gate = import_gate()
+        manifest = write_manifest([("startup", "lifecycle", 80.0)])
+        try:
+            with self.assertRaises(Exception):
+                gate(manifest, {"startup": [79.5, float("nan"), 79.8]})
+        finally:
+            cleanup(manifest)
+
+    def test_pos_inf_inside_repeats_raises_fail_closed(self):
+        # LOW-1: +Inf inside a repeat list must raise fail-closed.
+        _, _, gate = import_gate()
+        manifest = write_manifest([("startup", "lifecycle", 80.0)])
+        try:
+            with self.assertRaises(Exception):
+                gate(manifest, {"startup": [79.5, float("inf"), 79.8]})
+        finally:
+            cleanup(manifest)
+
+    def test_neg_inf_inside_repeats_raises_fail_closed(self):
+        # LOW-1: -Inf inside a repeat list must raise fail-closed.
+        _, _, gate = import_gate()
+        manifest = write_manifest([("startup", "lifecycle", 80.0)])
+        try:
+            with self.assertRaises(Exception):
+                gate(manifest, {"startup": [79.5, float("-inf"), 79.8]})
+        finally:
+            cleanup(manifest)
+
+
 class GateCliTest(unittest.TestCase):
     def run_cli(self, manifest, results):
         results_path = tempfile.NamedTemporaryFile(

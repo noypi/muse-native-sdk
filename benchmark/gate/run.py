@@ -13,6 +13,7 @@ repeat runs). Exit 0 on pass, nonzero naming each breaching subsystem.
 """
 
 import json
+import math
 import os
 import sys
 from dataclasses import dataclass, field
@@ -53,12 +54,18 @@ def _aggregate(measured):
         values = [float(v) for v in measured]
         if not values:
             raise ValueError("empty repeat-run sample list")
+        for value in values:
+            if not math.isfinite(value):
+                raise ValueError("non-finite measurement rejected fail-closed")
         ordered = sorted(values)
         mid = len(ordered) // 2
         if len(ordered) % 2:
             return ordered[mid]
         return (ordered[mid - 1] + ordered[mid]) / 2.0
-    return float(measured)
+    value = float(measured)
+    if not math.isfinite(value):
+        raise ValueError("non-finite measurement rejected fail-closed")
+    return value
 
 
 def gate(manifest_path: str, results: dict) -> GateResult:
