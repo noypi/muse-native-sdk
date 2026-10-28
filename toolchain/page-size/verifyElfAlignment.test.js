@@ -112,4 +112,54 @@ describe('verifyElfAlignment', () => {
     const { verifyElfAlignment } = loadImpl();
     assert.deepEqual(verifyElfAlignment(root), { ok: true, violations: [] });
   });
+
+  it('unreadable subdir fails closed naming the directory, never throws', () => {
+    const root = mkTmp('elf-align-unreadable-');
+    writeSo(root, 'arm64', 'libgood', '16384');
+    writeSo(root, 'x86', 'libbad', '4096');
+    const blockedDir = path.join(root, 'lib', 'x86');
+    const blockedRel = path.join('lib', 'x86');
+    const { verifyElfAlignment } = loadImpl();
+    const isRoot =
+      typeof process.getuid === 'function' && process.getuid() === 0;
+    if (isRoot) {
+      const orig = fs.readdirSync;
+      const err = new Error(
+        `EACCES: permission denied, scandir '${blockedDir}'`
+      );
+      err.code = 'EACCES';
+      fs.readdirSync = function patched(dir, opts) {
+        if (String(dir) === blockedDir) throw err;
+        return orig.call(this, dir, opts);
+      };
+      try {
+        let result;
+        assert.doesNotThrow(() => {
+          result = verifyElfAlignment(root);
+        });
+        assert.equal(result.ok, false);
+        assert.ok(
+          result.violations.some((v) => v.includes(blockedRel)),
+          `expected violations to name ${blockedRel}, got: ${JSON.stringify(result.violations)}`
+        );
+      } finally {
+        fs.readdirSync = orig;
+      }
+      return;
+    }
+    fs.chmodSync(blockedDir, 0o000);
+    try {
+      let result;
+      assert.doesNotThrow(() => {
+        result = verifyElfAlignment(root);
+      });
+      assert.equal(result.ok, false);
+      assert.ok(
+        result.violations.some((v) => v.includes(blockedRel)),
+        `expected violations to name ${blockedRel}, got: ${JSON.stringify(result.violations)}`
+      );
+    } finally {
+      fs.chmodSync(blockedDir, 0o755);
+    }
+  });
 });
