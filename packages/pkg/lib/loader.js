@@ -14,6 +14,10 @@ const { PkgError } = require('./errors.js');
 const { validateManifest } = require('./manifest.js');
 const { validateLayout, CANONICAL_MANIFEST, ALIAS_MANIFESTS } = require('./layout.js');
 const { verifyIntegrity } = require('./integrity.js');
+const { checkAbiCoverage, checkEngineAbi } = require('./native.js');
+const { bindExports } = require('./exports.js');
+const { checkCapabilities } = require('./capabilities.js');
+const { checkNoRender } = require('./no-render.js');
 
 const INTEGRITY_PATH = 'integrity.json';
 
@@ -78,7 +82,7 @@ function readJsonFile(abs, code, rel) {
 }
 
 function loadPackage(pkgDir, opts) {
-  void opts;
+  const o = opts && typeof opts === 'object' ? opts : {};
   // Stage 0: fail closed when the directory itself is unusable.
   const { names, entries } = readPackageDir(pkgDir);
   const byName = new Map(entries.map((entry) => [entry.rel, entry.abs]));
@@ -118,8 +122,36 @@ function loadPackage(pkgDir, opts) {
   }
   verifyIntegrity(files, integrity);
 
-  // Stages 3+ (ABI → exports → capabilities → no-render) are owned by T3+ and
-  // run only after the hash gate above has passed.
+  // Stages 3-4 (ABI): device coverage first, then the running engine hash.
+  // Each throws (E_ABI_COVERAGE / E_ENGINE_ABI) with zero partial load.
+  const deviceAbis = Array.isArray(o.deviceAbi)
+    ? o.deviceAbi
+    : typeof o.deviceAbi === 'string'
+      ? [o.deviceAbi]
+      : [];
+  checkAbiCoverage(manifest, deviceAbis);
+  checkEngineAbi(manifest, o.engineAbi);
+
+  // Stage 5 (exports): bind only the manifest-declared surface against the
+  // caller-staged symbol table. No `.so` is opened here; a declared export
+  // with no staged entry throws E_EXPORT_BINDING.
+  const stagedTable =
+    o.symbols && typeof o.symbols === 'object' && !Array.isArray(o.symbols) ? o.symbols : {};
+  bindExports(manifest, stagedTable);
+
+  // Stage 6 (capabilities): every manifest capability must be granted.
+  // Fail-closed default: opts carries no policyId, so use a named deny-by-default policy; empty-capability packages pass while any required capability still needs an explicit grant.
+  const granted = Array.isArray(o.grantedCapabilities) ? o.grantedCapabilities : [];
+  checkCapabilities(manifest, granted, typeof o.policyId === 'string' ? o.policyId : 'no-policy');
+
+  // Stage 7 (no-render): declared capabilities plus staged native symbol
+  // names only; never opens a native library.
+  const stagedSymbols = [
+    ...Object.keys(stagedTable),
+    ...(Array.isArray(o.importedSymbols) ? o.importedSymbols : []),
+  ];
+  checkNoRender(manifest, stagedSymbols);
+
   return { dir: String(pkgDir), manifest, files: names };
 }
 

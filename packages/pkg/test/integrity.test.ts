@@ -167,3 +167,98 @@ describe('TC-PKG-002 — loadPackage gate order (AC-PKG-002, AC-PKG-011 integrit
     assert.equal(typeof loadPackage, 'function');
   });
 });
+
+// ---------------------------------------------------------------------------
+// loadPackage — loader-level refusal pins (stages 3+):
+// temp fixture dirs with valid layout + integrity asserting loadPackage
+// throws the named stage code (E_ABI_COVERAGE / E_ENGINE_ABI / E_CAPABILITY /
+// E_NO_RENDER). Added per review; append-only, no existing case changed.
+// ---------------------------------------------------------------------------
+describe('TC-PKG-002 — loadPackage loader-level refusal pins (stages 3+)', () => {
+  const fs = require('node:fs');
+  const os = require('node:os');
+  const nodePath = require('node:path');
+
+  function writeFixtureDir(manifestOverrides = {}) {
+    const manifest = {
+      name: 'acme-engine',
+      version: '1.2.0',
+      museApi: '1',
+      entry: { form: 'prebuilt', main: 'src/index.js', types: 'src/index.d.ts' },
+      abis: ['arm64-v8a'],
+      engineAbi: 'deadbeef',
+      exports: [],
+      capabilities: [],
+      ...manifestOverrides,
+    };
+    const dir = fs.mkdtempSync(nodePath.join(os.tmpdir(), 'pkg-pin-'));
+    fs.mkdirSync(nodePath.join(dir, 'src'), { recursive: true });
+    const files = {
+      'muse-package.json': Buffer.from(JSON.stringify(manifest)),
+      'src/index.js': Buffer.from('module.exports = {};'),
+      'src/index.d.ts': Buffer.from('export {};'),
+    };
+    const integrity = {};
+    for (const [rel, buf] of Object.entries(files)) {
+      fs.writeFileSync(nodePath.join(dir, rel), buf);
+      integrity[rel] = sha256(buf);
+    }
+    fs.writeFileSync(nodePath.join(dir, 'integrity.json'), JSON.stringify(integrity));
+    return dir;
+  }
+
+  function withFixtureDir(manifestOverrides, fn) {
+    const dir = writeFixtureDir(manifestOverrides);
+    try {
+      fn(dir);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  }
+
+  it('refuses an uncovered device ABI from loadPackage with E_ABI_COVERAGE', () => {
+    withFixtureDir({}, (dir) => {
+      assertPkgError(
+        () => loadPackage(dir, { engineAbi: 'deadbeef', deviceAbi: 'x86_64', grantedCapabilities: [] }),
+        'E_ABI_COVERAGE',
+        'x86_64',
+      );
+    });
+  });
+
+  it('refuses a wrong engine hash from loadPackage with E_ENGINE_ABI', () => {
+    withFixtureDir({}, (dir) => {
+      assertPkgError(
+        () => loadPackage(dir, { engineAbi: 'wrong-hash', deviceAbi: 'arm64-v8a', grantedCapabilities: [] }),
+        'E_ENGINE_ABI',
+        'engineAbi',
+      );
+    });
+  });
+
+  it('refuses an ungranted capability from loadPackage with E_CAPABILITY', () => {
+    withFixtureDir({ capabilities: ['net:http'] }, (dir) => {
+      assertPkgError(
+        () => loadPackage(dir, { engineAbi: 'deadbeef', deviceAbi: 'arm64-v8a', grantedCapabilities: [] }),
+        'E_CAPABILITY',
+        'net:http',
+      );
+    });
+  });
+
+  it('refuses a forbidden graphics symbol from loadPackage with E_NO_RENDER', () => {
+    withFixtureDir({}, (dir) => {
+      assertPkgError(
+        () =>
+          loadPackage(dir, {
+            engineAbi: 'deadbeef',
+            deviceAbi: 'arm64-v8a',
+            grantedCapabilities: [],
+            importedSymbols: ['glClear'],
+          }),
+        'E_NO_RENDER',
+        'glClear',
+      );
+    });
+  });
+});
