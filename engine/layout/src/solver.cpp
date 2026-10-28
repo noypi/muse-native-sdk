@@ -1,5 +1,9 @@
 #include "layout/solver.h"
 
+#include "layout/delegate.h"
+#include "layout/masonry.h"
+#include "layout/sliver.h"
+
 #include <algorithm>
 #include <stdexcept>
 #include <vector>
@@ -99,6 +103,9 @@ Box Solver::solve(NodeId root) {
   for (int iter = 0; iter < kMaxProjectionIterations; ++iter) {
     bool changed = false;
     for (const Constraint* c : ordered) {
+      if (isHandled(c->node)) {
+        continue;  // Delegated subtrees skip the built-in backends.
+      }
       Box& box = boxes_[static_cast<std::size_t>(c->node)];
       float* channel = nullptr;
       switch (c->attribute) {
@@ -117,6 +124,7 @@ Box Solver::solve(NodeId root) {
   }
 
   solved_ = true;
+  dispatchDelegates(root);
   return boxes_.at(static_cast<std::size_t>(root));
 }
 
@@ -171,6 +179,9 @@ void Solver::layoutFlexSubtree(NodeId id) {
 
   float cursor = self.x;
   for (NodeId child : children) {
+    if (isHandled(child)) {
+      continue;  // Delegated subtrees skip the built-in flex backend.
+    }
     const NodeRec& cs = nodes_.at(static_cast<std::size_t>(child));
     float main = cs.w;
     if (cs.flexGrow > 0.0f && flexTotal > 0.0f) {
@@ -183,6 +194,141 @@ void Solver::layoutFlexSubtree(NodeId id) {
     box.h = cs.h;
     cursor += main;
     layoutFlexSubtree(child);
+  }
+}
+
+// T3 delegate walk: membership test, handled check, and dispatch. All
+// dispatch is direct virtual calls on pure C++ types (no marshalling, no
+// JNI, no heap allocation on the call path).
+bool Solver::isInSubtree(NodeId node, NodeId root) const noexcept {
+  NodeId cur = node;
+  while (cur != kInvalidNodeId) {
+    if (cur == root) {
+      return true;
+    }
+    if (static_cast<std::size_t>(cur) >= nodes_.size()) {
+      return false;
+    }
+    cur = nodes_[static_cast<std::size_t>(cur)].parent;
+  }
+  return false;
+}
+
+bool Solver::isHandled(NodeId id) const {
+  for (const auto& entry : delegates_) {
+    LayoutDelegate* d = entry.second;
+    if (d == nullptr) {
+      continue;
+    }
+    if (id == entry.first || isInSubtree(id, entry.first)) {
+      if (d->handles(id)) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+void Solver::dispatchDelegates(NodeId root) {
+  for (NodeId id = 0; static_cast<std::size_t>(id) < nodes_.size(); ++id) {
+    if (!isInSubtree(id, root) || !isHandled(id)) {
+      continue;
+    }
+    // Available size comes from the parent frame (own frame for parentless
+    // roots); values are informational — arrange receives the solved box.
+    float availW = boxes_.at(static_cast<std::size_t>(id)).w;
+    float availH = boxes_.at(static_cast<std::size_t>(id)).h;
+    const NodeId parent = nodes_.at(static_cast<std::size_t>(id)).parent;
+    if (parent != kInvalidNodeId &&
+        static_cast<std::size_t>(parent) < boxes_.size()) {
+      availW = boxes_.at(static_cast<std::size_t>(parent)).w;
+      availH = boxes_.at(static_cast<std::size_t>(parent)).h;
+    }
+    for (const auto& entry : delegates_) {
+      LayoutDelegate* d = entry.second;
+      if (d == nullptr) {
+        continue;
+      }
+      if ((id == entry.first || isInSubtree(id, entry.first)) &&
+          d->handles(id)) {
+        // T4 sliver write-back: handled nodes skip the built-in backends, so
+        // their boxes are still default-constructed at this point. A
+        // SliverDelegate computes exact frames as a pure function of
+        // (config, scroll offset); install them before measure/arrange so
+        // the bounds forwarded to arrange() equal boxOf(id) (the T3
+        // arrange-bounds invariant) and boxOf() reports sliver geometry
+        // afterwards. Non-sliver delegates keep the pass-through behavior.
+        if (SliverDelegate* sliver = dynamic_cast<SliverDelegate*>(d)) {
+          const Box& rootBox =
+              boxes_.at(static_cast<std::size_t>(entry.first));
+          int childIndex = -1;
+          float naturalW = 0.0f;
+          float naturalH = 0.0f;
+          {
+            const NodeRec& rec = nodes_.at(static_cast<std::size_t>(id));
+            naturalW = rec.w;
+            naturalH = rec.h;
+          }
+          if (id != entry.first) {
+            int pos = 0;
+            for (NodeId cand = 0;
+                 static_cast<std::size_t>(cand) < nodes_.size(); ++cand) {
+              if (nodes_.at(static_cast<std::size_t>(cand)).parent ==
+                  entry.first) {
+                if (cand == id) {
+                  childIndex = pos;
+                  break;
+                }
+                ++pos;
+              }
+            }
+          }
+          if (childIndex >= 0 || id == entry.first) {
+            Box frame{0.0f, 0.0f, 0.0f, 0.0f};
+            if (sliver->frameFor(id, rootBox, childIndex, naturalW, naturalH,
+                                 &frame)) {
+              boxes_.at(static_cast<std::size_t>(id)) = frame;
+            }
+          }
+        } else if (MasonryDelegate* masonry =
+                       dynamic_cast<MasonryDelegate*>(d)) {
+          const Box& rootBox =
+              boxes_.at(static_cast<std::size_t>(entry.first));
+          int childIndex = -1;
+          float naturalW = 0.0f;
+          float naturalH = 0.0f;
+          {
+            const NodeRec& rec = nodes_.at(static_cast<std::size_t>(id));
+            naturalW = rec.w;
+            naturalH = rec.h;
+          }
+          if (id != entry.first) {
+            int pos = 0;
+            for (NodeId cand = 0;
+                 static_cast<std::size_t>(cand) < nodes_.size(); ++cand) {
+              if (nodes_.at(static_cast<std::size_t>(cand)).parent ==
+                  entry.first) {
+                if (cand == id) {
+                  childIndex = pos;
+                  break;
+                }
+                ++pos;
+              }
+            }
+          }
+          if (childIndex >= 0 || id == entry.first) {
+            Box frame{0.0f, 0.0f, 0.0f, 0.0f};
+            if (masonry->frameFor(id, rootBox, childIndex, naturalW, naturalH,
+                                  &frame)) {
+              boxes_.at(static_cast<std::size_t>(id)) = frame;
+            }
+          }
+        }
+        d->measure(id, availW, availH);
+        d->arrange(id, boxes_.at(static_cast<std::size_t>(id)));
+        break;  // One delegate owns each node: the first match wins.
+      }
+    }
   }
 }
 

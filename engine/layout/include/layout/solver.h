@@ -1,10 +1,16 @@
 #pragma once
 
 #include <cstdint>
+#include <utility>
+#include <vector>
 
 #include "layout/types.h"
 
 namespace layout {
+
+// Forward declaration; defined in layout/delegate.h (T3). The Solver stores
+// only a non-owning raw pointer (caller owns the delegate lifetime).
+class LayoutDelegate;
 
 // Hybrid tree backend tag. Unknown values (e.g. from
 // static_cast<Backend>(999)) are rejected with an exception.
@@ -38,6 +44,12 @@ class Solver {
   Box solve(NodeId root);
   const Box& boxOf(NodeId id) const;
 
+  // T3 delegate registry (free functions in layout/delegate.h). The Solver
+  // holds non-owning raw pointers only; it never deletes a delegate.
+  friend bool registerDelegate(Solver& s, NodeId subtreeRoot,
+                               LayoutDelegate* d) noexcept;
+  friend void unregisterDelegate(Solver& s, NodeId subtreeRoot) noexcept;
+
  private:
   struct NodeRec {
     Backend backend = Backend::Flex;
@@ -48,10 +60,14 @@ class Solver {
   };
 
   void layoutFlexSubtree(NodeId id);
+  bool isInSubtree(NodeId node, NodeId root) const noexcept;
+  bool isHandled(NodeId id) const;
+  void dispatchDelegates(NodeId root);
 
   std::vector<NodeRec> nodes_;
   std::vector<Box> boxes_;
   std::vector<Constraint> constraints_;
+  std::vector<std::pair<NodeId, LayoutDelegate*>> delegates_;
   bool solved_ = false;
 };
 
