@@ -68,8 +68,9 @@ function monitorPack(handle) {
   if (!record) {
     fail('unknown handle', 0);
   }
+  const current = stateFor(record);
   record.polls += 1;
-  return stateFor(record);
+  return current;
 }
 
 function mountPack(handle) {
