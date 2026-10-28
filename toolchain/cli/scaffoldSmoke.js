@@ -11,7 +11,7 @@ const path = require('node:path');
 
 const { scaffoldProject } = require('../../packages/cli/lib/init.js');
 const { buildSignedAab } = require('./buildSignedAab.js');
-const { requestPack, monitorPack, mountPack } = require('./playDelivery.js');
+const { requestPack, monitorPack, mountPack, releasePack } = require('./playDelivery.js');
 const { collectSymbols } = require('./symbolArtifacts.js');
 
 const SMOKE_KEY_ALIAS = 'fake-alias-not-real';
@@ -117,9 +117,14 @@ function runScaffoldSmoke(args) {
   }
 
   // Stage 3 — delivery mount.
+  // Caller ownership: on success the mountPoint remains live and caller-owned
+  // (NOT released here — releasing would delete the directory the AC requires
+  // to exist); on delivery failure / not-ready terminal the acquired handle is
+  // released best-effort before smokeFailed('delivery', err) throws.
   let mountPoint;
+  let handle = null;
   try {
-    const { handle } = requestPack(packName);
+    ({ handle } = requestPack(packName));
     let terminal = null;
     for (let i = 0; i < 20; i += 1) {
       const cur = monitorPack(handle);
@@ -136,6 +141,13 @@ function runScaffoldSmoke(args) {
     }
     ({ mountPoint } = mountPack(handle));
   } catch (err) {
+    if (handle) {
+      try {
+        releasePack(handle);
+      } catch {
+        // Best-effort: release must never mask the original delivery error.
+      }
+    }
     smokeFailed('delivery', err);
   }
 
