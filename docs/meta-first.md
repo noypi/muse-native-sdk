@@ -66,3 +66,20 @@ are marked unmeasured/degraded pending device-lab.
 | `structure` | SPEC-PERFORMANCE route budget, by reference | unmeasured — degraded pending device-lab |
 | `transcribe` | SPEC-PERFORMANCE route budget, by reference | unmeasured — degraded pending device-lab |
 | `generate-image` | SPEC-PERFORMANCE route budget, by reference | unmeasured — degraded pending device-lab |
+
+## 5. Swap-test anchors (FR-MUSE-001, AC-MUSE-001)
+
+Each MVP intelligent component names the Meta-exclusive anchor its swap test
+asserts against. On swap to a generic provider the anchor is absent and the
+listed visible behaviour breaks. No outside model, vendor, or endpoint is
+named here — the outside is only "generic provider" (RULE-MUSE-006). Names
+below cite only verified IDs/params; anything unverified is marked assumed
+(RULE-MUSE-008).
+
+| Component | Meta-exclusive anchor | Visible breakage on generic-provider swap |
+|-----------|----------------------|-------------------------------------------|
+| MuseLens | SAM `sam-3.1` polygon masks (`mask_encoding: polygon`) | Mask overlay cannot render: generic run-length/box shape is unparseable as polygon points, so segmentation viz breaks (no outline). |
+| MuseField | Muse Spark `muse-spark-1.3` `reasoning_content` streaming + `reasoning_effort` | Thinking indicator goes silent: generic content-only deltas yield zero `reasoning_content` callbacks, so the field falls back to degraded plain-text answer with no Thinking stream. |
+| MuseList | Muse-strict structured output (`muse-spark-1.3`, `strict: true`) | Grouped summary→groups→items hierarchy fails schema validation with a named error and degrades to plain text instead of the structured list. |
+| MuseVoice | Muse transcription route (`muse-voice-transcribe-1.0`, `mode: PUSH_TO_TALK`) | Dictation yields no partials/final transcript shape: transcript target stays empty (or manual form only), so voice entry breaks. |
+| MuseImage | Muse image model `muse-image` with `style_preset` (assumed) + `seed` (assumed) reproducibility | Avatar/cover generation loses identity stability: same prompt re-renders non-reproducibly (no seed-stable asset) and style presets are ignored, so fallback art drifts per call. |
