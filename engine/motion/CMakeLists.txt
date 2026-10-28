@@ -18,6 +18,8 @@ add_library(motion
   src/recorder.cpp
   src/trace.cpp
   src/determinism.cpp
+  src/asset.cpp
+  src/svg_import.cpp
 )
 target_include_directories(motion PUBLIC include)
 target_compile_options(motion PRIVATE -Wall -Wextra -Wpedantic)
@@ -109,3 +111,8 @@ add_executable(cross_machine_replay_test tests/cross_machine_replay_test.cpp)
 target_link_libraries(cross_machine_replay_test PRIVATE motion)
 target_compile_options(cross_machine_replay_test PRIVATE -Wall -Wextra -Wpedantic)
 add_test(NAME cross_machine_replay_test COMMAND cross_machine_replay_test)
+
+add_executable(asset_control_test tests/asset_control_test.cpp)
+target_link_libraries(asset_control_test PRIVATE motion)
+target_compile_options(asset_control_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME asset_control_test COMMAND asset_control_test)
