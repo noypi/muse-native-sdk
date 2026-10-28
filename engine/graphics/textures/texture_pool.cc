@@ -2,6 +2,8 @@
 // Pure logic, no VMA calls.
 #include "engine/graphics/textures/texture_pool.h"
 
+#include <climits>
+
 PoolOutcome poolAcquire(const PoolState& state, const TextureRequest& req) {
   PoolOutcome out;
   out.admitted = false;
@@ -20,15 +22,23 @@ PoolOutcome poolAcquire(const PoolState& state, const TextureRequest& req) {
     out.status = Status::kOverBudget;
     return out;
   }
-  const int shortfall = state.usedBytes + req.bytes - state.capacityBytes;
+  // Overflow-safe pressure path: 64-bit so INT_MAX-scale inputs cannot wrap
+  // to admit-without-eviction. Fail closed when the true total is not
+  // int-representable (no logic change for normal magnitudes).
+  const long long total = (long long)state.usedBytes + (long long)req.bytes;
+  const long long shortfall = total - (long long)state.capacityBytes;
   if (shortfall <= 0) {
     out.admitted = true;
     out.status = Status::kOk;
     return out;
   }
+  if (total > INT_MAX || shortfall > INT_MAX) {
+    out.status = Status::kOverBudget;
+    return out;
+  }
   out.admitted = true;
   out.evicted = true;
-  out.evictedBytes = shortfall;
+  out.evictedBytes = (int)shortfall;
   out.status = Status::kOk;
   return out;
 }

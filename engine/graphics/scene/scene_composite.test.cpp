@@ -131,6 +131,20 @@ int main() {
     printf("PASS negative-sizes-invalid-arg\n");
   }
 
+  // 8. Security: negative FrameBudget fails closed with kOverBudget.
+  //    (No equivalent case existed: case 7 covers negative node sizes only.)
+  {
+    CompositeResult r1 =
+        compositeSceneNode(Node(128, 8, false), Budget(-1, 4096), Pool(8192, 0, 8, 0));
+    assert(r1.status == Status::kOverBudget);
+    assert(r1.composited == false);
+    CompositeResult r2 =
+        compositeSceneNode(Node(128, 8, false), Budget(16, -64), Pool(8192, 0, 8, 0));
+    assert(r2.status == Status::kOverBudget);
+    assert(r2.composited == false);
+    printf("PASS negative-frame-budget-over-budget\n");
+  }
+
   printf("ALL T6 TESTS PASSED\n");
   return 0;
 }

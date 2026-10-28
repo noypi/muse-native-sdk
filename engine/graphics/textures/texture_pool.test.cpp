@@ -2,6 +2,7 @@
 // (FR-GRAPHICS-008, AC-GRAPHICS-021/022). Accounting model only: no VMA calls.
 // Style: plain asserts, no dependencies, no I/O, no network.
 #include <cassert>
+#include <climits>
 #include <cstdio>
 
 #include "engine/graphics/textures/texture_pool.h"
@@ -114,6 +115,20 @@ int main() {
     PoolOutcome over = poolAcquire(s, Req(GpuFormat::kUncompressed, uncompressedTotal, false));
     assert(over.status == Status::kOverBudget && over.admitted == false);
     printf("PASS reference-feed-compressed-below-uncompressed\n");
+  }
+  // 9. Security: INT_MAX-scale accounting must not admit-without-eviction via
+  //    signed overflow. usedBytes + bytes overflows 32-bit int here, so a
+  //    naive `shortfall = used + bytes - capacity` wraps negative and looks
+  //    like "fits". Fail-closed expectation: admitted==false (kOverBudget).
+  //    NOTE: once the 64-bit shortfall fix lands, clamped-shortfall eviction
+  //    (admitted with evictedBytes covering the true 200-byte shortfall) is
+  //    also acceptable — this assertion pins the RED fail-closed behavior.
+  {
+    PoolOutcome o = poolAcquire(State(INT_MAX - 100, INT_MAX - 100, 8, 0),
+                                Req(GpuFormat::kAstc, 200, false));
+    assert(o.status == Status::kOverBudget);
+    assert(o.admitted == false);
+    printf("PASS int-max-scale-overflow-fails-closed\n");
   }
   printf("ALL T4 TESTS PASSED\n");
   return 0;
