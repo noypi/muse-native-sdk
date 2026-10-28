@@ -1,0 +1,63 @@
+name: device-lab
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  device-lab:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Create AVD device-lab-api29
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 29
+          target: google_apis
+          arch: x86_64
+          avd-name: device-lab-api29
+          force-avd-creation: true
+          emulator-options: -no-window -no-audio -no-boot-anim
+          script: echo "AVD ready"
+
+      - name: Wait for emulator boot
+        run: |
+          adb wait-for-device
+          boot_completed=""
+          for attempt in $(seq 1 60); do
+            boot_completed=$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')
+            if [ "$boot_completed" = "1" ]; then
+              echo "boot-complete"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "emulator did not reach boot-complete in time"
+          exit 1
+
+      - name: Configure host build
+        run: cmake -S engine/runtime -B engine/runtime/build
+
+      - name: Build host tree
+        run: cmake --build engine/runtime/build
+
+      - name: Hermetic gate
+        run: ctest --test-dir engine/runtime/build
+
+      - name: Suite ime-smoke
+        run: device-lab/run.sh ime-smoke
+
+      - name: Suite ime-inset
+        run: device-lab/run.sh ime-inset
+
+      - name: Suite touch-smoke
+        run: device-lab/run.sh touch-smoke
+
+      - name: Suite config-change
+        run: device-lab/run.sh config-change
