@@ -198,3 +198,15 @@ add_executable(motion_tokens_test tests/motion_tokens_test.cpp)
 target_link_libraries(motion_tokens_test PRIVATE motion)
 target_compile_options(motion_tokens_test PRIVATE -Wall -Wextra -Wpedantic)
 add_test(NAME motion_tokens_test COMMAND motion_tokens_test)
+
+add_executable(implicit_test tests/implicit_test.cpp)
+target_link_libraries(implicit_test PRIVATE motion)
+target_compile_options(implicit_test PRIVATE -Wall -Wextra -Wpedantic)
+
+add_test(NAME implicit_test COMMAND implicit_test)
+
+add_executable(shared_element_test tests/shared_element_test.cpp)
+target_link_libraries(shared_element_test PRIVATE motion)
+target_compile_options(shared_element_test PRIVATE -Wall -Wextra -Wpedantic)
+
+add_test(NAME shared_element_test COMMAND shared_element_test)
