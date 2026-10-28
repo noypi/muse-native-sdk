@@ -114,3 +114,13 @@ add_executable(config_change_test tests/config_change_test.cpp)
 target_link_libraries(config_change_test PRIVATE runtime)
 target_compile_options(config_change_test PRIVATE -Wall -Wextra -Wpedantic)
 add_test(NAME config_change_test COMMAND config_change_test)
+
+add_executable(gap_buffer_test tests/gap_buffer_test.cpp)
+target_link_libraries(gap_buffer_test PRIVATE runtime)
+target_compile_options(gap_buffer_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME gap_buffer_test COMMAND gap_buffer_test)
+
+add_executable(alooper_bridge_test tests/alooper_bridge_test.cpp)
+target_link_libraries(alooper_bridge_test PRIVATE runtime)
+target_compile_options(alooper_bridge_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME alooper_bridge_test COMMAND alooper_bridge_test)

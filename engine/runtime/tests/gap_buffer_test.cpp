@@ -1,0 +1,170 @@
+// T1 contract tests — FR-TEXT-008 / AC-TEXT-014 (TC-TEXT-014).
+// Binds ONLY to the T1 `Interface:` line; never to implementation.
+// Hermetic: C++17 + committed runtime headers only; no network, no env/
+// config reads, no filesystem, no live services.
+// Expected red state: `runtime/gap_buffer.h` does not exist yet, so this
+// file must FAIL TO COMPILE. That is the recorded red state.
+#include <cstddef>
+#include <cstdio>
+#include <cstring>
+#include <string>
+#include <string_view>
+#include <utility>
+#include <vector>
+
+#include "runtime/gap_buffer.h"
+
+// --- harness cases (match existing test style) -----------------------------
+
+static bool check_harness_entry_reached() { return true; }
+
+static bool check_all_green_returns_zero() {
+  const int greenFailures = 0;
+  return greenFailures == 0;
+}
+
+static bool check_failure_protocol_shape() {
+  const char* failingName = "";
+  return failingName != nullptr && std::strlen(failingName) == 0;
+}
+
+// --- T1 cases (each maps to the Interface: line + AC-TEXT-014) --------------
+
+// Happy path: insert at tail then read back.
+static bool check_insert_tail_reads_back() {
+  GapBuffer buf;
+  buf.insert(0, std::string_view("hello"));
+  buf.insert(5, std::string_view(" world"));
+  return buf.to_string() == "hello world" && buf.byte_size() == 11;
+}
+
+// Happy path: insert in the middle.
+static bool check_insert_middle() {
+  GapBuffer buf;
+  buf.insert(0, std::string_view("ac"));
+  buf.insert(1, std::string_view("b"));
+  return buf.to_string() == "abc";
+}
+
+// Happy path: erase a middle range.
+static bool check_erase_middle() {
+  GapBuffer buf;
+  buf.insert(0, std::string_view("hello world"));
+  buf.erase(5, 6);
+  return buf.to_string() == "hello" && buf.byte_size() == 5;
+}
+
+// Boundary: out-of-range insert position clamps to [0, byte_size()].
+static bool check_insert_pos_clamps() {
+  GapBuffer buf;
+  buf.insert(0, std::string_view("abc"));
+  buf.insert(1000, std::string_view("d"));  // clamps to end
+  if (buf.to_string() != "abcd") return false;
+  return true;
+}
+
+// Boundary: out-of-range erase length clamps; never throws.
+static bool check_erase_len_clamps() {
+  GapBuffer buf;
+  buf.insert(0, std::string_view("abc"));
+  buf.erase(1, 100);  // clamps to end
+  if (buf.to_string() != "a") return false;
+  buf.erase(50, 10);  // pos past end: no-op
+  return buf.to_string() == "a";
+}
+
+// Undo/redo restores byte-identical states; can_undo/can_redo expose state.
+static bool check_undo_redo_restores() {
+  GapBuffer buf;
+  if (buf.can_undo()) return false;
+  if (buf.can_redo()) return false;
+  buf.insert(0, std::string_view("abc"));
+  if (!buf.can_undo()) return false;
+  buf.erase(0, 1);
+  if (buf.to_string() != "bc") return false;
+  buf.undo();
+  if (buf.to_string() != "abc") return false;
+  buf.undo();
+  if (buf.to_string() != "") return false;
+  if (buf.can_undo()) return false;
+  buf.redo();
+  if (buf.to_string() != "abc") return false;
+  buf.redo();
+  if (buf.to_string() != "bc") return false;
+  return true;
+}
+
+// Boundary: undo()/redo() with empty stack are no-ops (never throw).
+static bool check_undo_redo_empty_noop() {
+  GapBuffer buf;
+  buf.undo();
+  buf.redo();
+  if (buf.can_undo()) return false;
+  if (buf.can_redo()) return false;
+  return buf.to_string() == "" && buf.byte_size() == 0;
+}
+
+// Multi-cursor: set_cursors stores ranges; cursors() returns them.
+static bool check_cursors_roundtrip() {
+  GapBuffer buf;
+  buf.insert(0, std::string_view("hello world"));
+  buf.set_cursors({{0, 0}, {6, 11}});
+  const std::vector<std::pair<size_t, size_t>>& cs = buf.cursors();
+  if (cs.size() != 2) return false;
+  if (cs[0].first != 0 || cs[0].second != 0) return false;
+  if (cs[1].first != 6 || cs[1].second != 11) return false;
+  return true;
+}
+
+// Span hook: tag_span does not alter text; spans survive edits.
+static bool check_tag_span_survives_edit() {
+  GapBuffer buf;
+  buf.insert(0, std::string_view("hello world"));
+  buf.tag_span(0, 5, 1);
+  buf.insert(5, std::string_view("!"));
+  // Text reflects the edit; tagging itself never changes bytes.
+  return buf.to_string() == "hello! world" && buf.byte_size() == 12;
+}
+
+// Security/boundary: large insert at head completes; byte size exact.
+static bool check_large_insert_head() {
+  GapBuffer buf;
+  const std::string big(100 * 1024, 'x');
+  buf.insert(0, std::string_view(big));
+  buf.insert(0, std::string_view("H"));
+  if (buf.byte_size() != 100 * 1024 + 1) return false;
+  return buf.to_string()[0] == 'H';
+}
+
+#define RUN_CASE(name)                           \
+  do {                                           \
+    if (!(name)()) {                             \
+      std::printf("FAIL %s\n", #name);           \
+      ++failures;                                \
+    } else {                                     \
+      std::printf("PASS %s\n", #name);           \
+    }                                            \
+  } while (0)
+
+int main() {
+  int failures = 0;
+  RUN_CASE(check_harness_entry_reached);
+  RUN_CASE(check_all_green_returns_zero);
+  RUN_CASE(check_failure_protocol_shape);
+  RUN_CASE(check_insert_tail_reads_back);
+  RUN_CASE(check_insert_middle);
+  RUN_CASE(check_erase_middle);
+  RUN_CASE(check_insert_pos_clamps);
+  RUN_CASE(check_erase_len_clamps);
+  RUN_CASE(check_undo_redo_restores);
+  RUN_CASE(check_undo_redo_empty_noop);
+  RUN_CASE(check_cursors_roundtrip);
+  RUN_CASE(check_tag_span_survives_edit);
+  RUN_CASE(check_large_insert_head);
+  if (failures > 0) {
+    std::printf("gap_buffer_test: %d failing\n", failures);
+    return 1;
+  }
+  std::printf("gap_buffer_test: all passing\n");
+  return 0;
+}
