@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { View, Text } from '@muse/native';
+import { View, Text, TopAppBar } from '@muse/native';
 import { createWorld, step, readBodies, destroy } from '@muse/game-engine-sample';
 import { stepGame, resetGame } from './loop';
 import type { GameState } from './loop';
@@ -49,7 +49,11 @@ export default function App() {
 
   return (
     <View onTouchStart={tap}>
-      <Text>score: {game.score}</Text>
+      <TopAppBar title="flappy" />
+      <View>
+        <Text>HUD</Text>
+        <Text>score: {game.score}</Text>
+      </View>
       <View x={0} y={game.birdY} />
       {bodies.map((b) => (
         <View key={b.id} x={b.x} y={b.y} rotation={b.angle} />

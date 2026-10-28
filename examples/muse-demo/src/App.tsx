@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { View, Text } from '@muse/native';
+import { View, Text, TopAppBar } from '@muse/native';
 import galleryManifest from '../assets/gallery.manifest.json';
 import keywordsSidecar from '../assets/keywords.sidecar.json';
 import { Annotator } from './annotator';
@@ -143,6 +143,7 @@ export default function App() {
     return (
       <DemoChrome page="onboarding">
       <View>
+        <TopAppBar title="muse-demo" />
         <ErrorSnackbar />
         <OnboardingPage onDone={() => setPage('main')} />
       </View>
@@ -153,6 +154,7 @@ export default function App() {
   return (
     <DemoChrome page="main">
     <View>
+      <TopAppBar title="muse-demo" />
       <ErrorSnackbar />
       <View>
         {TABS.map((name) => (
