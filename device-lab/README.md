@@ -31,36 +31,61 @@ adb devices   # must list one emulator
 ## Running
 
 ```sh
-device-lab/run.sh ime-smoke   # T5 — exit 0 iff composition + caret/selection + clipboard round-trip
-device-lab/run.sh ime-inset   # T6 — exit 0 iff inset tracking delta <= 1 frame
-device-lab/run.sh touch-smoke   # T7 — exit 0 iff tap dispatches handler + drag scrolls list
-device-lab/run.sh config-change # T8 — exit 0 iff rotation + bg/fg preserve tree, no crash/blank
-device-lab/run.sh --self-check  # hermetic guard check, green without any device
+device-lab/run.sh ime-smoke      # T5 — exit 0 iff composition + caret/selection + clipboard evidence validates
+device-lab/run.sh ime-inset      # T6 — exit 0 iff inset frame evidence validates (latency <= 1 frame, show+hide)
+device-lab/run.sh touch-smoke    # T7 — exit 0 iff tap/drag evidence validates
+device-lab/run.sh config-change  # T8 — exit 0 iff rotation + bg/fg evidence validates
+device-lab/run.sh --help         # lists the four suites, exit 0
 ```
 
-Without an emulator both suites FAIL closed (exit 2, `FAIL: missing Android
-harness: ...` naming the missing piece) — never a silent pass. Exit 1 means a
-real assertion failed on a connected device (the assertion is named).
+`run.sh` takes exactly one argument, matched byte-exactly (no case folding,
+no extra args). Unknown suite, empty suite, missing arg, or extra args exit 2
+with `usage: run.sh <suite>`. There is no `--self-check` mode and no
+multi-suite dispatcher: one invocation runs one suite
+(`device-lab/self_check.sh` was deleted as superseded).
+
+Order of checks inside `run.sh <suite>`:
+
+1. Hermetic gate first: `run.sh` configures/builds `engine/runtime` if needed
+   and runs `ctest --test-dir engine/runtime/build` before touching any
+   device. A red gate fails closed with exit 1
+   (`run.sh: hermetic gate (ctest engine/runtime) failed — refusing device run`)
+   without touching a device.
+2. Suite dispatch + evidence validation: exit 0 only when the pulled evidence
+   content validates; any failure exits 1 with a named cause
+   (`run.sh: suite <suite> failed evidence check`, `missing evidence at ...`,
+   `invalid evidence json(l): ...`, or the per-suite `*_dryrun`-mirrored
+   verdict naming the failing flag/line).
 
 ## Evidence seams (what the instrumented app must write on-device)
 
-- T5 `ime-smoke` pulls `/sdcard/ime-smoke-result.json`
-  (override: `DEVICE_LAB_IME_EVIDENCE_PATH`):
-  `{"composition": true, "caret": true, "selection": true, "clipboard": true, "method": "<ime id>"}`.
-- T6 `ime-inset` pulls `/sdcard/ime-inset-frames.jsonl`
-  (override: `DEVICE_LAB_INSET_EVIDENCE_PATH`), one JSON object per animation
-  frame: `{"announced": N, "applied": M, "height": H}` with finite `H >= 0` and
-  `|applied - announced| <= 1`. NaN/±Inf heights fail (T2 clamp violated).
-- T7 `touch-smoke` pulls `/sdcard/touch-smoke-result.json`
-  (override: `DEVICE_LAB_TOUCH_EVIDENCE_PATH`):
-  `{"tap": true, "handler": "<component id>", "scroll": true, "scroll_delta": <px>}`.
-  `handler` must be a non-empty component id and `scroll_delta` non-zero —
-  the platform path (Activity-injected tap/drag) reached the T1 per-host seam.
-- T8 `config-change` pulls `/sdcard/config-change-result.json`
-  (override: `DEVICE_LAB_CONFIG_EVIDENCE_PATH`):
-  `{"rotation": true, "background": true, "foreground": true,
-    "tree_intact": true, "surface_live": true, "no_crash": true}`.
-  Asserts the T3 liveness semantics from the platform side.
+Defaults live under the app-specific external files dir
+(`Activity.getExternalFilesDir`:
+`/storage/emulated/0/Android/data/com.muse.devicelab/files/<suite>/<file>`;
+no `/sdcard/` root paths are used). Each `DEVICE_LAB_*_EVIDENCE_PATH` override
+retargets the on-device path only — the verdict always validates the evidence
+file content, never the env var.
+
+- T5 `ime-smoke` validates `ime-smoke-result.json`
+  (override: `DEVICE_LAB_IME_SMOKE_EVIDENCE_PATH`):
+  `{"composition": true, "caret": true, "selection": true,
+    "clipboardCopyPaste": true, "engineHosted": true}` — every flag must be
+  JSON boolean `true` (strict; `"true"`/`1`/`null`/missing fail).
+- T6 `ime-inset` validates `ime-inset-frames.jsonl`
+  (override: `DEVICE_LAB_IME_INSET_EVIDENCE_PATH`), one JSON object per frame
+  line: `{"frame": N, "announcedHeight": A, "appliedHeight": P,
+  "latencyFrames": L}` with strict-int `frame`/heights `>= 0`,
+  `latencyFrames` int in `[0,1]`, and an ordered show+hide cycle (>= 1 show
+  frame with `announcedHeight > 0`, then a hide frame with
+  `announcedHeight == 0`).
+- T7 `touch-smoke` validates `touch-smoke-result.json`
+  (override: `DEVICE_LAB_TOUCH_SMOKE_EVIDENCE_PATH`):
+  `{"tapDispatched": true, "dragScrolled": true, "engineHosted": true}` —
+  strict boolean `true`; missing evidence fails closed.
+- T8 `config-change` validates `config-change-result.json`
+  (override: `DEVICE_LAB_CONFIG_CHANGE_EVIDENCE_PATH`):
+  `{"rotationPreserved": true, "bgFgPreserved": true, "nodeIdsStable": true,
+    "engineHosted": true}` — strict boolean `true` (string `"true"` fails).
 
 ## T8 rotation/background sequence (identical every rerun)
 
@@ -71,40 +96,69 @@ real assertion failed on a connected device (the assertion is named).
 4. Background: `adb shell input keyevent KEYCODE_HOME`; wait 2 s
    (config-change-while-backgrounded per T3: surface must stay dead, tree intact).
 5. Foreground: relaunch the Activity; wait 2 s (surface live again, tree intact).
-6. App writes the evidence JSON; `device-lab/run.sh config-change` pulls it.
+6. App writes the evidence JSON under its external files dir; `run.sh`
+   dispatches the per-suite script with the resolved `EVIDENCE_PATH` and then
+   validates the pulled evidence content (fail closed on missing/invalid).
 
 ## Environment knobs
 
 | Variable | Purpose |
 |----------|---------|
 | `ANDROID_HOME` / `ANDROID_SDK_ROOT` | SDK location (required) |
-| `DEVICE_LAB_ADB` | adb binary override (default: `adb` from PATH; tests force a bogus value to prove the guard) |
-| `DEVICE_LAB_IME_EVIDENCE_PATH` | T5 on-device evidence path override |
-| `DEVICE_LAB_INSET_EVIDENCE_PATH` | T6 on-device evidence path override |
-| `DEVICE_LAB_TOUCH_EVIDENCE_PATH` | T7 on-device evidence path override |
-| `DEVICE_LAB_CONFIG_EVIDENCE_PATH` | T8 on-device evidence path override |
+| `DEVICE_LAB_ADB` | adb binary override (default: `adb` from PATH) |
+| `DEVICE_LAB_IME_SMOKE_EVIDENCE_PATH` | T5 on-device evidence path override (path only) |
+| `DEVICE_LAB_IME_INSET_EVIDENCE_PATH` | T6 on-device evidence path override (path only) |
+| `DEVICE_LAB_TOUCH_SMOKE_EVIDENCE_PATH` | T7 on-device evidence path override (path only) |
+| `DEVICE_LAB_CONFIG_CHANGE_EVIDENCE_PATH` | T8 on-device evidence path override (path only) |
 
-## CI (T9)
+## Hermetic dry-run tests (no device, no network)
 
-`.github/workflows/device-lab.yml` boots the pinned AVD (`device-lab-api29`,
-API 29, `google_apis`/`x86_64`) via the Android emulator runner and runs
-`device-lab/run.sh ime-smoke ime-inset touch-smoke config-change` green.
+- `device-lab/tests/run_dispatch_dryrun.sh` — T4 dispatch contract: `--help`
+  lists all four suites, unknown/empty/missing/extra-arg/case-folded suites
+  exit 2, evidence defaults to the app-specific external files dir, no
+  `/sdcard/` root, no committed APK, hermetic gate runs before any device
+  suite (uses a failing stub `adb` to prove dispatch checks need no device).
+- `device-lab/tests/evidence_failclosed_acceptance.sh` — T4–T8 fail-closed
+  acceptance with tmp-dir fixtures: unknown suite exits 2, `--help` lists
+  four suites, `engineHosted:false`/string-`"true"`/bad-latency/missing
+  evidence all fail, valid fixtures pass, overrides retarget path only.
+- Per-suite dry-runs: `device-lab/ime-smoke/tests/ime_smoke_dryrun.sh`,
+  `device-lab/ime-inset/tests/ime_inset_dryrun.sh`,
+  `device-lab/touch-smoke/tests/touch_smoke_dryrun.sh`,
+  `device-lab/config-change/tests/config_change_dryrun.sh` — each drives its
+  suite script via its `DEVICE_LAB_*_EVIDENCE_PATH` override against tmp-dir
+  fixtures (a failing stub `adb` proves no device is contacted) plus static
+  checks (app-specific external files dir, no `/sdcard/` root, producer
+  contract).
 
-Job order (fail-closed at every stage):
+## CI
 
-1. `actions/checkout@v4` on `ubuntu-latest`.
-2. Hermetic CTest fast gate first: `cmake -S engine/runtime -B build/runtime`,
-   `cmake --build build/runtime`, `ctest --test-dir build/runtime`. A red gate
-   fails the workflow without booting the emulator.
-3. Device gate via `reactivecircus/android-emulator-runner@v2` (`api-level: 29`,
-   `target: google_apis`, `arch: x86_64`, `avd-name: device-lab-api29`,
-   `-no-snapshot -no-window -gpu swiftshader_indirect`): `adb wait-for-device`,
-   then the four suites in order. Any suite exiting non-zero — including exit 2
-   when no device boots — fails the workflow; there is no silent green.
+`.github/workflows/device-lab.yml` (push + pull_request, `contents: read`,
+`ubuntu-latest`, 30 min timeout) runs one job with separate steps — no
+multi-suite dispatcher invocation:
 
-There was no repo Actions convention to match (no `.github/` or other CI config
-existed), so the job follows the standard checkout + emulator-runner pattern;
-CI-green is pending a real runner (validated here by YAML parse only).
+1. `actions/checkout@v4`.
+2. Create AVD `device-lab-api29` via
+   `reactivecircus/android-emulator-runner@v2` (`api-level: 29`,
+   `target: google_apis`, `arch: x86_64`, `force-avd-creation: true`,
+   `emulator-options: -no-window -no-audio -no-boot-anim`, script echoes
+   `AVD ready`).
+3. Wait-for-boot step: `adb wait-for-device`, then poll
+   `sys.boot_completed` (up to 60 × 5 s); exits 1 if boot never completes.
+4. Hermetic gate as its own steps: `cmake -S engine/runtime -B
+   engine/runtime/build`, `cmake --build engine/runtime/build`,
+   `ctest --test-dir engine/runtime/build`.
+5. Four separate suite steps, one arg each: `device-lab/run.sh ime-smoke`,
+   `device-lab/run.sh ime-inset`, `device-lab/run.sh touch-smoke`,
+   `device-lab/run.sh config-change`. Any non-zero suite exit fails the
+   workflow.
+
+## Run history
+
+T1–T4 hermetic hardening still holds: per-host counters, NaN/Inf clamped to
+`0.0f`, bg-config liveness, and 12/12 translation units including
+`src/jni_bridge.cpp` from main. The device halves (T5–T8) are pending a real
+emulator run.
 
 ## Q-RUNTIME-001 note
 
@@ -115,6 +169,11 @@ scope here.
 
 ## Expected state without an emulator (this machine)
 
-`device-lab/run.sh --self-check` → GREEN (guards hold).
-`device-lab/run.sh ime-smoke` / `ime-inset` / `touch-smoke` / `config-change` → RED, exit 2,
-`FAIL: missing Android harness: no emulator/device attached ...`.
+`device-lab/run.sh --help` → exit 0, lists the four suites.
+`device-lab/run.sh bogus-suite` (or no args) → exit 2, usage error — no
+device is contacted for dispatch-level checks.
+`device-lab/run.sh ime-smoke` / `ime-inset` / `touch-smoke` / `config-change`
+→ the hermetic gate runs first (exit 1 if the host `engine/runtime` build is
+red); with a green gate and no emulator attached, the suite fails its
+evidence check with exit 1 (`missing evidence at ...`), never a silent pass.
+The hermetic dry-run tests above stay green without any device.
