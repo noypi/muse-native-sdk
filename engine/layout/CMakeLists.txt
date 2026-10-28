@@ -18,6 +18,7 @@ add_library(layout
   src/property.cpp
   src/batch.cpp
   src/insets.cpp
+  src/inspector.cpp
 )
 target_include_directories(layout PUBLIC include)
 target_compile_options(layout PRIVATE -Wall -Wextra -Wpedantic -Werror)
@@ -103,3 +104,38 @@ add_executable(ime_scripted_test tests/ime_scripted_test.cpp)
 target_link_libraries(ime_scripted_test PRIVATE layout)
 target_compile_options(ime_scripted_test PRIVATE -Wall -Wextra -Wpedantic -Werror)
 add_test(NAME ime_scripted_test COMMAND ime_scripted_test)
+
+add_executable(freeform_resize_test tests/freeform_resize_test.cpp)
+target_link_libraries(freeform_resize_test PRIVATE layout)
+target_compile_options(freeform_resize_test PRIVATE -Wall -Wextra -Wpedantic -Werror)
+add_test(NAME freeform_resize_test COMMAND freeform_resize_test)
+
+add_executable(display_metrics_test tests/display_metrics_test.cpp)
+target_link_libraries(display_metrics_test PRIVATE layout)
+target_compile_options(display_metrics_test PRIVATE -Wall -Wextra -Wpedantic -Werror)
+add_test(NAME display_metrics_test COMMAND display_metrics_test)
+
+add_executable(drag_resize_test tests/drag_resize_test.cpp)
+target_link_libraries(drag_resize_test PRIVATE layout)
+target_compile_options(drag_resize_test PRIVATE -Wall -Wextra -Wpedantic -Werror)
+add_test(NAME drag_resize_test COMMAND drag_resize_test)
+
+add_executable(window_sweep_test tests/window_sweep_test.cpp)
+target_link_libraries(window_sweep_test PRIVATE layout)
+target_compile_options(window_sweep_test PRIVATE -Wall -Wextra -Wpedantic -Werror)
+add_test(NAME window_sweep_test COMMAND window_sweep_test)
+
+add_executable(inspector_dump_test tests/inspector_dump_test.cpp)
+target_link_libraries(inspector_dump_test PRIVATE layout)
+target_compile_options(inspector_dump_test PRIVATE -Wall -Wextra -Wpedantic -Werror)
+add_test(NAME inspector_dump_test COMMAND inspector_dump_test)
+
+add_executable(inspector_overhead_test tests/inspector_overhead_test.cpp)
+target_link_libraries(inspector_overhead_test PRIVATE layout)
+target_compile_options(inspector_overhead_test PRIVATE -Wall -Wextra -Wpedantic -Werror)
+add_test(NAME inspector_overhead_test COMMAND inspector_overhead_test)
+
+add_executable(overlay_geometry_test tests/overlay_geometry_test.cpp)
+target_link_libraries(overlay_geometry_test PRIVATE layout)
+target_compile_options(overlay_geometry_test PRIVATE -Wall -Wextra -Wpedantic -Werror)
+add_test(NAME overlay_geometry_test COMMAND overlay_geometry_test)
