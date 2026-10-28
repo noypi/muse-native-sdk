@@ -17,6 +17,10 @@ outside that path and still collects garbage normally; every
 JS-authored callback, action body, and subscriber runs under the
 collector and may allocate.
 
+This document makes no process-wide zero GC claim. The split is
+explicit: the C++ side stays render-path GC-free while the JS isolate
+still collects.
+
 This matches the competitive matrix GC row (C++ render/layout hot
 path GC-free via RAII; Hermes isolate still collects with bounded
 pauses) and AC-CORE-017 (never claim process-wide freedom from

@@ -41,20 +41,33 @@ FORBIDDEN_RES = tuple(re.compile(p, re.IGNORECASE) for p in FORBIDDEN_PATTERNS)
 MISSING_ROOT_PATTERN = "missing-root:docs/performance"
 
 
-def _is_allowlisted(line):
+DENIAL_MARKERS = ("no ", "not ", "never ", "makes no", "without ", "disclaim")
+
+
+def _is_allowlisted(line, prev_line=""):
     """Allowlist (plan T6): honest bounded render-path phrasing only.
 
     - ``GC-free`` render-path phrasing (the honest render-path GC-free /
       Hermes-isolate-GC split T5 writes);
     - the ``docs/state/api-surface.md`` PROHIBITION line pattern
       (explicit honest-split language: a line carrying PROHIBITION that
-      quotes the forbidden phrase to forbid it).
+      quotes the forbidden phrase to forbid it);
+    - explicit-DENIAL phrasing: a line matching the absolute-claim
+      pattern is NOT a violation when the same line (or the immediately
+      preceding line) carries an explicit denial marker (``no ``,
+      ``not ``, ``never ``, ``makes no``, ``without ``, ``disclaim``,
+      case-insensitive), e.g. "this document makes no process-wide
+      zero-GC claim".
     """
     low = line.lower()
     if "gc-free" in low or "gc free" in low:
         return True
     if "prohibition" in low and "never describe" in low:
         return True
+    prev_low = (prev_line or "").lower()
+    for marker in DENIAL_MARKERS:
+        if marker in low or (prev_low and marker in prev_low):
+            return True
     return False
 
 
@@ -75,14 +88,16 @@ def scan_zero_claims(root):
                 continue
             path = os.path.join(dirpath, name)
             with open(path, encoding="utf-8") as fh:
+                prev_line = ""
                 for lineno, line in enumerate(fh, start=1):
                     for rx in FORBIDDEN_RES:
                         m = rx.search(line)
-                        if m and not _is_allowlisted(line):
+                        if m and not _is_allowlisted(line, prev_line):
                             violations.append(
                                 Violation(path, lineno, m.group(0))
                             )
                             break
+                    prev_line = line
     return violations
 
 
@@ -179,6 +194,51 @@ class AllowlistTest(unittest.TestCase):
                 'PROHIBITION: Never describe JS-authored logic as "zero GC".\n',
             )
             self.assertEqual(scan_zero_claims(tmp), [])
+
+    def test_denial_phrasing_same_line_allowed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            _write(
+                tmp,
+                "ok.md",
+                "This document makes no process-wide zero-GC claim.\n",
+            )
+            self.assertEqual(scan_zero_claims(tmp), [])
+
+    def test_denial_marker_preceding_line_allowed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            _write(
+                tmp,
+                "ok.md",
+                "We make no absolute claim here.\n"
+                "The following phrase is disclaimed: zero-cost dispatch.\n",
+            )
+            self.assertEqual(scan_zero_claims(tmp), [])
+
+    def test_unqualified_claim_with_denial_elsewhere_still_flagged(self):
+        # Denial allowlist is line-scoped (same or immediately preceding
+        # line only): a denial two lines away must NOT suppress the flag.
+        with tempfile.TemporaryDirectory() as tmp:
+            _write(
+                tmp,
+                "bad.md",
+                "We make no absolute claim here.\n"
+                "\n"
+                "This engine has zero-cost dispatch.\n",
+            )
+            self.assertTrue(scan_zero_claims(tmp))
+
+
+class MissingRootSentinelTest(unittest.TestCase):
+    def test_missing_root_returns_sentinel_violation(self):
+        # Fail-closed: nonexistent root -> single `missing-root:<name>`
+        # sentinel violation (non-empty).
+        with tempfile.TemporaryDirectory() as tmp:
+            missing = os.path.join(tmp, "does-not-exist-xyz")
+            violations = scan_zero_claims(missing)
+            self.assertTrue(violations, msg="missing root must fail closed")
+            self.assertEqual(len(violations), 1)
+            self.assertIn("missing-root:", violations[0].pattern)
+            self.assertIn("does-not-exist-xyz", violations[0].path)
 
 
 class ScanScopeTest(unittest.TestCase):
