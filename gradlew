@@ -16,6 +16,11 @@
 #   :benchmark:powerSaver   -> benchmark.powersaver.run.measure_power_saver
 #   :benchmark:soak         -> benchmark.soak.run.measure_soak
 #   :engine:core:allocator   -> tests.test_core_allocator (arena/pool contract, TC-CORE-003)
+#   :testing:cliAllTiers     -> testing.cli.run.run_all_tiers (four tiers, JUnit XML)
+#   :testing:frameStepping   -> testing.determinism.clock stepping entry point
+#   :testing:seedContract    -> testing.determinism.prng/http-mock seed entry point
+#   :testing:determinismLint -> testing.determinism.lint.lint_no_wallclock
+#   :testing:determinismReplay -> testing.determinism.replay.replay_twice
 set -eu
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 
@@ -34,6 +39,11 @@ Tasks:
   :benchmark:powerSaver    benchmark.powersaver.run.measure_power_saver
   :benchmark:soak          benchmark.soak.run.measure_soak
   :engine:core:allocator   tests.test_core_allocator (arena/pool contract)
+  :testing:cliAllTiers     testing.cli.run.run_all_tiers (four tiers, JUnit XML)
+  :testing:frameStepping   testing.determinism.clock stepping entry point
+  :testing:seedContract    testing.determinism.prng/http-mock seed entry point
+  :testing:determinismLint testing.determinism.lint.lint_no_wallclock
+  :testing:determinismReplay testing.determinism.replay.replay_twice
 Extra args after :benchmark:perfGate are forwarded to benchmark/gate/run.py
 as <manifest> <results-json>.
 EOF
@@ -226,6 +236,51 @@ EOF
     ;;
   :engine:core:pluginManifest)
     cd "$ROOT" && python3 -m unittest tests.test_core_plugin_manifest
+    ;;
+  :testing:cliAllTiers)
+    run_py "import os, sys
+from testing.cli.run import run_all_tiers
+out = sys.argv[1] if len(sys.argv) > 1 else os.path.join('build', 'testing', 'tiers')
+results = run_all_tiers(out)
+raise SystemExit(0 if all(v['passed'] for v in results.values()) else 1)"
+    ;;
+  :testing:frameStepping)
+    run_py "from testing.determinism.clock import VirtualClock, step_frames
+clock = VirtualClock(vsync_ms=16)
+seen = step_frames(clock, 4, lambda frame: None)
+assert seen == [0, 1, 2, 3] and clock.now() == 64, (seen, clock.now())
+print('frame stepping ok: frames=%s now=%s' % (seen, clock.now()))"
+    ;;
+  :testing:seedContract)
+    run_py "from testing.determinism.http_mock import MockHttpServer
+from testing.determinism.prng import SeedablePRNG
+run_a = SeedablePRNG(seed=42)
+run_b = SeedablePRNG(seed=42)
+assert [run_a.next_int(1000) for _ in range(20)] == [run_b.next_int(1000) for _ in range(20)]
+server = MockHttpServer()
+server.enqueue_fixture('/items', b'{\"n\": 1}')
+assert server.handle_request('/items') == b'{\"n\": 1}'
+print('seed contract ok: seed=42 replay identical')"
+    ;;
+  :testing:determinismLint)
+    run_py "import os
+from testing.determinism.lint import lint_no_wallclock
+targets = []
+for base in (os.path.join('testing', 'cli'), os.path.join('testing', 'determinism')):
+    for name in sorted(os.listdir(base)):
+        if name.endswith('.py'):
+            targets.append(os.path.join(base, name))
+findings = [hit for path in targets for hit in lint_no_wallclock(path)]
+print('determinism lint ok: %d files clean' % len(targets) if not findings else 'determinism lint FAILED:')
+for hit in findings:
+    print(hit)
+raise SystemExit(0 if not findings else 1)"
+    ;;
+  :testing:determinismReplay)
+    run_py "from testing.determinism.replay import replay_twice
+result = replay_twice(seed=1234, steps=['boot', 'frame', 'frame'])
+print('determinism replay: byte_identical=%s logs_identical=%s seed=%s' % (result['byte_identical'], result['logs_identical'], result['seed']))
+raise SystemExit(0 if (result['byte_identical'] and result['logs_identical']) else 1)"
     ;;
   *)
     echo "gradlew: unknown task '$TASK'" >&2
