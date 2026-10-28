@@ -179,3 +179,52 @@ test('null dynamic and absent dynamic resolve identically (seed fallback, no bre
   const absent = theme.resolveTokens('Chip', 'light');
   assert.deepEqual(absent, explicitNull, 'dynamic null and dynamic absent must both use the seed');
 });
+
+// ---------------------------------------------------------------------------
+// Security coverage (Stage 4): unmount / clearMounted repaint accounting
+// ---------------------------------------------------------------------------
+
+test('resolving 2 components then setTheme reports repainted 2', () => {
+  const theme = require('../theme.js');
+  theme.clearMounted();
+  theme.resolveTokens('Button', 'light');
+  theme.resolveTokens('Card', 'light');
+  const result = theme.setTheme({ mode: 'dark', seed: SEED, dynamic: null });
+  assert.equal(result.repainted, 2, 'setTheme must repaint exactly the 2 mounted components');
+  assert.equal(result.reinstantiated, 0);
+  assert.equal(result.frames, 1);
+});
+
+test('after unmount(one) the next setTheme reports repainted 1', () => {
+  const theme = require('../theme.js');
+  theme.clearMounted();
+  theme.resolveTokens('Button', 'light');
+  theme.resolveTokens('Card', 'light');
+  theme.unmount('Button');
+  const result = theme.setTheme({ mode: 'dark', seed: SEED, dynamic: null });
+  assert.equal(result.repainted, 1, 'unmounted component must no longer be repainted');
+  assert.equal(result.reinstantiated, 0);
+  assert.equal(result.frames, 1);
+});
+
+test('after clearMounted() setTheme reports repainted 0', () => {
+  const theme = require('../theme.js');
+  theme.clearMounted();
+  theme.resolveTokens('Button', 'light');
+  theme.resolveTokens('Card', 'light');
+  theme.clearMounted();
+  const result = theme.setTheme({ mode: 'dark', seed: SEED, dynamic: null });
+  assert.equal(result.repainted, 0, 'no mounted components must repaint zero');
+  assert.equal(result.reinstantiated, 0);
+  assert.equal(result.frames, 1);
+});
+
+test('unmount of an unknown component does not throw and leaves the count unchanged', () => {
+  const theme = require('../theme.js');
+  theme.clearMounted();
+  theme.resolveTokens('Button', 'light');
+  theme.resolveTokens('Card', 'light');
+  assert.doesNotThrow(() => theme.unmount('NotMounted'), 'unmount of unknown must not throw');
+  const result = theme.setTheme({ mode: 'dark', seed: SEED, dynamic: null });
+  assert.equal(result.repainted, 2, 'unknown unmount must leave the mounted count unchanged');
+});
