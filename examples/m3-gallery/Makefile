@@ -10,6 +10,8 @@ UNSIGNED_APK = $(BUILD_DIR)/$(APP_NAME)-unsigned.apk
 ALIGNED_APK = $(BUILD_DIR)/$(APP_NAME)-aligned.apk
 SIGNED_APK = $(BUILD_DIR)/$(APP_NAME)-debug.apk
 DEBUG_KEYSTORE = debug.keystore
+ASSET_SRC = dist/tree.mui.bin
+ASSET_DST = assets/tree.mui.bin
 ANDROID_JAR = $(ANDROID_HOME)/platforms/android-34/android.jar
 ENGINE_LIBS = ../../build/android-arm64-v8a/libRuntime.so ../../build/android-armeabi-v7a/libRuntime.so ../../build/android-x86_64/libRuntime.so ../../build/android-x86/libRuntime.so
 
@@ -33,7 +35,7 @@ apk:
 	cp ../../build/android-x86/libRuntime.so $(STAGING_DIR)/lib/x86/libRuntime.so
 	cp $(BUILD_DIR)/dex/classes.dex $(STAGING_DIR)/classes.dex
 	cp -r tree/* $(STAGING_DIR)/assets/tree/ 2>/dev/null || cp -r assets/* $(STAGING_DIR)/assets/ 2>/dev/null || true
-	cd $(STAGING_DIR) && zip -r ../$(notdir $(UNSIGNED_APK)) AndroidManifest.xml classes.dex resources.arsc lib assets
+	cd $(STAGING_DIR) && zip -r ../$(notdir $(UNSIGNED_APK)) AndroidManifest.xml classes.dex lib assets && zip -0 ../$(notdir $(UNSIGNED_APK)) resources.arsc
 
 sign: apk
 	zipalign -f 4 $(UNSIGNED_APK) $(ALIGNED_APK)
@@ -46,6 +48,9 @@ verify: sign
 	if ! apksigner verify $(SIGNED_APK) >/dev/null 2>&1; then echo "error: verify failed: apksigner verify rejected $(SIGNED_APK)" >&2; exit 1; fi
 
 install: sign
+	mkdir -p $(dir $(ASSET_DST))
+	test -f $(ASSET_SRC) || { echo "error: install failed: missing build output at $(ASSET_SRC); run muse-native build first" >&2; exit 1; }
+	cp $(ASSET_SRC) $(ASSET_DST)
 	if ! adb devices | awk 'NR>1 && $$2=="device" { found=1 } END { exit !found }'; then echo "error: install failed: no device connected (adb devices shows no device); connect a device with USB debugging instead of partial-installing" >&2; exit 1; fi
 	adb install -r $(SIGNED_APK)
 

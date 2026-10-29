@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { View, Text, manifest, TopAppBar, NavigationRail } from '@muse/native';
+import { View, Text, manifest, components, TopAppBar, NavigationRail, OverlayHost } from '@muse/native';
 import { spring } from '@muse/core';
 import ButtonScreen from "./screens/ButtonScreen";
 import { buildStories } from "./stories";
@@ -122,10 +122,19 @@ export default function App() {
       <ButtonScreen />
       {stories.map((story, index) => {
         const rendered = story.render();
+        // Map the descriptor type string through the real @muse/native
+        // component table (RULE-M3-006): a bare <rendered.type /> would
+        // render the string as a host tag instead of the real component.
+        // Overlay members nest the inner component as OverlayHost content.
+        const StoryComponent = components[rendered.type];
         return (
           <View key={`${story.component}-${story.variant}-${story.state}-${story.theme}-${index}`}>
             <Text color={theme.onSurface}>{`${story.component} ${story.variant} ${story.state} ${story.theme}`}</Text>
-            <Text>{JSON.stringify(rendered)}</Text>
+            {rendered.host ? (
+              <OverlayHost content={<StoryComponent {...rendered.props} />} />
+            ) : (
+              <StoryComponent {...rendered.props} />
+            )}
           </View>
         );
       })}
