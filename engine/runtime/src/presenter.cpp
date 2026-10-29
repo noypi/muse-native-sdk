@@ -1,0 +1,96 @@
+// Opaque ANativeWindow attach (FR-RUNTIME-009 / AC-RUNTIME-027).
+// The JNI-carried window handle crosses as an opaque void* and is never
+// dereferenced as a View, per FR-CORE-004. Null/invalid handles fail closed:
+// no crash, no retained handle, no View creation. A single presenter owns the
+// window at a time (RULE-RUNTIME-006): a second attach without an intervening
+// detach is rejected with kAlreadyAttached.
+
+#include "runtime/presenter.h"
+
+#include <cstdint>
+#include <cstring>
+
+namespace runtime {
+namespace {
+
+// Currently attached opaque handle; nullptr when detached.
+void* g_attached_window = nullptr;
+
+// Surface+swapchain created flag; cleared on DetachSurface().
+bool g_surface_created = false;
+
+// Magic word identifying a host-side window handle. On host builds the
+// ANativeWindow is a fake whose first word carries this magic behind the
+// non-Android guard; real NDK calls happen only under `__ANDROID__`.
+constexpr std::uint32_t kWindowMagic = 0xA11CEu;
+
+// Low-address guard: values this small can never be a mapped window object.
+// Rejects hostile sentinels (e.g. reinterpret_cast<void*>(0x1)) without
+// dereferencing them.
+constexpr std::uintptr_t kMinPlausibleAddress = 0x1000u;
+
+bool LooksLikeWindow(void* opaque_window) {
+#ifdef __ANDROID__
+  // On-device the handle is a real ANativeWindow owned by the host. Only the
+  // low-address guard applies here; the NDK owns validation beyond that, and
+  // no View dereference ever happens in this path.
+  (void)opaque_window;
+  return true;
+#else
+  // Host hermetic lane: validity is the magic word, read with memcpy so no
+  // type punning or View-shaped access occurs.
+  std::uint32_t magic = 0;
+  std::memcpy(&magic, opaque_window, sizeof(magic));
+  return magic == kWindowMagic;
+#endif
+}
+
+}  // namespace
+
+PresenterError AttachSurface(void* opaque_window) {
+  if (opaque_window == nullptr) {
+    return {PresenterCode::kNullWindow, "AttachSurface: null window handle"};
+  }
+  if (g_attached_window != nullptr) {
+    return {PresenterCode::kAlreadyAttached,
+            "AttachSurface: presenter already attached; detach first"};
+  }
+  if (reinterpret_cast<std::uintptr_t>(opaque_window) <
+      kMinPlausibleAddress) {
+    return {PresenterCode::kInvalidWindow,
+            "AttachSurface: invalid window handle (unmapped address)"};
+  }
+  if (!LooksLikeWindow(opaque_window)) {
+    return {PresenterCode::kInvalidWindow,
+            "AttachSurface: invalid window handle (not an ANativeWindow)"};
+  }
+  g_attached_window = opaque_window;
+  return {PresenterCode::kOk, ""};
+}
+
+PresenterError DetachSurface() {
+  g_attached_window = nullptr;
+  g_surface_created = false;
+  return {PresenterCode::kOk, ""};
+}
+
+PresenterError CreateSurfaceAndSwapchain(const BackendProbe& probe) {
+  // Probe result is never assumed: extension absence fails on every backend
+  // path before any surface work, so nothing is created or presented.
+  if (!probe.android_surface_ext_present) {
+    return {PresenterCode::kMissingExtension,
+            "CreateSurfaceAndSwapchain: missing VK_KHR_android_surface; "
+            "surface not created, nothing presented"};
+  }
+  // No View creation: the attached ANativeWindow handle is only retained,
+  // never dereferenced as a View, and creation without one fails closed.
+  if (g_attached_window == nullptr) {
+    return {PresenterCode::kCreateFailed,
+            "CreateSurfaceAndSwapchain: no attached surface; attach a "
+            "window before creating surface+swapchain"};
+  }
+  g_surface_created = true;
+  return {PresenterCode::kOk, ""};
+}
+
+}  // namespace runtime
