@@ -151,3 +151,126 @@ describe('T1 single JNI_OnLoad definition (AC-PACKAGING-018)', () => {
     assert.equal(stubCalls.length, 0, 'T1 assertions must not shell out to any tool');
   });
 });
+
+// --- T2 root Makefile: engine-host / engine-android / clean + fail-closed ---
+// Scope: FR-PACKAGING-007 AC-PACKAGING-017/018/019 (TC-017/018/019).
+// Interface (plan T2 verbatim):
+//   `make engine-host | make engine-android [ABIS=...] | make clean` → exit 0
+//   on success, non-zero with stderr naming the expected NDK rev + offending
+//   path (missing/wrong NDK, misconfigured ABI dir) or the ABI slot vs ELF
+//   machine on arch mismatch.
+// Hermetic: Makefile-text assertions only; child_process stays stubbed (no
+// NDK/SDK/CMake/ctest/file/readelf, no device/network). RED until root
+// `Makefile` exists with the three targets and the NDK/arch gates.
+// ASSUMPTION A-M1 (contract genuinely silent): NDK pin text is the NFR-BUILD-016
+// rev `27.2.12479018` (r27); the gate names it via a Makefile variable or a
+// literal — tests accept either.
+// ASSUMPTION A-M2: supported ABI allow-list defaults to all four packaging slots
+// (`arm64-v8a`, `armeabi-v7a`, `x86_64`, `x86`) per plan A3; overridable via
+// `ABIS=...` on the make command line (`?=`/`ABIS` reference in text).
+// ASSUMPTION A-M3: ELF arch proof is a recipe-level gate comparing the `file`/
+// `readelf` machine string against the ABI slot with a non-zero `exit 1` on
+// mismatch; live compile/ELF proof is `tester` work (no NDK on this host).
+function readMakefile() {
+  assert.ok(fs.existsSync(ROOT_MAKEFILE),
+    'root Makefile must exist (T2 owns it; RED until the coder adds it)');
+  return fs.readFileSync(ROOT_MAKEFILE, 'utf8');
+}
+
+function targetBody(text, name) {
+  // Matches `name:` target header plus an optional `VAR ?= ...` preamble is
+  // asserted separately; body = text from the header to the next target/EOF.
+  const lines = text.split('\n');
+  const idx = lines.findIndex((l) => new RegExp(`^${name}\\s*:`).test(l));
+  assert.ok(idx !== -1, `root Makefile must define target: ${name}`);
+  let end = lines.length;
+  for (let i = idx + 1; i < lines.length; i += 1) {
+    if (/^[A-Za-z0-9_.-]+\s*:(?![:=])/.test(lines[i]) && !/^\s/.test(lines[i])) { end = i; break; }
+  }
+  return lines.slice(idx, end).join('\n');
+}
+
+describe('T2 root Makefile engine targets (AC-PACKAGING-017/018/019)', () => {
+  it('root Makefile exists with engine-host, engine-android, clean targets', () => {
+    const text = readMakefile();
+    for (const t of ['engine-host', 'engine-android', 'clean']) {
+      assert.match(text, new RegExp(`^${t}\\s*:`, 'm'), `missing make target: ${t}`);
+    }
+  });
+
+  it('engine-host configures + compiles + runs ctest green (AC-PACKAGING-017)', () => {
+    const body = targetBody(readMakefile(), 'engine-host');
+    assert.match(body, /cmake/i, 'engine-host must configure via cmake');
+    assert.match(body, /cmake\s+--build|make\b|\bninja\b/i, 'engine-host must compile the configured tree');
+    assert.match(body, /ctest/, 'engine-host must run ctest (exit 0 = green)');
+  });
+
+  it('engine-android pins NDK r27 27.2.12479018 (AC-PACKAGING-019)', () => {
+    const text = readMakefile();
+    assert.ok(text.includes('27.2.12479018'),
+      'root Makefile must pin NDK rev 27.2.12479018 (NFR-BUILD-016)');
+  });
+
+  it('engine-android defaults ABIS to the four-slot allow-list and honors ABIS=... (AC-PACKAGING-018)', () => {
+    const text = readMakefile();
+    for (const abi of ['arm64-v8a', 'armeabi-v7a', 'x86_64']) {
+      assert.ok(text.includes(abi), `engine-android must list ABI slot ${abi}`);
+    }
+    assert.ok(text.includes('x86'), 'engine-android must list ABI slot x86');
+    assert.match(text, /\bABIS\b/, 'engine-android must honor an ABIS=... override');
+  });
+
+  it('engine-android emits one arch-correct libRuntime.so per ABI (AC-PACKAGING-018)', () => {
+    const body = targetBody(readMakefile(), 'engine-android');
+    assert.ok(body.includes('libRuntime.so'), 'engine-android must build libRuntime.so per ABI');
+    assert.match(body, /\bfile\b|\breadelf\b/i,
+      'engine-android must verify ELF output with file/readelf');
+  });
+
+  it('arch mismatch fails the target naming slot vs ELF machine (AC-PACKAGING-018)', () => {
+    const body = targetBody(readMakefile(), 'engine-android');
+    assert.match(body, /aarch64/i, 'arch gate must name the aarch64 machine for arm64-v8a');
+    assert.match(body, /exit\s+1|&&\s*exit|false\b/,
+      'arch mismatch must fail the target (non-zero exit)');
+    assert.match(body, /ABI|slot|arm64-v8a/i,
+      'arch-mismatch error must name the offending ABI slot');
+  });
+
+  it('missing NDK fails closed before compilation naming rev + path (AC-PACKAGING-019)', () => {
+    const text = readMakefile();
+    const androidBody = targetBody(text, 'engine-android');
+    assert.match(androidBody, /ANDROID_NDK|NDK/i, 'engine-android must gate on the NDK location');
+    assert.match(androidBody, /27\.2\.12479018/,
+      'NDK gate must name the expected rev 27.2.12479018');
+    assert.match(androidBody, /not found|missing|NDK.*[Pp]ath|ANDROID_NDK_HOME|ANDROID_NDK_ROOT/i,
+      'NDK gate must name the offending path when the NDK is missing');
+    assert.match(androidBody, /exit\s+1/,
+      'missing-NDK gate must exit non-zero before compilation');
+  });
+
+  it('wrong NDK revision fails closed naming expected rev + path (AC-PACKAGING-019)', () => {
+    const text = readMakefile();
+    assert.match(text, /source\.properties|Pkg\.Revision|28\.|26\.|wrong|mismatch|expected/i,
+      'Makefile must compare the installed NDK revision against the pin and name the expected rev on mismatch');
+    const androidBody = targetBody(text, 'engine-android');
+    assert.match(androidBody, /exit\s+1/, 'wrong-rev gate must exit non-zero');
+  });
+
+  it('misconfigured ABI dir fails closed naming rev + path (AC-PACKAGING-019)', () => {
+    const body = targetBody(readMakefile(), 'engine-android');
+    assert.match(body, /ABI|ABIS/i, 'engine-android must validate the ABI dir/slot selection');
+    assert.match(body, /exit\s+1/, 'misconfigured ABI dir must fail the target non-zero');
+    assert.match(body, /27\.2\.12479018|expected/i, 'ABI-dir gate must name the expected NDK rev');
+  });
+
+  it('clean removes engine build outputs (T2 interface)', () => {
+    const body = targetBody(readMakefile(), 'clean');
+    assert.match(body, /rm\s+-rf|rmdir|\$\(BUILD|\bbuild\b/i,
+      'clean must remove engine build output directories');
+  });
+
+  it('hermetic: T2 asserts Makefile text only, zero tool invocations', () => {
+    readMakefile();
+    assert.equal(stubCalls.length, 0, 'T2 assertions must not shell out to any tool');
+  });
+});
