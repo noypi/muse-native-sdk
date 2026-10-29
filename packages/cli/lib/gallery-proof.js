@@ -139,8 +139,13 @@ function syncAssets(galleryDir) {
   if (!fs.existsSync(src)) {
     throw new Error(`asset-sync: missing build output at ${src}; run muse-native build first`);
   }
-  fs.mkdirSync(path.dirname(dest), { recursive: true });
-  fs.copyFileSync(src, dest);
+  try {
+    fs.mkdirSync(path.dirname(dest), { recursive: true });
+    fs.copyFileSync(src, dest);
+  } catch (err) {
+    if (err && (err.code === 'io-error' || /missing build output/.test(err.message || ''))) throw err;
+    failWith('io-error', 'asset-sync failed');
+  }
   return { src, dest };
 }
 
@@ -259,7 +264,7 @@ async function runGalleryProof({ serial, androidJar, outDir, readCounts, capture
   try {
     syncFn(galleryDir);
   } catch (err) {
-    if (err && /missing build output/.test(err.message || '')) throw err;
+    if (err && (err.code === 'io-error' || /missing build output/.test(err.message || ''))) throw err;
     failWith('device-unreachable', `asset-sync failed: ${(err && err.message) || String(err)}`);
   }
 
@@ -296,8 +301,7 @@ async function runGalleryProof({ serial, androidJar, outDir, readCounts, capture
   try {
     fs.mkdirSync(resolvedOut, { recursive: true });
   } catch (err) {
-    if (err && (err.code === 'blank-viewport' || err.code === 'device-unreachable')) throw err;
-    failWith('io-error', 'screenshot write failed: ' + err.message);
+    failWith('io-error', 'screenshot write failed');
   }
   const shots = [];
   for (let page = 0; page < pages; page++) {
@@ -505,7 +509,7 @@ function saveScreenshot({ serial, page, shot, frame } = {}) {
     writeBytes(shot, Buffer.from(out));
   } catch (err) {
     if (err && (err.code === 'blank-viewport' || err.code === 'device-unreachable')) throw err;
-    failWith('io-error', 'screenshot write failed: ' + err.message);
+    failWith('io-error', 'screenshot write failed');
   }
   return Promise.resolve(shot);
 }
