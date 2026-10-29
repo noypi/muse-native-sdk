@@ -26,7 +26,6 @@
 #include <cstring>
 #include <filesystem>
 #include <string>
-#include <vector>
 
 namespace fs = std::filesystem;
 
@@ -38,7 +37,6 @@ std::string g_bridge_src;
 std::string g_jni_bridge_src;
 std::string g_engine_include;
 std::string g_runtime_lib;  // may be empty -> compile jni_bridge.cpp.o fallback
-std::vector<std::string> g_jni_includes;
 std::string g_treebridge_obj;
 std::string g_engine_obj;
 std::string g_shared_lib;
@@ -155,40 +153,6 @@ void resolve_inputs() {
       }
     }
   }
-  std::string java_include = getenv_str("JAVA_INCLUDE");
-  std::string jni_flags;
-  if (!java_include.empty()) {
-    jni_flags = include_flags(java_include);
-  } else {
-    const char* pinned[] = {
-        "/usr/lib/jvm/java-21-openjdk-amd64/include",
-        "/usr/lib/jvm/java-21-openjdk-amd64/include/linux",
-    };
-    for (const char* dir : pinned) {
-      std::error_code ec;
-      if (fs::is_directory(dir, ec) && !ec) {
-        g_jni_includes.emplace_back(dir);
-        jni_flags += std::string(" -I\"") + dir + "\"";
-      }
-    }
-    // $JAVA_HOME fallback when the pinned sysroot is absent.
-    std::string java_home = getenv_str("JAVA_HOME");
-    if (g_jni_includes.empty() && !java_home.empty()) {
-      for (const char* sub : {"/include", "/include/linux"}) {
-        std::string dir = java_home + sub;
-        std::error_code ec;
-        if (fs::is_directory(dir, ec) && !ec) {
-          jni_flags += " -I\"" + dir + "\"";
-        }
-      }
-    }
-  }
-  (void)jni_flags;
-  // Stash the assembled -I flags in g_tmpdir-adjacent storage via statics.
-  static std::string s_jni_flags;
-  s_jni_flags = jni_flags;
-  // Re-expose through a file-scope accessor below.
-  (void)s_jni_flags;
 }
 
 const std::string& jni_flags() {
@@ -316,8 +280,7 @@ static std::string dynamic_symbols() {
 }
 
 // Named case: both Activity natives are exported by the app-shell link.
-static bool check_both_activity_natives_exported() {
-  std::string syms = dynamic_symbols();
+static bool check_both_activity_natives_exported(const std::string& syms) {
   if (syms.empty()) {
     std::printf("  detail: nm -D produced no output (nm missing or link "
                 "absent)\n");
@@ -336,8 +299,7 @@ static bool check_both_activity_natives_exported() {
 }
 
 // Named case: exactly one dynamic JNI_OnLoad (`grep -c " T JNI_OnLoad"` == 1).
-static bool check_exactly_one_jni_onload() {
-  std::string syms = dynamic_symbols();
+static bool check_exactly_one_jni_onload(const std::string& syms) {
   if (syms.empty()) {
     std::printf("  detail: nm -D produced no output (nm missing or link "
                 "absent)\n");
@@ -377,8 +339,20 @@ static int run_link_check() {
     std::printf("jni_bridge_link: %d failing (link stage)\n", failures);
     return 1;
   }
-  RUN_CASE(check_both_activity_natives_exported);
-  RUN_CASE(check_exactly_one_jni_onload);
+  // Single `nm -D` invocation per run; both symbol checks share the output.
+  const std::string syms = dynamic_symbols();
+  if (!check_both_activity_natives_exported(syms)) {
+    std::printf("FAIL check_both_activity_natives_exported\n");
+    ++failures;
+  } else {
+    std::printf("PASS check_both_activity_natives_exported\n");
+  }
+  if (!check_exactly_one_jni_onload(syms)) {
+    std::printf("FAIL check_exactly_one_jni_onload\n");
+    ++failures;
+  } else {
+    std::printf("PASS check_exactly_one_jni_onload\n");
+  }
 #undef RUN_CASE
   if (failures > 0) {
     std::printf("jni_bridge_link: %d failing\n", failures);
