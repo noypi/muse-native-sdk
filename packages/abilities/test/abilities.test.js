@@ -198,3 +198,84 @@ describe('T2 — turnId-stamped bridge with stale-id rule (AC-MUSE-040)', () => 
     assert.equal(code, 'stale-id');
   });
 });
+
+// ---- T3 — tools() snapshot (FR-MUSE-012, FR-MUSE-013) ----
+// Shared file assigned to T1 per GR-08 T1.8; T3 contract maps to this file.
+
+describe('T3 — registry exposes tools() as a function', () => {
+  it('registry exposes a tools function', () => {
+    const registry = abilities.createRegistry({ capabilities: ['gallery.read'] });
+    assert.equal(typeof registry.tools, 'function');
+  });
+
+  it('empty registry tools() returns an empty array', () => {
+    const registry = abilities.createRegistry({ capabilities: [] });
+    assert.deepEqual(registry.tools(), []);
+  });
+});
+
+describe('T3 — tools() snapshot derived from registered abilities', () => {
+  it('after registering two abilities tools() returns both with matching arg maps', () => {
+    const registry = abilities.createRegistry({
+      capabilities: ['gallery.read', 'notes.write'],
+    });
+    registry.register(validAbility());
+    registry.register(
+      validAbility({
+        name: 'notes.save',
+        capabilities: ['notes.write'],
+        args: { title: 'string', count: 'number' },
+      })
+    );
+    const tools = registry.tools();
+    assert.equal(tools.length, 2);
+    const byName = new Map(tools.map((t) => [t.name, t]));
+    assert.deepEqual(byName.get('gallery.open').args, { itemId: 'string' });
+    assert.deepEqual(byName.get('gallery.open').capabilities, ['gallery.read']);
+    assert.deepEqual(byName.get('notes.save').args, {
+      title: 'string',
+      count: 'number',
+    });
+    assert.deepEqual(byName.get('notes.save').capabilities, ['notes.write']);
+  });
+
+  it('registering a third ability updates the next tools() snapshot with no separate declaration', () => {
+    const registry = abilities.createRegistry({ capabilities: ['gallery.read'] });
+    registry.register(validAbility());
+    registry.register(
+      validAbility({ name: 'gallery.close', args: { itemId: 'string' } })
+    );
+    assert.equal(registry.tools().length, 2);
+    registry.register(
+      validAbility({ name: 'gallery.focus', args: { itemId: 'string' } })
+    );
+    const tools = registry.tools();
+    assert.equal(tools.length, 3);
+    assert.deepEqual(
+      tools.map((t) => t.name).sort(),
+      ['gallery.close', 'gallery.focus', 'gallery.open']
+    );
+  });
+
+  it('tools() entries carry only name, args and capabilities (no invoke)', () => {
+    const registry = abilities.createRegistry({ capabilities: ['gallery.read'] });
+    registry.register(validAbility());
+    const [entry] = registry.tools();
+    assert.deepEqual(Object.keys(entry).sort(), ['args', 'capabilities', 'name']);
+  });
+
+  it('tools() is a pure snapshot: mutating a snapshot does not change the next one', () => {
+    // ASSUMPTION: "pure snapshot" means each tools() call returns fresh
+    // objects; mutating a returned entry must not leak into the registry.
+    const registry = abilities.createRegistry({ capabilities: ['gallery.read'] });
+    registry.register(validAbility());
+    const first = registry.tools();
+    first[0].args.injected = 'string';
+    first[0].capabilities.push('notes.write');
+    first.push({ name: 'bogus.op', args: {}, capabilities: [] });
+    const second = registry.tools();
+    assert.equal(second.length, 1);
+    assert.deepEqual(second[0].args, { itemId: 'string' });
+    assert.deepEqual(second[0].capabilities, ['gallery.read']);
+  });
+});

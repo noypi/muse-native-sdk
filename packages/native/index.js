@@ -490,4 +490,8 @@ const components = { ...tier1, ...tier2, ...tier3 };
 const primitives = manifest.components.map((entry) => entry.name);
 
 module.exports = { primitives, components, manifest, driveState, createTextInput, TextInput };
+// FR-MUSE-013 — connector re-export (T4, additive; existing surface untouched).
+// MuseMcpHandle is `{ registry, tools, call, dispose }` from ./muse-mcp.js.
+const { createMuseMcp } = require('./muse-mcp.js');
+module.exports.createMuseMcp = createMuseMcp;
 module.exports.lintAppLiteral = require('./scripts/check-tokens.js').lintAppLiteral;

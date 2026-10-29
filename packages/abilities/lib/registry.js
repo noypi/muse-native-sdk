@@ -53,7 +53,17 @@ function createRegistry(options) {
     return ability.invoke(args === undefined ? {} : args, { turnId });
   }
 
-  return { register, call };
+  function tools() {
+    return Array.from(byName.values()).map((ability) => ({
+      name: ability.name,
+      args: Object.assign({}, ability.args),
+      capabilities: Array.isArray(ability.capabilities)
+        ? ability.capabilities.slice()
+        : [],
+    }));
+  }
+
+  return { register, call, tools };
 }
 
 module.exports = { createRegistry };
