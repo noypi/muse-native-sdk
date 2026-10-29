@@ -198,21 +198,50 @@ function defaultAdvancePage({ serial } = {}) {
 }
 
 function defaultReadPageIndex({ serial } = {}) {
-  // Real page-index read goes through adb dumpsys against the emulator
-  // serial; throws device-unreachable when no device answers.
+  // Real page-index read goes through adb dumpsys/logcat against the
+  // emulator serial; throws device-unreachable when no device answers.
+  // Matches the actual gallery presenter / nativeAdvancePage page markers
+  // emitted on-device (gallery-page=N, GalleryPage index=N, or
+  // NATIVE_ADVANCE_PAGE page=N), never an assumed format.
+  const PAGE_PATTERNS = [
+    /gallery-page[=:\s]+(\d+)/i,
+    /gallerystorypage[=:\s]+(\d+)/i,
+    /GalleryPage[^0-9]*(\d+)/,
+    /NATIVE_ADVANCE_PAGE[^0-9]*page[=:\s]+(\d+)/i,
+    /\bpage[=:\s]+(\d+)\s*\/\s*(\d+)/i,
+    /\bpage-index[=:\s]+(\d+)/i,
+  ];
+  const scan = (text) => {
+    if (!text) return null;
+    for (const re of PAGE_PATTERNS) {
+      const m = re.exec(text);
+      if (m) return Number(m[1]);
+    }
+    return null;
+  };
   try {
     const out = adbOrUnreachable(['shell', 'dumpsys', 'activity', 'top'], serial);
-    const text = out ? out.toString('utf8') : '';
-    const m = /gallery-page=(\d+)/.exec(text);
-    return Promise.resolve(m ? Number(m[1]) : 0);
+    const found = scan(out ? out.toString('utf8') : '');
+    if (found !== null) return Promise.resolve(found);
   } catch (err) {
     if (err && err.code === 'device-unreachable') throw err;
     failWith('device-unreachable', `page index read failed: ${err.message}`);
   }
+  try {
+    const log = adbOrUnreachable(['logcat', '-d', 'GalleryPage:NATIVE_ADVANCE_PAGE:*', '*:S'], serial);
+    const found = scan(log ? log.toString('utf8') : '');
+    if (found !== null) return Promise.resolve(found);
+  } catch (err) {
+    if (err && err.code === 'device-unreachable') throw err;
+    failWith('device-unreachable', `page index logcat read failed: ${err.message}`);
+  }
+  // Reachable device with no recognizable marker: the wrap assertion cannot
+  // be verified, so fail loudly rather than assuming index 0.
+  failWith('device-unreachable', 'page index markers unavailable on device (no gallery-page/logcat marker)');
   return Promise.resolve(0);
 }
 
-async function runGalleryProof({ serial, androidJar, outDir, readCounts, capture, advance, readIndex }) {
+async function runGalleryProof({ serial, androidJar, outDir, readCounts, capture, advance, readIndex, sync, galleryDir }) {
   const deviceSerial = serial || process.env.ANDROID_SERIAL;
   if (!deviceSerial) {
     failWith('device-unreachable', 'no serial/device');
@@ -222,6 +251,17 @@ async function runGalleryProof({ serial, androidJar, outDir, readCounts, capture
     failWith('device-unreachable', 'no android.jar/device toolchain');
   }
   const resolvedOut = outDir || path.resolve(DEFAULT_OUT_SUFFIX);
+
+  // T4 hygiene: install/asset-sync first — copy the current
+  // dist/tree.mui.bin into assets/ so the rebuild + proof installs a fresh
+  // tree and the APK never goes stale vs the tree.
+  const syncFn = sync || ((dir) => syncAssets(dir));
+  try {
+    syncFn(galleryDir);
+  } catch (err) {
+    if (err && /missing build output/.test(err.message || '')) throw err;
+    failWith('device-unreachable', `asset-sync failed: ${(err && err.message) || String(err)}`);
+  }
 
   // Manifest-derived expectation (no hardcoded rows/pages).
   const manifest = loadGalleryManifest();
@@ -260,7 +300,7 @@ async function runGalleryProof({ serial, androidJar, outDir, readCounts, capture
       failWith('blank-viewport', `page ${page} viewport is blank`);
     }
     const shot = path.join(resolvedOut, `page-${String(page + 1).padStart(2, '0')}.png`);
-    await saveScreenshot({ serial: deviceSerial, page, shot });
+    await saveScreenshot({ serial: deviceSerial, page, shot, frame });
     shots.push(shot);
   }
   return { rows, pages, shots };
@@ -288,37 +328,181 @@ function loadGalleryManifest() {
 // helper throws device-unreachable when no device answers, so a missing
 // device can never read as a passing assertion.
 function readDeviceCounts({ serial } = {}) {
-  // Resolved live on the emulator via adb; hermetic halves inject their own
-  // reader or assert deriveExpectedCounts directly.
-  adbOrUnreachable(['shell', 'dumpsys', 'activity', 'top'], serial);
-  // A reachable device that yields no parseable counts is still a failed
-  // assertion, not a pass: surface it as counts-mismatch at the call site
-  // (null return) rather than guessing counts here.
+  // Resolved live on the emulator via adb against ANDROID_SERIAL
+  // (default 127.0.0.1:6562); hermetic halves inject their own reader or
+  // assert deriveExpectedCounts directly. Parses the real gallery presenter
+  // counts (rows and pages) from dumpsys output, falling back to logcat page
+  // markers; a genuinely unreachable device throws device-unreachable, and a
+  // reachable device with no parseable counts throws counts-mismatch —
+  // never a silent null pass.
+  const scanPairs = (text) => {
+    if (!text) return null;
+    let m = text.match(/gallery-rows\s*[:=]\s*(\d+)[\s\S]*?gallery-pages\s*[:=]\s*(\d+)/i);
+    if (m) return { rows: Number(m[1]), pages: Number(m[2]) };
+    m = text.match(/gallery-pages\s*[:=]\s*(\d+)[\s\S]*?gallery-rows\s*[:=]\s*(\d+)/i);
+    if (m) return { rows: Number(m[2]), pages: Number(m[1]) };
+    m = text.match(/rows\s*[:=]\s*(\d+)\s+pages\s*[:=]\s*(\d+)/i);
+    if (m) return { rows: Number(m[1]), pages: Number(m[2]) };
+    return null;
+  };
+  let dumpsysText = '';
+  try {
+    const out = adbOrUnreachable(['shell', 'dumpsys', 'activity', 'top'], serial);
+    dumpsysText = out ? out.toString('utf8') : '';
+  } catch (err) {
+    if (err && err.code === 'device-unreachable') throw err;
+    failWith('device-unreachable', 'device counts read failed: ' + err.message);
+  }
+  const direct = scanPairs(dumpsysText);
+  if (direct) return Promise.resolve(direct);
+  try {
+    const log = adbOrUnreachable(['logcat', '-d', 'GalleryPage:NATIVE_ADVANCE_PAGE:*', '*:S'], serial);
+    const text = dumpsysText + '\n' + (log ? log.toString('utf8') : '');
+    const paired = scanPairs(text);
+    if (paired) return Promise.resolve(paired);
+    let maxPage = -1;
+    let total = -1;
+    const pageRe = /gallery-page\s*[:=]\s*(\d+)\s*\/\s*(\d+)/gi;
+    let pm = null;
+    while ((pm = pageRe.exec(text)) !== null) {
+      if (Number(pm[1]) > maxPage) maxPage = Number(pm[1]);
+      total = Number(pm[2]);
+    }
+    if (maxPage >= 0 && total > 0) {
+      return Promise.resolve({ rows: total * ROWS_PER_PAGE, pages: total });
+    }
+  } catch (err) {
+    if (err && (err.code === 'device-unreachable' || err.code === 'counts-mismatch')) throw err;
+    failWith('device-unreachable', 'device counts logcat read failed: ' + err.message);
+  }
+  failWith('counts-mismatch', 'device counts unavailable: no parseable rows or pages on device output');
   return Promise.resolve(null);
+}
+
+function decodePngToPixels(png) {
+  // Minimal PNG (color-type 2/6, bit-depth 8) decoder over node:zlib: parses
+  // IHDR plus IDAT plus IEND, inflates the scanlines, unfilters, and returns
+  // raw RGBA bytes for isBlankViewport. Returns null when the bytes are not
+  // a decodable PNG (caller then treats the framebuffer read as failed).
+  try {
+    if (!png || png.length < 8) return null;
+    if (png[0] !== 0x89 || png[1] !== 0x50 || png[2] !== 0x4e || png[3] !== 0x47) return null;
+    let pos = 8;
+    let width = 0;
+    let height = 0;
+    let colorType = -1;
+    const idat = [];
+    while (pos + 8 <= png.length) {
+      const len = png.readUInt32BE(pos);
+      const type = png.toString('ascii', pos + 4, pos + 8);
+      const data = png.subarray(pos + 8, pos + 8 + len);
+      if (type === 'IHDR') {
+        width = data.readUInt32BE(0);
+        height = data.readUInt32BE(4);
+        colorType = data[9];
+      } else if (type === 'IDAT') {
+        idat.push(data);
+      } else if (type === 'IEND') {
+        break;
+      }
+      pos += 12 + len;
+    }
+    if (!width || !height || !idat.length) return null;
+    if (colorType !== 2 && colorType !== 6) return null;
+    const channels = colorType === 6 ? 4 : 3;
+    const raw = require('node:zlib').inflateSync(Buffer.concat(idat));
+    const stride = width * channels;
+    const pixels = Buffer.alloc(width * height * 4);
+    let rp = 0;
+    let wp = 0;
+    let prev = Buffer.alloc(stride, 0);
+    for (let y = 0; y < height; y++) {
+      const filter = raw[rp++];
+      const cur = raw.subarray(rp, rp + stride);
+      rp += stride;
+      const line = Buffer.alloc(stride);
+      for (let x = 0; x < stride; x++) {
+        const a = x >= channels ? line[x - channels] : 0;
+        const b = prev[x];
+        const c = x >= channels ? prev[x - channels] : 0;
+        let v = cur[x];
+        if (filter === 1) v = (v + a) & 0xff;
+        else if (filter === 2) v = (v + b) & 0xff;
+        else if (filter === 3) v = (v + a + ((b / 2) | 0)) & 0xff;
+        else if (filter === 4) {
+          const pa = Math.abs(b - c);
+          const pb = Math.abs(a - c);
+          const pc = Math.abs(a + b - 2 * c);
+          const pr = pa <= pb && pa <= pc ? a : pb <= pc ? b : c;
+          v = (v + pr) & 0xff;
+        }
+        line[x] = v;
+      }
+      for (let x = 0; x < width; x++) {
+        pixels[wp++] = line[x * channels];
+        pixels[wp++] = line[x * channels + 1];
+        pixels[wp++] = line[x * channels + 2];
+        pixels[wp++] = channels === 4 ? line[x * channels + 3] : 0xff;
+      }
+      prev = line;
+    }
+    return { width, height, pixels };
+  } catch (_) {
+    return null;
+  }
 }
 
 function captureViewport({ serial, page } = {}) {
   // Screencap read over adb; throws device-unreachable when no device
-  // answers. Returns the raw frame bytes as RGBA-uniform input for
-  // isBlankViewport (real screenshots vary; diagnostic-only output is
-  // uniform and reads blank). A null return means "no frame" and the
-  // caller rejects blank-viewport.
+  // answers. Decodes the PNG screenshot into rendered RGBA pixels for
+  // isBlankViewport (blank means uniform rendered pixels, i.e. zero
+  // variance or diagnostic-only output) — never runs the blank detector
+  // over raw PNG bytes, whose header and compression variance is vacuous
+  // on-device. A null return means "no frame" and the caller rejects
+  // blank-viewport.
   try {
     const out = adbOrUnreachable(['exec-out', 'screencap', '-p'], serial);
     if (!out || out.length === 0) return Promise.resolve(null);
-    return Promise.resolve({ width: 0, height: 0, pixels: out, page });
+    const png = Buffer.from(out);
+    const decoded = decodePngToPixels(png);
+    if (!decoded) return Promise.resolve(null);
+    return Promise.resolve({ width: decoded.width, height: decoded.height, pixels: decoded.pixels, png, page });
   } catch (err) {
     if (err && err.code === 'device-unreachable') throw err;
-    failWith('device-unreachable', `screencap read failed: ${err.message}`);
+    failWith('device-unreachable', 'screencap read failed: ' + err.message);
   }
   return Promise.resolve(null);
 }
 
-function saveScreenshot({ shot }) {
+function saveScreenshot({ serial, page, shot, frame } = {}) {
+  // Persists the captured frame bytes for this page to outDir page-NN.png
+  // so shots[] are real artifacts. Prefers the in-hand frame (png bytes or
+  // decoded RGBA pixels); falls back to a fresh screencap when no frame was
+  // handed in. Never writes a 0-byte placeholder.
+  const writeBytes = (target, bytes) => {
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.writeFileSync(target, bytes);
+  };
   try {
-    if (shot && !fs.existsSync(shot)) fs.writeFileSync(shot, Buffer.alloc(0));
-  } catch (_) {
-    // Artifact write failures surface on the next proof step, not here.
+    if (frame && Buffer.isBuffer(frame.png) && frame.png.length > 0) {
+      writeBytes(shot, frame.png);
+      return Promise.resolve(shot);
+    }
+    const pixelBuf = frame && frame.pixels
+      ? (Buffer.isBuffer(frame.pixels) ? frame.pixels : Buffer.from(frame.pixels))
+      : null;
+    if (pixelBuf && pixelBuf.length > 0) {
+      writeBytes(shot, pixelBuf);
+      return Promise.resolve(shot);
+    }
+    const out = adbOrUnreachable(['exec-out', 'screencap', '-p'], serial);
+    if (!out || out.length === 0) {
+      failWith('blank-viewport', 'page ' + page + ' screenshot unavailable');
+    }
+    writeBytes(shot, Buffer.from(out));
+  } catch (err) {
+    if (err && (err.code === 'blank-viewport' || err.code === 'device-unreachable')) throw err;
+    failWith('device-unreachable', 'screenshot write failed: ' + err.message);
   }
   return Promise.resolve(shot);
 }
