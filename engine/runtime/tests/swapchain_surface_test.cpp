@@ -165,7 +165,8 @@ static bool check_probed_present_creates_on_gles_path() {
 
 // Named case: creation without an attached surface fails closed with a clear
 // error (kCreateFailed or kInvalidWindow) + diagnostic — never presents
-// silently.
+// silently. A second create still fails closed and a subsequent valid
+// attach+create still succeeds (no state mutated).
 static bool check_create_without_attach_fails_closed() {
   reset_presenter();
   runtime::PresenterError err =
@@ -174,6 +175,65 @@ static bool check_create_without_attach_fails_closed() {
       (error_is(err, runtime::PresenterCode::kCreateFailed) ||
        error_is(err, runtime::PresenterCode::kInvalidWindow)) &&
       has_diagnostic(err);
+  runtime::PresenterError again =
+      runtime::CreateSurfaceAndSwapchain(probe_with_extension());
+  ok = ok &&
+       (error_is(again, runtime::PresenterCode::kCreateFailed) ||
+        error_is(again, runtime::PresenterCode::kInvalidWindow)) &&
+       has_diagnostic(again);
+#ifndef __ANDROID__
+  FakeNativeWindow w;
+  ok = ok && error_is(runtime::AttachSurface(static_cast<void*>(&w)),
+                      runtime::PresenterCode::kOk);
+#else
+  ok = ok && error_is(runtime::AttachSurface(reinterpret_cast<void*>(0x1234)),
+                      runtime::PresenterCode::kOk);
+#endif
+  ok = ok && error_is(runtime::CreateSurfaceAndSwapchain(probe_with_extension()),
+                      runtime::PresenterCode::kOk);
+  reset_presenter();
+  return ok;
+}
+
+// Named case: CreateSurfaceAndSwapchain records the probed backend for
+// downstream use — LastProbedBackend reflects the most recent successful
+// create on each backend path.
+static bool check_last_probed_backend_records_backend() {
+  reset_presenter();
+#ifndef __ANDROID__
+  FakeNativeWindow w;
+  if (!error_is(runtime::AttachSurface(static_cast<void*>(&w)),
+                runtime::PresenterCode::kOk)) {
+    reset_presenter();
+    return false;
+  }
+#else
+  if (!error_is(runtime::AttachSurface(reinterpret_cast<void*>(0x1234)),
+                runtime::PresenterCode::kOk)) {
+    reset_presenter();
+    return false;
+  }
+#endif
+  runtime::BackendProbe vulkan;
+  vulkan.backend = runtime::ProbeBackend::kVulkan11Emulated;
+  vulkan.android_surface_ext_present = true;
+  if (!error_is(runtime::CreateSurfaceAndSwapchain(vulkan),
+                runtime::PresenterCode::kOk)) {
+    reset_presenter();
+    return false;
+  }
+  bool ok = runtime::LastProbedBackend() ==
+            runtime::ProbeBackend::kVulkan11Emulated;
+  runtime::BackendProbe gles;
+  gles.backend = runtime::ProbeBackend::kGles32Window;
+  gles.android_surface_ext_present = true;
+  if (!error_is(runtime::CreateSurfaceAndSwapchain(gles),
+                runtime::PresenterCode::kOk)) {
+    reset_presenter();
+    return false;
+  }
+  ok = ok && runtime::LastProbedBackend() ==
+                 runtime::ProbeBackend::kGles32Window;
   reset_presenter();
   return ok;
 }
@@ -198,6 +258,7 @@ int main() {
   RUN_CASE(check_probed_present_creates_on_vulkan_path);
   RUN_CASE(check_probed_present_creates_on_gles_path);
   RUN_CASE(check_create_without_attach_fails_closed);
+  RUN_CASE(check_last_probed_backend_records_backend);
   if (failures > 0) {
     std::printf("swapchain_surface_test: %d failing\n", failures);
     return 1;

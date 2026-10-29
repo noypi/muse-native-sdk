@@ -62,15 +62,11 @@ bool returns_only_known_codes(const runtime::PresenterError& err) {
          err.code == runtime::PresenterCode::kPacingError;
 }
 
-bool attach_valid_window() {
-#ifndef __ANDROID__
-  FakeNativeWindow w;
-  runtime::PresenterError attach =
-      runtime::AttachSurface(static_cast<void*>(&w));
-#else
-  runtime::PresenterError attach =
-      runtime::AttachSurface(reinterpret_cast<void*>(0x1234));
-#endif
+bool attach_valid_window(void* handle) {
+  // The fake window outlives the call: callers declare it at test scope and
+  // pass the handle in, so the presenter never retains a dangling
+  // stack-local from this helper's return.
+  runtime::PresenterError attach = runtime::AttachSurface(handle);
   return error_is(attach, runtime::PresenterCode::kOk);
 }
 
@@ -82,8 +78,8 @@ bool create_swapchain_for_paced() {
                   runtime::PresenterCode::kOk);
 }
 
-bool setup_live_swapchain() {
-  return attach_valid_window() && create_swapchain_for_paced();
+bool setup_live_swapchain(void* handle) {
+  return attach_valid_window(handle) && create_swapchain_for_paced();
 }
 
 // Choreographer-deadline fakes (host lane; non-Android builds use a
@@ -103,6 +99,12 @@ runtime::ChoreographerDeadline expired_deadline() {
   return d;
 }
 
+runtime::ChoreographerDeadline negative_deadline() {
+  runtime::ChoreographerDeadline d{};
+  d.deadline_ns = -1;
+  return d;
+}
+
 runtime::DrawCmds some_cmds() {
   runtime::DrawCmds cmds;
   runtime::DrawCmd cmd;
@@ -114,7 +116,9 @@ runtime::DrawCmds some_cmds() {
 }  // namespace
 
 // Named case: PresentPaced with no swapchain fails closed with kPacingError
-// + diagnostic — nothing is presented without a live surface.
+// + diagnostic — nothing is presented without a live surface. A second call
+// still fails closed and a subsequent valid setup paces cleanly (no state
+// mutated).
 static bool check_paced_without_swapchain_fails_closed() {
   reset_presenter();
   runtime::DrawCmds cmds = some_cmds();
@@ -122,6 +126,20 @@ static bool check_paced_without_swapchain_fails_closed() {
       runtime::PresentPaced(cmds, fresh_deadline());
   bool ok = error_is(err, runtime::PresenterCode::kPacingError) &&
             has_diagnostic(err);
+  runtime::PresenterError again =
+      runtime::PresentPaced(cmds, fresh_deadline());
+  ok = ok && error_is(again, runtime::PresenterCode::kPacingError) &&
+       has_diagnostic(again);
+#ifndef __ANDROID__
+  FakeNativeWindow w;
+  void* handle = static_cast<void*>(&w);
+#else
+  void* handle = reinterpret_cast<void*>(0x1234);
+#endif
+  ok = ok && setup_live_swapchain(handle);
+  runtime::PresenterError paced =
+      runtime::PresentPaced(cmds, fresh_deadline());
+  ok = ok && error_is(paced, runtime::PresenterCode::kOk);
   reset_presenter();
   return ok;
 }
@@ -130,8 +148,14 @@ static bool check_paced_without_swapchain_fails_closed() {
 // fails closed with kDeadlineMissed + diagnostic — a missed vsync is never
 // presented as on-time.
 static bool check_paced_missed_deadline_fails_closed() {
+#ifndef __ANDROID__
+  FakeNativeWindow w;
+  void* handle = static_cast<void*>(&w);
+#else
+  void* handle = reinterpret_cast<void*>(0x1234);
+#endif
   reset_presenter();
-  if (!setup_live_swapchain()) {
+  if (!setup_live_swapchain(handle)) {
     reset_presenter();
     return false;
   }
@@ -149,8 +173,14 @@ static bool check_paced_missed_deadline_fails_closed() {
 // one deadline window never yields all-kOk; the excess is clamped
 // (kDeadlineMissed or kPacingError), so no unbounded render-ahead occurs.
 static bool check_paced_render_ahead_bound_honored() {
+#ifndef __ANDROID__
+  FakeNativeWindow w;
+  void* handle = static_cast<void*>(&w);
+#else
+  void* handle = reinterpret_cast<void*>(0x1234);
+#endif
   reset_presenter();
-  if (!setup_live_swapchain()) {
+  if (!setup_live_swapchain(handle)) {
     reset_presenter();
     return false;
   }
@@ -178,13 +208,19 @@ static bool check_paced_render_ahead_bound_honored() {
 // Named case: every PresentPaced error carries a diagnostic — kDeadlineMissed
 // and kPacingError are never silent.
 static bool check_paced_errors_carry_diagnostics() {
+#ifndef __ANDROID__
+  FakeNativeWindow w;
+  void* handle = static_cast<void*>(&w);
+#else
+  void* handle = reinterpret_cast<void*>(0x1234);
+#endif
   reset_presenter();
   runtime::DrawCmds cmds = some_cmds();
   runtime::PresenterError no_surface =
       runtime::PresentPaced(cmds, fresh_deadline());
   bool ok = error_is(no_surface, runtime::PresenterCode::kPacingError) &&
             has_diagnostic(no_surface);
-  if (!setup_live_swapchain()) {
+  if (!setup_live_swapchain(handle)) {
     reset_presenter();
     return false;
   }
@@ -200,8 +236,14 @@ static bool check_paced_errors_carry_diagnostics() {
 // (kOk | kDeadlineMissed | kPacingError) — no unknown code escapes, and the
 // single-call shape never crashes on a fresh deadline.
 static bool check_paced_return_set_is_closed() {
+#ifndef __ANDROID__
+  FakeNativeWindow w;
+  void* handle = static_cast<void*>(&w);
+#else
+  void* handle = reinterpret_cast<void*>(0x1234);
+#endif
   reset_presenter();
-  if (!setup_live_swapchain()) {
+  if (!setup_live_swapchain(handle)) {
     reset_presenter();
     return false;
   }
@@ -218,8 +260,14 @@ static bool check_paced_return_set_is_closed() {
 // fails closed with kPacingError + diagnostic — no dangling-surface present
 // on a stale deadline (depends on T4 OnSurfaceDestroyed).
 static bool check_paced_after_destroy_fails_closed() {
+#ifndef __ANDROID__
+  FakeNativeWindow w;
+  void* handle = static_cast<void*>(&w);
+#else
+  void* handle = reinterpret_cast<void*>(0x1234);
+#endif
   reset_presenter();
-  if (!setup_live_swapchain()) {
+  if (!setup_live_swapchain(handle)) {
     reset_presenter();
     return false;
   }
@@ -232,6 +280,30 @@ static bool check_paced_after_destroy_fails_closed() {
   runtime::PresenterError err =
       runtime::PresentPaced(cmds, fresh_deadline());
   bool ok = error_is(err, runtime::PresenterCode::kPacingError) &&
+            has_diagnostic(err);
+  reset_presenter();
+  return ok;
+}
+
+// Named case: PresentPaced against a negative choreographer deadline
+// (deadline_ns < 0) fails closed with kDeadlineMissed + diagnostic —
+// negative values are expired, never presented as on-time.
+static bool check_paced_negative_deadline_fails_closed() {
+#ifndef __ANDROID__
+  FakeNativeWindow w;
+  void* handle = static_cast<void*>(&w);
+#else
+  void* handle = reinterpret_cast<void*>(0x1234);
+#endif
+  reset_presenter();
+  if (!setup_live_swapchain(handle)) {
+    reset_presenter();
+    return false;
+  }
+  runtime::DrawCmds cmds = some_cmds();
+  runtime::PresenterError err =
+      runtime::PresentPaced(cmds, negative_deadline());
+  bool ok = error_is(err, runtime::PresenterCode::kDeadlineMissed) &&
             has_diagnostic(err);
   reset_presenter();
   return ok;
@@ -254,6 +326,7 @@ int main() {
   RUN_CASE(check_failure_protocol_shape);
   RUN_CASE(check_paced_without_swapchain_fails_closed);
   RUN_CASE(check_paced_missed_deadline_fails_closed);
+  RUN_CASE(check_paced_negative_deadline_fails_closed);
   RUN_CASE(check_paced_render_ahead_bound_honored);
   RUN_CASE(check_paced_errors_carry_diagnostics);
   RUN_CASE(check_paced_return_set_is_closed);

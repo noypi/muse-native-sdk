@@ -53,30 +53,61 @@ bool has_diagnostic(const runtime::PresenterError& err) {
 }  // namespace
 
 // Named case: null window fails closed with kNullWindow + diagnostic,
-// no crash, no handle retained.
+// no crash, no handle retained. A second null attach still fails closed
+// and a subsequent valid attach still succeeds (no state mutated).
 static bool check_null_window_fails_closed() {
   reset_presenter();
   runtime::PresenterError err = runtime::AttachSurface(nullptr);
   bool ok = error_is(err, runtime::PresenterCode::kNullWindow) &&
             has_diagnostic(err);
+  runtime::PresenterError again = runtime::AttachSurface(nullptr);
+  ok = ok && error_is(again, runtime::PresenterCode::kNullWindow) &&
+       has_diagnostic(again);
+#ifndef __ANDROID__
+  FakeNativeWindow w;
+  runtime::PresenterError good =
+      runtime::AttachSurface(static_cast<void*>(&w));
+#else
+  runtime::PresenterError good =
+      runtime::AttachSurface(reinterpret_cast<void*>(0x1234));
+#endif
+  ok = ok && error_is(good, runtime::PresenterCode::kOk);
   reset_presenter();
   return ok;
 }
 
 // Named case: invalid (non-null, non-window) handle fails closed with
 // kInvalidWindow + diagnostic, no crash, no leaked handle, no View creation.
+// A second invalid attach still fails closed and a subsequent valid attach
+// still succeeds (no state mutated).
 static bool check_invalid_handle_fails_closed() {
   reset_presenter();
 #ifndef __ANDROID__
   int bogus = 0;  // never a FakeNativeWindow: must be rejected, not probed.
   runtime::PresenterError err =
       runtime::AttachSurface(static_cast<void*>(&bogus));
+  bool ok = error_is(err, runtime::PresenterCode::kInvalidWindow) &&
+            has_diagnostic(err);
+  runtime::PresenterError again =
+      runtime::AttachSurface(static_cast<void*>(&bogus));
+  ok = ok && error_is(again, runtime::PresenterCode::kInvalidWindow) &&
+       has_diagnostic(again);
+  FakeNativeWindow w;
+  runtime::PresenterError good =
+      runtime::AttachSurface(static_cast<void*>(&w));
 #else
   runtime::PresenterError err =
       runtime::AttachSurface(reinterpret_cast<void*>(0x1));
-#endif
   bool ok = error_is(err, runtime::PresenterCode::kInvalidWindow) &&
             has_diagnostic(err);
+  runtime::PresenterError again =
+      runtime::AttachSurface(reinterpret_cast<void*>(0x1));
+  ok = ok && error_is(again, runtime::PresenterCode::kInvalidWindow) &&
+       has_diagnostic(again);
+  runtime::PresenterError good =
+      runtime::AttachSurface(reinterpret_cast<void*>(0x1234));
+#endif
+  ok = ok && error_is(good, runtime::PresenterCode::kOk);
   reset_presenter();
   return ok;
 }
@@ -154,6 +185,39 @@ static bool check_no_leaked_handle_after_failed_attach() {
   return ok;
 }
 
+// Named case: InvalidateWindow drops the retained handle — a subsequent
+// create fails closed (no dangling handle reports a false-kOk create) and
+// the window can be re-attached cleanly afterwards.
+static bool check_invalidate_window_drops_handle() {
+  reset_presenter();
+#ifndef __ANDROID__
+  FakeNativeWindow w;
+  void* handle = static_cast<void*>(&w);
+#else
+  void* handle = reinterpret_cast<void*>(0x1234);
+#endif
+  if (!error_is(runtime::AttachSurface(handle),
+                 runtime::PresenterCode::kOk)) {
+    reset_presenter();
+    return false;
+  }
+  runtime::PresenterError inv = runtime::InvalidateWindow(handle);
+  if (!error_is(inv, runtime::PresenterCode::kOk)) {
+    reset_presenter();
+    return false;
+  }
+  runtime::BackendProbe p;
+  p.backend = runtime::ProbeBackend::kVulkan11Emulated;
+  p.android_surface_ext_present = true;
+  runtime::PresenterError created = runtime::CreateSurfaceAndSwapchain(p);
+  bool ok = error_is(created, runtime::PresenterCode::kCreateFailed) &&
+            has_diagnostic(created);
+  ok = ok && error_is(runtime::AttachSurface(handle),
+                      runtime::PresenterCode::kOk);
+  reset_presenter();
+  return ok;
+}
+
 #define RUN_CASE(name)                                       \
   do {                                                       \
     if (!(name)()) {                                         \
@@ -174,6 +238,7 @@ int main() {
   RUN_CASE(check_valid_attach_detach_round_trips);
   RUN_CASE(check_double_attach_rejected);
   RUN_CASE(check_no_leaked_handle_after_failed_attach);
+  RUN_CASE(check_invalidate_window_drops_handle);
   if (failures > 0) {
     std::printf("surface_attach_test: %d failing\n", failures);
     return 1;

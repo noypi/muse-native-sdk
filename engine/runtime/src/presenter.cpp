@@ -4,14 +4,32 @@
 // no crash, no retained handle, no View creation. A single presenter owns the
 // window at a time (RULE-RUNTIME-006): a second attach without an intervening
 // detach is rejected with kAlreadyAttached.
+//
+// Ownership (RULE-RUNTIME-004): the host owns the window; the presenter only
+// retains the opaque handle between AttachSurface/OnSurfaceRecreated and
+// DetachSurface/OnSurfaceDestroyed/InvalidateWindow. The host MUST call one
+// of those before freeing the window. All global state is guarded by g_mu:
+// attach/detach (UI/lifecycle thread), PresentFrame (render thread), and
+// PresentPaced (choreographer/Swappy callback) run concurrently on device.
 
 #include "runtime/presenter.h"
 
 #include <cstdint>
 #include <cstring>
+#include <mutex>
+
+#ifndef __ANDROID__
+#include <sys/mman.h>
+#include <unistd.h>
+#endif
 
 namespace runtime {
 namespace {
+
+// Guards every global below; multi-flag transitions (teardown, recreate,
+// bg/fg) hold the lock across all flags so no thread observes a half-torn
+// swapchain.
+std::mutex g_mu;
 
 // Currently attached opaque handle; nullptr when detached.
 void* g_attached_window = nullptr;
@@ -26,11 +44,16 @@ bool g_surface_created = false;
 // handle is never touched here (RULE-RUNTIME-004): only presentation state.
 bool g_backgrounded = false;
 
-// DAG-recorded current-frame currency. Set only by the DAG record hook;
-// PresentFrame never infers currency from list shape (empty vs non-empty),
-// so hand-built lists that were never DAG-recorded always fail closed with
-// kNoCurrentFrame. Cleared on DetachSurface()/OnSurfaceDestroyed().
+// DAG-recorded current-frame currency. Set only by NoteFrameRecorded(), the
+// DAG record-path hook; PresentFrame never infers currency from list shape
+// (empty vs non-empty), so hand-built lists that were never DAG-recorded
+// always fail closed with kNoCurrentFrame. Cleared on
+// DetachSurface()/OnSurfaceDestroyed()/OnSurfaceRecreated()/InvalidateWindow().
 bool g_has_current_frame = false;
+
+// Last probed backend, recorded by CreateSurfaceAndSwapchain for downstream
+// use (the hermetic stub creates on either backend path).
+ProbeBackend g_last_backend = ProbeBackend::kVulkan11Emulated;
 
 // Magic word identifying a host-side window handle. On host builds the
 // ANativeWindow is a fake whose first word carries this magic behind the
@@ -39,8 +62,36 @@ constexpr std::uint32_t kWindowMagic = 0xA11CEu;
 
 // Low-address guard: values this small can never be a mapped window object.
 // Rejects hostile sentinels (e.g. reinterpret_cast<void*>(0x1)) without
-// dereferencing them.
+// touching the pointer.
 constexpr std::uintptr_t kMinPlausibleAddress = 0x1000u;
+
+#ifndef __ANDROID__
+// True when [ptr, ptr+size) lies in readable mapped memory. Uses msync as a
+// readability probe so an unmapped high address (e.g. 0xDEADBEEF forwarded
+// from Java) is reported unreadable WITHOUT dereferencing it.
+bool IsReadable(const void* ptr, std::size_t size) {
+  if (ptr == nullptr || size == 0) {
+    return false;
+  }
+  const long page = sysconf(_SC_PAGESIZE);
+  if (page <= 0) {
+    return false;
+  }
+  const std::uintptr_t addr = reinterpret_cast<std::uintptr_t>(ptr);
+  const std::uintptr_t base = addr & ~static_cast<std::uintptr_t>(page - 1);
+  const std::uintptr_t end = addr + size;
+  const std::uintptr_t aligned_end =
+      (end + static_cast<std::uintptr_t>(page - 1)) &
+      ~static_cast<std::uintptr_t>(page - 1);
+  const std::size_t len = aligned_end - base;
+  // MS_ASYNC never writes back; the call is only a validity probe.
+  // Returns 0 when every page in range is mapped; ENOMEM otherwise.
+  if (msync(reinterpret_cast<void*>(base), len, MS_ASYNC) == 0) {
+    return true;
+  }
+  return false;
+}
+#endif
 
 bool LooksLikeWindow(void* opaque_window) {
 #ifdef __ANDROID__
@@ -51,7 +102,12 @@ bool LooksLikeWindow(void* opaque_window) {
   return true;
 #else
   // Host hermetic lane: validity is the magic word, read with memcpy so no
-  // type punning or View-shaped access occurs.
+  // type punning or View-shaped access occurs — but ONLY after proving the
+  // page is readable, so a hostile unmapped address fails closed instead of
+  // segfaulting inside the probe.
+  if (!IsReadable(opaque_window, sizeof(std::uint32_t))) {
+    return false;
+  }
   std::uint32_t magic = 0;
   std::memcpy(&magic, opaque_window, sizeof(magic));
   return magic == kWindowMagic;
@@ -67,7 +123,7 @@ long long g_paced_window_ns = 0;
 bool g_paced_window_open = false;
 int g_paced_in_window = 0;
 
-void ResetPacedWindow() {
+void ResetPacedWindowLocked() {
   g_paced_window_ns = 0;
   g_paced_window_open = false;
   g_paced_in_window = 0;
@@ -79,6 +135,7 @@ PresenterError AttachSurface(void* opaque_window) {
   if (opaque_window == nullptr) {
     return {PresenterCode::kNullWindow, "AttachSurface: null window handle"};
   }
+  std::lock_guard<std::mutex> lock(g_mu);
   if (g_attached_window != nullptr) {
     return {PresenterCode::kAlreadyAttached,
             "AttachSurface: presenter already attached; detach first"};
@@ -97,11 +154,12 @@ PresenterError AttachSurface(void* opaque_window) {
 }
 
 PresenterError DetachSurface() {
+  std::lock_guard<std::mutex> lock(g_mu);
   g_attached_window = nullptr;
   g_surface_created = false;
   g_has_current_frame = false;
   g_backgrounded = false;
-  ResetPacedWindow();
+  ResetPacedWindowLocked();
   return {PresenterCode::kOk, ""};
 }
 
@@ -113,6 +171,7 @@ PresenterError CreateSurfaceAndSwapchain(const BackendProbe& probe) {
             "CreateSurfaceAndSwapchain: missing VK_KHR_android_surface; "
             "surface not created, nothing presented"};
   }
+  std::lock_guard<std::mutex> lock(g_mu);
   // No View creation: the attached ANativeWindow handle is only retained,
   // never dereferenced as a View, and creation without one fails closed.
   if (g_attached_window == nullptr) {
@@ -121,21 +180,56 @@ PresenterError CreateSurfaceAndSwapchain(const BackendProbe& probe) {
             "window before creating surface+swapchain"};
   }
   g_surface_created = true;
+  g_last_backend = probe.backend;
+  return {PresenterCode::kOk, ""};
+}
+
+void NoteFrameRecorded() {
+  std::lock_guard<std::mutex> lock(g_mu);
+  g_has_current_frame = true;
+}
+
+ProbeBackend LastProbedBackend() {
+  std::lock_guard<std::mutex> lock(g_mu);
+  return g_last_backend;
+}
+
+PresenterError InvalidateWindow(void* opaque_window) {
+  std::lock_guard<std::mutex> lock(g_mu);
+  // nullptr means "any": drop whatever is retained so a host that lost track
+  // of the exact handle still cannot leave a dangling pointer behind.
+  if (opaque_window != nullptr && opaque_window != g_attached_window) {
+    return {PresenterCode::kOk, ""};
+  }
+  g_attached_window = nullptr;
+  g_surface_created = false;
+  g_has_current_frame = false;
+  g_backgrounded = false;
+  ResetPacedWindowLocked();
   return {PresenterCode::kOk, ""};
 }
 
 PresenterError PresentFrame(const DrawCmds& cmds) {
   (void)cmds;
+  std::lock_guard<std::mutex> lock(g_mu);
   // No dangling-surface present: without a live swapchain nothing is
   // presented, whatever cmds holds.
   if (!g_surface_created) {
     return {PresenterCode::kNoSwapchain,
             "PresentFrame: no swapchain; frame not presented"};
   }
+  // Backgrounded suspends unpaced present exactly like the paced path: the
+  // swapchain is retained for foreground, but nothing is presented while
+  // backgrounded.
+  if (g_backgrounded) {
+    return {PresenterCode::kNoSwapchain,
+            "PresentFrame: backgrounded; frame not presented while suspended"};
+  }
   // Currency is DAG-recorded state, never inferred from list shape: only the
   // DAG-recorded current-frame set may be presented, so an empty or stale
   // (hand-built, never-DAG-recorded) acquisition fails closed here. The kOk
-  // visible-frames path is proven manually via examples/m3-gallery TC-029.
+  // visible-frames path is proven manually via examples/m3-gallery TC-029
+  // after the DAG record path calls NoteFrameRecorded().
   if (!g_has_current_frame) {
     return {PresenterCode::kNoCurrentFrame,
             "PresentFrame: no DAG-recorded current-frame DrawCmds; frame "
@@ -145,6 +239,7 @@ PresenterError PresentFrame(const DrawCmds& cmds) {
 }
 
 PresenterError OnSurfaceDestroyed() {
+  std::lock_guard<std::mutex> lock(g_mu);
   if (!g_surface_created) {
     return {PresenterCode::kNoSurface,
             "OnSurfaceDestroyed: no surface; nothing to destroy"};
@@ -156,7 +251,7 @@ PresenterError OnSurfaceDestroyed() {
   g_has_current_frame = false;
   g_backgrounded = false;
   g_attached_window = nullptr;
-  ResetPacedWindow();
+  ResetPacedWindowLocked();
   return {PresenterCode::kOk, ""};
 }
 
@@ -171,22 +266,27 @@ PresenterError OnSurfaceRecreated(void* opaque_window) {
             "OnSurfaceRecreated: invalid window handle (unmapped address); "
             "surface not recreated"};
   }
+  std::lock_guard<std::mutex> lock(g_mu);
   if (!LooksLikeWindow(opaque_window)) {
     return {PresenterCode::kRecreateFailed,
             "OnSurfaceRecreated: invalid window handle (not an "
             "ANativeWindow); surface not recreated"};
   }
-  // Fresh window replaces any prior handle; swapchain is re-created on it.
+  // Legal swap (documented in presenter.h): unlike AttachSurface, recreate
+  // while attached does NOT return kAlreadyAttached. Config-change delivers a
+  // fresh window owned by the host, and the presenter replaces the retained
+  // handle, re-creating surface+swapchain on it.
   // Currency stays dropped until the DAG records the next current frame.
   g_attached_window = opaque_window;
   g_surface_created = true;
   g_has_current_frame = false;
   g_backgrounded = false;
-  ResetPacedWindow();
+  ResetPacedWindowLocked();
   return {PresenterCode::kOk, ""};
 }
 
 PresenterError OnBackground() {
+  std::lock_guard<std::mutex> lock(g_mu);
   if (!g_surface_created) {
     return {PresenterCode::kNoSurface,
             "OnBackground: no surface; nothing to suspend"};
@@ -196,6 +296,7 @@ PresenterError OnBackground() {
 }
 
 PresenterError OnForeground() {
+  std::lock_guard<std::mutex> lock(g_mu);
   if (!g_surface_created) {
     return {PresenterCode::kNoSurface,
             "OnForeground: no surface; nothing to resume"};
@@ -206,6 +307,7 @@ PresenterError OnForeground() {
 
 PresenterError PresentPaced(const DrawCmds& cmds, ChoreographerDeadline deadline) {
   (void)cmds;
+  std::lock_guard<std::mutex> lock(g_mu);
   // No live swapchain: nothing is paced-presented without a live surface.
   // Backgrounded counts as no live surface here (swapchain retained for
   // foreground, presentation suspended), reported through the T5 fail-closed

@@ -60,7 +60,11 @@ PresenterError Runtime_detachSurface() {
   try {
     return DetachSurface();
   } catch (...) {
-    return {PresenterCode::kOk, ""};
+    // No exception may cross into the VM; report the failure with a
+    // diagnostic instead of masking it as success.
+    return {PresenterCode::kNoSurface,
+            "Runtime_detachSurface: exception during detach; surface state "
+            "ambiguous, re-attach before presenting"};
   }
 }
 

@@ -53,15 +53,11 @@ bool has_diagnostic(const runtime::PresenterError& err) {
   return !err.message.empty();
 }
 
-bool attach_valid_window() {
-#ifndef __ANDROID__
-  FakeNativeWindow w;
-  runtime::PresenterError attach =
-      runtime::AttachSurface(static_cast<void*>(&w));
-#else
-  runtime::PresenterError attach =
-      runtime::AttachSurface(reinterpret_cast<void*>(0x1234));
-#endif
+bool attach_valid_window(void* handle) {
+  // The fake window outlives the call: callers declare it at test scope and
+  // pass the handle in, so the presenter never retains a dangling
+  // stack-local from this helper's return.
+  runtime::PresenterError attach = runtime::AttachSurface(handle);
   return error_is(attach, runtime::PresenterCode::kOk);
 }
 
@@ -87,13 +83,28 @@ runtime::DrawCmds stale_cmds() {
 
 // Named case: PresentFrame with no swapchain fails closed with kNoSwapchain
 // + diagnostic — an empty/stale acquisition without current-frame DrawCmds
-// is never presented.
+// is never presented. A second call still fails closed and a subsequent
+// valid attach/create/record/present still succeeds (no state mutated).
 static bool check_present_without_swapchain_fails_closed() {
   reset_presenter();
   runtime::DrawCmds empty;
   runtime::PresenterError err = runtime::PresentFrame(empty);
   bool ok = error_is(err, runtime::PresenterCode::kNoSwapchain) &&
             has_diagnostic(err);
+  runtime::PresenterError again = runtime::PresentFrame(empty);
+  ok = ok && error_is(again, runtime::PresenterCode::kNoSwapchain) &&
+       has_diagnostic(again);
+#ifndef __ANDROID__
+  FakeNativeWindow w;
+  void* handle = static_cast<void*>(&w);
+#else
+  void* handle = reinterpret_cast<void*>(0x1234);
+#endif
+  ok = ok && attach_valid_window(handle) && create_swapchain_for_present();
+  runtime::NoteFrameRecorded();
+  runtime::DrawCmds cmds = stale_cmds();
+  ok = ok && error_is(runtime::PresentFrame(cmds),
+                      runtime::PresenterCode::kOk);
   reset_presenter();
   return ok;
 }
@@ -102,7 +113,13 @@ static bool check_present_without_swapchain_fails_closed() {
 // fails closed with kNoCurrentFrame + diagnostic — never presented.
 static bool check_present_empty_cmds_never_presented() {
   reset_presenter();
-  if (!attach_valid_window() || !create_swapchain_for_present()) {
+#ifndef __ANDROID__
+  FakeNativeWindow w;
+  void* handle = static_cast<void*>(&w);
+#else
+  void* handle = reinterpret_cast<void*>(0x1234);
+#endif
+  if (!attach_valid_window(handle) || !create_swapchain_for_present()) {
     reset_presenter();
     return false;
   }
@@ -119,7 +136,13 @@ static bool check_present_empty_cmds_never_presented() {
 // DAG-recorded current-frame set may be presented.
 static bool check_present_stale_cmds_never_presented() {
   reset_presenter();
-  if (!attach_valid_window() || !create_swapchain_for_present()) {
+#ifndef __ANDROID__
+  FakeNativeWindow w;
+  void* handle = static_cast<void*>(&w);
+#else
+  void* handle = reinterpret_cast<void*>(0x1234);
+#endif
+  if (!attach_valid_window(handle) || !create_swapchain_for_present()) {
     reset_presenter();
     return false;
   }
@@ -131,11 +154,40 @@ static bool check_present_stale_cmds_never_presented() {
   return ok;
 }
 
+// Named case: after the DAG record path calls NoteFrameRecorded(), the
+// recorded current-frame set presents with kOk on a live swapchain — the
+// positive path through the DAG currency setter.
+static bool check_present_after_record_returns_ok() {
+  reset_presenter();
+#ifndef __ANDROID__
+  FakeNativeWindow w;
+  void* handle = static_cast<void*>(&w);
+#else
+  void* handle = reinterpret_cast<void*>(0x1234);
+#endif
+  if (!attach_valid_window(handle) || !create_swapchain_for_present()) {
+    reset_presenter();
+    return false;
+  }
+  runtime::NoteFrameRecorded();
+  runtime::DrawCmds cmds = stale_cmds();
+  runtime::PresenterError err = runtime::PresentFrame(cmds);
+  bool ok = error_is(err, runtime::PresenterCode::kOk);
+  reset_presenter();
+  return ok;
+}
+
 // Named case: PresentFrame after the swapchain is gone (destroyed surface)
 // fails closed with kNoSwapchain + diagnostic — no dangling-surface present.
 static bool check_present_after_destroy_fails_closed() {
   reset_presenter();
-  if (!attach_valid_window() || !create_swapchain_for_present()) {
+#ifndef __ANDROID__
+  FakeNativeWindow w;
+  void* handle = static_cast<void*>(&w);
+#else
+  void* handle = reinterpret_cast<void*>(0x1234);
+#endif
+  if (!attach_valid_window(handle) || !create_swapchain_for_present()) {
     reset_presenter();
     return false;
   }
@@ -170,6 +222,7 @@ int main() {
   RUN_CASE(check_present_without_swapchain_fails_closed);
   RUN_CASE(check_present_empty_cmds_never_presented);
   RUN_CASE(check_present_stale_cmds_never_presented);
+  RUN_CASE(check_present_after_record_returns_ok);
   RUN_CASE(check_present_after_destroy_fails_closed);
   if (failures > 0) {
     std::printf("present_frame_test: %d failing\n", failures);
