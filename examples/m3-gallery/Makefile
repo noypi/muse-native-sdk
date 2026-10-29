@@ -37,7 +37,7 @@ apk:
 
 sign: apk
 	zipalign -f 4 $(UNSIGNED_APK) $(ALIGNED_APK)
-	apksigner sign --ks $(DEBUG_KEYSTORE) --ks-pass:android --key-pass:android --out $(SIGNED_APK) $(ALIGNED_APK)
+	apksigner sign --ks $(DEBUG_KEYSTORE) --ks-pass pass:android --key-pass pass:android --out $(SIGNED_APK) $(ALIGNED_APK)
 	@echo "signed debug build: $(SIGNED_APK) (debug key only)"
 
 verify: sign

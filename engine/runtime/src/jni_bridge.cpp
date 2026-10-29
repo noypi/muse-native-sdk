@@ -7,6 +7,19 @@
 #include "runtime/presenter.h"
 
 #include <cstdint>
+#include <cstdio>
+#include <cstring>
+#include <mutex>
+#include <string>
+#include <vector>
+
+#include "runtime/gallery_present.h"
+
+#ifdef __ANDROID__
+#include <android/log.h>
+#include <android/native_window.h>
+#include <android/native_window_jni.h>
+#endif
 
 // The shared Runtime target builds with CXX_VISIBILITY_PRESET hidden, so JNI
 // entry points resolved by name lookup must opt back into default visibility.
@@ -159,5 +172,291 @@ extern "C" MUSE_JNI_EXPORT jint Java_com_muse_devicelab_EngineHost_nativeDetachS
       env->ExceptionClear();
     }
     return static_cast<jint>(::runtime::PresenterCode::kInvalidWindow);
+  }
+}
+
+// JNI host entries for com.muse.host.MainActivity (Option A native host).
+// Spec position: JNI is the Activity/host entry only (FR-CORE-004,
+// RULE-CORE-003/004; NFR-RUNTIME-001) — never the frame renderer. The tree
+// asset crosses here as bytes; surface attach, page advance, frame raster,
+// and detach are thin host-entry gates over gallery_present (pixels stay
+// native: ANativeWindow lock/unlock, no View creation, no Java drawing).
+// No C++ exception and no pending JNI exception ever escapes into the VM.
+// Diagnostics go through __android_log_print (`adb logcat -s muse-host`).
+
+namespace {
+
+#ifdef __ANDROID__
+constexpr const char* kMuseLogTag = "muse-host";
+
+void MuseLogInfo(const std::string& msg) {
+  __android_log_print(ANDROID_LOG_INFO, kMuseLogTag, "%s", msg.c_str());
+}
+#endif
+
+struct GalleryHandle {
+  std::vector<std::uint8_t> tree;
+  std::vector<::runtime::GalleryRow> rows;
+  std::string parseError;
+  bool parsed = false;
+  int page = 0;
+#ifdef __ANDROID__
+  ANativeWindow* window = nullptr;
+#endif
+  std::mutex mu;
+};
+
+GalleryHandle* ToGallery(jlong handle) {
+  if (handle == 0) return nullptr;
+  return reinterpret_cast<GalleryHandle*>(static_cast<intptr_t>(handle));
+}
+
+#ifdef __ANDROID__
+// Renders the current page into the attached window. Callers must hold
+// g->mu: attach state, page, and rows are all mutated under that lock.
+void RenderLocked(GalleryHandle* g) {
+  ANativeWindow* win = g->window;
+  if (win == nullptr) {
+    return;  // No surface yet (or already detached): fail closed, no log
+             // spam — surface callbacks re-render once attached.
+  }
+  ANativeWindow_Buffer buf;
+  if (ANativeWindow_lock(win, &buf, nullptr) != 0 || buf.bits == nullptr) {
+    MuseLogInfo("nativeRenderFrame: window lock failed; frame skipped");
+    return;
+  }
+  int w = buf.width;
+  int h = buf.height;
+  int stride = buf.stride;
+  int pages = ::runtime::GalleryPageCount(g->rows, h);
+  if (pages > 0) {
+    g->page %= pages;
+    if (g->page < 0) g->page += pages;
+  }
+  std::string error = g->parseError;
+  int drawn = ::runtime::RasterGalleryPage(g->rows, g->page,
+                                           static_cast<std::uint32_t*>(buf.bits),
+                                           stride, w, h, &error);
+  ANativeWindow_unlockAndPost(win);
+  if (!error.empty() || drawn == 0) {
+    // Production logging is failure-only: a healthy frame stays silent.
+    char msg[192];
+    std::snprintf(msg, sizeof(msg),
+                  "nativeRenderFrame: page %d/%d rows=%d drawn=%d "
+                  "viewport=%dx%d warn=%s",
+                  g->page + 1, pages, static_cast<int>(g->rows.size()),
+                  drawn, w, h, error.c_str());
+    MuseLogInfo(msg);
+  }
+}
+#endif
+
+}  // namespace
+
+extern "C" MUSE_JNI_EXPORT jlong Java_com_muse_host_MainActivity_nativeLoadTree(
+    JNIEnv* env, jobject thiz, jbyteArray treeBytes) {
+  (void)thiz;
+  if (env == nullptr || env->ExceptionCheck() == JNI_TRUE) {
+    return 0;
+  }
+  if (treeBytes == nullptr) {
+#ifdef __ANDROID__
+    MuseLogInfo("nativeLoadTree: null treeBytes -> handle 0");
+#endif
+    return 0;
+  }
+  try {
+    jsize len = env->GetArrayLength(treeBytes);
+    if (env->ExceptionCheck() == JNI_TRUE || len <= 0) {
+      if (env->ExceptionCheck() == JNI_TRUE) {
+        env->ExceptionClear();
+      }
+#ifdef __ANDROID__
+      MuseLogInfo("nativeLoadTree: empty tree asset -> handle 0");
+#endif
+      return 0;
+    }
+    GalleryHandle* g = new GalleryHandle();
+    g->tree.resize(static_cast<std::size_t>(len));
+    env->GetByteArrayRegion(treeBytes, 0, len,
+                            reinterpret_cast<jbyte*>(g->tree.data()));
+    if (env->ExceptionCheck() == JNI_TRUE) {
+      env->ExceptionClear();
+      delete g;
+      return 0;
+    }
+    g->rows = ::runtime::ParseGalleryRows(g->tree.data(), g->tree.size(),
+                                          &g->parseError);
+    g->parsed = true;
+#ifdef __ANDROID__
+    char msg[192];
+    std::snprintf(msg, sizeof(msg),
+                  "nativeLoadTree: bytes=%d rows=%d%s%s -> handle acquired",
+                  static_cast<int>(len), static_cast<int>(g->rows.size()),
+                  g->parseError.empty() ? "" : " parseWarn=",
+                  g->parseError.empty() ? "" : g->parseError.c_str());
+    MuseLogInfo(msg);
+#endif
+    return static_cast<jlong>(reinterpret_cast<intptr_t>(g));
+  } catch (...) {
+    if (env != nullptr && env->ExceptionCheck() == JNI_TRUE) {
+      env->ExceptionClear();
+    }
+    return 0;
+  }
+}
+
+extern "C" MUSE_JNI_EXPORT void Java_com_muse_host_MainActivity_nativeAttachSurface(
+    JNIEnv* env, jobject thiz, jlong handle, jobject surface) {
+  (void)thiz;
+  if (env == nullptr || env->ExceptionCheck() == JNI_TRUE) {
+    return;
+  }
+  GalleryHandle* g = ToGallery(handle);
+  if (g == nullptr) return;
+  try {
+#ifdef __ANDROID__
+    std::lock_guard<std::mutex> lock(g->mu);
+    if (g->window != nullptr) {
+      ANativeWindow_release(g->window);
+      g->window = nullptr;
+    }
+    if (surface == nullptr) {
+      MuseLogInfo("nativeAttachSurface: null surface; window cleared");
+      return;
+    }
+    g->window = ANativeWindow_fromSurface(env, surface);
+    if (g->window == nullptr) {
+      MuseLogInfo("nativeAttachSurface: fromSurface failed");
+      return;
+    }
+    // Buffer format is fixed once per surface; the rasterizer writes
+    // RGBA_8888 pixels, so every lock sees the same layout.
+    if (ANativeWindow_setBuffersGeometry(g->window, 0, 0,
+                                         WINDOW_FORMAT_RGBA_8888) != 0) {
+      MuseLogInfo("nativeAttachSurface: setBuffersGeometry failed");
+      ANativeWindow_release(g->window);
+      g->window = nullptr;
+      return;
+    }
+    int w = ANativeWindow_getWidth(g->window);
+    int h = ANativeWindow_getHeight(g->window);
+    char msg[128];
+    std::snprintf(msg, sizeof(msg), "nativeAttachSurface: window %dx%d", w,
+                  h);
+    MuseLogInfo(msg);
+#else
+    (void)surface;
+#endif
+  } catch (...) {
+    if (env->ExceptionCheck() == JNI_TRUE) {
+      env->ExceptionClear();
+    }
+  }
+}
+
+extern "C" MUSE_JNI_EXPORT void Java_com_muse_host_MainActivity_nativeRenderFrame(
+    JNIEnv* env, jobject thiz, jlong handle) {
+  (void)thiz;
+  if (env == nullptr || handle == 0) {
+    return;
+  }
+  if (env->ExceptionCheck() == JNI_TRUE) {
+    return;
+  }
+  GalleryHandle* g = ToGallery(handle);
+  if (g == nullptr) return;
+  try {
+#ifdef __ANDROID__
+    std::lock_guard<std::mutex> lock(g->mu);
+    RenderLocked(g);
+#endif
+  } catch (...) {
+    if (env->ExceptionCheck() == JNI_TRUE) {
+      env->ExceptionClear();
+    }
+  }
+}
+
+extern "C" MUSE_JNI_EXPORT jint Java_com_muse_host_MainActivity_nativeAdvancePage(
+    JNIEnv* env, jobject thiz, jlong handle) {
+  (void)thiz;
+  if (env == nullptr || env->ExceptionCheck() == JNI_TRUE) {
+    return 0;
+  }
+  GalleryHandle* g = ToGallery(handle);
+  if (g == nullptr) return 0;
+  try {
+#ifdef __ANDROID__
+    std::lock_guard<std::mutex> lock(g->mu);
+    g->page += 1;
+    RenderLocked(g);
+    {
+      // A page turn is a deliberate user action: always worth one line.
+      char msg[64];
+      std::snprintf(msg, sizeof(msg), "nativeAdvancePage: page %d",
+                    g->page + 1);
+      MuseLogInfo(msg);
+    }
+    return static_cast<jint>(g->page);
+#else
+    return 0;
+#endif
+  } catch (...) {
+    if (env->ExceptionCheck() == JNI_TRUE) {
+      env->ExceptionClear();
+    }
+    return 0;
+  }
+}
+
+extern "C" MUSE_JNI_EXPORT void Java_com_muse_host_MainActivity_nativeDetachSurface(
+    JNIEnv* env, jobject thiz, jlong handle) {
+  (void)thiz;
+  if (env == nullptr || env->ExceptionCheck() == JNI_TRUE) {
+    return;
+  }
+  GalleryHandle* g = ToGallery(handle);
+  if (g == nullptr) return;
+  try {
+#ifdef __ANDROID__
+    std::lock_guard<std::mutex> lock(g->mu);
+    if (g->window != nullptr) {
+      ANativeWindow_release(g->window);
+      g->window = nullptr;
+    }
+    MuseLogInfo("nativeDetachSurface: window released");
+#endif
+  } catch (...) {
+    if (env->ExceptionCheck() == JNI_TRUE) {
+      env->ExceptionClear();
+    }
+  }
+}
+
+extern "C" MUSE_JNI_EXPORT void Java_com_muse_host_MainActivity_nativeDestroy(
+    JNIEnv* env, jobject thiz, jlong handle) {
+  (void)thiz;
+  if (env == nullptr || handle == 0) {
+    return;
+  }
+  if (env->ExceptionCheck() == JNI_TRUE) {
+    return;
+  }
+  GalleryHandle* g = ToGallery(handle);
+  if (g == nullptr) return;
+  try {
+#ifdef __ANDROID__
+    std::lock_guard<std::mutex> lock(g->mu);
+    if (g->window != nullptr) {
+      ANativeWindow_release(g->window);
+      g->window = nullptr;
+    }
+#endif
+  } catch (...) {
+  }
+  try {
+    delete g;
+  } catch (...) {
   }
 }

@@ -14,6 +14,7 @@ add_library(runtime
   src/vulkan_baseline.cpp
   src/renderer.cpp
   src/jni_bridge.cpp
+  src/gallery_present.cpp
   src/host.cpp
   src/input.cpp
   src/ime_inset.cpp
@@ -27,6 +28,21 @@ target_compile_options(runtime PRIVATE -Wall -Wextra -Wpedantic)
 find_package(JNI)
 if(JNI_FOUND)
   target_include_directories(runtime PUBLIC ${JNI_INCLUDE_DIRS})
+endif()
+
+# Gallery bring-up: jni_bridge references ANativeWindow/log on Android, so
+# every consumer of the static runtime (including the hermetic test
+# executables the Android lane also builds) links the NDK android and log
+# libs. Host lane (no ANDROID toolchain) is untouched.
+if(ANDROID)
+  find_library(MUSE_ANDROID_LIB_STATIC android)
+  find_library(MUSE_LOG_LIB_STATIC log)
+  if(MUSE_ANDROID_LIB_STATIC)
+    target_link_libraries(runtime PRIVATE ${MUSE_ANDROID_LIB_STATIC})
+  endif()
+  if(MUSE_LOG_LIB_STATIC)
+    target_link_libraries(runtime PRIVATE ${MUSE_LOG_LIB_STATIC})
+  endif()
 endif()
 
 # Stage 5 F1: real-Android lane — shared Runtime -> libRuntime.so in
@@ -43,6 +59,7 @@ if(DEFINED ANDROID_ABI AND NOT TARGET Runtime)
     src/vulkan_baseline.cpp
     src/renderer.cpp
     src/jni_bridge.cpp
+    src/gallery_present.cpp
     src/presenter.cpp
   )
   set_target_properties(Runtime PROPERTIES
@@ -56,6 +73,19 @@ if(DEFINED ANDROID_ABI AND NOT TARGET Runtime)
     target_include_directories(Runtime PUBLIC ${JNI_INCLUDE_DIRS})
   endif()
   target_compile_options(Runtime PRIVATE -Wall -Wextra -Wpedantic)
+  # Gallery bring-up: ANativeWindow raster + logcat diagnostics live in
+  # jni_bridge/gallery_present, so the shared target links the NDK android
+  # and log libs (Android lane only; host lane untouched).
+  if(ANDROID)
+    find_library(MUSE_ANDROID_LIB android)
+    find_library(MUSE_LOG_LIB log)
+    if(MUSE_ANDROID_LIB)
+      target_link_libraries(Runtime PRIVATE ${MUSE_ANDROID_LIB})
+    endif()
+    if(MUSE_LOG_LIB)
+      target_link_libraries(Runtime PRIVATE ${MUSE_LOG_LIB})
+    endif()
+  endif()
 endif()
 
 add_executable(instantiate_test tests/instantiate_test.cpp)
@@ -235,6 +265,28 @@ add_executable(paced_present_test tests/paced_present_test.cpp)
 target_link_libraries(paced_present_test PRIVATE runtime)
 target_compile_options(paced_present_test PRIVATE -Wall -Wextra -Wpedantic)
 add_test(NAME paced_present_test COMMAND paced_present_test)
+
+add_executable(gallery_present_test tests/gallery_present_test.cpp)
+target_link_libraries(gallery_present_test PRIVATE runtime)
+target_compile_options(gallery_present_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME gallery_present_test COMMAND gallery_present_test)
+
+# T2 JNI contract regression (BUG-RUNTIME-002): every native* method in
+# MainActivity.java must have a matching Java_com_muse_host_MainActivity_*
+# export. Hermetic shell case; no device, no network.
+add_test(NAME jni_contract_test
+  COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/jni_contract_test.sh"
+    "${CMAKE_BINARY_DIR}/libRuntime.so"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../examples/m3-gallery/src/MainActivity.java"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/jni_bridge.cpp")
+
+# T3 gallery-handle lifecycle variant (BUG-RUNTIME-002): attach -> render ->
+# detach -> re-attach lifecycle at the handle level with a mock window
+# (no NDK, no device). Mirrors surface_attach/swapchain_lifecycle structure.
+add_executable(gallery_handle_lifecycle_test tests/gallery_handle_lifecycle_test.cpp)
+target_link_libraries(gallery_handle_lifecycle_test PRIVATE runtime)
+target_compile_options(gallery_handle_lifecycle_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME gallery_handle_lifecycle_test COMMAND gallery_handle_lifecycle_test)
 
 # T3 hermetic dual-ABI gate (permanent wiring; no NDK required).
 # Real Android configure (ANDROID_ABI defined via T1 -C lane) skips this;

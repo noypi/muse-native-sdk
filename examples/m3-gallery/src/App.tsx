@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { View, Text, manifest, TopAppBar, NavigationRail } from '@muse/native';
 import { spring } from '@muse/core';
-import { ButtonScreen } from "./screens/ButtonScreen";
+import ButtonScreen from "./screens/ButtonScreen";
 import { buildStories } from "./stories";
 import { shuffleRemix, encodeRemix, decodeRemix } from "./remix";
 
