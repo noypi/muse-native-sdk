@@ -10,6 +10,8 @@ UNSIGNED_APK = $(BUILD_DIR)/$(APP_NAME)-unsigned.apk
 ALIGNED_APK = $(BUILD_DIR)/$(APP_NAME)-aligned.apk
 SIGNED_APK = $(BUILD_DIR)/$(APP_NAME)-debug.apk
 DEBUG_KEYSTORE = debug.keystore
+ASSET_SRC = dist/tree.mui.bin
+ASSET_DST = assets/tree.mui.bin
 ANDROID_JAR = $(ANDROID_HOME)/platforms/android-34/android.jar
 ENGINE_LIBS = ../../build/android-arm64-v8a/libRuntime.so ../../build/android-armeabi-v7a/libRuntime.so ../../build/android-x86_64/libRuntime.so ../../build/android-x86/libRuntime.so
 
@@ -46,6 +48,8 @@ verify: sign
 	if ! apksigner verify $(SIGNED_APK) >/dev/null 2>&1; then echo "error: verify failed: apksigner verify rejected $(SIGNED_APK)" >&2; exit 1; fi
 
 install: sign
+	mkdir -p $(dir $(ASSET_DST))
+	test -f $(ASSET_SRC) && cp $(ASSET_SRC) $(ASSET_DST) || true
 	if ! adb devices | awk 'NR>1 && $$2=="device" { found=1 } END { exit !found }'; then echo "error: install failed: no device connected (adb devices shows no device); connect a device with USB debugging instead of partial-installing" >&2; exit 1; fi
 	adb install -r $(SIGNED_APK)
 
