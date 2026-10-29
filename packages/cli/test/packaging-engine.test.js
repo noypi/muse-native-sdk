@@ -273,3 +273,234 @@ describe('Security — validateElfArch rejects hostile and oversized input (AC-P
     );
   });
 });
+
+// ---- T3: compiled classes.dex (AC-PACKAGING-015, TC-PACKAGING-015) ----
+// Hermetic: node:test + node:assert/strict + stdlib only. compileDex is
+// driven through fake javac/d8 executables written into a tmp
+// buildToolsDir plus a stub android.jar file — no real SDK, no network.
+// dex.js is required lazily inside each case so the missing module fails
+// only these cases (red) without breaking the T1/T2 cases above.
+
+const DEX_MAGIC_4 = 'dex\n';
+
+function loadCompileDex() {
+  const mod = require('../lib/dex.js');
+  assert.equal(typeof mod.compileDex, 'function', 'dex.js must export compileDex');
+  return mod.compileDex;
+}
+
+function writeExecutable(dir, name, script) {
+  const p = path.join(dir, name);
+  fs.writeFileSync(p, script, { mode: 0o755 });
+  return p;
+}
+
+// Fake javac: exits 0, touches a .class next to every .java arg.
+const FAKE_JAVAC = '#!/bin/sh\n'
+  + 'for a in "$@"; do\n'
+  + '  case "$a" in *.java) touch "${a%.java}.class" ;; esac\n'
+  + 'done\nexit 0\n';
+
+// Fake d8: writes dex-magic bytes to every plausible dex output — any arg
+// ending in .dex, and any --output/--output= target (file, or dir holding
+// classes.dex). Exits 0.
+const FAKE_D8 = '#!/bin/sh\n'
+  + 'dexhdr=$(printf \'dex\\n035\\0\')\n'
+  + 'out=""\nprev=""\n'
+  + 'for a in "$@"; do\n'
+  + '  if [ "$prev" = "--output" ]; then out="$a"; prev=""; continue; fi\n'
+  + '  case "$a" in\n'
+  + '    --output) prev="--output" ;;\n'
+  + '    --output=*) out="${a#--output=}" ;;\n'
+  + '    *.dex) printf "%s" "$dexhdr-padding-by-fake-d8" > "$a" ;;\n'
+  + '  esac\n'
+  + 'done\n'
+  + 'if [ -n "$out" ]; then\n'
+  + '  case "$out" in\n'
+  + '    *.dex) printf "%s" "$dexhdr-padding-by-fake-d8" > "$out" ;;\n'
+  + '    *) mkdir -p "$out"; printf "%s" "$dexhdr-padding-by-fake-d8" > "$out/classes.dex" ;;\n'
+  + '  esac\n'
+  + 'fi\n'
+  + 'exit 0\n';
+
+// Failing d8: names itself on stderr, exits 1.
+const FAILING_D8 = '#!/bin/sh\necho "d8: fake failure compiling classes" >&2\nexit 1\n';
+
+function writeFakeToolchain(opts) {
+  const root = mkTmp('muse-pack-dex-');
+  const btDir = path.join(root, 'build-tools');
+  fs.mkdirSync(btDir, { recursive: true });
+  writeExecutable(btDir, 'javac', FAKE_JAVAC);
+  writeExecutable(btDir, 'd8', opts && opts.d8Script ? opts.d8Script : FAKE_D8);
+  const androidJar = path.join(root, 'android.jar');
+  if (!opts || opts.androidJar !== false) fs.writeFileSync(androidJar, 'STUB-ANDROID-JAR');
+  const srcDir = path.join(root, 'src');
+  fs.mkdirSync(srcDir, { recursive: true });
+  const javaPath = path.join(srcDir, 'MainActivity.java');
+  fs.writeFileSync(javaPath, 'package com.muse.host;\npublic class MainActivity {}\n', 'utf8');
+  return { root, btDir, androidJar, javaPath };
+}
+
+describe('T3 compileDex — interface and dex magic (AC-PACKAGING-015)', () => {
+  it('dex.js exports compileDex(javaSources, opts) returning dex bytes starting with magic dex\\n', async () => {
+    const compileDex = loadCompileDex();
+    const { btDir, androidJar, javaPath } = writeFakeToolchain();
+    const out = await compileDex([javaPath], { androidJar, buildToolsDir: btDir });
+    assert.ok(Buffer.isBuffer(out), 'must return a Buffer');
+    assert.equal(out.subarray(0, 4).toString('utf8'), DEX_MAGIC_4);
+  });
+
+  it('empty javaSources fails closed naming the missing piece', async () => {
+    const compileDex = loadCompileDex();
+    const { btDir, androidJar } = writeFakeToolchain();
+    await assert.rejects(
+      () => compileDex([], { androidJar, buildToolsDir: btDir }),
+      (err) => {
+        assert.match(String(err && err.message), /java sources|no sources|missing.*source/i);
+        return true;
+      },
+    );
+  });
+
+  it('missing android.jar fails closed naming the missing piece', async () => {
+    const compileDex = loadCompileDex();
+    const { btDir, javaPath } = writeFakeToolchain({ androidJar: false });
+    await assert.rejects(
+      () => compileDex([javaPath], { androidJar: path.join(path.dirname(btDir), 'android.jar'), buildToolsDir: btDir }),
+      (err) => {
+        assert.match(String(err && err.message), /android\.jar|androidJar/i);
+        return true;
+      },
+    );
+  });
+
+  it('missing buildToolsDir fails closed naming the missing piece', async () => {
+    const compileDex = loadCompileDex();
+    const { androidJar, javaPath, root } = writeFakeToolchain();
+    await assert.rejects(
+      () => compileDex([javaPath], { androidJar, buildToolsDir: path.join(root, 'no-such-build-tools') }),
+      (err) => {
+        assert.match(String(err && err.message), /build-?tools|javac|d8|toolchain/i);
+        return true;
+      },
+    );
+  });
+
+  it("toolchain failure throws 'dex compile failed: ...' naming the tool and source", async () => {
+    const compileDex = loadCompileDex();
+    const { btDir, androidJar, javaPath } = writeFakeToolchain({ d8Script: FAILING_D8 });
+    await assert.rejects(
+      () => compileDex([javaPath], { androidJar, buildToolsDir: btDir }),
+      (err) => {
+        assert.match(String(err && err.message), /dex compile failed:/);
+        assert.match(String(err && err.message), /d8/);
+        assert.match(String(err && err.message), /MainActivity\.java/);
+        return true;
+      },
+    );
+  });
+
+  it('nonexistent java source fails naming the source, before any dist/ write', async () => {
+    const compileDex = loadCompileDex();
+    const { btDir, androidJar, root } = writeFakeToolchain();
+    const missing = path.join(root, 'src', 'Nope.java');
+    await assert.rejects(
+      () => compileDex([missing], { androidJar, buildToolsDir: btDir }),
+      (err) => {
+        assert.match(String(err && err.message), /Nope\.java/);
+        return true;
+      },
+    );
+    assert.ok(!fs.existsSync(path.join(root, 'dist')), 'no dist/ on fail-closed run');
+  });
+});
+
+// Security — hostile toolchain input must never execute (GR-05 R5.3/R5.4).
+describe('Security — compileDex rejects hostile sources without invoking the toolchain (AC-PACKAGING-015)', () => {
+  it("path-traversal source '../../evil.java' throws and the toolchain marker is never created", async () => {
+    const compileDex = loadCompileDex();
+    const { btDir, androidJar, root } = writeFakeToolchain();
+    const marker = path.join(root, 'TOOLCHAIN-EXECUTED');
+    // Tripwire: any toolchain execution drops this marker.
+    writeExecutable(btDir, 'javac', `#!/bin/sh\ntouch "${marker}"\nexit 0\n`);
+    writeExecutable(btDir, 'd8', `#!/bin/sh\ntouch "${marker}"\nexit 0\n`);
+    await assert.rejects(
+      () => compileDex([path.join(root, '..', '..', 'evil.java')], { androidJar, buildToolsDir: btDir }),
+      (err) => {
+        assert.match(String(err && err.message), /evil|\.\./);
+        return true;
+      },
+    );
+    assert.ok(!fs.existsSync(marker), 'toolchain must not run for hostile input');
+  });
+
+  it('oversized source list is rejected instead of being compiled unsafely', async () => {
+    const compileDex = loadCompileDex();
+    const { btDir, androidJar, javaPath } = writeFakeToolchain();
+    const huge = new Array(100001).fill(javaPath);
+    await assert.rejects(
+      () => compileDex(huge, { androidJar, buildToolsDir: btDir }),
+      (err) => {
+        assert.match(String(err && err.message), /too many|oversized|limit/i);
+        return true;
+      },
+    );
+  });
+});
+
+describe('T3 packageStage — dex wiring and fail-closed edges (AC-PACKAGING-015)', () => {
+  it('ctx._hostInputs.dexBytes override lands in classes.dex with dex magic (hermetic seam kept)', async () => {
+    const dir = mkTmp('muse-pack-dex-');
+    writeStageApp(dir);
+    const { config } = resolveConfig(['--archs', 'arm64-v8a'], {}, dir);
+    const magicDex = Buffer.concat([Buffer.from('dex\n035\0', 'binary'), Buffer.from('hermetic-seam')]);
+    const results = await runStages('package', {
+      config,
+      appDir: dir,
+      _hostInputs: {
+        dexBytes: magicDex,
+        resourcesArsc: Buffer.from('ARSC-SEAM', 'utf8'),
+        nativeLibs: [{ abi: 'arm64-v8a', name: 'libRuntime.so', bytes: makeElf(183, 'RUNTIME') }],
+      },
+    });
+    assert.equal(results.length, 1);
+    assert.equal(results[0].ok, true);
+    const apkBytes = fs.readFileSync(fatPath(dir));
+    const entry = zipEntryData(apkBytes, 'classes.dex');
+    assert.ok(entry, 'APK must contain classes.dex');
+    assert.equal(Buffer.from(entry).subarray(0, 4).toString('utf8'), DEX_MAGIC_4);
+    assert.deepEqual(Buffer.from(entry), magicDex);
+  });
+
+  it('default package never ships DEX-STAGE-FALLBACK text: real dex magic or fail-closed naming the missing piece', async () => {
+    const dir = mkTmp('muse-pack-dex-');
+    writeStageApp(dir);
+    const soBytes = makeElf(183, 'RUNTIME-arm64');
+    const soPath = path.join(dir, 'libRuntime-arm64.so');
+    fs.writeFileSync(soPath, soBytes);
+    const { config } = resolveConfig(
+      ['--archs', 'arm64-v8a', '--engine-lib', `arm64-v8a=${soPath}`],
+      {},
+      dir,
+    );
+    const results = await runStages('package', { config, appDir: dir });
+    assert.equal(results.length, 1);
+    if (results[0].ok) {
+      const apkBytes = fs.readFileSync(fatPath(dir));
+      const entry = zipEntryData(apkBytes, 'classes.dex');
+      assert.ok(entry, 'APK must contain classes.dex');
+      assert.ok(
+        !Buffer.from(entry).includes('DEX-STAGE-FALLBACK'),
+        'fallback text must be gone once wired to compileDex',
+      );
+      assert.equal(Buffer.from(entry).subarray(0, 4).toString('utf8'), DEX_MAGIC_4);
+    } else {
+      assert.match(
+        String(results[0].error && results[0].error.message),
+        /java|source|android\.jar|androidJar|build-?tools|javac|d8|toolchain|sdk|dex/i,
+        'fail-closed error must name the missing piece',
+      );
+      assert.ok(!fs.existsSync(fatPath(dir)), 'no APK on fail-closed run');
+    }
+  });
+});

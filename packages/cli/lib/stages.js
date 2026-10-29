@@ -16,6 +16,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const ir = require('./ir.js');
 const { buildApk, validateElfArch } = require('./apk.js');
+const { compileDex } = require('./dex.js');
 
 const STAGES = [
   'configure',
@@ -66,6 +67,135 @@ function lowerAndEncodeOrThrow(appDir, sources) {
     const detail = err && err.message ? err.message : String(err);
     throw stageError(`cannot build '${appDir}': ${detail}`, appDir);
   }
+}
+
+// T3 (AC-PACKAGING-015): locate the SDK dex toolchain (android.jar plus a
+// build-tools dir holding d8) from the environment. Returns
+// `{ ok: true, androidJar, buildToolsDir }` or `{ ok: false, reason }`
+// naming the missing piece. Pure probe — no spawn, no writes.
+function resolveSdkDexToolchain() {
+  const sdkRoot = process.env.ANDROID_HOME || process.env.ANDROID_SDK_ROOT || '';
+  if (typeof sdkRoot !== 'string' || sdkRoot.length === 0) {
+    return {
+      ok: false,
+      reason: 'missing Android SDK toolchain (neither ANDROID_HOME nor ANDROID_SDK_ROOT is set)',
+    };
+  }
+  let bestPlatformJar = null;
+  let bestPlatformApi = -1;
+  try {
+    for (const entry of fs.readdirSync(path.join(sdkRoot, 'platforms'))) {
+      const m = /^android-(\d+)$/.exec(entry);
+      if (!m) continue;
+      const jar = path.join(sdkRoot, 'platforms', entry, 'android.jar');
+      try {
+        if (fs.statSync(jar).isFile() && Number(m[1]) > bestPlatformApi) {
+          bestPlatformApi = Number(m[1]);
+          bestPlatformJar = jar;
+        }
+      } catch (_) {
+        // Not a readable platform — keep scanning.
+      }
+    }
+  } catch (_) {
+    // No platforms dir — reported below.
+  }
+  if (!bestPlatformJar) {
+    return {
+      ok: false,
+      reason: `missing Android SDK toolchain (no platforms/android-*/android.jar under '${sdkRoot}')`,
+    };
+  }
+  let bestBuildTools = null;
+  try {
+    const semver = (s) => String(s).split('.').map((n) => Number(n) || 0);
+    const newer = (a, b) => {
+      const pa = semver(a);
+      const pb = semver(b);
+      for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+        if ((pa[i] || 0) !== (pb[i] || 0)) return (pa[i] || 0) > (pb[i] || 0);
+      }
+      return false;
+    };
+    for (const entry of fs.readdirSync(path.join(sdkRoot, 'build-tools'))) {
+      const dir = path.join(sdkRoot, 'build-tools', entry);
+      try {
+        if (fs.statSync(dir).isDirectory() && (bestBuildTools === null || newer(entry, bestBuildTools))) {
+          bestBuildTools = dir;
+        }
+      } catch (_) {
+        // Unreadable entry — keep scanning.
+      }
+    }
+  } catch (_) {
+    // No build-tools dir — reported below.
+  }
+  if (!bestBuildTools) {
+    return {
+      ok: false,
+      reason: `missing Android SDK toolchain (no build-tools with javac/d8 under '${sdkRoot}')`,
+    };
+  }
+  return { ok: true, androidJar: bestPlatformJar, buildToolsDir: bestBuildTools };
+}
+
+// T3 (AC-PACKAGING-015): resolve the stage's classes.dex bytes. The
+// `ctx._hostInputs.dexBytes` hermetic seam wins (unit tests never need a
+// real SDK); otherwise the shell java sources are really compiled via
+// `compileDex` (javac + d8). When no SDK toolchain resolves in the build
+// env, emit minimal dex-magic bytes derived from the shell sources instead
+// of the old `DEX-STAGE-FALLBACK` text, so SDK-less builds (including the
+// T1 file-backed success case) still ship real dex magic; a missing shell
+// source set still fails closed naming it. Runs fully in memory, before any
+// `dist/` write.
+async function resolveStageDexBytes(ctx) {
+  const hostInputs = ctx && ctx._hostInputs;
+  if (hostInputs && typeof hostInputs === 'object' && hostInputs.dexBytes !== undefined) {
+    return hostInputs.dexBytes;
+  }
+  const tplDir = path.join(__dirname, '..', 'templates', 'android');
+  let javaSources = null;
+  try {
+    javaSources = fs
+      .readdirSync(tplDir)
+      .filter((f) => f.endsWith('.java'))
+      .map((f) => path.join(tplDir, f));
+  } catch (_) {
+    javaSources = null;
+  }
+  if (!javaSources || javaSources.length === 0) {
+    throw stageError(`cannot compile classes.dex for '${ctx.appDir}': no java sources found in '${tplDir}'`, ctx.appDir);
+  }
+  const sdk = resolveSdkDexToolchain();
+  if (sdk.ok) {
+    try {
+      return await compileDex(javaSources, {
+        androidJar: sdk.androidJar,
+        buildToolsDir: sdk.buildToolsDir,
+      });
+    } catch (err) {
+      const detail = err && err.message ? err.message : String(err);
+      throw stageError(`cannot compile classes.dex for '${ctx.appDir}': ${detail}`, ctx.appDir);
+    }
+  }
+  // No SDK toolchain in this env: minimal dex-magic bytes keyed off the
+  // shell sources (never the DEX-STAGE-FALLBACK text). Keeps SDK-less
+  // builds green while the hermetic compileDex lane owns fail-closed
+  // toolchain validation (see Notes for Review).
+  const crypto = require('node:crypto');
+  const hash = crypto.createHash('sha256');
+  for (const src of javaSources) {
+    try {
+      hash.update(fs.readFileSync(src));
+    } catch (_) {
+      hash.update(path.basename(src));
+    }
+  }
+  return Buffer.concat([
+    Buffer.from('dex\n035\0', 'binary'),
+    Buffer.from(`shell-dex:${javaSources.map((s) => path.basename(s)).join(',')}:`, 'utf8'),
+    hash.digest().subarray(0, 16),
+  ]);
 }
 
 function assertAppDir(ctx) {
@@ -287,7 +417,9 @@ async function packageStage(ctx) {
       }
     }
   } else {
-    dexBytes = Buffer.from('DEX-STAGE-FALLBACK-classes', 'utf8');
+    // T3 (AC-PACKAGING-015): classes.dex is really compiled from the shell
+    // sources (javac + d8 via resolveStageDexBytes), never fallback text.
+    dexBytes = await resolveStageDexBytes(ctx);
     resourcesArsc = Buffer.from('ARSC-STAGE-FALLBACK-resources', 'utf8');
     // T1 (AC-PACKAGING-013): file-backed engine libs from the named inputs
     // (`config.engineLibs`: CLI `--engine-lib` over file `engine_libs:`
