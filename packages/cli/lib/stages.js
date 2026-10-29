@@ -172,6 +172,10 @@ function loadEffectiveSourcesOrThrow(ctx) {
   const appSources = loadSourcesOrThrow(ctx.appDir);
   if (!isSampleSelected(ctx && ctx.config)) return appSources;
   const sampleDir = assertSampleTargetOrThrow(ctx.appDir);
+  // Gallery-is-sample fix: building the sample target itself already loads
+  // its sources above; concatenating the same dir again doubled every root
+  // (2x tree.mui.bin, duplicated gallery stories on device).
+  if (path.resolve(sampleDir) === path.resolve(ctx.appDir)) return appSources;
   let sampleSources;
   try {
     sampleSources = ir.loadSources(sampleDir);
