@@ -116,12 +116,12 @@ check_cli() {
   for cli in muse-native muse; do
     if command -v "$cli" >/dev/null 2>&1; then
       version="$("$cli" --version 2>/dev/null || true)"
-      case "$version" in
-        *"$EXPECTED_CLI_VERSION"*)
+      for token in $version; do
+        if [ "$token" = "$EXPECTED_CLI_VERSION" ]; then
           echo "OK: muse-native CLI version $EXPECTED_CLI_VERSION found ($cli --version)"
           return 0
-          ;;
-      esac
+        fi
+      done
     fi
   done
   echo "MISSING: muse-native CLI version $EXPECTED_CLI_VERSION is missing — $(cli_fix)"

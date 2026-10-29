@@ -73,10 +73,10 @@ muse --version
 **Symptom:** A stale build cache is reused: edits do not appear in the rebuilt
 sample, or the build keeps failing after the toolchain was fixed.
 
-**Fix:** Clear the sample build output and rebuild from clean:
+**Fix:** From the repository root, clear the sample build output and rebuild from clean:
 
 ```sh
-rm -rf build
+rm -rf examples/m3-gallery/build
 muse-native build examples/m3-gallery
 ```
 
