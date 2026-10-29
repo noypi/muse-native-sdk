@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128" role="img" aria-label="MuseNative logo">
+  <title>MuseNative SDK for Android</title>
+  <defs>
+    <linearGradient id="mn-bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#7C4DFF"/>
+      <stop offset="1" stop-color="#00E5FF"/>
+    </linearGradient>
+    <linearGradient id="mn-wave" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.95"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0.55"/>
+    </linearGradient>
+  </defs>
+  <rect x="8" y="8" width="112" height="112" rx="28" fill="url(#mn-bg)"/>
+  <!-- Stylized "M" formed by two native pillars + AI spark -->
+  <path d="M32 88 V48 L52 68 L64 54 L76 68 L96 48 V88"
+        fill="none" stroke="#FFFFFF" stroke-width="9"
+        stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="64" cy="34" r="7" fill="url(#mn-wave)"/>
+</svg>
