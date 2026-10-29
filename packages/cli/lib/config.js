@@ -10,6 +10,9 @@
 const fs = require('node:fs');
 const path = require('node:path');
 
+const ALL_ARCHS = ['arm64-v8a', 'armeabi-v7a', 'x86_64', 'x86'];
+const PACKAGING_VALUES = ['fat', 'split', 'both'];
+
 const SCHEMA = {
   name: 'string',
   version: 'string',
@@ -20,6 +23,8 @@ const SCHEMA = {
   output: 'string',
   strict: 'boolean',
   diagnostics: 'object',
+  archs: 'object',
+  packaging: 'string',
 };
 
 const DEFAULTS = {
@@ -32,6 +37,8 @@ const DEFAULTS = {
   output: undefined,
   strict: false,
   diagnostics: undefined,
+  archs: ALL_ARCHS.slice(),
+  packaging: 'fat',
 };
 
 const ENV_PREFIX = 'MUSE_NATIVE_';
@@ -41,13 +48,54 @@ const ALIAS_FILES = ['muse.config.ts', 'capo.config.ts'];
 
 // Error thrown for unknown keys / wrong value types. Carries the key,
 // the file the bad value came from, and the expected type name.
+// Optional 4th `code` (e.g. CFG-UNKNOWN-ABI, CFG-BAD-PACKAGING) is stored
+// on `err.code` and prefixed to the message; value + accepted set stay in
+// the message so fail-closed errors name what was rejected.
 class ConfigError extends Error {
-  constructor(key, file, expected) {
-    super(`Error: ${key} in ${file}: expected ${expected}`);
+  constructor(key, file, expected, code) {
+    super(code ? `${code}: ${key} in ${file}: expected ${expected}` : `Error: ${key} in ${file}: expected ${expected}`);
     this.name = 'ConfigError';
     this.key = key;
     this.file = file;
     this.expected = expected;
+    if (code) this.code = code;
+  }
+}
+
+// Parse an `archs` layer value into an array, preserving author order.
+// Accepts comma-separated scalars (`archs: arm64-v8a, x86_64`) and YAML
+// flow-lists (`archs: [arm64-v8a, x86_64]`); single values become a
+// one-element array. Non-string/non-array input passes through so the
+// validator below can reject it fail-closed.
+function parseArchsValue(value) {
+  if (Array.isArray(value)) return value.map((v) => String(v).trim());
+  if (typeof value !== 'string') return value;
+  let raw = value.trim();
+  if (raw === '') return [];
+  if (raw.startsWith('[') && raw.endsWith(']')) raw = raw.slice(1, -1).trim();
+  if (raw === '') return [];
+  return raw.split(',').map((v) => v.trim());
+}
+
+// Fail-closed enum checks, run at `configure` before compilation. Empty or
+// unknown selections never default silently — they throw.
+function assertArchsList(list, where) {
+  if (!Array.isArray(list)) {
+    throw new ConfigError('archs', where, `one of: ${ALL_ARCHS.join(', ')} (got ${JSON.stringify(list)})`, 'CFG-UNKNOWN-ABI');
+  }
+  if (list.length === 0 || list.some((v) => v === '')) {
+    throw new ConfigError('archs', where, `non-empty array, expected one of: ${ALL_ARCHS.join(', ')} (got empty selection)`, 'CFG-UNKNOWN-ABI');
+  }
+  for (const abi of list) {
+    if (!ALL_ARCHS.includes(abi)) {
+      throw new ConfigError('archs', where, `unknown ABI "${abi}", expected one of: ${ALL_ARCHS.join(', ')}`, 'CFG-UNKNOWN-ABI');
+    }
+  }
+}
+
+function assertPackagingValue(value, where) {
+  if (!PACKAGING_VALUES.includes(value)) {
+    throw new ConfigError('packaging', where, `unknown packaging "${value}", expected one of: ${PACKAGING_VALUES.join(', ')}`, 'CFG-BAD-PACKAGING');
   }
 }
 
@@ -67,6 +115,13 @@ function validateConfig(raw, file) {
   }
   for (const key of Object.keys(raw)) {
     const expected = SCHEMA[key];
+    if (key === 'archs') {
+      if (typeof raw[key] === 'string') raw[key] = parseArchsValue(raw[key]);
+      if (!Array.isArray(raw[key])) {
+        throw new ConfigError(key, where, expected);
+      }
+      continue;
+    }
     if (typeof raw[key] !== expected) {
       throw new ConfigError(key, where, expected);
     }
@@ -87,6 +142,12 @@ function validateConfig(raw, file) {
       }
     }
   }
+  // T1 (AC-PACKAGING-005, RULE-WORKFLOW-006): archs/packaging enums are
+  // validated at configure time, before anything merges. Unknown ABIs name
+  // the value + accepted set (CFG-UNKNOWN-ABI); bad packaging names the
+  // value + fat/split/both (CFG-BAD-PACKAGING); empty never defaults.
+  if (raw.archs !== undefined) assertArchsList(raw.archs, where);
+  if (raw.packaging !== undefined) assertPackagingValue(raw.packaging, where);
 }
 
 function envNameFor(key) {
@@ -262,7 +323,9 @@ function readFileLayer(cwd) {
           }
         }
       }
-      values[parsed.key] = parsed.value;
+      values[parsed.key] = parsed.key === 'archs' && typeof parsed.value === 'string'
+        ? parseArchsValue(parsed.value)
+        : parsed.value;
     }
   }
   return { values, file: full, muse: museLines.length ? parseMuseSubtree(museLines.join('\n'), full) : undefined };
@@ -370,6 +433,12 @@ function resolveConfig(argv, env, cwd) {
   for (const layer of layers) {
     for (const key of Object.keys(layer.values)) {
       const expected = SCHEMA[key];
+      // T1: CSV/flow-list forms are accepted on the CLI/env layers too —
+      // normalize to arrays before the type gate so enum validation below
+      // sees the same shape as the file layer.
+      if (key === 'archs' && typeof layer.values[key] === 'string') {
+        layer.values[key] = parseArchsValue(layer.values[key]);
+      }
       const actual = typeof layer.values[key];
       if (actual === expected) continue;
       // Env values arrive via String() and CLI booleans use bare flags:
@@ -379,6 +448,10 @@ function resolveConfig(argv, env, cwd) {
       if (expected === 'object' && actual === 'string') continue;
       throw new ConfigError(key, layer.file, expected);
     }
+    // T1 enum validation per layer so CLI/env errors name the value +
+    // accepted set at configure time, before anything merges.
+    if (layer.values.archs !== undefined) assertArchsList(layer.values.archs, layer.file);
+    if (layer.values.packaging !== undefined) assertPackagingValue(layer.values.packaging, layer.file);
   }
 
   const config = {};
@@ -394,7 +467,7 @@ function resolveConfig(argv, env, cwd) {
       config[key] = fileValues[key];
       winningLayer[key] = 'file';
     } else {
-      config[key] = DEFAULTS[key];
+      config[key] = key === 'archs' && Array.isArray(DEFAULTS[key]) ? DEFAULTS[key].slice() : DEFAULTS[key];
       winningLayer[key] = 'default';
     }
   }
