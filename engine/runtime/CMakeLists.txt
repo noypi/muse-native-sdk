@@ -181,6 +181,11 @@ target_link_libraries(jni_boundary_test PRIVATE runtime)
 target_compile_options(jni_boundary_test PRIVATE -Wall -Wextra -Wpedantic)
 add_test(NAME jni_boundary_test COMMAND jni_boundary_test)
 
+add_executable(jni_bridge_link_test tests/jni_bridge_link_test.cpp)
+target_compile_options(jni_bridge_link_test PRIVATE -Wall -Wextra -Wpedantic)
+get_filename_component(MUSE_REPO_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../.." ABSOLUTE)
+add_test(NAME jni_bridge_link_test COMMAND jni_bridge_link_test "${MUSE_REPO_ROOT}")
+
 # T3 hermetic dual-ABI gate (permanent wiring; no NDK required).
 # Real Android configure (ANDROID_ABI defined via T1 -C lane) skips this;
 # plain host configure defines both <root>-<abi>/libRuntime.so outputs plus
