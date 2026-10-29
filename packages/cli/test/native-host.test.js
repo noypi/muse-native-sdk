@@ -108,13 +108,25 @@ describe('T5 Android host sources (AC-PACKAGING-008/010/011)', () => {
     const src = readOrThrow(BRIDGE_PATH);
     assert.match(src, /Java_com_muse_host_MainActivity_nativeRenderFrame/, 'exports nativeRenderFrame JNI symbol');
     assert.match(src, /handle\s*==\s*0|!handle|handle == nullptr/, 'nativeRenderFrame no-ops on handle 0');
-    assert.match(src, /JNI_OnLoad/, 'follows engine JNI_OnLoad pattern');
+    // BUG-BUILD-009 single-definition invariant: the template must NOT define
+    // JNI_OnLoad — the one non-test definition lives in
+    // engine/runtime/src/jni_bridge.cpp (header comments may still mention the
+    // gate, so match the definition signature, not the bare name).
+    assert.doesNotMatch(src, /jint\s+JNI_OnLoad\s*\(/, 'template defines no JNI_OnLoad — single definition lives in engine/runtime/src/jni_bridge.cpp');
   });
 
-  it('TreeBridge.cpp reuses the engine jni_bridge Runtime pattern', () => {
+  it('TreeBridge.cpp reuses the engine jni_bridge Runtime pattern without duplicating JNI_OnLoad', () => {
     const src = readOrThrow(BRIDGE_PATH);
-    assert.match(src, /jni_bridge|JNI_OnLoad/, 'references engine jni_bridge / JNI_OnLoad pattern');
+    assert.match(src, /jni_bridge/, 'references engine jni_bridge pattern');
     assert.match(src, /Runtime_create/, 'creates engine tree via Runtime_create');
+    assert.doesNotMatch(src, /jint\s+JNI_OnLoad\s*\(/, 'template defines no JNI_OnLoad definition');
+    // The single surviving definition is the engine null-VM gate.
+    const enginePath = path.join(CLI_DIR, '..', '..', 'engine', 'runtime', 'src', 'jni_bridge.cpp');
+    const engineSrc = readOrThrow(enginePath);
+    const defs = engineSrc.match(/jint\s+JNI_OnLoad\s*\(/g) || [];
+    assert.equal(defs.length, 1, 'exactly one JNI_OnLoad definition lives in engine/runtime/src/jni_bridge.cpp');
+    assert.match(engineSrc, /JNI_ERR/, 'engine gate fails closed (null VM -> JNI_ERR)');
+    assert.match(engineSrc, /JNI_VERSION_1_6/, 'engine gate reports JNI_VERSION_1_6');
   });
 });
 
