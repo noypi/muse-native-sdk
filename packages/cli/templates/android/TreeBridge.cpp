@@ -6,6 +6,11 @@
 // this boundary; handles travel as opaque jlong slots. No C++ exception and
 // no pending JNI exception ever escapes into the VM: every failure returns 0
 // (load) or no-ops (render).
+//
+// Note: the JNI load entry lives solely in engine/runtime/src/jni_bridge.cpp
+// (single-definition link, null-VM fail-closed gate kept there); this
+// template declares only the runtime lifecycle below and defines no load
+// entry, so it links against the engine symbol without duplicating it.
 
 #include <jni.h>
 
@@ -18,14 +23,6 @@ namespace runtime {
 void* Runtime_create();
 void Runtime_destroy(void* handle);
 }  // namespace runtime
-
-jint JNI_OnLoad(JavaVM* vm, void* reserved) {
-  (void)reserved;
-  if (vm == nullptr) {
-    return JNI_ERR;
-  }
-  return JNI_VERSION_1_6;
-}
 
 extern "C" jlong Java_com_muse_host_MainActivity_nativeLoadTree(
     JNIEnv* env, jobject thiz, jbyteArray treeBytes) {

@@ -7,6 +7,10 @@
 
 #include <cstdint>
 
+// The shared Runtime target builds with CXX_VISIBILITY_PRESET hidden, so JNI
+// entry points resolved by name lookup must opt back into default visibility.
+#define MUSE_JNI_EXPORT __attribute__((visibility("default")))
+
 namespace runtime {
 namespace {
 
@@ -41,7 +45,7 @@ void Runtime_destroy(void* handle) {
 
 }  // namespace runtime
 
-jint JNI_OnLoad(JavaVM* vm, void* reserved) {
+MUSE_JNI_EXPORT jint JNI_OnLoad(JavaVM* vm, void* reserved) {
   (void)reserved;
   if (vm == nullptr) {
     return JNI_ERR;
@@ -54,7 +58,7 @@ jint JNI_OnLoad(JavaVM* vm, void* reserved) {
 // fail-closed semantics: a null JNIEnv, a pending exception, or any C++
 // exception yields 0 / no-op and never lets an exception cross into the VM.
 // No engine type appears here; handles cross as opaque jlong slots.
-extern "C" jlong Java_com_muse_devicelab_EngineHost_nativeCreate(
+extern "C" MUSE_JNI_EXPORT jlong Java_com_muse_devicelab_EngineHost_nativeCreate(
     JNIEnv* env, jobject thiz) {
   (void)thiz;
   if (env == nullptr || env->ExceptionCheck() == JNI_TRUE) {
@@ -74,7 +78,7 @@ extern "C" jlong Java_com_muse_devicelab_EngineHost_nativeCreate(
   }
 }
 
-extern "C" void Java_com_muse_devicelab_EngineHost_nativeDestroy(
+extern "C" MUSE_JNI_EXPORT void Java_com_muse_devicelab_EngineHost_nativeDestroy(
     JNIEnv* env, jobject thiz, jlong handle) {
   (void)thiz;
   if (env == nullptr || handle == 0) {
