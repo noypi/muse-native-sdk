@@ -175,6 +175,53 @@ describe('T4 — dispose() unbinds the turn so later call() fails stale-id (AC-M
   });
 });
 
+describe('T5 — smart-component handle-only boundary (AC-MUSE-042, TC-MUSE-041)', () => {
+  it('handle carries exactly registry, tools, call and dispose (no transport/provider fields)', () => {
+    const handle = createMuseMcp({
+      abilities: [ability()],
+      control: { turnId: 'turn-7-handle-only' },
+      capabilities: ['gallery.read'],
+    });
+    assert.deepEqual(Object.keys(handle).sort(), [
+      'call',
+      'dispose',
+      'registry',
+      'tools',
+    ]);
+    for (const key of ['transport', 'providerUrl', 'apiKey', 'client']) {
+      assert.ok(!(key in handle), `handle must not carry ${key}`);
+    }
+  });
+
+  for (const key of ['transport', 'providerUrl', 'apiKey', 'client']) {
+    it(`createMuseMcp rejects a top-level ${key} option instead of storing it`, () => {
+      // Plan Interface: forbidden surface throws `{ code: 'capability-denied' }`
+      // or `TypeError` at construction; the value must never be stored.
+      assert.throws(
+        () =>
+          createMuseMcp({
+            abilities: [ability()],
+            control: { turnId: 'turn-7-forbidden' },
+            capabilities: ['gallery.read'],
+            [key]: 'forbidden-value',
+          }),
+        (err) =>
+          err instanceof TypeError || (err && err.code === 'capability-denied')
+      );
+    });
+  }
+
+  it('muse-mcp.js source mentions no transport and no client wiring', () => {
+    const src = fs.readFileSync(path.join(__dirname, '..', 'muse-mcp.js'), 'utf8');
+    assert.ok(!/transport/.test(src), 'muse-mcp.js must not mention transport');
+    // `client` as a bare identifier would over-match (e.g. comments); match
+    // only option-shaped uses: `.client`, `client:` or `client =`.
+    assert.ok(
+      !/[.]client\b|\bclient\s*[:=]/.test(src),
+      'muse-mcp.js must not take a client option'
+    );
+  });
+});
 describe('T4 — one-way dep: no transport/provider fields (TC-MUSE-040)', () => {
   it('muse-mcp.js source mentions no providerUrl and no apiKey', () => {
     const src = fs.readFileSync(path.join(__dirname, '..', 'muse-mcp.js'), 'utf8');

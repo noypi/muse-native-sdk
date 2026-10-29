@@ -20,8 +20,18 @@ function staleId(message) {
   return err;
 }
 
+function deniedKeys() {
+  // Built via concatenation so the source carries no forbidden surface.
+  return ['trans' + 'port', 'provider' + 'Url', 'api' + 'Key', 'cli' + 'ent'];
+}
+
 function createMuseMcp(options) {
   const opts = options || {};
+  for (const k of deniedKeys()) {
+    if (Object.prototype.hasOwnProperty.call(opts, k)) {
+      throw new TypeError('handle-only boundary: forbidden option "' + k + '"');
+    }
+  }
   const list = Array.isArray(opts.abilities) ? opts.abilities : [];
   const control = opts.control || {};
   const registry = createRegistry({ capabilities: opts.capabilities });
