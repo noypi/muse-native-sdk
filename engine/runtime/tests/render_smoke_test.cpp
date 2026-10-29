@@ -1,19 +1,20 @@
-// T8 contract tests — FR-RUNTIME-003 / AC-RUNTIME-006 (TC-RUNTIME-006 hermetic
-// counterpart; real-GPU presentation stays external device-lab).
-// Renderer draws the MVP primitive vocabulary (Rect, RoundedRect, Image,
-// Text) with per-node opacity into the swapchain; an unsupported kind
-// returns DrawError::UnknownPrimitive instead of a default box
-// (RULE-RUNTIME-001); drawing is gated on the T5 checkBaseline probe.
+// Batch 1 contract tests — FR-GRAPHICS-010 / AC-GRAPHICS-029
+// (TC-GRAPHICS-029 hermetic counterpart; gallery goldens stay T9/T10).
+// T1: retained vocabulary extends to 11 PrimitiveKinds with copyable
+// PrimitivePayload; unknown kind fails closed (RULE-RUNTIME-001).
+// T2: StateLayer (payload.stateColor/stateOpacity) renders tint rect at
+// bounds; error surface unchanged.
 // Hermetic: C++17 + committed runtime headers only; FakeSwapchain records
-// cmds in-process, fake DeviceCaps, no GPU, no Vulkan headers, no network,
-// no env/config reads, no filesystem, no live services.
-// Binds ONLY to the T8 `Interface:` line; never to implementation.
-// RED STATE (expected): `runtime/renderer.h` does not exist yet (production
-// code owned by the coder), so this file must fail to compile until the
-// coder writes renderer.h/renderer.cpp.
+// cmds in-process, fake DeviceCaps, no GPU, no network, no env/config,
+// no filesystem, no live services.
+// Binds ONLY to the T1/T2 `Interface:` lines; never to implementation.
+// RED STATE (expected): `runtime/renderer.h` has only 4 kinds and no
+// PrimitivePayload yet (production code owned by the coder), so this file
+// must fail to compile until the coder implements T1/T2.
 #include <cstdint>
 #include <cstdio>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 #include "runtime/renderer.h"
@@ -49,6 +50,103 @@ runtime::DrawCmd make_cmd(runtime::PrimitiveKind kind, float opacity,
 }
 
 }  // namespace
+
+// T1: all 11 vocabulary kinds draw — one cmd per kind is recorded in the
+// swapchain with kind/nodeId intact; draw returns None.
+static bool check_all_eleven_kinds_draw() {
+  runtime::Renderer renderer(baseline_device());
+  FakeSwapchain target;
+  const std::vector<runtime::PrimitiveKind> kinds = {
+      runtime::PrimitiveKind::Rect,
+      runtime::PrimitiveKind::RoundedRect,
+      runtime::PrimitiveKind::Image,
+      runtime::PrimitiveKind::Text,
+      runtime::PrimitiveKind::StateLayer,
+      runtime::PrimitiveKind::Ripple,
+      runtime::PrimitiveKind::ElevationShadow,
+      runtime::PrimitiveKind::CircleArc,
+      runtime::PrimitiveKind::VectorIcon,
+      runtime::PrimitiveKind::ShapedText,
+      runtime::PrimitiveKind::OverlayScrim,
+  };
+  std::vector<runtime::DrawCmd> cmds;
+  std::uint32_t node = 100;
+  for (const auto kind : kinds) {
+    cmds.push_back(make_cmd(kind, 1.0f, node++));
+  }
+  if (renderer.draw(cmds, target) != runtime::DrawError::None) return false;
+  if (target.captured.size() != kinds.size()) return false;
+  for (std::size_t i = 0; i < kinds.size(); ++i) {
+    if (target.captured[i].kind != kinds[i]) return false;
+    if (target.captured[i].nodeId != cmds[i].nodeId) return false;
+  }
+  return true;
+}
+
+// T1: PrimitivePayload is copyable (noexcept-copyable per plan A1) and a
+// DrawCmd copy preserves kind/bounds/payload.
+static bool check_payload_copyable_cmd_copy_preserves() {
+  static_assert(std::is_copy_constructible<runtime::PrimitivePayload>::value,
+                "PrimitivePayload must be copyable");
+  static_assert(std::is_copy_assignable<runtime::PrimitivePayload>::value,
+                "PrimitivePayload must be copy-assignable");
+  runtime::DrawCmd cmd = make_cmd(runtime::PrimitiveKind::StateLayer, 1.0f, 61);
+  cmd.payload.stateColor = 0xFF112233u;
+  cmd.payload.stateOpacity = 0.5f;
+  const runtime::DrawCmd copied = cmd;
+  if (copied.kind != runtime::PrimitiveKind::StateLayer) return false;
+  if (copied.payload.stateColor != 0xFF112233u) return false;
+  if (copied.payload.stateOpacity != 0.5f) return false;
+  if (copied.bounds.w != 100.0f || copied.bounds.h != 50.0f) return false;
+  runtime::DrawCmd assigned;
+  assigned = cmd;
+  return assigned.payload.stateColor == 0xFF112233u &&
+         assigned.payload.stateOpacity == 0.5f;
+}
+
+// T2: StateLayer renders tint rect at bounds — recorded cmd keeps bounds,
+// stateColor, stateOpacity; draw returns None.
+static bool check_statelayer_records_tint_at_bounds() {
+  runtime::Renderer renderer(baseline_device());
+  FakeSwapchain target;
+  runtime::DrawCmd cmd =
+      make_cmd(runtime::PrimitiveKind::StateLayer, 1.0f, 71);
+  cmd.bounds = {5.0f, 7.0f, 64.0f, 32.0f};
+  cmd.payload.stateColor = 0xFF445566u;
+  cmd.payload.stateOpacity = 0.25f;
+  if (renderer.draw({cmd}, target) != runtime::DrawError::None) return false;
+  if (target.captured.size() != 1) return false;
+  const runtime::DrawCmd& recorded = target.captured[0];
+  if (recorded.kind != runtime::PrimitiveKind::StateLayer) return false;
+  if (recorded.nodeId != 71) return false;
+  if (recorded.bounds.x != 5.0f || recorded.bounds.y != 7.0f ||
+      recorded.bounds.w != 64.0f || recorded.bounds.h != 32.0f) {
+    return false;
+  }
+  return recorded.payload.stateColor == 0xFF445566u &&
+         recorded.payload.stateOpacity == 0.25f;
+}
+
+// T2 boundary: StateLayer opacity edges 0.0 (no visible tint, still
+// submits None) and 1.0 round-trip exactly.
+static bool check_statelayer_opacity_edges_zero_and_one() {
+  runtime::Renderer renderer(baseline_device());
+  FakeSwapchain target;
+  runtime::DrawCmd zero =
+      make_cmd(runtime::PrimitiveKind::StateLayer, 1.0f, 81);
+  zero.payload.stateColor = 0xFF0000FFu;
+  zero.payload.stateOpacity = 0.0f;
+  runtime::DrawCmd one =
+      make_cmd(runtime::PrimitiveKind::StateLayer, 1.0f, 82);
+  one.payload.stateColor = 0xFF0000FFu;
+  one.payload.stateOpacity = 1.0f;
+  if (renderer.draw({zero, one}, target) != runtime::DrawError::None) {
+    return false;
+  }
+  if (target.captured.size() != 2) return false;
+  return target.captured[0].payload.stateOpacity == 0.0f &&
+         target.captured[1].payload.stateOpacity == 1.0f;
+}
 
 // Named case: each MVP primitive kind draws — one cmd per kind is recorded
 // in the swapchain.
@@ -175,11 +273,34 @@ static bool check_mixed_list_reports_unknown_kind() {
   return sawValid;
 }
 
+// Named case (T1 fail-closed kept): unknown kind among the new vocabulary
+// still returns UnknownPrimitive and records no box for that nodeId.
+static bool check_unknown_kind_among_new_vocabulary_fail_closed() {
+  runtime::Renderer renderer(baseline_device());
+  FakeSwapchain target;
+  runtime::DrawCmd ok =
+      make_cmd(runtime::PrimitiveKind::StateLayer, 1.0f, 91);
+  ok.payload.stateColor = 0xFF123456u;
+  ok.payload.stateOpacity = 0.5f;
+  runtime::DrawCmd bad = make_cmd(static_cast<runtime::PrimitiveKind>(999),
+                                  1.0f, 92);
+  const std::vector<runtime::DrawCmd> cmds = {ok, bad};
+  if (renderer.draw(cmds, target) != runtime::DrawError::UnknownPrimitive) {
+    return false;
+  }
+  bool sawOk = false;
+  for (const auto& recorded : target.captured) {
+    if (recorded.nodeId == 92) return false;
+    if (recorded.nodeId == 91) sawOk = true;
+  }
+  return sawOk;
+}
+
 #define RUN_CASE(name)                           \
   do {                                           \
     if (!(name)()) {                             \
       std::printf("FAIL %s\n", #name);           \
-      ++failures;                                \
+       ++failures;                                \
     } else {                                     \
       std::printf("PASS %s\n", #name);           \
     }                                            \
@@ -187,6 +308,10 @@ static bool check_mixed_list_reports_unknown_kind() {
 
 int main() {
   int failures = 0;
+  RUN_CASE(check_all_eleven_kinds_draw);
+  RUN_CASE(check_payload_copyable_cmd_copy_preserves);
+  RUN_CASE(check_statelayer_records_tint_at_bounds);
+  RUN_CASE(check_statelayer_opacity_edges_zero_and_one);
   RUN_CASE(check_each_primitive_kind_draws);
   RUN_CASE(check_per_node_opacity_recorded);
   RUN_CASE(check_opacity_edges_zero_and_one);
@@ -194,6 +319,7 @@ int main() {
   RUN_CASE(check_unknown_primitive_returns_error_no_default_box);
   RUN_CASE(check_unsupported_baseline_gate_noops);
   RUN_CASE(check_mixed_list_reports_unknown_kind);
+  RUN_CASE(check_unknown_kind_among_new_vocabulary_fail_closed);
   if (failures > 0) {
     std::printf("render_smoke_test: %d failing\n", failures);
     return 1;
