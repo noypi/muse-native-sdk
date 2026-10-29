@@ -25,6 +25,9 @@ const SCHEMA = {
   diagnostics: 'object',
   archs: 'object',
   packaging: 'string',
+  keystore: 'string',
+  keyAlias: 'string',
+  storepass: 'string',
 };
 
 const DEFAULTS = {
@@ -39,6 +42,9 @@ const DEFAULTS = {
   diagnostics: undefined,
   archs: ALL_ARCHS.slice(),
   packaging: 'fat',
+  keystore: path.join(__dirname, '..', 'templates', 'android', 'debug.keystore'),
+  keyAlias: 'androiddebugkey',
+  storepass: undefined,
 };
 
 const ENV_PREFIX = 'MUSE_NATIVE_';
