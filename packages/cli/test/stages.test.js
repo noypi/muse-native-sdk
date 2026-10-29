@@ -259,4 +259,48 @@ describe('BUG-SAMPLE-002 — gallery-is-sample returns app sources once (AC-SAMP
       `non-sample withSample build must concatenate (roots ${ctx._tree.roots.length} !== app ${appSources.length} + sample ${sampleSources.length}); an over-correction dropping the merge returns only ${appSources.length}`,
     );
   });
+
+  it('sample-dir guard normalizes appDir aliases — trailing slash, dot segment, and relative spelling still single-load (FR-SAMPLE-007)', async () => {
+    const appSources = ir.loadSources(GALLERY_DIR);
+    assert.ok(appSources.length > 0, 'gallery fixture must hold at least one .tsx source');
+    const dotAlias = GALLERY_DIR + path.sep + '.';
+    const parentAlias = GALLERY_DIR + path.sep + '..' + path.sep + 'm3-gallery';
+    const relativeAlias = path.relative(process.cwd(), GALLERY_DIR);
+    // Precondition: every alias is textually distinct yet resolves identically.
+    for (const alias of [dotAlias, parentAlias, relativeAlias]) {
+      assert.notEqual(alias, GALLERY_DIR, `alias must differ textually from the canonical path, got ${JSON.stringify(alias)}`);
+      assert.equal(path.resolve(alias), path.resolve(GALLERY_DIR), `alias must resolve identically: ${JSON.stringify(alias)}`);
+    }
+    for (const appDir of [GALLERY_DIR + path.sep, dotAlias, parentAlias, relativeAlias]) {
+      const ctx = { appDir, config: { withSample: true } };
+      const results = await stages.runStages('compile', ctx);
+      assert.equal(results.length, 1, 'single-stage run must return exactly one result');
+      assert.equal(results[0].ok, true, `compile of aliased sample target ${JSON.stringify(appDir)} must succeed, got: ${JSON.stringify(results[0].error)}`);
+      assert.equal(
+        ctx._tree.roots.length,
+        appSources.length,
+        `aliased sample target ${JSON.stringify(appDir)} must single-load (roots ${ctx._tree.roots.length} !== app sources ${appSources.length}); a string-equality guard evaded by the alias doubles to ${2 * appSources.length}`,
+      );
+    }
+  });
+
+  it('withSample with an absent sample target fails closed naming the expected sample dir (AC-SAMPLE-018)', async () => {
+    const work = mkTmp('muse-sample-absent-');
+    const appDir = path.join(work, 'app');
+    fs.mkdirSync(appDir, { recursive: true });
+    writePassingApp(appDir);
+    // Out-of-tree tmp app: `resolveSampleDir` falls through to the
+    // app-anchored sibling, which does not exist here.
+    const expectedSampleDir = path.join(path.dirname(path.resolve(appDir)), 'examples', 'm3-gallery');
+    assert.ok(!fs.existsSync(expectedSampleDir), `precondition: sample dir must be absent, but exists at ${expectedSampleDir}`);
+    const ctx = { appDir, config: { withSample: true } };
+    const results = await stages.runStages('compile', ctx);
+    assert.equal(results.length, 1, 'single-stage run must return exactly one result');
+    assert.equal(results[0].ok, false, 'compile with an absent sample target must fail closed (ok:false), not silently build app-only');
+    const message = (results[0].error && results[0].error.message) || '';
+    assert.ok(
+      message.includes(expectedSampleDir),
+      `stage failure must name the expected sample dir ${JSON.stringify(expectedSampleDir)}, got: ${JSON.stringify(message)}`,
+    );
+  });
 });
