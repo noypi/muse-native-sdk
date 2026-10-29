@@ -461,3 +461,101 @@ describe('T4 hermetic gate coverage TC-017..022 (AC-PACKAGING-017..022)', () => 
     assert.equal(stubCalls.length, 0, 'T4 assertions must not shell out to any tool');
   });
 });
+
+// --- Review fix: exact x86 slot token + NDK_HOME re-derived (T2) ---------
+// Code-review follow-up (BLOCKER + apk MAJORS fixed in Makefiles): tighten the
+// T2 gates so (a) the cmake configure line cannot reference an unset per-line
+// shell var, and (d) the x86 allow-list slot cannot be subsumed by x86_64.
+// Hermetic: Makefile-text assertions only; child_process stays stubbed.
+describe('T2 review tightening: NDK_HOME + exact x86 slot (AC-PACKAGING-018/019)', () => {
+  it('cmake configure re-derives NDK_HOME on the same recipe line (no unset per-line var)', () => {
+    const body = targetBody(readMakefile(), 'engine-android');
+    const lines = body.split('\n');
+    const configureLines = lines.filter((l) => l.includes('CMAKE_TOOLCHAIN_FILE'));
+    assert.ok(configureLines.length >= 1, 'engine-android must configure via a CMAKE_TOOLCHAIN_FILE line');
+    for (const line of configureLines) {
+      assert.ok(line.includes('$$NDK_HOME'),
+        'configure line must reference the derived $$NDK_HOME toolchain path');
+      assert.ok(line.includes('NDK_HOME='),
+        'configure line must re-derive NDK_HOME on the same shell line (each make recipe line is a fresh shell; a bare $$NDK_HOME from another line is unset)');
+      assert.ok(line.indexOf('NDK_HOME=') < line.indexOf('$$NDK_HOME'),
+        'NDK_HOME= assignment must precede the $$NDK_HOME use on the configure line');
+    }
+  });
+
+  it('x86 slot match is an exact token so x86_64 does not subsume x86 (AC-PACKAGING-018)', () => {
+    const text = readMakefile();
+    // Padded-token match: " $$ABI " against " x86 " / " x86_64 " alternatives.
+    assert.ok(text.includes('" x86 "') || text.includes("' x86 '") || text.includes(' x86 "'),
+      'allow-list gate must match x86 as an exact space-delimited slot token');
+    assert.ok(text.includes('x86_64'), 'allow-list gate must still list the x86_64 slot distinctly');
+    assert.ok(!text.includes('*x86*)'),
+      'allow-list gate must not use a bare *x86* pattern (it would subsume x86_64 into x86)');
+  });
+
+  it('hermetic: review-tightening T2 asserts text only, zero tool invocations', () => {
+    readMakefile();
+    assert.equal(stubCalls.length, 0, 'review T2 assertions must not shell out to any tool');
+  });
+});
+
+// --- Review fix: apk link-vs-zip paths + gated per-ABI lib copies (T3) --------
+// Code-review follow-up (apk MAJORS fixed in scaffold Makefile): (b) the aapt2
+// link output must differ from the final zip path with manifest/resources
+// staged in between; (c) lib-copy lines must not hide a missing engine lib
+// behind `|| true` — every ABI needs a lib/<abi>/ copy plus an explicit
+// existence gate. Hermetic: scaffold-Makefile-text assertions only.
+describe('T3 review tightening: link/zip paths + per-ABI lib gates (AC-PACKAGING-020)', () => {
+  it('aapt2 link output path differs from the final zip path', () => {
+    const text = readScaffoldMakefile();
+    const body = scaffoldTargetBody(text, 'apk');
+    const linkMatch = /aapt2\s+link[^;\n]*-o\s+(\S+)/.exec(body);
+    assert.ok(linkMatch, 'apk must pass -o <linked-zip> to aapt2 link');
+    assert.ok(/UNSIGNED_APK\s*[:?]?=/.test(text), 'scaffold Makefile must define UNSIGNED_APK');
+    assert.ok(/LINKED_ZIP\s*[:?]?=/.test(text), 'scaffold Makefile must define LINKED_ZIP');
+    const linkedDecl = /LINKED_ZIP\s*[:?]?=\s*(\S+)/.exec(text)[1];
+    const unsignedDecl = /UNSIGNED_APK\s*[:?]?=\s*(\S+)/.exec(text)[1];
+    assert.notEqual(linkedDecl, unsignedDecl,
+      `aapt2 link output (${linkedDecl}) must differ from the final zip (${unsignedDecl})`);
+    assert.ok(body.includes('$(LINKED_ZIP)'), 'apk recipe must link to $(LINKED_ZIP)');
+    assert.ok(body.includes('$(UNSIGNED_APK)') || body.includes('$(notdir $(UNSIGNED_APK))'),
+      'final zip step must target $(UNSIGNED_APK)');
+  });
+
+  it('manifest/resources are staged from the linked zip before the final zip', () => {
+    const body = scaffoldTargetBody(readScaffoldMakefile(), 'apk');
+    const stageIdx = body.indexOf('$(LINKED_ZIP)');
+    const zipIdx = body.indexOf('zip -r');
+    assert.ok(stageIdx !== -1 && zipIdx !== -1, 'apk must stage from $(LINKED_ZIP) then run zip -r');
+    assert.ok(stageIdx < zipIdx, 'manifest/resources staging must precede the final zip');
+    const staging = body.slice(0, zipIdx);
+    assert.ok(staging.includes('AndroidManifest.xml'), 'staging must include AndroidManifest.xml');
+    assert.ok(staging.includes('resources.arsc'), 'staging must include resources.arsc');
+  });
+
+  it('lib-copy lines never use bare || true (missing engine lib must fail)', () => {
+    const body = scaffoldTargetBody(readScaffoldMakefile(), 'apk');
+    const copyLines = body.split('\n').filter((l) => /^\s*cp\b/.test(l) && l.includes('libRuntime.so'));
+    assert.ok(copyLines.length >= 4, `expected per-ABI lib copies, found ${copyLines.length}`);
+    for (const line of copyLines) {
+      assert.ok(!line.includes('|| true'),
+        `lib-copy line must not swallow a missing lib with || true: ${line.trim()}`);
+    }
+  });
+
+  it('every ABI has a lib/<abi>/ copy with an explicit existence gate', () => {
+    const body = scaffoldTargetBody(readScaffoldMakefile(), 'apk');
+    for (const abi of ['arm64-v8a', 'armeabi-v7a', 'x86_64', 'x86']) {
+      assert.ok(body.includes(`lib/${abi}/`),
+        `apk must copy the engine lib into lib/${abi}/ for slot ${abi}`);
+      const gateRe = new RegExp(`test\\s+-f\\s+[^\\n]*${abi.replace('+', '\\+')}[^\\n]*libRuntime\\.so`);
+      assert.match(body, gateRe,
+        `apk must gate slot ${abi} with an explicit test -f existence check before copying`);
+    }
+  });
+
+  it('hermetic: review-tightening T3 asserts text only, zero tool invocations', () => {
+    readScaffoldMakefile();
+    assert.equal(stubCalls.length, 0, 'review T3 assertions must not shell out to any tool');
+  });
+});
