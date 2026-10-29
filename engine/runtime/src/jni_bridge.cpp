@@ -4,6 +4,7 @@
 // ABC, so no engine type reaches JNI consumers.
 
 #include "runtime/jni_bridge.h"
+#include "runtime/presenter.h"
 
 #include <cstdint>
 
@@ -40,6 +41,30 @@ void Runtime_destroy(void* handle) {
   try {
     delete static_cast<EngineRuntimeHost*>(handle);
   } catch (...) {
+  }
+}
+
+// Opaque surface attach/detach across the JNI boundary (FR-RUNTIME-009 T1).
+// The window handle crosses as an opaque void* and is forwarded untouched to
+// the presenter; it is never dereferenced as a View here.
+PresenterError Runtime_attachSurface(void* opaque_window) {
+  try {
+    return AttachSurface(opaque_window);
+  } catch (...) {
+    return {PresenterCode::kInvalidWindow,
+            "Runtime_attachSurface: exception during attach"};
+  }
+}
+
+PresenterError Runtime_detachSurface() {
+  try {
+    return DetachSurface();
+  } catch (...) {
+    // No exception may cross into the VM; report the failure with a
+    // diagnostic instead of masking it as success.
+    return {PresenterCode::kNoSurface,
+            "Runtime_detachSurface: exception during detach; surface state "
+            "ambiguous, re-attach before presenting"};
   }
 }
 
@@ -94,5 +119,45 @@ extern "C" MUSE_JNI_EXPORT void Java_com_muse_devicelab_EngineHost_nativeDestroy
     if (env->ExceptionCheck() == JNI_TRUE) {
       env->ExceptionClear();
     }
+  }
+}
+
+// JNI glue for opaque surface attach/detach (FR-RUNTIME-009 T1).
+// The window handle crosses as an opaque jlong slot; it is never
+// dereferenced as a View. Fail-closed: a null JNIEnv, a pending exception,
+// or a zero handle yields the corresponding error code and never throws
+// across into the VM. Returns the PresenterCode as jint.
+extern "C" MUSE_JNI_EXPORT jint Java_com_muse_devicelab_EngineHost_nativeAttachSurface(
+    JNIEnv* env, jobject thiz, jlong windowHandle) {
+  (void)thiz;
+  if (env == nullptr || env->ExceptionCheck() == JNI_TRUE) {
+    return static_cast<jint>(::runtime::PresenterCode::kInvalidWindow);
+  }
+  try {
+    ::runtime::PresenterError err = ::runtime::Runtime_attachSurface(
+        reinterpret_cast<void*>(static_cast<intptr_t>(windowHandle)));
+    return static_cast<jint>(err.code);
+  } catch (...) {
+    if (env->ExceptionCheck() == JNI_TRUE) {
+      env->ExceptionClear();
+    }
+    return static_cast<jint>(::runtime::PresenterCode::kInvalidWindow);
+  }
+}
+
+extern "C" MUSE_JNI_EXPORT jint Java_com_muse_devicelab_EngineHost_nativeDetachSurface(
+    JNIEnv* env, jobject thiz) {
+  (void)thiz;
+  if (env == nullptr || env->ExceptionCheck() == JNI_TRUE) {
+    return static_cast<jint>(::runtime::PresenterCode::kInvalidWindow);
+  }
+  try {
+    ::runtime::PresenterError err = ::runtime::Runtime_detachSurface();
+    return static_cast<jint>(err.code);
+  } catch (...) {
+    if (env->ExceptionCheck() == JNI_TRUE) {
+      env->ExceptionClear();
+    }
+    return static_cast<jint>(::runtime::PresenterCode::kInvalidWindow);
   }
 }

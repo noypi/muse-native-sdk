@@ -19,6 +19,7 @@ add_library(runtime
   src/ime_inset.cpp
   src/text.cpp
   src/text_field.cpp
+  src/presenter.cpp
 )
 target_include_directories(runtime PUBLIC include)
 target_compile_options(runtime PRIVATE -Wall -Wextra -Wpedantic)
@@ -42,6 +43,7 @@ if(DEFINED ANDROID_ABI AND NOT TARGET Runtime)
     src/vulkan_baseline.cpp
     src/renderer.cpp
     src/jni_bridge.cpp
+    src/presenter.cpp
   )
   set_target_properties(Runtime PROPERTIES
     OUTPUT_NAME Runtime
@@ -208,6 +210,31 @@ add_executable(jni_boundary_test tests/jni_boundary_test.cpp)
 target_link_libraries(jni_boundary_test PRIVATE runtime)
 target_compile_options(jni_boundary_test PRIVATE -Wall -Wextra -Wpedantic)
 add_test(NAME jni_boundary_test COMMAND jni_boundary_test)
+
+add_executable(surface_attach_test tests/surface_attach_test.cpp)
+target_link_libraries(surface_attach_test PRIVATE runtime)
+target_compile_options(surface_attach_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME surface_attach_test COMMAND surface_attach_test)
+
+add_executable(swapchain_surface_test tests/swapchain_surface_test.cpp)
+target_link_libraries(swapchain_surface_test PRIVATE runtime)
+target_compile_options(swapchain_surface_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME swapchain_surface_test COMMAND swapchain_surface_test)
+
+add_executable(present_frame_test tests/present_frame_test.cpp)
+target_link_libraries(present_frame_test PRIVATE runtime)
+target_compile_options(present_frame_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME present_frame_test COMMAND present_frame_test)
+
+add_executable(swapchain_lifecycle_test tests/swapchain_lifecycle_test.cpp)
+target_link_libraries(swapchain_lifecycle_test PRIVATE runtime)
+target_compile_options(swapchain_lifecycle_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME swapchain_lifecycle_test COMMAND swapchain_lifecycle_test)
+
+add_executable(paced_present_test tests/paced_present_test.cpp)
+target_link_libraries(paced_present_test PRIVATE runtime)
+target_compile_options(paced_present_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME paced_present_test COMMAND paced_present_test)
 
 # T3 hermetic dual-ABI gate (permanent wiring; no NDK required).
 # Real Android configure (ANDROID_ABI defined via T1 -C lane) skips this;
