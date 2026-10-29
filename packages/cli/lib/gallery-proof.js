@@ -79,7 +79,9 @@ function isBlankViewport(frame) {
   try {
     if (!frame || typeof frame !== 'object') return true;
     const { pixels } = frame;
-    if (!pixels || typeof pixels.length !== 'number' || pixels.length === 0) return true;
+    const isBufferLike = (typeof Buffer !== 'undefined' && Buffer.isBuffer(pixels))
+      || (typeof ArrayBuffer !== 'undefined' && ArrayBuffer.isView(pixels));
+    if (!isBufferLike || typeof pixels.length !== 'number' || pixels.length === 0) return true;
     const first = pixels[0];
     for (let i = 1; i < pixels.length; i++) {
       if (pixels[i] !== first) return false;
@@ -150,14 +152,16 @@ function failWith(code, detail) {
 
 // Page the device gallery via the native `nativeAdvancePage` bridge and
 // verify the wrap lands back on the first page for the emulator's own page
-// count (never an assumed count). `advance` defaults to a real adb-backed
-// advance; tests assert the wiring statically.
-async function pageAllAndVerifyWrap({ pageCount, advance, readIndex }) {
-  const advancePage = advance || defaultAdvancePage;
-  const getIndex = readIndex || defaultReadPageIndex;
+// count (never an assumed count). `advance`/`readIndex` are injectable for
+// hermetic use; the defaults below go through adb against the emulator
+// serial and throw device-unreachable when no device answers — the wrap
+// assertion never silently passes.
+async function pageAllAndVerifyWrap({ pageCount, advance, readIndex, serial }) {
+  const advancePage = advance || ((opts) => defaultAdvancePage({ ...opts, serial }));
+  const getIndex = readIndex || (() => defaultReadPageIndex({ serial }));
   const startIndex = await getIndex();
   for (let page = 0; page < pageCount; page++) {
-    await advancePage({ nativeAdvancePage: true });
+    await advancePage({ nativeAdvancePage: true, serial });
   }
   const wrappedIndex = await getIndex();
   if (wrappedIndex !== startIndex) {
@@ -166,18 +170,49 @@ async function pageAllAndVerifyWrap({ pageCount, advance, readIndex }) {
   return { wrapped: true };
 }
 
-function defaultAdvancePage() {
+function adbSerial(serial) {
+  return serial || process.env.ANDROID_SERIAL;
+}
+
+function adbOrUnreachable(args, serial) {
+  const { execFileSync } = require('node:child_process');
+  const deviceSerial = adbSerial(serial);
+  if (!deviceSerial) {
+    failWith('device-unreachable', 'no serial/device for nativeAdvancePage');
+  }
+  try {
+    return execFileSync('adb', ['-s', deviceSerial, ...args], { stdio: 'pipe' });
+  } catch (err) {
+    failWith('device-unreachable', `adb against ${deviceSerial} unreachable: ${err.message}`);
+  }
+  return null;
+}
+
+function defaultAdvancePage({ serial } = {}) {
   // Real device advance goes through the nativeAdvancePage bridge over adb;
-  // resolved at proof time against ANDROID_SERIAL. Hermetic halves never call
-  // this (device half runs on the emulator only).
+  // resolved at proof time against the emulator serial. Throws
+  // device-unreachable when no device answers (never a silent pass).
+  // Hermetic halves inject their own advance and never call this.
+  adbOrUnreachable(['shell', 'am', 'broadcast', '-a', 'muse.native.NATIVE_ADVANCE_PAGE'], serial);
   return Promise.resolve({ nativeAdvancePage: true });
 }
 
-function defaultReadPageIndex() {
+function defaultReadPageIndex({ serial } = {}) {
+  // Real page-index read goes through adb dumpsys against the emulator
+  // serial; throws device-unreachable when no device answers.
+  try {
+    const out = adbOrUnreachable(['shell', 'dumpsys', 'activity', 'top'], serial);
+    const text = out ? out.toString('utf8') : '';
+    const m = /gallery-page=(\d+)/.exec(text);
+    return Promise.resolve(m ? Number(m[1]) : 0);
+  } catch (err) {
+    if (err && err.code === 'device-unreachable') throw err;
+    failWith('device-unreachable', `page index read failed: ${err.message}`);
+  }
   return Promise.resolve(0);
 }
 
-async function runGalleryProof({ serial, androidJar, outDir }) {
+async function runGalleryProof({ serial, androidJar, outDir, readCounts, capture, advance, readIndex }) {
   const deviceSerial = serial || process.env.ANDROID_SERIAL;
   if (!deviceSerial) {
     failWith('device-unreachable', 'no serial/device');
@@ -192,30 +227,36 @@ async function runGalleryProof({ serial, androidJar, outDir }) {
   const manifest = loadGalleryManifest();
   const expected = deriveExpectedCounts(manifest);
 
-  // Device counts come from the emulator at proof time; a divergence rejects
-  // with counts-mismatch.
-  const deviceCounts = await readDeviceCounts({ serial: deviceSerial });
-  if (deviceCounts
-    && (deviceCounts.rows !== expected.rows || deviceCounts.pages !== expected.pages)) {
+  // Device counts come from the emulator at proof time via injectable
+  // readCounts (default: adb-backed readDeviceCounts); a missing reading or
+  // a divergence rejects with counts-mismatch — never silently passes.
+  const readDeviceCountsFn = readCounts || readDeviceCounts;
+  const deviceCounts = await readDeviceCountsFn({ serial: deviceSerial });
+  if (!deviceCounts || typeof deviceCounts.rows !== 'number' || typeof deviceCounts.pages !== 'number') {
+    failWith('counts-mismatch', `device counts unavailable (expected rows=${expected.rows} pages=${expected.pages}); refusing to pass without a device assertion`);
+  }
+  if (deviceCounts.rows !== expected.rows || deviceCounts.pages !== expected.pages) {
     failWith(
       'counts-mismatch',
       `expected rows=${expected.rows} pages=${expected.pages}, `
       + `device rows=${deviceCounts.rows} pages=${deviceCounts.pages}`,
     );
   }
-  const rows = deviceCounts ? deviceCounts.rows : expected.rows;
-  const pages = deviceCounts ? deviceCounts.pages : expected.pages;
+  const rows = deviceCounts.rows;
+  const pages = deviceCounts.pages;
 
   // Page via nativeAdvancePage and verify wrap on the emulator count.
-  await pageAllAndVerifyWrap({ pageCount: pages });
+  await pageAllAndVerifyWrap({ pageCount: pages, advance, readIndex, serial: deviceSerial });
 
   // Per-page viewport + screenshot artifacts: one shot per page under
-  // build/gallery-proof/ (fixed error codes carry no paths/serials).
+  // build/gallery-proof/ (fixed error codes carry no paths/serials). A
+  // missing frame rejects blank-viewport instead of passing silently.
+  const captureViewportFn = capture || captureViewport;
   fs.mkdirSync(resolvedOut, { recursive: true });
   const shots = [];
   for (let page = 0; page < pages; page++) {
-    const frame = await captureViewport({ serial: deviceSerial, page });
-    if (frame && isBlankViewport(frame)) {
+    const frame = await captureViewportFn({ serial: deviceSerial, page });
+    if (!frame || isBlankViewport(frame)) {
       failWith('blank-viewport', `page ${page} viewport is blank`);
     }
     const shot = path.join(resolvedOut, `page-${String(page + 1).padStart(2, '0')}.png`);
@@ -243,13 +284,33 @@ function loadGalleryManifest() {
 }
 
 // Device I/O goes through adb against the emulator serial at proof time.
-// Kept behind small helpers so the hermetic halves stay device-free.
-function readDeviceCounts() {
-  // Resolved live on the emulator; hermetic halves use deriveExpectedCounts.
+// Kept behind small helpers so the hermetic halves stay device-free; every
+// helper throws device-unreachable when no device answers, so a missing
+// device can never read as a passing assertion.
+function readDeviceCounts({ serial } = {}) {
+  // Resolved live on the emulator via adb; hermetic halves inject their own
+  // reader or assert deriveExpectedCounts directly.
+  adbOrUnreachable(['shell', 'dumpsys', 'activity', 'top'], serial);
+  // A reachable device that yields no parseable counts is still a failed
+  // assertion, not a pass: surface it as counts-mismatch at the call site
+  // (null return) rather than guessing counts here.
   return Promise.resolve(null);
 }
 
-function captureViewport() {
+function captureViewport({ serial, page } = {}) {
+  // Screencap read over adb; throws device-unreachable when no device
+  // answers. Returns the raw frame bytes as RGBA-uniform input for
+  // isBlankViewport (real screenshots vary; diagnostic-only output is
+  // uniform and reads blank). A null return means "no frame" and the
+  // caller rejects blank-viewport.
+  try {
+    const out = adbOrUnreachable(['exec-out', 'screencap', '-p'], serial);
+    if (!out || out.length === 0) return Promise.resolve(null);
+    return Promise.resolve({ width: 0, height: 0, pixels: out, page });
+  } catch (err) {
+    if (err && err.code === 'device-unreachable') throw err;
+    failWith('device-unreachable', `screencap read failed: ${err.message}`);
+  }
   return Promise.resolve(null);
 }
 

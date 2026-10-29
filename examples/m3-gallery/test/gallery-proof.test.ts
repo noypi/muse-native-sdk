@@ -43,6 +43,7 @@ const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
 const { readFileSync, existsSync } = require('node:fs');
 const { join, resolve } = require('node:path');
+const os = require('node:os');
 
 const REPO_ROOT = resolve(__dirname, '..', '..', '..');
 const PROOF_LIB = join(REPO_ROOT, 'packages', 'cli', 'lib', 'gallery-proof.js');
@@ -99,6 +100,66 @@ function nonBlankFrame() {
   return { width: 64, height: 64, pixels };
 }
 
+// Hermetic runGalleryProof driver: everything device-shaped is injected.
+// Serial/jar are obvious dummies; outDir lands under os.tmpdir() (never the
+// repo); advance/readIndex are no-op page fakes (wrap holds: index stays 0).
+// No adb is ever spawned: without injected readCounts/capture/advance the
+// test would fail, so every behavior below injects all three. ANDROID_SERIAL
+// / ANDROID_JAR are cleared per call so the result cannot depend on the host.
+function proofDriver(mod, overrides = {}) {
+  const savedSerial = process.env.ANDROID_SERIAL;
+  const savedJar = process.env.ANDROID_JAR;
+  delete process.env.ANDROID_SERIAL;
+  delete process.env.ANDROID_JAR;
+  const fs = require('node:fs');
+  const outDir = fs.mkdtempSync(join(os.tmpdir(), 'gallery-proof-'));
+  const restore = () => {
+    if (savedSerial === undefined) delete process.env.ANDROID_SERIAL;
+    else process.env.ANDROID_SERIAL = savedSerial;
+    if (savedJar === undefined) delete process.env.ANDROID_JAR;
+    else process.env.ANDROID_JAR = savedJar;
+  };
+  const base = {
+    serial: 'test-serial-not-real',
+    androidJar: 'test-android-jar-not-real',
+    outDir,
+    advance: async () => ({ nativeAdvancePage: true }),
+    readIndex: async () => 0,
+  };
+  const opts = { ...base, ...overrides };
+  return { opts, restore };
+}
+
+async function rejectsWithCode(promise, code) {
+  let err = null;
+  try {
+    await promise;
+  } catch (e) {
+    err = e;
+  }
+  assert.ok(err, `runGalleryProof must reject with ${code}`);
+  const text = `${err.code || ''} ${err.message || ''}`;
+  assert.ok(text.includes(code), `rejection must carry ${code} (got ${text})`);
+  return err;
+}
+
+// Read the on-disk gallery manifest with the same candidate order as
+// loadGalleryManifest() so a readCounts fake can echo the true expectation
+// back (positive control) or diverge from it (mismatch control) without
+// hardcoding rows/pages.
+function loadManifestForExpectation() {
+  const candidates = [
+    join(REPO_ROOT, 'packages', 'native', 'muse.manifest.json'),
+    join(REPO_ROOT, 'examples', 'm3-gallery', 'muse.manifest.json'),
+  ];
+  for (const candidate of candidates) {
+    try {
+      if (existsSync(candidate)) return JSON.parse(readFileSync(candidate, 'utf8'));
+    } catch (_) { /* keep looking */ }
+  }
+  return { components: [] };
+}
+
 describe('T3 gallery-proof module contract', () => {
   it('exports runGalleryProof({ serial, androidJar, outDir })', () => {
     const { mod } = tryLoadProof();
@@ -129,9 +190,33 @@ describe('T3 gallery-proof module contract', () => {
     assert.ok(/buildStories|manifest/i.test(src), 'counts must derive from buildStories(manifest)');
   });
 
-  it('rejects counts-mismatch on expectation divergence', () => {
-    assert.ok(existsSync(PROOF_LIB), 'behavior missing: gallery-proof.js not implemented');
-    assert.ok(readText(PROOF_LIB).includes('counts-mismatch'), 'must reject with counts-mismatch');
+  it('rejects counts-mismatch on diverged device counts (injected readCounts)', async () => {
+    const { mod } = tryLoadProof();
+    assert.ok(mod, 'behavior missing: packages/cli/lib/gallery-proof.js not implemented');
+    const expected = mod.deriveExpectedCounts(loadManifestForExpectation());
+    const { opts, restore } = proofDriver(mod, {
+      readCounts: async () => ({ rows: expected.rows + 1, pages: expected.pages }),
+      capture: async () => nonBlankFrame(),
+    });
+    try {
+      await rejectsWithCode(mod.runGalleryProof(opts), 'counts-mismatch');
+    } finally {
+      restore();
+    }
+  });
+
+  it('rejects counts-mismatch on missing device counts (injected null)', async () => {
+    const { mod } = tryLoadProof();
+    assert.ok(mod, 'behavior missing: packages/cli/lib/gallery-proof.js not implemented');
+    const { opts, restore } = proofDriver(mod, {
+      readCounts: async () => null,
+      capture: async () => nonBlankFrame(),
+    });
+    try {
+      await rejectsWithCode(mod.runGalleryProof(opts), 'counts-mismatch');
+    } finally {
+      restore();
+    }
   });
 
   it('rejects blank-viewport for blank frames, accepts real frames', () => {
@@ -150,11 +235,92 @@ describe('T3 gallery-proof module contract', () => {
     assert.ok(readText(PROOF_LIB).includes('blank-viewport'), 'must reject with blank-viewport');
   });
 
-  it('rejects device-unreachable when no serial/device', () => {
-    assert.ok(existsSync(PROOF_LIB), 'behavior missing: gallery-proof.js not implemented');
-    const src = readText(PROOF_LIB);
-    assert.ok(src.includes('device-unreachable'), 'must reject with device-unreachable');
-    assert.ok(/serial/i.test(src), 'must take the device serial into account');
+  it('treats a malformed frame (non-Buffer pixels) as blank, never crashing', () => {
+    const { mod } = tryLoadProof();
+    assert.ok(mod, 'behavior missing: packages/cli/lib/gallery-proof.js not implemented');
+    assert.equal(typeof mod.isBlankViewport, 'function', 'isBlankViewport must be exported (A-H1/A-H2)');
+    assert.equal(mod.isBlankViewport({ width: 8, height: 8, pixels: 'not-bytes-not-real' }), true, 'string pixels must read blank');
+    assert.equal(mod.isBlankViewport({ width: 8, height: 8 }), true, 'missing pixels must read blank');
+    assert.equal(mod.isBlankViewport(null), true, 'null frame must read blank');
+  });
+
+  it('rejects device-unreachable when no serial/device (injected fakes only)', async () => {
+    const { mod } = tryLoadProof();
+    assert.ok(mod, 'behavior missing: packages/cli/lib/gallery-proof.js not implemented');
+    const savedSerial = process.env.ANDROID_SERIAL;
+    const savedJar = process.env.ANDROID_JAR;
+    delete process.env.ANDROID_SERIAL;
+    delete process.env.ANDROID_JAR;
+    try {
+      await rejectsWithCode(
+        mod.runGalleryProof({
+          serial: undefined,
+          androidJar: 'test-android-jar-not-real',
+          outDir: join(os.tmpdir(), 'gallery-proof-no-serial'),
+          readCounts: async () => ({ rows: 1, pages: 1 }),
+          capture: async () => nonBlankFrame(),
+          advance: async () => ({ nativeAdvancePage: true }),
+          readIndex: async () => 0,
+        }),
+        'device-unreachable',
+      );
+    } finally {
+      if (savedSerial === undefined) delete process.env.ANDROID_SERIAL;
+      else process.env.ANDROID_SERIAL = savedSerial;
+      if (savedJar === undefined) delete process.env.ANDROID_JAR;
+      else process.env.ANDROID_JAR = savedJar;
+    }
+  });
+
+  it('propagates device-unreachable from the injected advance', async () => {
+    const { mod } = tryLoadProof();
+    assert.ok(mod, 'behavior missing: packages/cli/lib/gallery-proof.js not implemented');
+    const expected = mod.deriveExpectedCounts(loadManifestForExpectation());
+    const deviceUnreachable = () => {
+      const err = new Error('device-unreachable: test-injected');
+      err.code = 'device-unreachable';
+      throw err;
+    };
+    const { opts, restore } = proofDriver(mod, {
+      readCounts: async () => ({ rows: expected.rows, pages: expected.pages }),
+      capture: async () => nonBlankFrame(),
+      advance: async () => deviceUnreachable(),
+    });
+    try {
+      await rejectsWithCode(mod.runGalleryProof(opts), 'device-unreachable');
+    } finally {
+      restore();
+    }
+  });
+
+  it('rejects blank-viewport for a blank frame via runGalleryProof (injected capture)', async () => {
+    const { mod } = tryLoadProof();
+    assert.ok(mod, 'behavior missing: packages/cli/lib/gallery-proof.js not implemented');
+    const expected = mod.deriveExpectedCounts(loadManifestForExpectation());
+    const { opts, restore } = proofDriver(mod, {
+      readCounts: async () => ({ rows: expected.rows, pages: expected.pages }),
+      capture: async () => blankFrame(),
+    });
+    try {
+      await rejectsWithCode(mod.runGalleryProof(opts), 'blank-viewport');
+    } finally {
+      restore();
+    }
+  });
+
+  it('rejects blank-viewport for a missing frame via runGalleryProof (injected null)', async () => {
+    const { mod } = tryLoadProof();
+    assert.ok(mod, 'behavior missing: packages/cli/lib/gallery-proof.js not implemented');
+    const expected = mod.deriveExpectedCounts(loadManifestForExpectation());
+    const { opts, restore } = proofDriver(mod, {
+      readCounts: async () => ({ rows: expected.rows, pages: expected.pages }),
+      capture: async () => null,
+    });
+    try {
+      await rejectsWithCode(mod.runGalleryProof(opts), 'blank-viewport');
+    } finally {
+      restore();
+    }
   });
 
   it('parses gallery-proof args with defaults', () => {

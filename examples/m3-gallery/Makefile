@@ -49,7 +49,8 @@ verify: sign
 
 install: sign
 	mkdir -p $(dir $(ASSET_DST))
-	test -f $(ASSET_SRC) && cp $(ASSET_SRC) $(ASSET_DST) || true
+	test -f $(ASSET_SRC) || { echo "error: install failed: missing build output at $(ASSET_SRC); run muse-native build first" >&2; exit 1; }
+	cp $(ASSET_SRC) $(ASSET_DST)
 	if ! adb devices | awk 'NR>1 && $$2=="device" { found=1 } END { exit !found }'; then echo "error: install failed: no device connected (adb devices shows no device); connect a device with USB debugging instead of partial-installing" >&2; exit 1; fi
 	adb install -r $(SIGNED_APK)
 

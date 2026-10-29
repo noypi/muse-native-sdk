@@ -185,6 +185,18 @@ describe('T2 story rows render instead of JSON debug dump (AC-M3-016)', () => {
     );
   });
 
+  it('resolves the descriptor type through the real component table', () => {
+    const src = readSource(APP_PATH);
+    assert.ok(
+      src.includes('components[rendered.type]'),
+      'App.tsx must map the descriptor type string through the real component table (components[rendered.type])',
+    );
+    assert.ok(
+      /<StoryComponent\b/.test(src),
+      'App.tsx must render the resolved table entry as <StoryComponent .../> (a bare <rendered.type /> would render the string as a host tag)',
+    );
+  });
+
   it('keeps the buildStories mapping', () => {
     const src = readSource(APP_PATH);
     assert.match(src, /buildStories\(manifest\)/, 'App.tsx must keep the buildStories(manifest) mapping');

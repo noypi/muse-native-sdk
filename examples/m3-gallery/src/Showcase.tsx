@@ -4,7 +4,7 @@
 // evaluation on device. Covers all three tiers with their documented
 // variants, each in a light row and a dark row. No hooks, no expressions,
 // no imports beyond @muse/native.
-import { View, Text } from '@muse/native';
+import { View, Text, TopAppBar, NavigationBar, NavigationRail, NavigationDrawer, BottomAppBar, SearchBar, SegmentedButton, ButtonGroup, SplitButton, Button, IconButton, Fab, ExtendedFab, Card, Chip, Checkbox, Radio, Switch, Slider, LinearProgress, CircularProgress, Badge, ListItem, Avatar, Icon, Image, Divider, TextFieldEditCore, TextInput, Dialog, BottomSheet, Menu, SnackbarHost, Tooltip, Carousel, Surface, Scroll, Stack, Ripple, OverlayHost } from '@muse/native';
 
 export default function Showcase() {
   return (
@@ -37,31 +37,31 @@ export default function Showcase() {
         <Chip variant="filter" label="Filter chip" />
         <Chip variant="input" label="Input chip" />
         <Chip variant="suggestion" label="Suggestion chip" />
-        <Checkbox checked="true" enabled="true" />
-        <Checkbox checked="false" enabled="true" />
-        <Radio selected="true" enabled="true" />
-        <Radio selected="false" enabled="true" />
-        <Switch checked="true" enabled="true" />
-        <Switch checked="false" enabled="true" />
-        <Slider value="0.6" enabled="true" />
-        <LinearProgress progress="0.6" />
-        <CircularProgress progress="0.4" />
+        <Checkbox checked={true} enabled={true} />
+        <Checkbox checked={false} enabled={true} />
+        <Radio selected={true} enabled={true} />
+        <Radio selected={false} enabled={true} />
+        <Switch checked={true} enabled={true} />
+        <Switch checked={false} enabled={true} />
+        <Slider value={0.6} enabled={true} />
+        <LinearProgress progress={0.6} />
+        <CircularProgress progress={0.4} />
         <Badge label="3" />
         <ListItem headline="Inbox headline" supporting="Three new messages arrived" />
-        <Avatar label="AB" size="40" />
-        <Icon name="favorite" size="24" />
+        <Avatar label="AB" size={40} />
+        <Icon name="favorite" size={24} />
         <Image source="gallery-hero" contentFit="cover" />
-        <Divider orientation="horizontal" /><TextFieldEditCore value="" placeholder="Search settings" enabled="true" /><TextInput value="" placeholder="Search settings" />
-        <Dialog open="true" title="Confirm delete dialog" />
-        <BottomSheet open="true" />
-        <Menu open="true" />
+        <Divider orientation="horizontal" /><TextFieldEditCore value="" placeholder="Search settings" enabled={true} /><TextInput value="" placeholder="Search settings" />
+        <Dialog open={true} title="Confirm delete dialog" />
+        <BottomSheet open={true} />
+        <Menu open={true} />
         <SnackbarHost message="Saved to library snackbar" />
         <Tooltip text="Favorite tooltip" />
-        <Carousel index="1" />
-        <Surface tone="tonal" elevation="1" />
+        <Carousel index={1} />
+        <Surface tone="tonal" elevation={1} />
         <Scroll orientation="vertical" />
-        <Stack direction="column" spacing="8" />
-        <Ripple bounded="true" />
+        <Stack direction="column" spacing={8} />
+        <Ripple bounded={true} />
         <OverlayHost />
       </View>
       <Text>M3 Gallery dark</Text>
@@ -92,31 +92,31 @@ export default function Showcase() {
         <Chip variant="filter" label="Filter chip" />
         <Chip variant="input" label="Input chip" />
         <Chip variant="suggestion" label="Suggestion chip" />
-        <Checkbox checked="true" enabled="true" />
-        <Checkbox checked="false" enabled="true" />
-        <Radio selected="true" enabled="true" />
-        <Radio selected="false" enabled="true" />
-        <Switch checked="true" enabled="true" />
-        <Switch checked="false" enabled="true" />
-        <Slider value="0.6" enabled="true" />
-        <LinearProgress progress="0.6" />
-        <CircularProgress progress="0.4" />
+        <Checkbox checked={true} enabled={true} />
+        <Checkbox checked={false} enabled={true} />
+        <Radio selected={true} enabled={true} />
+        <Radio selected={false} enabled={true} />
+        <Switch checked={true} enabled={true} />
+        <Switch checked={false} enabled={true} />
+        <Slider value={0.6} enabled={true} />
+        <LinearProgress progress={0.6} />
+        <CircularProgress progress={0.4} />
         <Badge label="3" />
         <ListItem headline="Inbox headline" supporting="Three new messages arrived" />
-        <Avatar label="AB" size="40" />
-        <Icon name="favorite" size="24" />
+        <Avatar label="AB" size={40} />
+        <Icon name="favorite" size={24} />
         <Image source="gallery-hero" contentFit="cover" />
-        <Divider orientation="horizontal" /><TextFieldEditCore value="" placeholder="Search settings" enabled="true" /><TextInput value="" placeholder="Search settings" />
-        <Dialog open="true" title="Confirm delete dialog" />
-        <BottomSheet open="true" />
-        <Menu open="true" />
+        <Divider orientation="horizontal" /><TextFieldEditCore value="" placeholder="Search settings" enabled={true} /><TextInput value="" placeholder="Search settings" />
+        <Dialog open={true} title="Confirm delete dialog" />
+        <BottomSheet open={true} />
+        <Menu open={true} />
         <SnackbarHost message="Saved to library snackbar" />
         <Tooltip text="Favorite tooltip" />
-        <Carousel index="1" />
-        <Surface tone="tonal" elevation="1" />
+        <Carousel index={1} />
+        <Surface tone="tonal" elevation={1} />
         <Scroll orientation="vertical" />
-        <Stack direction="column" spacing="8" />
-        <Ripple bounded="true" />
+        <Stack direction="column" spacing={8} />
+        <Ripple bounded={true} />
         <OverlayHost />
       </View>
     </View>
