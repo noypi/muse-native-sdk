@@ -25,8 +25,12 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
+const stages = require('../lib/stages.js');
+const ir = require('../lib/ir.js');
 
 const CLI_DIR = path.resolve(__dirname, '..');
+const REPO_ROOT = path.resolve(CLI_DIR, '..', '..');
+const GALLERY_DIR = path.join(REPO_ROOT, 'examples', 'm3-gallery');
 const BIN_NATIVE = path.join(CLI_DIR, 'bin', 'muse-native.js');
 
 const STAGES = [
@@ -198,5 +202,105 @@ describe('Security — stage-failure stderr never echoes secrets or stacks (AC-W
     for (const line of r.stderr.split('\n').filter((l) => l.trim())) {
       assert.match(line, /^Error: /, `stderr line must be an option/key/location-shaped message, got: ${JSON.stringify(line)}`);
     }
+  });
+});
+
+// BUG-SAMPLE-002 — gallery-is-sample regression (FR-SAMPLE-007, AC-SAMPLE-018).
+// `loadEffectiveSourcesOrThrow` is internal to `../lib/stages.js`, so these
+// cases drive it through its public boundary `runStages('compile', ctx)`
+// (exported) and read the effective source count back as
+// `ctx._tree.roots.length` — `lowerToIR` maps one root per source, so roots
+// length === effective sources length. `config: { withSample: true }`
+// selects the sample merge without touching process env, network, or the
+// real filesystem outside hermetic tmp dirs (case (b)) and the read-only
+// repo gallery (case (a)); `compile` writes nothing.
+// ASSUMPTIONS (contract genuinely silent, most defensible behavior tested):
+// - A-T2a: the gallery source count is read live (`ir.loadSources`), not
+//   pinned to plan A2's `4`: this checkout holds 3 `.tsx` files, so the
+//   single-load assertion is `roots === appCount` (currently 3). A drift
+//   that changes the gallery file set keeps the test meaningful.
+// - A-T2b: a hermetic out-of-tree tmp app cannot see the checkout's sample
+//   (`resolveSampleDir` fails closed off-checkout), so case (b) builds a
+//   hermetic tmp repo `<w>/app` + `<w>/examples/m3-gallery` (a recursive
+//   copy of the real gallery) to exercise the intended app+sample merge.
+describe('BUG-SAMPLE-002 — gallery-is-sample returns app sources once (AC-SAMPLE-018)', () => {
+  it('sample target with withSample compiles from its own sources exactly once (no doubled concat)', async () => {
+    const appSources = ir.loadSources(GALLERY_DIR);
+    assert.ok(appSources.length > 0, 'gallery fixture must hold at least one .tsx source');
+    const ctx = { appDir: GALLERY_DIR, config: { withSample: true } };
+    const results = await stages.runStages('compile', ctx);
+    assert.equal(results.length, 1, 'single-stage run must return exactly one result');
+    assert.equal(results[0].ok, true, `compile of the sample target must succeed, got: ${JSON.stringify(results[0].error)}`);
+    assert.equal(
+      ctx._tree.roots.length,
+      appSources.length,
+      `gallery-is-sample must return app sources unconcatenated (roots ${ctx._tree.roots.length} !== app sources ${appSources.length}); unfixed code doubles to ${2 * appSources.length}`,
+    );
+  });
+
+  it('non-sample app with withSample still concatenates app + sample sources (merge preserved)', async () => {
+    const work = mkTmp('muse-sample-merge-');
+    const appDir = path.join(work, 'app');
+    fs.mkdirSync(appDir, { recursive: true });
+    writePassingApp(appDir);
+    const sampleDir = path.join(work, 'examples', 'm3-gallery');
+    fs.mkdirSync(path.dirname(sampleDir), { recursive: true });
+    fs.cpSync(GALLERY_DIR, sampleDir, { recursive: true });
+    const appSources = ir.loadSources(appDir);
+    const sampleSources = ir.loadSources(sampleDir);
+    assert.ok(appSources.length > 0 && sampleSources.length > 0, 'both app and sample fixtures must hold sources');
+    const ctx = { appDir, config: { withSample: true } };
+    const results = await stages.runStages('compile', ctx);
+    assert.equal(results.length, 1, 'single-stage run must return exactly one result');
+    assert.equal(results[0].ok, true, `compile of the non-sample app must succeed, got: ${JSON.stringify(results[0].error)}`);
+    assert.equal(
+      ctx._tree.roots.length,
+      appSources.length + sampleSources.length,
+      `non-sample withSample build must concatenate (roots ${ctx._tree.roots.length} !== app ${appSources.length} + sample ${sampleSources.length}); an over-correction dropping the merge returns only ${appSources.length}`,
+    );
+  });
+
+  it('sample-dir guard normalizes appDir aliases — trailing slash, dot segment, and relative spelling still single-load (FR-SAMPLE-007)', async () => {
+    const appSources = ir.loadSources(GALLERY_DIR);
+    assert.ok(appSources.length > 0, 'gallery fixture must hold at least one .tsx source');
+    const dotAlias = GALLERY_DIR + path.sep + '.';
+    const parentAlias = GALLERY_DIR + path.sep + '..' + path.sep + 'm3-gallery';
+    const relativeAlias = path.relative(process.cwd(), GALLERY_DIR);
+    // Precondition: every alias is textually distinct yet resolves identically.
+    for (const alias of [dotAlias, parentAlias, relativeAlias]) {
+      assert.notEqual(alias, GALLERY_DIR, `alias must differ textually from the canonical path, got ${JSON.stringify(alias)}`);
+      assert.equal(path.resolve(alias), path.resolve(GALLERY_DIR), `alias must resolve identically: ${JSON.stringify(alias)}`);
+    }
+    for (const appDir of [GALLERY_DIR + path.sep, dotAlias, parentAlias, relativeAlias]) {
+      const ctx = { appDir, config: { withSample: true } };
+      const results = await stages.runStages('compile', ctx);
+      assert.equal(results.length, 1, 'single-stage run must return exactly one result');
+      assert.equal(results[0].ok, true, `compile of aliased sample target ${JSON.stringify(appDir)} must succeed, got: ${JSON.stringify(results[0].error)}`);
+      assert.equal(
+        ctx._tree.roots.length,
+        appSources.length,
+        `aliased sample target ${JSON.stringify(appDir)} must single-load (roots ${ctx._tree.roots.length} !== app sources ${appSources.length}); a string-equality guard evaded by the alias doubles to ${2 * appSources.length}`,
+      );
+    }
+  });
+
+  it('withSample with an absent sample target fails closed naming the expected sample dir (AC-SAMPLE-018)', async () => {
+    const work = mkTmp('muse-sample-absent-');
+    const appDir = path.join(work, 'app');
+    fs.mkdirSync(appDir, { recursive: true });
+    writePassingApp(appDir);
+    // Out-of-tree tmp app: `resolveSampleDir` falls through to the
+    // app-anchored sibling, which does not exist here.
+    const expectedSampleDir = path.join(path.dirname(path.resolve(appDir)), 'examples', 'm3-gallery');
+    assert.ok(!fs.existsSync(expectedSampleDir), `precondition: sample dir must be absent, but exists at ${expectedSampleDir}`);
+    const ctx = { appDir, config: { withSample: true } };
+    const results = await stages.runStages('compile', ctx);
+    assert.equal(results.length, 1, 'single-stage run must return exactly one result');
+    assert.equal(results[0].ok, false, 'compile with an absent sample target must fail closed (ok:false), not silently build app-only');
+    const message = (results[0].error && results[0].error.message) || '';
+    assert.ok(
+      message.includes(expectedSampleDir),
+      `stage failure must name the expected sample dir ${JSON.stringify(expectedSampleDir)}, got: ${JSON.stringify(message)}`,
+    );
   });
 });
