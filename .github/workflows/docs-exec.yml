@@ -31,3 +31,15 @@ jobs:
           set -euo pipefail
           ./scripts/check-prerequisites.sh
           # Note: --self-test is a local fallback for debugging only; CI runs with no args.
+      - name: Assert build script is executable
+        run: |
+          set -euo pipefail
+          test -x scripts/build-sample.sh
+      - name: Build sample
+        run: |
+          set -euo pipefail
+          ./scripts/build-sample.sh examples/m3-gallery
+      - name: Assert README documents build script
+        run: |
+          set -euo pipefail
+          grep -q 'build-sample.sh' README.md
