@@ -9,6 +9,7 @@ outside the allow-list below, it does so only with the generic phrase
 "non-Muse models" — never by naming an outside model, vendor, or endpoint.
 
 This exclusivity rule exists for the five FR-MUSE-007 reasons:
+Through the abilities path, the only remote path is the adapter's server-side capability re-check, and component-level non-Muse configuration stays rejected per AC-MUSE-019.
 
 1. **Swap-test integrity** — the swap test is only meaningful when every route
    under test resolves to a known Muse upstream; any outside upstream would
