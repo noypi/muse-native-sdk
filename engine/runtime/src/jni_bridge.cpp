@@ -188,9 +188,18 @@ namespace {
 
 #ifdef __ANDROID__
 constexpr const char* kMuseLogTag = "muse-host";
+// Proof-marker tag: matches the gallery-proof `GalleryPage:I` logcat filter
+// (logcat rejects a filter spec with an embedded second colon, so the tag
+// itself carries no colon). Markers emitted here mirror exactly what the
+// device pager uses — never hardcoded counts.
+constexpr const char* kGalleryLogTag = "GalleryPage";
 
 void MuseLogInfo(const std::string& msg) {
   __android_log_print(ANDROID_LOG_INFO, kMuseLogTag, "%s", msg.c_str());
+}
+
+void GalleryLogInfo(const std::string& msg) {
+  __android_log_print(ANDROID_LOG_INFO, kGalleryLogTag, "%s", msg.c_str());
 }
 #endif
 
@@ -212,6 +221,24 @@ GalleryHandle* ToGallery(jlong handle) {
 }
 
 #ifdef __ANDROID__
+// Emits the proof markers the gallery-proof parser scans for
+// (`gallery-rows=N gallery-pages=M` pairs and `gallery-page=i/M`), under the
+// `GalleryPage` tag so the `GalleryPage:I` logcat filter sees them. Counts
+// always come from the live row model + pager (rows.size() and
+// GalleryPageCount with the attached window height) — never constants.
+// Callers must hold g->mu.
+void EmitGalleryMarkersLocked(GalleryHandle* g, int pages, int w, int h) {
+  (void)w;
+  (void)h;
+  char marker[128];
+  std::snprintf(marker, sizeof(marker), "gallery-rows=%d gallery-pages=%d",
+                static_cast<int>(g->rows.size()), pages);
+  GalleryLogInfo(marker);
+  char page[64];
+  std::snprintf(page, sizeof(page), "gallery-page=%d/%d", g->page + 1, pages);
+  GalleryLogInfo(page);
+}
+
 // Renders the current page into the attached window. Callers must hold
 // g->mu: attach state, page, and rows are all mutated under that lock.
 void RenderLocked(GalleryHandle* g) {
@@ -238,6 +265,8 @@ void RenderLocked(GalleryHandle* g) {
                                            static_cast<std::uint32_t*>(buf.bits),
                                            stride, w, h, &error);
   ANativeWindow_unlockAndPost(win);
+  // Proof markers for the presented page (device's own row model + pager).
+  EmitGalleryMarkersLocked(g, pages, w, h);
   if (!error.empty() || drawn == 0) {
     // Production logging is failure-only: a healthy frame stays silent.
     char msg[192];
@@ -296,6 +325,17 @@ extern "C" MUSE_JNI_EXPORT jlong Java_com_muse_host_MainActivity_nativeLoadTree(
                   g->parseError.empty() ? "" : " parseWarn=",
                   g->parseError.empty() ? "" : g->parseError.c_str());
     MuseLogInfo(msg);
+    {
+      // Proof marker: device's own parsed row count. The window is not
+      // attached yet at load, so the pager height is unknown here — the
+      // authoritative `gallery-rows=N gallery-pages=M` pair (with the real
+      // viewport height) is emitted on every render; this line guarantees
+      // the rows count is visible even before the first frame.
+      char marker[128];
+      std::snprintf(marker, sizeof(marker), "gallery-rows=%d",
+                    static_cast<int>(g->rows.size()));
+      GalleryLogInfo(marker);
+    }
 #endif
     return static_cast<jlong>(reinterpret_cast<intptr_t>(g));
   } catch (...) {

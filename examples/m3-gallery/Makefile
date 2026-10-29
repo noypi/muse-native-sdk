@@ -35,7 +35,7 @@ apk:
 	cp ../../build/android-x86/libRuntime.so $(STAGING_DIR)/lib/x86/libRuntime.so
 	cp $(BUILD_DIR)/dex/classes.dex $(STAGING_DIR)/classes.dex
 	cp -r tree/* $(STAGING_DIR)/assets/tree/ 2>/dev/null || cp -r assets/* $(STAGING_DIR)/assets/ 2>/dev/null || true
-	cd $(STAGING_DIR) && zip -r ../$(notdir $(UNSIGNED_APK)) AndroidManifest.xml classes.dex resources.arsc lib assets
+	cd $(STAGING_DIR) && zip -r ../$(notdir $(UNSIGNED_APK)) AndroidManifest.xml classes.dex lib assets && zip -0 ../$(notdir $(UNSIGNED_APK)) resources.arsc
 
 sign: apk
 	zipalign -f 4 $(UNSIGNED_APK) $(ALIGNED_APK)

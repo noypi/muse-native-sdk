@@ -4,8 +4,10 @@
 // Installs the x86_64 android-35 gallery build on the emulator at
 // `ANDROID_SERIAL=127.0.0.1:6562`, pages through every gallery page via
 // `nativeAdvancePage` (verifying wrap on the emulator's own page count),
-// asserts row/page counts against the manifest-derived expectation from
-// `buildStories(manifest)` (never hardcoded Huawei rows/pages), asserts no
+// asserts row/page counts against the built-tree expectation parsed from the
+// installed dist/tree.mui.bin with the device's own row filter and paged by
+// the live viewport height (never hardcoded rows/pages, never manifest story
+// counts), asserts no
 // blank/diagnostic-only viewport per page, and saves one screenshot per page
 // under `examples/m3-gallery/build/gallery-proof/` as run artifacts feeding
 // TC-M3-022.
@@ -29,11 +31,209 @@ const fs = require('node:fs');
 const DEFAULT_OUT_SUFFIX = path.join('examples', 'm3-gallery', 'build', 'gallery-proof');
 const ROWS_PER_PAGE = 8;
 
+// Tree-oracle constants mirroring engine/runtime/src/gallery_present.cpp
+// (RowHeight / PageStarts / GalleryPageCount). The device renders the built
+// tree IR, not manifest stories, so the production row/page expectation comes
+// from this mirror over dist/tree.mui.bin — never from buildStories counts.
+const TREE_HEADER_H = 84;
+const TREE_FOOTER_H = 56;
+const TREE_PAD = 16;
+const TREE_GAP = 8;
+const TREE_MAX_ROWS = 400;
+
+// Literal-prop keys the device keeps in a component row description (same
+// order as gallery_present.cpp kPropKeys; at most 10 kept, desc truncated).
+const TREE_PROP_KEYS = ['label', 'title', 'headline', 'message', 'text',
+  'placeholder', 'name', 'variant', 'size', 'selected', 'checked', 'enabled',
+  'value', 'index', 'icon', 'tone', 'elevation', 'orientation', 'direction',
+  'spacing', 'open', 'contentFit', 'source'];
+
+// Row height mirror of gallery_present.cpp RowHeight(row).
+function treeRowHeight(row) {
+  if (row.header) return 84;
+  if (!row.comp) return 64;
+  const c = row.comp;
+  const d = row.desc || '';
+  if (c === 'TopAppBar') {
+    if (d.indexOf('large') !== -1) return 236;
+    if (d.indexOf('medium') !== -1) return 196;
+    return 156;
+  }
+  if (c === 'Card' || c === 'Dialog') return 190;
+  if (c === 'BottomSheet' || c === 'NavigationDrawer') return 180;
+  if (c === 'Menu' || c === 'Carousel') return 170;
+  if (c === 'ListItem') return 128;
+  if (c === 'NavigationBar' || c === 'NavigationRail'
+    || c === 'BottomAppBar' || c === 'SearchBar' || c === 'SnackbarHost'
+    || c === 'Slider' || c === 'LinearProgress' || c === 'CircularProgress') {
+    return 124;
+  }
+  return 104;
+}
+
+// Greedy page-packing mirror of gallery_present.cpp PageStarts(rows, height).
+function treePageStarts(rows, height) {
+  const starts = [0];
+  const avail = height - TREE_HEADER_H - TREE_FOOTER_H - TREE_PAD;
+  let used = 0;
+  for (let i = 0; i < rows.length; i++) {
+    const h = treeRowHeight(rows[i]);
+    const need = used === 0 ? h : h + TREE_GAP;
+    if (used !== 0 && used + need > avail) {
+      starts.push(i);
+      used = h;
+    } else {
+      used += need;
+    }
+  }
+  starts.push(rows.length);
+  return starts;
+}
+
+// Page-count mirror of gallery_present.cpp GalleryPageCount(rows, height).
+function treePageCount(rows, height) {
+  if (!rows || rows.length === 0) return 1;
+  if (!(height > TREE_HEADER_H + TREE_FOOTER_H + 64)) return 1;
+  const pages = treePageStarts(rows, height).length - 1;
+  return pages < 1 ? 1 : pages;
+}
+
+// Decode the MUI1 envelope (magic + u32LE version + u32LE length + JSON IR)
+// carried by dist/tree.mui.bin into the parsed IR object. Throws io-error on
+// any malformed input (never a silent empty tree).
+function decodeTreeIR(input) {
+  const buf = Buffer.isBuffer(input) ? input : Buffer.from(input || []);
+  if (buf.length < 12 || buf.subarray(0, 4).toString('ascii') !== 'MUI1') {
+    failWith('io-error', 'gallery tree has a bad MUI1 envelope (not MUI1)');
+  }
+  if (buf.readUInt32LE(4) !== 1) {
+    failWith('io-error', 'gallery tree has an unsupported envelope version');
+  }
+  const declared = buf.readUInt32LE(8);
+  if (declared === 0 || 12 + declared > buf.length) {
+    failWith('io-error', 'gallery tree envelope length out of range');
+  }
+  try {
+    return JSON.parse(buf.subarray(12, 12 + declared).toString('utf8'));
+  } catch (_) {
+    failWith('io-error', 'gallery tree payload is not valid JSON IR');
+  }
+  return null;
+}
+
+// Row-filter mirror of gallery_present.cpp ParseGalleryRows: literal text
+// values starting with alnum become text rows; View/Text wrapper types never
+// become rows; every other literal tag becomes a component inventory row from
+// its literal string props. Component rows come first, then literal text
+// rows, capped the same way as the device.
+function parseTreeRows(ir) {
+  const roots = ir && Array.isArray(ir.roots) ? ir.roots : [];
+  if (roots.length === 0) return [];
+  let chosen = roots[0];
+  for (const root of roots) {
+    if (root && root.file === 'src/Showcase.tsx') {
+      chosen = root;
+      break;
+    }
+  }
+  const children = chosen && Array.isArray(chosen.children) ? chosen.children : [];
+  const textRows = [];
+  const componentRows = [];
+  let dark = false;
+  const isAlnumStart = (value) => /^[A-Za-z0-9]/.test(value);
+  for (const child of children) {
+    if (!child || typeof child.type !== 'string') continue;
+    if (child.type === '#text') {
+      const value = child.value;
+      if (typeof value !== 'string' || value.length === 0) continue;
+      if (!isAlnumStart(value)) continue;
+      if (value === 'M3 Gallery dark') dark = true;
+      if (value === 'M3 Gallery light') dark = false;
+      const header = value.indexOf('M3 Gallery') === 0;
+      textRows.push({ label: value, comp: '', desc: '', dark, header });
+    } else {
+      if (child.type === 'View' || child.type === 'Text') continue;
+      const props = (child.props && typeof child.props === 'object') ? child.props : {};
+      let desc = child.type;
+      let picked = '';
+      let kept = 0;
+      for (const key of TREE_PROP_KEYS) {
+        if (kept >= 10) break;
+        const v = props[key];
+        if (typeof v !== 'string') continue;
+        if (v.indexOf('{') !== -1 || v.indexOf('}') !== -1) continue;
+        desc += ` ${key}=${v}`;
+        if (!picked && (key === 'label' || key === 'title' || key === 'headline'
+          || key === 'message' || key === 'text' || key === 'placeholder'
+          || key === 'name')) {
+          picked = v;
+        }
+        kept++;
+      }
+      if (desc.length > 160) desc = desc.slice(0, 160);
+      componentRows.push({
+        label: picked || desc, comp: child.type, desc, dark: false, header: false,
+      });
+    }
+  }
+  const rows = componentRows.concat(textRows);
+  return rows.length > TREE_MAX_ROWS ? rows.slice(0, TREE_MAX_ROWS) : rows;
+}
+
+// Tree-derived expectation: parse the built tree artifact the device
+// installs (dist/tree.mui.bin) with the device's own row filter and page it
+// with the live viewport height. Accepts MUI1 bytes, a JSON string, or a
+// parsed IR object. Never hardcoded; a function of the tree + viewport.
+function deriveTreeCounts(treeInput, viewportHeight) {
+  const ir = (treeInput && typeof treeInput === 'object' && !Buffer.isBuffer(treeInput)
+    && !ArrayBuffer.isView(treeInput))
+    ? treeInput
+    : decodeTreeIR(treeInput);
+  const rows = parseTreeRows(ir).length;
+  const pages = treePageCount(parseTreeRows(ir), viewportHeight);
+  return { rows, pages };
+}
+
+// Load the built gallery tree the proof's asset-sync just installed
+// (dist/tree.mui.bin). Local file I/O, not device I/O: missing output is
+// io-error (run muse-native build first), same contract as syncAssets.
+function loadGalleryTreeBytes(galleryDir) {
+  const { src } = resolveAssetSyncPaths({ galleryDir });
+  try {
+    return fs.readFileSync(src);
+  } catch (_) {
+    failWith('io-error', `gallery tree missing at ${src}; run muse-native build first`);
+  }
+  return null;
+}
+
+// Coverage input: every manifest component must appear as a component row in
+// the built tree. Returns the missing names (empty when fully covered); the
+// caller fails counts-mismatch listing them.
+function missingTreeComponents(manifest, rows) {
+  if (!manifest || typeof manifest !== 'object' || !Array.isArray(manifest.components)) return [];
+  const have = new Set();
+  for (const row of rows || []) {
+    if (row && typeof row.comp === 'string' && row.comp) have.add(row.comp);
+  }
+  // Structural wrappers (View/Text) never become device rows by design
+  // (gallery_present.cpp skips them), so they are not coverage obligations.
+  const missing = [];
+  for (const entry of manifest.components) {
+    if (!entry || typeof entry.name !== 'string') continue;
+    if (entry.name === 'View' || entry.name === 'Text') continue;
+    if (!have.has(entry.name)) missing.push(entry.name);
+  }
+  return missing;
+}
+
 // Mirror of the manifest expansion in `buildStories(manifest)` (see
 // examples/m3-gallery/src/stories.js): one story row per
 // (component x documented variant/state x light/dark theme). Counts derive
 // from the manifest object so adding/removing a component flows through with
-// no hand edit.
+// no hand edit. Hermetic coverage input only: the production row oracle is
+// deriveTreeCounts over the built tree, and this expansion only checks that
+// every manifest component reaches the tree.
 function deriveExpectedCounts(manifest) {
   let stories = [];
   try {
@@ -270,6 +470,14 @@ function logcatFilterArgs() {
   return ['logcat', '-d', 'GalleryPage:I', '*:S'];
 }
 
+// Viewport logcat filter: the `nativeAttachSurface: window WxH` marker is
+// emitted under the muse-host tag, which the GalleryPage-only filter silences
+// via `*:S`. Include both tags so the attach/window marker survives the
+// silence filter (still a valid tag-level filter: no embedded second colon).
+function logcatViewportFilterArgs() {
+  return ['logcat', '-d', 'GalleryPage:I', 'muse-host:I', '*:S'];
+}
+
 // APK / launch wiring for the proof deploy. The gallery APK is the signed
 // x86_64 android-35 build; the signed adb-installable candidate
 // (`build/m3-gallery-debug.apk`) is checked first. The CLI package output
@@ -345,7 +553,75 @@ async function waitForGalleryMarkers({ serial, attempts, sleepMs, sleep } = {}) 
   return { ready: false };
 }
 
-async function runGalleryProof({ serial, androidJar, outDir, readCounts, capture, advance, readIndex, sync, galleryDir, apkPath, install, launch, waitForMarkers, sleep }) {
+// Viewport-height read at proof time: the device's own window size from
+// dumpsys plus the `nativeAttachSurface: window WxH` marker the JNI host
+// emits on attach (the same height GalleryPageCount pages with). Resolves
+// { width, height }; throws device-unreachable when no device answers or no
+// size marker is parseable. Injectable as `readViewport` for hermetic use.
+//
+// Ordering/race note: on a fresh launch the attach line can postdate the
+// first read, and the attach marker lives under the muse-host tag (silenced
+// by the GalleryPage-only filter). So the logcat scan uses the
+// both-tags viewport filter, dumpsys window bounds are parsed as a fallback,
+// and the read retries briefly instead of failing on the first empty scan.
+// runGalleryProof already gates this behind waitForGalleryMarkers; the retry
+// here covers the residual attach-after-markers race. Never hardcoded: every
+// size comes from a device marker parse. `attempts`/`sleepMs`/`sleep` are
+// injectable for hermetic use.
+async function defaultReadViewport({ serial, attempts, sleepMs, sleep } = {}) {
+  const tries = Number.isInteger(attempts) && attempts > 0 ? attempts : 6;
+  const delay = Number.isInteger(sleepMs) && sleepMs >= 0 ? sleepMs : 500;
+  const sleepFn = sleep || ((ms) => new Promise((resolve) => { setTimeout(resolve, ms); }));
+  const scan = (text) => {
+    if (!text) return null;
+    let m = /nativeAttachSurface:\s*window\s*(\d+)x(\d+)/i.exec(text);
+    if (m) return { width: Number(m[1]), height: Number(m[2]) };
+    m = /DisplayHeight[=:\s]+(\d+)/i.exec(text);
+    if (m) {
+      const w = /DisplayWidth[=:\s]+(\d+)/i.exec(text);
+      return { width: w ? Number(w[1]) : 0, height: Number(m[1]) };
+    }
+    m = /\bcur=(\d+)x(\d+)/i.exec(text);
+    if (m) return { width: Number(m[1]), height: Number(m[2]) };
+    // Attached window bounds from `dumpsys window` (e.g. bounds=[0,0][W,H],
+    // mBounds=Rect(0, 0 - W, H), frame=[0,0][W,H), app=WxH). Pure parse of
+    // device output — never a hardcoded geometry.
+    m = /bounds=\[0,0\]\[(\d+),(\d+)\]/i.exec(text);
+    if (m) return { width: Number(m[1]), height: Number(m[2]) };
+    m = /mBounds=Rect\(\s*0\s*,\s*0\s*-\s*(\d+)\s*,\s*(\d+)\s*\)/i.exec(text);
+    if (m) return { width: Number(m[1]), height: Number(m[2]) };
+    m = /frame=\[0,0\]\[(\d+),(\d+)\]/i.exec(text);
+    if (m) return { width: Number(m[1]), height: Number(m[2]) };
+    m = /\bapp=(\d+)x(\d+)/i.exec(text);
+    if (m) return { width: Number(m[1]), height: Number(m[2]) };
+    return null;
+  };
+  let lastErr = null;
+  for (let i = 0; i < tries; i++) {
+    try {
+      const out = adbOrUnreachable(['shell', 'dumpsys', 'window'], serial);
+      const found = scan(out ? out.toString('utf8') : '');
+      if (found && found.height > 0) return found;
+    } catch (err) {
+      if (err && err.code === 'device-unreachable') throw err;
+      lastErr = err;
+    }
+    try {
+      const log = adbOrUnreachable(logcatViewportFilterArgs(), serial);
+      const found = scan(log ? log.toString('utf8') : '');
+      if (found && found.height > 0) return found;
+    } catch (err) {
+      if (err && (err.code === 'device-unreachable' || err.code === 'counts-mismatch')) throw err;
+      lastErr = err;
+    }
+    if (i + 1 < tries) await sleepFn(delay);
+  }
+  if (lastErr && lastErr.code === 'device-unreachable') throw lastErr;
+  failWith('device-unreachable', 'viewport size unavailable on device (no window/nativeAttachSurface marker)');
+  return null;
+}
+
+async function runGalleryProof({ serial, androidJar, outDir, readCounts, capture, advance, readIndex, sync, galleryDir, apkPath, install, launch, waitForMarkers, sleep, readViewport }) {
   const deviceSerial = serial || process.env.ANDROID_SERIAL;
   if (!deviceSerial) {
     failWith('device-unreachable', 'no serial/device');
@@ -400,9 +676,41 @@ async function runGalleryProof({ serial, androidJar, outDir, readCounts, capture
     }
   }
 
-  // Manifest-derived expectation (no hardcoded rows/pages).
+  // Production expectation (no hardcoded rows/pages): parse the built tree
+  // artifact the device installs (dist/tree.mui.bin, refreshed by the sync
+  // above) with the device's own row filter, and page it by the live
+  // viewport height read at proof time. buildStories(manifest) stays a
+  // coverage input only: every manifest component must appear in the tree,
+  // and a missing component fails counts-mismatch naming it. Hermetic halves
+  // inject readCounts/capture and keep the manifest-derived expectation so
+  // they stay device-free; an explicitly injected readViewport opts into the
+  // tree oracle alongside injected device doubles.
   const manifest = loadGalleryManifest();
-  const expected = deriveExpectedCounts(manifest);
+  const readViewportFn = readViewport || defaultReadViewport;
+  const useTreeOracle = !hermetic || Boolean(readViewport);
+  let expected;
+  if (useTreeOracle) {
+    const treeBytes = loadGalleryTreeBytes(galleryDir);
+    const viewport = await readViewportFn({ serial: deviceSerial, sleep });
+    const height = viewport && typeof viewport.height === 'number'
+      ? viewport.height
+      : Number(viewport);
+    if (!Number.isFinite(height) || height <= 0) {
+      failWith('device-unreachable', 'viewport height unavailable (no window size marker)');
+    }
+    const ir = decodeTreeIR(treeBytes);
+    const treeRows = parseTreeRows(ir);
+    const missing = missingTreeComponents(manifest, treeRows);
+    if (missing.length > 0) {
+      failWith(
+        'counts-mismatch',
+        `manifest components missing from built tree: ${missing.join(', ')}`,
+      );
+    }
+    expected = { rows: treeRows.length, pages: treePageCount(treeRows, height) };
+  } else {
+    expected = deriveExpectedCounts(manifest);
+  }
 
   // Device counts come from the emulator at proof time via injectable
   // readCounts (default: adb-backed readDeviceCounts); a missing reading or
@@ -649,12 +957,20 @@ function saveScreenshot({ serial, page, shot, frame } = {}) {
 module.exports = {
   runGalleryProof,
   deriveExpectedCounts,
+  deriveTreeCounts,
+  parseTreeRows,
+  decodeTreeIR,
+  treePageCount,
+  missingTreeComponents,
+  loadGalleryTreeBytes,
+  defaultReadViewport,
   isBlankViewport,
   parseGalleryProofArgs,
   resolveAssetSyncPaths,
   syncAssets,
   pageAllAndVerifyWrap,
   logcatFilterArgs,
+  logcatViewportFilterArgs,
   resolveGalleryApkPath,
   defaultInstallApk,
   defaultLaunchApp,
