@@ -13,7 +13,7 @@
 // withSample:false, release:false, strict:false, abi/modules/output undefined,
 // diagnostics undefined. Positional-target equivalence is T2, not tested here.
 
-const { describe, it, afterEach } = require('node:test');
+const { describe, it, before, after, afterEach } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -30,6 +30,34 @@ function mkTmp(prefix) {
 afterEach(() => {
   while (tmpRoots.length) fs.rmSync(tmpRoots.pop(), { recursive: true, force: true });
 });
+
+// FR-PACKAGING-006 Stage 2 §6: specified-behavior engine inputs for spawned
+// builds — synthetic minimal ELF per ABI written under the tmp app dir and
+// referenced via the `engine_libs:` file layer, so the package stage
+// (AC-PACKAGING-013/014) and the real in-build sign lane (AC-PACKAGING-016)
+// succeed hermetically. Build purposes below are unchanged; only the
+// interim (no-lib) inputs were replaced.
+const ENGINE_LIB_ABIS_F6 = ['arm64-v8a', 'armeabi-v7a', 'x86_64', 'x86'];
+const MACHINE_FOR_ABI_F6 = { 'arm64-v8a': 183, 'armeabi-v7a': 40, x86_64: 62, x86: 3 };
+function writeEngineLibFiles_F6(dir) {
+  fs.mkdirSync(dir, { recursive: true });
+  const entries = [];
+  for (const abi of ENGINE_LIB_ABIS_F6) {
+    const buf = Buffer.alloc(64);
+    buf[0] = 0x7f;
+    buf.write('ELF', 1);
+    buf.writeUInt16LE(MACHINE_FOR_ABI_F6[abi], 18);
+    const soPath = path.join(dir, `libRuntime-${abi}.so`);
+    fs.writeFileSync(soPath, Buffer.concat([buf, Buffer.from(`RUNTIME-F6-${abi}`, 'utf8')]));
+    entries.push(`${abi}=${soPath}`);
+  }
+  return entries;
+}
+function addEngineLibs_F6(appDir) {
+  const entries = writeEngineLibFiles_F6(path.join(appDir, 'engine-libs'));
+  fs.appendFileSync(path.join(appDir, 'muse-native.yaml'), `engine_libs: ${entries.join(', ')}\n`);
+  return entries;
+}
 
 describe('T1 targets — withSample/strict/diagnostics schema + resolution', () => {
   it('defaults: withSample:false, strict:false, diagnostics undefined, all layer "default"', () => {
@@ -163,16 +191,55 @@ describe('T1 targets — withSample/strict/diagnostics schema + resolution', () 
 //   behavior is pinned through the spawned CLI with explicit `cwd`, which
 //   drives the same `runStages(stageName, ctx)` boundary.
 
-const { spawnSync } = require('node:child_process');
+const { spawnSync, execFileSync } = require('node:child_process');
 
 const { runStages } = require('../lib/stages.js');
 
 const BIN_NATIVE_T3 = path.join(path.resolve(__dirname, '..'), 'bin', 'muse-native.js');
 const SAMPLE_MARKER = 'SAMPLE-MARKER-7f3a';
 
+// FR-PACKAGING-006 Stage 2 §6 keystore fixture: spawned full builds reach
+// the real sign lane, which needs a REAL keystore. Generated at runtime in
+// before() via keytool (JDK, no SDK dependency) — never committed (GR-05
+// R5.3). Configure-only/print-config/absent-sample cases never reach
+// signing and keep their original invocations.
+let DEBUG_KS = null;
+let DEBUG_KS_DIR = null;
+before(() => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'muse-debug-ks-'));
+  DEBUG_KS_DIR = dir;
+  DEBUG_KS = path.join(dir, 'debug.keystore');
+  execFileSync('keytool', [
+    '-genkeypair',
+    '-keystore', DEBUG_KS,
+    '-alias', 'androiddebugkey',
+    '-storepass', 'android',
+    '-keypass', 'android',
+    '-keyalg', 'RSA',
+    '-keysize', '2048',
+    '-validity', '3650',
+    '-dname', 'CN=Android Debug',
+  ]);
+});
+after(() => {
+  if (DEBUG_KS_DIR) fs.rmSync(DEBUG_KS_DIR, { recursive: true, force: true });
+  DEBUG_KS = null;
+  DEBUG_KS_DIR = null;
+});
+function signArgs(extra) {
+  return [...extra, '--keystore', DEBUG_KS, '--key-alias', 'androiddebugkey'];
+}
+function signEnv(base) {
+  const env = { ...(base || process.env) };
+  if (env.MUSE_NATIVE_STOREPASS === undefined) env.MUSE_NATIVE_STOREPASS = 'android';
+  return env;
+}
+
+
 function writeApp(appDir, name) {
   fs.mkdirSync(path.join(appDir, 'src'), { recursive: true });
   fs.writeFileSync(path.join(appDir, 'muse-native.yaml'), `name: ${name}\nversion: 0.0.1\n`, 'utf8');
+  addEngineLibs_F6(appDir);
   fs.writeFileSync(
     path.join(appDir, 'src', 'App.tsx'),
     [
@@ -228,9 +295,10 @@ describe('T3 target selection — sample excluded by default, included when sele
     fs.mkdirSync(appDir, { recursive: true });
     writeApp(appDir, 't3-app');
     writeSample(repo);
-    const r = spawnSync(process.execPath, [BIN_NATIVE_T3, 'build', 'my-app'], {
+    const r = spawnSync(process.execPath, [BIN_NATIVE_T3, 'build', 'my-app', ...signArgs([])], {
       encoding: 'utf8',
       cwd: repo,
+      env: signEnv(process.env),
     });
     assert.equal(r.status, 0, `default build must exit 0, got ${r.status}: ${r.stderr}`);
     assert.ok(!readIr(appDir).includes(SAMPLE_MARKER), 'default build artefacts must not contain sample content');
@@ -242,9 +310,10 @@ describe('T3 target selection — sample excluded by default, included when sele
     fs.mkdirSync(appDir, { recursive: true });
     writeApp(appDir, 't3-app');
     writeSample(repo);
-    const r = spawnSync(process.execPath, [BIN_NATIVE_T3, 'build', 'my-app', '--with-sample'], {
+    const r = spawnSync(process.execPath, [BIN_NATIVE_T3, 'build', 'my-app', '--with-sample', ...signArgs([])], {
       encoding: 'utf8',
       cwd: repo,
+      env: signEnv(process.env),
     });
     assert.equal(r.status, 0, `selected build must exit 0, got ${r.status}: ${r.stderr}`);
     assert.ok(readIr(appDir).includes(SAMPLE_MARKER), 'selected build artefacts must contain sample content');

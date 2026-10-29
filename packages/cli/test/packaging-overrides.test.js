@@ -139,6 +139,31 @@ describe('T2 resolveConfig CLI overrides + winning layer (TC-006)', () => {
 
 const { runStages: runStagesT6 } = require('../lib/stages.js');
 
+// FR-PACKAGING-006 Stage 2 §6: specified-behavior hermetic inputs —
+// synthetic minimal ELF per ABI (AC-PACKAGING-014 gate) + dex-magic seam +
+// fake sign lane (AC-PACKAGING-016 hermetic seam). Containment/shape
+// assertions below are unchanged; only the interim inputs were replaced.
+const MACHINE_FOR_ABI_F6 = { 'arm64-v8a': 183, 'armeabi-v7a': 40, x86_64: 62, x86: 3 };
+function makeElfF6(abi) {
+  const buf = Buffer.alloc(64);
+  buf[0] = 0x7f;
+  buf.write('ELF', 1);
+  buf.writeUInt16LE(MACHINE_FOR_ABI_F6[abi], 18);
+  return Buffer.concat([buf, Buffer.from(`RUNTIME-F6-${abi}`, 'utf8')]);
+}
+function pkgCtx(config, appDir) {
+  return {
+    config,
+    appDir,
+    _hostInputs: {
+      dexBytes: Buffer.concat([Buffer.from('dex\n035\0', 'binary'), Buffer.from('F6-SEAM')]),
+      resourcesArsc: Buffer.from('ARSC-F6', 'utf8'),
+      nativeLibs: config.archs.map((abi) => ({ abi, name: 'libRuntime.so', bytes: makeElfF6(abi) })),
+    },
+    _signApk: async (buf) => Buffer.concat([Buffer.from(buf), Buffer.from('-signed-F6')]),
+  };
+}
+
 function writeGalleryRepoT6(repo) {
   const appDir = path.join(repo, 'my-app');
   fs.mkdirSync(path.join(appDir, 'src'), { recursive: true });
@@ -187,7 +212,7 @@ describe('T6 TC-PACKAGING-006 — CLI overrides win for the gallery app', () => 
     assert.equal(config.packaging, 'split');
     assert.equal(winningLayer.archs, 'cli');
     assert.equal(winningLayer.packaging, 'cli');
-    const results = await runStagesT6('package', { config, appDir });
+    const results = await runStagesT6('package', pkgCtx(config, appDir));
     assert.equal(results[0].ok, true);
     for (const arch of ['arm64-v8a', 'x86_64']) {
       const p = path.join(appDir, 'dist', `app-${arch}.apk`);
@@ -208,7 +233,7 @@ describe('T6 TC-PACKAGING-006 — CLI overrides win for the gallery app', () => 
     assert.equal(winningLayer.packaging, 'cli');
     assert.deepEqual(config.archs, ['x86']);
     assert.equal(winningLayer.archs, 'file');
-    const results = await runStagesT6('package', { config, appDir });
+    const results = await runStagesT6('package', pkgCtx(config, appDir));
     assert.equal(results[0].ok, true);
     assert.ok(fs.existsSync(path.join(appDir, 'dist', 'app-fat.apk')));
     assert.ok(fs.existsSync(path.join(appDir, 'dist', 'app-x86.apk')));

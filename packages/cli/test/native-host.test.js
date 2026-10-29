@@ -161,6 +161,24 @@ function writePassingApp(appDir) {
   );
 }
 
+// FR-PACKAGING-006 Stage 2 §6: per-arch libs are synthetic minimal ELF
+// headers (magic + e_machine u16LE at offset 18) so the AC-PACKAGING-014
+// arch gate accepts the slot ABI. The `_signApk` fake below is unchanged.
+const MACHINE_FOR_ABI_T6 = {
+  'arm64-v8a': 183,
+  'armeabi-v7a': 40,
+  x86_64: 62,
+  x86: 3,
+};
+
+function makeElfT6(abi) {
+  const buf = Buffer.alloc(64);
+  buf[0] = 0x7f;
+  buf.write('ELF', 1);
+  buf.writeUInt16LE(MACHINE_FOR_ABI_T6[abi], 18);
+  return Buffer.concat([buf, Buffer.from(`RUNTIME-T6-${abi}`, 'utf8')]);
+}
+
 function hostInputs(archs) {
   const list = archs || ['arm64-v8a', 'x86_64'];
   return {
@@ -169,7 +187,7 @@ function hostInputs(archs) {
     nativeLibs: list.map((abi) => ({
       abi,
       name: 'libRuntime.so',
-      bytes: Buffer.from(`SO-STUB-T6-${abi}`, 'utf8'),
+      bytes: makeElfT6(abi),
     })),
   };
 }

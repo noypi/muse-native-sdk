@@ -8,12 +8,12 @@
 // Batch 4 (T8, T9, T10) appends NEW describe blocks below the marker at the
 // end of this file. Do not edit the Batch-3 blocks above the marker.
 
-const { describe, it, afterEach } = require('node:test');
+const { describe, it, before, after, afterEach } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { spawnSync } = require('node:child_process');
+const { spawnSync, execFileSync } = require('node:child_process');
 
 const CLI_DIR = path.resolve(__dirname, '..');
 const BIN_NATIVE = path.join(CLI_DIR, 'bin', 'muse-native.js');
@@ -31,12 +31,53 @@ afterEach(() => {
   }
 });
 
+
+
 function runCli(args, options) {
-  return spawnSync(process.execPath, [BIN_NATIVE, ...args], {
+  const a = Array.isArray(args) ? args.slice() : [];
+  // FR-PACKAGING-006 Stage 2 §6 keystore fixture: spawned full builds reach
+  // the real sign lane, which needs a REAL keystore. Generated at runtime in
+  // before() (never committed — GR-05 R5.3). Only build/run reach signing;
+  // init/dev/print-config/failing-config cases are unaffected by the flags.
+  const needsKs =
+    (a[0] === 'build' || a[0] === 'run') && DEBUG_KS && !a.includes('--keystore');
+  const finalArgs = needsKs
+    ? [...a, '--keystore', DEBUG_KS, '--key-alias', 'androiddebugkey']
+    : a;
+  const env = { ...((options && options.env) || process.env) };
+  if (needsKs && env.MUSE_NATIVE_STOREPASS === undefined) env.MUSE_NATIVE_STOREPASS = 'android';
+  return spawnSync(process.execPath, [BIN_NATIVE, ...finalArgs], {
     encoding: 'utf8',
     ...options,
+    env,
   });
 }
+
+// Runtime debug keystore (once per file): keytool ships with the JDK, no SDK
+// dependency for this step. No key material is committed to the repo.
+let DEBUG_KS = null;
+let DEBUG_KS_DIR = null;
+before(() => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'muse-debug-ks-'));
+  DEBUG_KS_DIR = dir;
+  DEBUG_KS = path.join(dir, 'debug.keystore');
+  execFileSync('keytool', [
+    '-genkeypair',
+    '-keystore', DEBUG_KS,
+    '-alias', 'androiddebugkey',
+    '-storepass', 'android',
+    '-keypass', 'android',
+    '-keyalg', 'RSA',
+    '-keysize', '2048',
+    '-validity', '3650',
+    '-dname', 'CN=Android Debug',
+  ]);
+});
+after(() => {
+  if (DEBUG_KS_DIR) fs.rmSync(DEBUG_KS_DIR, { recursive: true, force: true });
+  DEBUG_KS = null;
+  DEBUG_KS_DIR = null;
+});
 
 // Pre-written inline minimal app (2 screens) for T7: written into a tmp dir
 // because examples/m3-gallery (T10) does not exist yet.
@@ -46,6 +87,7 @@ function writeMinimalApp(appDir) {
     path.join(appDir, 'muse-native.yaml'),
     'name: minimal-fixture\nversion: 0.0.0\n',
   );
+  addEngineLibs_F6(appDir);
   fs.writeFileSync(
     path.join(appDir, 'src', 'App.tsx'),
     [
@@ -77,6 +119,34 @@ function writeMinimalApp(appDir) {
 // files, stdout names the dir, exit 0; existing non-empty `<dir>` → stderr
 // error + exit 1; missing `<dir>` → usage + exit 2.
 // ---------------------------------------------------------------------------
+// FR-PACKAGING-006 Stage 2 §6: specified-behavior engine inputs for spawned
+// builds — synthetic minimal ELF per ABI written under the tmp app dir and
+// referenced via the `engine_libs:` file layer, so the package stage
+// (AC-PACKAGING-013/014) and the real in-build sign lane (AC-PACKAGING-016)
+// succeed hermetically. Build purposes below are unchanged; only the
+// interim (no-lib) inputs were replaced.
+const ENGINE_LIB_ABIS_F6 = ['arm64-v8a', 'armeabi-v7a', 'x86_64', 'x86'];
+const MACHINE_FOR_ABI_F6 = { 'arm64-v8a': 183, 'armeabi-v7a': 40, x86_64: 62, x86: 3 };
+function writeEngineLibFiles_F6(dir) {
+  fs.mkdirSync(dir, { recursive: true });
+  const entries = [];
+  for (const abi of ENGINE_LIB_ABIS_F6) {
+    const buf = Buffer.alloc(64);
+    buf[0] = 0x7f;
+    buf.write('ELF', 1);
+    buf.writeUInt16LE(MACHINE_FOR_ABI_F6[abi], 18);
+    const soPath = path.join(dir, `libRuntime-${abi}.so`);
+    fs.writeFileSync(soPath, Buffer.concat([buf, Buffer.from(`RUNTIME-F6-${abi}`, 'utf8')]));
+    entries.push(`${abi}=${soPath}`);
+  }
+  return entries;
+}
+function addEngineLibs_F6(appDir) {
+  const entries = writeEngineLibFiles_F6(path.join(appDir, 'engine-libs'));
+  fs.appendFileSync(path.join(appDir, 'muse-native.yaml'), `engine_libs: ${entries.join(', ')}\n`);
+  return entries;
+}
+
 describe('TC-TSX-022 Batch 3 — T6 init scaffolds a project', () => {
   it('init into a fresh dir creates the template tree, names the dir on stdout, exit 0', () => {
     const parent = mkTmp('muse-init-');
@@ -254,6 +324,7 @@ function writeMuseApp(appDir, museBlock) {
     path.join(appDir, 'muse-native.yaml'),
     'name: minimal-fixture\nversion: 0.0.0\n' + museBlock,
   );
+  addEngineLibs_F6(appDir);
 }
 
 function assertNoDist(appDir) {
@@ -373,6 +444,7 @@ describe('BUG-TSX-010 T3 — init-to-build roundtrip (TC-TSX-022)', () => {
     const dir = path.join(parent, 'roundtrip-app');
     const ri = runCli(['init', dir]);
     assert.equal(ri.status, 0, `init must exit 0, got ${ri.status}: ${ri.stderr}`);
+    addEngineLibs_F6(dir);
     const r = runCli(['build', dir]);
     assert.equal(r.status, 0, `build of init output must exit 0, got ${r.status}: ${r.stderr}`);
     assert.ok(!/unknown key.*muse/.test(r.stderr), `stderr must not report an unknown muse key, got: ${JSON.stringify(r.stderr)}`);
@@ -501,7 +573,9 @@ describe('TC-TSX-023 Batch 4 — T10 gallery fixture builds both artefacts', () 
 
   it('build of the committed examples/m3-gallery exits 0 with both artefacts carrying MUI1', () => {
     const gallery = path.resolve(CLI_DIR, '..', '..', 'examples', 'm3-gallery');
-    const r = runCli(['build', gallery]);
+    const libEntries = writeEngineLibFiles_F6(path.join(mkTmp('muse-gallery-libs-'), 'engine-libs'));
+    const libFlags = libEntries.flatMap((e) => ['--engine-lib', e]);
+    const r = runCli(['build', gallery, ...libFlags]);
     assert.equal(r.status, 0, `build examples/m3-gallery must exit 0, got ${r.status}: ${r.stderr}`);
     const ir = JSON.parse(fs.readFileSync(path.join(gallery, 'dist', 'ir.json'), 'utf8'));
     assert.equal(ir.version, 1, 'IR version must be 1');

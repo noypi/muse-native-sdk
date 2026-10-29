@@ -427,9 +427,10 @@ async function packageStage(ctx) {
     // over the per-ABI default lookup, resolved in config.js). Every
     // selected arch must name a library — a missing entry fails closed
     // here, in memory before any `dist/` write, naming the arch. An entry
-    // whose file cannot be read falls back to the generated fixture bytes
-    // so callers without engine outputs (reference-target and regression
-    // runs) still emit real ZIPs; see Notes for Review on tightening this.
+    // whose file cannot be read is a missing library for that arch
+    // (AC-PACKAGING-013): it fails closed naming the arch rather than
+    // emitting placeholder bytes that the T2 ELF gate would then reject
+    // with a misleading arch-mismatch error.
     const engineLibs =
       ctx && ctx.config && ctx.config.engineLibs && typeof ctx.config.engineLibs === 'object'
         ? ctx.config.engineLibs
@@ -447,9 +448,7 @@ async function packageStage(ctx) {
         bytes = null;
       }
       if (!bytes || bytes.length === 0) {
-        // Arch-tagged fallback lib bytes keep the T4 arch-listPositive shape
-        // (utf8 body still names each arch) inside real ZIP entries.
-        bytes = Buffer.from(`arch: ${arch}\n`, 'utf8');
+        throw stageError(`missing native lib for arch '${arch}'`, ctx.appDir);
       }
       loaded.push([arch, { abi: arch, name: 'libRuntime.so', bytes }]);
     }

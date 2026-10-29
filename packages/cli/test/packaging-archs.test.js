@@ -143,6 +143,31 @@ describe('T3 scaffold — template documents archs + resolves to default (AC-PAC
 
 const { runStages } = require('../lib/stages.js');
 
+// FR-PACKAGING-006 Stage 2 §6: specified-behavior hermetic inputs —
+// synthetic minimal ELF per ABI (AC-PACKAGING-014 gate) + dex-magic seam +
+// fake sign lane (AC-PACKAGING-016 hermetic seam). Containment/shape
+// assertions below are unchanged; only the interim inputs were replaced.
+const MACHINE_FOR_ABI_F6 = { 'arm64-v8a': 183, 'armeabi-v7a': 40, x86_64: 62, x86: 3 };
+function makeElfF6(abi) {
+  const buf = Buffer.alloc(64);
+  buf[0] = 0x7f;
+  buf.write('ELF', 1);
+  buf.writeUInt16LE(MACHINE_FOR_ABI_F6[abi], 18);
+  return Buffer.concat([buf, Buffer.from(`RUNTIME-F6-${abi}`, 'utf8')]);
+}
+function pkgCtx(config, appDir) {
+  return {
+    config,
+    appDir,
+    _hostInputs: {
+      dexBytes: Buffer.concat([Buffer.from('dex\n035\0', 'binary'), Buffer.from('F6-SEAM')]),
+      resourcesArsc: Buffer.from('ARSC-F6', 'utf8'),
+      nativeLibs: config.archs.map((abi) => ({ abi, name: 'libRuntime.so', bytes: makeElfF6(abi) })),
+    },
+    _signApk: async (buf) => Buffer.concat([Buffer.from(buf), Buffer.from('-signed-F6')]),
+  };
+}
+
 function writeStageApp(appDir) {
   fs.mkdirSync(path.join(appDir, 'src'), { recursive: true });
   fs.writeFileSync(
@@ -177,7 +202,7 @@ describe('T4 TC-PACKAGING-001 — fat emits single APK covering all archs', () =
     writeStageApp(dir);
     const { config } = resolveConfig([], {}, dir);
     assert.equal(config.packaging, 'fat');
-    const results = await runStages('package', { config, appDir: dir });
+    const results = await runStages('package', pkgCtx(config, dir));
     assert.equal(results.length, 1);
     assert.equal(results[0].stage, 'package');
     assert.equal(results[0].ok, true);
@@ -190,7 +215,7 @@ describe('T4 TC-PACKAGING-001 — fat emits single APK covering all archs', () =
     const dir = mkTmp('muse-pack-t4-');
     writeStageApp(dir);
     const { config } = resolveConfig(['--archs', 'arm64-v8a,x86_64'], {}, dir);
-    const results = await runStages('package', { config, appDir: dir });
+    const results = await runStages('package', pkgCtx(config, dir));
     assert.equal(results[0].ok, true);
     assert.ok(fs.existsSync(fatPath(dir)));
     const body = fs.readFileSync(fatPath(dir), 'utf8');
@@ -204,7 +229,7 @@ describe('T4 TC-PACKAGING-001 — fat emits single APK covering all archs', () =
     const dir = mkTmp('muse-pack-t4-');
     writeStageApp(dir);
     const { config } = resolveConfig([], {}, dir);
-    await runStages('package', { config, appDir: dir });
+    await runStages('package', pkgCtx(config, dir));
     for (const arch of ALL_FOUR) {
       assert.ok(!fs.existsSync(splitPath(dir, arch)), `no split ${arch} in fat mode`);
     }
@@ -216,7 +241,7 @@ describe('T4 TC-PACKAGING-002 — split emits one arch-named APK per arch', () =
     const dir = mkTmp('muse-pack-t4-');
     writeStageApp(dir);
     const { config } = resolveConfig(['--archs', 'arm64-v8a,x86_64', '--packaging', 'split'], {}, dir);
-    const results = await runStages('package', { config, appDir: dir });
+    const results = await runStages('package', pkgCtx(config, dir));
     assert.equal(results[0].ok, true);
     for (const arch of ['arm64-v8a', 'x86_64']) {
       assert.ok(fs.existsSync(splitPath(dir, arch)), `dist/app-${arch}.apk must exist`);
@@ -233,7 +258,7 @@ describe('T4 TC-PACKAGING-002 — split emits one arch-named APK per arch', () =
     const dir = mkTmp('muse-pack-t4-');
     writeStageApp(dir);
     const { config } = resolveConfig(['--archs', 'x86_64', '--packaging', 'split'], {}, dir);
-    await runStages('package', { config, appDir: dir });
+    await runStages('package', pkgCtx(config, dir));
     assert.ok(fs.existsSync(splitPath(dir, 'x86_64')));
     assert.ok(!fs.existsSync(fatPath(dir)), 'no fat APK in split mode');
   });
@@ -244,7 +269,7 @@ describe('T4 TC-PACKAGING-003 — both emits fat + full split set in one run', (
     const dir = mkTmp('muse-pack-t4-');
     writeStageApp(dir);
     const { config } = resolveConfig(['--archs', 'arm64-v8a,x86_64', '--packaging', 'both'], {}, dir);
-    const results = await runStages('package', { config, appDir: dir });
+    const results = await runStages('package', pkgCtx(config, dir));
     assert.equal(results.length, 1);
     assert.equal(results[0].ok, true);
     assert.ok(fs.existsSync(fatPath(dir)), 'fat present');
@@ -260,7 +285,7 @@ describe('T4 TC-PACKAGING-003 — both emits fat + full split set in one run', (
     const dir = mkTmp('muse-pack-t4-');
     writeStageApp(dir);
     const { config } = resolveConfig([], {}, dir);
-    const results = await runStages('package', { config, appDir: dir });
+    const results = await runStages('package', pkgCtx(config, dir));
     assert.equal(results[0].stage, 'package');
     assert.equal(typeof results[0].durationMs, 'number');
   });
@@ -269,7 +294,7 @@ describe('T4 TC-PACKAGING-003 — both emits fat + full split set in one run', (
     const dir = mkTmp('muse-pack-t4-');
     fs.writeFileSync(path.join(dir, 'muse-native.yaml'), 'name: empty\nversion: 0.0.1\n', 'utf8');
     const { config } = resolveConfig([], {}, dir);
-    const results = await runStages('package', { config, appDir: dir });
+    const results = await runStages('package', pkgCtx(config, dir));
     assert.equal(results[0].ok, false);
     assert.equal(typeof results[0].error.message, 'string');
     assert.equal(typeof results[0].error.location, 'string');
@@ -355,7 +380,7 @@ describe('T6 TC-PACKAGING-001 — fat shape with gallery reference target select
     const appDir = writeGalleryRepoT6(repo);
     const { config } = resolveConfig(['--with-sample'], {}, appDir);
     assert.equal(config.withSample, true);
-    const results = await runStages('package', { config, appDir });
+    const results = await runStages('package', pkgCtx(config, appDir));
     assert.equal(results[0].ok, true);
     assert.ok(fs.existsSync(fatPath(appDir)), 'dist/app-fat.apk must exist');
     const body = fs.readFileSync(fatPath(appDir), 'utf8');
@@ -367,7 +392,7 @@ describe('T6 TC-PACKAGING-001 — fat shape with gallery reference target select
     const appDir = writeBareAppT6(repo);
     assert.ok(!fs.existsSync(path.join(repo, 'examples', 'm3-gallery')));
     const { config } = resolveConfig(['--with-sample'], {}, appDir);
-    const results = await runStages('package', { config, appDir });
+    const results = await runStages('package', pkgCtx(config, appDir));
     assert.equal(results[0].ok, false);
     assert.match(results[0].error.message, /examples\/m3-gallery/);
     assert.ok(!fs.existsSync(fatPath(appDir)));
@@ -383,7 +408,7 @@ describe('T6 TC-PACKAGING-002/003 — split/both shapes with gallery reference t
       {},
       appDir,
     );
-    const results = await runStages('package', { config, appDir });
+    const results = await runStages('package', pkgCtx(config, appDir));
     assert.equal(results[0].ok, true);
     for (const arch of ['arm64-v8a', 'x86_64']) {
       assert.ok(fs.existsSync(splitPath(appDir, arch)), `dist/app-${arch}.apk must exist`);
@@ -397,7 +422,7 @@ describe('T6 TC-PACKAGING-002/003 — split/both shapes with gallery reference t
     const repo = mkTmp('muse-pack-t6-');
     const appDir = writeGalleryRepoT6(repo);
     const { config } = resolveConfig(['--with-sample', '--packaging', 'both'], {}, appDir);
-    const results = await runStages('package', { config, appDir });
+    const results = await runStages('package', pkgCtx(config, appDir));
     assert.equal(results[0].ok, true);
     assert.ok(fs.existsSync(fatPath(appDir)), 'fat present');
     for (const arch of ALL_FOUR) {
@@ -471,7 +496,7 @@ describe('Security — duplicate-ABI semantics documented (not changed)', () => 
       dir,
     );
     assert.deepEqual(config.archs, ['arm64-v8a', 'arm64-v8a']);
-    const results = await runStages('package', { config, appDir: dir });
+    const results = await runStages('package', pkgCtx(config, dir));
     assert.equal(results[0].ok, true);
     assert.ok(fs.existsSync(splitPath(dir, 'arm64-v8a')), 'split APK present after redundant rewrite');
   });
@@ -488,8 +513,17 @@ describe('Security — arch path-separator containment at the filename sink', ()
     );
     assert.equal(results[0].ok, false, 'separator arch at the sink must fail closed');
     assert.equal(typeof results[0].error.message, 'string');
-    assert.deepEqual(fs.readdirSync(path.join(dir, 'dist')), [], 'dist left with zero artefacts');
-    assert.deepEqual(fs.readdirSync(dir).sort(), ['dist', 'muse-native.yaml', 'src']);
+    // FR-PACKAGING-006 Stage 2 §6: the fail-closed lane rejects the hostile
+    // arch before creating dist/ — a missing dist/ is zero artefacts.
+    const distEntries = fs.existsSync(path.join(dir, 'dist'))
+      ? fs.readdirSync(path.join(dir, 'dist'))
+      : [];
+    assert.deepEqual(distEntries, [], 'dist left with zero artefacts');
+    const topEntries = fs.readdirSync(dir).sort();
+    assert.deepEqual(
+      topEntries,
+      topEntries.includes('dist') ? ['dist', 'muse-native.yaml', 'src'] : ['muse-native.yaml', 'src'],
+    );
     assert.ok(!fs.existsSync(path.join(dir, 'evil.apk')));
     assert.ok(!fs.existsSync(path.join(dir, 'app-evil.apk')));
   });

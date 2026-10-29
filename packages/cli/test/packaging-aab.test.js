@@ -29,6 +29,31 @@ const path = require('node:path');
 const { resolveConfig } = require('../lib/config.js');
 const { runStages } = require('../lib/stages.js');
 
+// FR-PACKAGING-006 Stage 2 §6: specified-behavior hermetic inputs —
+// synthetic minimal ELF per ABI (AC-PACKAGING-014 gate) + dex-magic seam +
+// fake sign lane (AC-PACKAGING-016 hermetic seam). Containment/shape
+// assertions below are unchanged; only the interim inputs were replaced.
+const MACHINE_FOR_ABI_F6 = { 'arm64-v8a': 183, 'armeabi-v7a': 40, x86_64: 62, x86: 3 };
+function makeElfF6(abi) {
+  const buf = Buffer.alloc(64);
+  buf[0] = 0x7f;
+  buf.write('ELF', 1);
+  buf.writeUInt16LE(MACHINE_FOR_ABI_F6[abi], 18);
+  return Buffer.concat([buf, Buffer.from(`RUNTIME-F6-${abi}`, 'utf8')]);
+}
+function pkgCtx(config, appDir) {
+  return {
+    config,
+    appDir,
+    _hostInputs: {
+      dexBytes: Buffer.concat([Buffer.from('dex\n035\0', 'binary'), Buffer.from('F6-SEAM')]),
+      resourcesArsc: Buffer.from('ARSC-F6', 'utf8'),
+      nativeLibs: config.archs.map((abi) => ({ abi, name: 'libRuntime.so', bytes: makeElfF6(abi) })),
+    },
+    _signApk: async (buf) => Buffer.concat([Buffer.from(buf), Buffer.from('-signed-F6')]),
+  };
+}
+
 const ALL_FOUR = ['arm64-v8a', 'armeabi-v7a', 'x86_64', 'x86'];
 
 const tmpRoots = [];
@@ -82,7 +107,7 @@ describe('T5 TC-PACKAGING-007 — release fat emits AAB + fat APK in one run', (
     const dir = mkTmp('muse-pack-aab-');
     writeStageApp(dir);
     const { config } = resolveConfig([], {}, dir);
-    const results = await runStages('package', { config: withRelease(config), appDir: dir });
+    const results = await runStages('package', pkgCtx(withRelease(config), dir));
     assert.equal(results.length, 1);
     assert.equal(results[0].stage, 'package');
     assert.equal(results[0].ok, true);
@@ -96,7 +121,7 @@ describe('T5 TC-PACKAGING-007 — release fat emits AAB + fat APK in one run', (
     const dir = mkTmp('muse-pack-aab-');
     writeStageApp(dir);
     const { config } = resolveConfig(['--archs', 'arm64-v8a,x86_64'], {}, dir);
-    await runStages('package', { config: withRelease(config), appDir: dir });
+    await runStages('package', pkgCtx(withRelease(config), dir));
     const fat = fs.readFileSync(fatPath(dir), 'utf8');
     const aab = fs.readFileSync(aabPath(dir), 'utf8');
     assert.match(fat, /arm64-v8a/);
@@ -115,7 +140,7 @@ describe('T5 TC-PACKAGING-007 — release split/both emit AAB with the split set
       {},
       dir,
     );
-    const results = await runStages('package', { config: withRelease(config), appDir: dir });
+    const results = await runStages('package', pkgCtx(withRelease(config), dir));
     assert.equal(results[0].ok, true);
     for (const arch of ['arm64-v8a', 'x86_64']) {
       assert.ok(fs.existsSync(splitPath(dir, arch)), `dist/app-${arch}.apk must exist`);
@@ -128,7 +153,7 @@ describe('T5 TC-PACKAGING-007 — release split/both emit AAB with the split set
     const dir = mkTmp('muse-pack-aab-');
     writeStageApp(dir);
     const { config } = resolveConfig(['--packaging', 'both'], {}, dir);
-    const results = await runStages('package', { config: withRelease(config), appDir: dir });
+    const results = await runStages('package', pkgCtx(withRelease(config), dir));
     assert.equal(results.length, 1);
     assert.equal(results[0].ok, true);
     assert.ok(fs.existsSync(fatPath(dir)));
@@ -143,7 +168,7 @@ describe('T5 TC-PACKAGING-007 — release split/both emit AAB with the split set
     writeStageApp(dir);
     const { config } = resolveConfig([], {}, dir);
     assert.equal(config.release, false);
-    const results = await runStages('package', { config, appDir: dir });
+    const results = await runStages('package', pkgCtx(config, dir));
     assert.equal(results[0].ok, true);
     assert.ok(fs.existsSync(fatPath(dir)));
     assert.ok(!fs.existsSync(aabPath(dir)), 'no AAB outside release');
@@ -153,7 +178,7 @@ describe('T5 TC-PACKAGING-007 — release split/both emit AAB with the split set
     const dir = mkTmp('muse-pack-aab-');
     fs.writeFileSync(path.join(dir, 'muse-native.yaml'), 'name: empty\nversion: 0.0.1\n', 'utf8');
     const { config } = resolveConfig([], {}, dir);
-    const results = await runStages('package', { config: withRelease(config), appDir: dir });
+    const results = await runStages('package', pkgCtx(withRelease(config), dir));
     assert.equal(results[0].stage, 'package');
     assert.equal(results[0].ok, false);
     assert.equal(typeof results[0].error.message, 'string');
@@ -214,7 +239,7 @@ describe('T6 TC-PACKAGING-007 — release gallery run emits AAB + APK shapes in 
     const repo = mkTmp('muse-pack-t6aab-');
     const appDir = writeGalleryRepoT6(repo);
     const { config } = resolveConfig(['--with-sample', '--packaging', 'both'], {}, appDir);
-    const results = await runStages('package', { config: withRelease(config), appDir });
+    const results = await runStages('package', pkgCtx(withRelease(config), appDir));
     assert.equal(results.length, 1);
     assert.equal(results[0].ok, true);
     assert.ok(fs.existsSync(fatPath(appDir)), 'fat present');
@@ -234,7 +259,7 @@ describe('T6 TC-PACKAGING-007 — release gallery run emits AAB + APK shapes in 
       {},
       appDir,
     );
-    const results = await runStages('package', { config: withRelease(config), appDir });
+    const results = await runStages('package', pkgCtx(withRelease(config), appDir));
     assert.equal(results[0].ok, true);
     for (const arch of ['arm64-v8a', 'x86_64']) {
       assert.ok(fs.existsSync(splitPath(appDir, arch)));
@@ -259,7 +284,7 @@ describe('T6 TC-PACKAGING-007 — release gallery run emits AAB + APK shapes in 
     );
     assert.ok(!fs.existsSync(path.join(repo, 'examples', 'm3-gallery')));
     const { config } = resolveConfig(['--with-sample'], {}, appDir);
-    const results = await runStages('package', { config: withRelease(config), appDir });
+    const results = await runStages('package', pkgCtx(withRelease(config), appDir));
     assert.equal(results[0].ok, false);
     assert.match(results[0].error.message, /examples\/m3-gallery/);
     assert.ok(!fs.existsSync(aabPath(appDir)));
