@@ -509,7 +509,31 @@ describe('TC-TSX-023 Batch 4 — T10 gallery fixture builds both artefacts', () 
     const buf = fs.readFileSync(path.join(gallery, 'dist', 'tree.mui.bin'));
     assert.ok(buf.length > 4, 'binary tree must be non-empty');
     assert.equal(buf.subarray(0, 4).toString('ascii'), 'MUI1', 'binary tree must start with the MUI1 magic header');
-    fs.rmSync(path.join(gallery, 'dist'), { recursive: true, force: true });
+    fs.rmSync(path.join(gallery, 'dist', 'ir.json'), { force: true });
+    fs.rmSync(path.join(gallery, 'dist', 'tree.mui.bin'), { force: true });
+  });
+
+  it('gallery build leaves a pre-existing shared dist/ sentinel in place (FR-PACKAGING-004)', () => {
+    const gallery = path.resolve(CLI_DIR, '..', '..', 'examples', 'm3-gallery');
+    const sentinel = path.join(gallery, 'dist', '.t2-sentinel');
+    fs.mkdirSync(path.join(gallery, 'dist'), { recursive: true });
+    fs.writeFileSync(sentinel, 'sentinel');
+    try {
+      const r = runCli(['build', gallery]);
+      assert.equal(r.status, 0, `build examples/m3-gallery must exit 0, got ${r.status}: ${r.stderr}`);
+      const ir = JSON.parse(fs.readFileSync(path.join(gallery, 'dist', 'ir.json'), 'utf8'));
+      assert.equal(ir.version, 1, 'IR version must be 1');
+      assert.ok(Array.isArray(ir.roots) && ir.roots.length > 0, 'IR must carry a non-empty roots array');
+      const buf = fs.readFileSync(path.join(gallery, 'dist', 'tree.mui.bin'));
+      assert.ok(buf.length > 4, 'binary tree must be non-empty');
+      assert.equal(buf.subarray(0, 4).toString('ascii'), 'MUI1', 'binary tree must start with the MUI1 magic header');
+      assert.ok(fs.existsSync(sentinel), 'pre-existing shared dist/ sentinel must survive the gallery build');
+      assert.equal(fs.readFileSync(sentinel, 'utf8'), 'sentinel', 'sentinel contents must be unchanged');
+    } finally {
+      fs.rmSync(sentinel, { force: true });
+      fs.rmSync(path.join(gallery, 'dist', 'ir.json'), { force: true });
+      fs.rmSync(path.join(gallery, 'dist', 'tree.mui.bin'), { force: true });
+    }
   });
 });
 
