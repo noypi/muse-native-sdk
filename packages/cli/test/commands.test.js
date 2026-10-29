@@ -592,8 +592,10 @@ describe('TC-TSX-023 Batch 4 — T10 gallery fixture builds both artefacts', () 
     const sentinel = path.join(gallery, 'dist', '.t2-sentinel');
     fs.mkdirSync(path.join(gallery, 'dist'), { recursive: true });
     fs.writeFileSync(sentinel, 'sentinel');
+    const libEntries = writeEngineLibFiles_F6(path.join(mkTmp('muse-gallery-libs-'), 'engine-libs'));
+    const libFlags = libEntries.flatMap((e) => ['--engine-lib', e]);
     try {
-      const r = runCli(['build', gallery]);
+      const r = runCli(['build', gallery, ...libFlags]);
       assert.equal(r.status, 0, `build examples/m3-gallery must exit 0, got ${r.status}: ${r.stderr}`);
       const ir = JSON.parse(fs.readFileSync(path.join(gallery, 'dist', 'ir.json'), 'utf8'));
       assert.equal(ir.version, 1, 'IR version must be 1');
