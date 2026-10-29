@@ -10,7 +10,7 @@
 #     -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake \
 #     -C engine/runtime/cmake/android-ndk.cmake \
 #     -DANDROID_ABI=<abi>
-# where <abi> is exactly one of: arm64-v8a, x86_64.
+# where <abi> is exactly one of: arm64-v8a, armeabi-v7a, x86_64, x86.
 #
 # Hermetic dual-ABI gate usage (T3, no NDK required):
 #   cmake -S engine/runtime -B engine/runtime/build \
@@ -32,10 +32,10 @@ if(NOT DEFINED PROJECT_NAME)
   set(MUSE_NDK_VERSION "27.2.12479018" CACHE STRING "Pinned NDK revision (r27)")
 
   if(DEFINED ANDROID_ABI)
-    # Real Android configure: fail fast on anything but the two supported
+    # Real Android configure: fail fast on anything but the four supported
     # ABIs; matching is byte-exact.
-    if(NOT ANDROID_ABI STREQUAL "arm64-v8a" AND NOT ANDROID_ABI STREQUAL "x86_64")
-      message(FATAL_ERROR "android-ndk.cmake: unsupported ANDROID_ABI '${ANDROID_ABI}' (expected arm64-v8a or x86_64)")
+    if(NOT ANDROID_ABI STREQUAL "arm64-v8a" AND NOT ANDROID_ABI STREQUAL "armeabi-v7a" AND NOT ANDROID_ABI STREQUAL "x86_64" AND NOT ANDROID_ABI STREQUAL "x86")
+      message(FATAL_ERROR "android-ndk.cmake: unsupported ANDROID_ABI '${ANDROID_ABI}' (expected arm64-v8a, armeabi-v7a, x86_64, or x86)")
     endif()
   else()
     # Host-hermetic gate configure (T3): no ABI validation here; re-include

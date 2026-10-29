@@ -28,6 +28,34 @@ if(JNI_FOUND)
   target_include_directories(runtime PUBLIC ${JNI_INCLUDE_DIRS})
 endif()
 
+# Stage 5 F1: real-Android lane — shared Runtime -> libRuntime.so in
+# CMAKE_BINARY_DIR. Host lane untouched (DEFINED ANDROID_ABI guard);
+# NOT TARGET Runtime guard avoids double-define under the -C hermetic
+# preload. Minimal 8-file JNI set mirrors the hermetic gate.
+if(DEFINED ANDROID_ABI AND NOT TARGET Runtime)
+  add_library(Runtime SHARED
+    src/tree.cpp
+    src/frame.cpp
+    src/layout.cpp
+    src/js_runtime.cpp
+    src/js_engine.cpp
+    src/vulkan_baseline.cpp
+    src/renderer.cpp
+    src/jni_bridge.cpp
+  )
+  set_target_properties(Runtime PROPERTIES
+    OUTPUT_NAME Runtime
+    LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}"
+    CXX_VISIBILITY_PRESET hidden
+    VISIBILITY_INLINES_HIDDEN ON
+  )
+  target_include_directories(Runtime PUBLIC include)
+  if(JNI_FOUND)
+    target_include_directories(Runtime PUBLIC ${JNI_INCLUDE_DIRS})
+  endif()
+  target_compile_options(Runtime PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
 add_executable(instantiate_test tests/instantiate_test.cpp)
 target_link_libraries(instantiate_test PRIVATE runtime)
 target_compile_options(instantiate_test PRIVATE -Wall -Wextra -Wpedantic)
