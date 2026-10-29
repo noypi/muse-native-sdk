@@ -514,3 +514,158 @@ describe('Security — arch path-separator containment at the filename sink', ()
     );
   });
 });
+
+// Batch FR-PACKAGING-004/005 T2 — keep-alive regression for selection shapes
+// (regression guard for done FR-PACKAGING-001/002/003, TC-PACKAGING-001/002/003;
+// no behavior change to selection logic). Scope: the fat/split/both output
+// sets still resolve from the same config.archs per RULE-PACKAGING-001, now
+// backed by T1 buffers (`buildApk` from lib/apk.js) instead of the
+// placeholder arch-list text. These cases MUST RED until lib/apk.js lands
+// (T1); every case above stays green throughout.
+// Hermetic: node:test + node:assert/strict + stdlib only. Fixture bytes are
+// inline mocks; ZIP name-listing is an inline Buffer-reader (stored and
+// deflated entries); no disk writes (buffers only), no network, no secrets,
+// no live device, no existing app config. Path-confinement assertions above
+// are untouched — this block adds no dist/ writes.
+
+// Lazy require (inside T2 helpers only): lib/apk.js does not exist until T1
+// lands, and a top-level require would fail the whole file — including the
+// green TC-001..007 cases above. Lazy loading keeps this file green except
+// for the new T2 cases, which red individually with MODULE_NOT_FOUND.
+function t2BuildApk() {
+  return require('../lib/apk.js').buildApk;
+}
+
+const T2_MANIFEST = '<?xml version="1.0" encoding="utf-8"?><manifest package="com.muse.gallery" />';
+const T2_DEX = Buffer.from('DEX-FIXTURE-T2-classes', 'utf8');
+const T2_ARSC = Buffer.from('ARSC-FIXTURE-T2-resources', 'utf8');
+const T2_TREE = Buffer.from('TREE-FIXTURE-T2-mui-bin', 'utf8');
+
+function t2Libs(abis) {
+  return abis.map((abi) => ({
+    abi,
+    name: 'libRuntime.so',
+    bytes: Buffer.from(`SO-FIXTURE-T2-${abi}`, 'utf8'),
+  }));
+}
+
+// Minimal central-directory name lister (mirrors apk-builder.test.js).
+function t2ZipNames(buf) {
+  assert.ok(Buffer.isBuffer(buf));
+  let eocd = -1;
+  for (let i = buf.length - 22; i >= 0; i--) {
+    if (buf[i] === 0x50 && buf[i + 1] === 0x4b && buf[i + 2] === 0x05 && buf[i + 3] === 0x06) {
+      eocd = i;
+      break;
+    }
+  }
+  assert.ok(eocd >= 0, 'EOCD present — valid ZIP');
+  const count = buf.readUInt16LE(eocd + 10);
+  const cdOffset = buf.readUInt32LE(eocd + 16);
+  const names = [];
+  let p = cdOffset;
+  for (let n = 0; n < count; n++) {
+    assert.equal(buf.readUInt32LE(p), 0x02014b50, `central header signature for entry ${n}`);
+    const nLen = buf.readUInt16LE(p + 28);
+    const xLen = buf.readUInt16LE(p + 30);
+    const cLen = buf.readUInt16LE(p + 32);
+    names.push(buf.toString('utf8', p + 46, p + 46 + nLen));
+    p += 46 + nLen + xLen + cLen;
+  }
+  return names;
+}
+
+function t2FatBufferFor(config) {
+  const buildApk = t2BuildApk();
+  return buildApk({
+    manifestXml: T2_MANIFEST,
+    dexBytes: T2_DEX,
+    resourcesArsc: T2_ARSC,
+    nativeLibs: t2Libs(config.archs),
+    treeBin: T2_TREE,
+  });
+}
+
+function t2SplitBuffersFor(config) {
+  const buildApk = t2BuildApk();
+  return new Map(
+    config.archs.map((arch) => [
+      arch,
+      buildApk({
+        manifestXml: T2_MANIFEST,
+        dexBytes: T2_DEX,
+        resourcesArsc: T2_ARSC,
+        nativeLibs: t2Libs([arch]),
+        treeBin: T2_TREE,
+      }),
+    ]),
+  );
+}
+
+describe('T2 TC-PACKAGING-001 — fat output set resolves from config.archs via T1 buffers', () => {
+  it('default config archs back a fat buffer holding every arch lib + required entries', () => {
+    const dir = mkTmp('muse-pack-t2-');
+    const { config } = resolveConfig([], {}, dir);
+    assert.deepEqual(config.archs, ALL_FOUR);
+    const names = t2ZipNames(t2FatBufferFor(config));
+    for (const arch of config.archs) {
+      assert.ok(names.includes(`lib/${arch}/libRuntime.so`), `fat buffer holds ${arch}`);
+    }
+    for (const required of ['AndroidManifest.xml', 'classes.dex', 'resources.arsc', 'assets/tree.mui.bin']) {
+      assert.ok(names.includes(required), `fat buffer holds ${required}`);
+    }
+  });
+
+  it('subset archs back a fat buffer covering only the selection', () => {
+    const dir = mkTmp('muse-pack-t2-');
+    const { config } = resolveConfig(['--archs', 'arm64-v8a,x86_64'], {}, dir);
+    const names = t2ZipNames(t2FatBufferFor(config));
+    assert.ok(names.includes('lib/arm64-v8a/libRuntime.so'));
+    assert.ok(names.includes('lib/x86_64/libRuntime.so'));
+    assert.ok(!names.some((n) => n.startsWith('lib/armeabi-v7a/')));
+  });
+});
+
+describe('T2 TC-PACKAGING-002 — split output set resolves from config.archs via T1 buffers', () => {
+  it('one buffer per selected arch, each holding only its own lib', () => {
+    const dir = mkTmp('muse-pack-t2-');
+    const { config } = resolveConfig(['--archs', 'arm64-v8a,x86_64', '--packaging', 'split'], {}, dir);
+    const splits = t2SplitBuffersFor(config);
+    assert.equal(splits.size, 2);
+    for (const [arch, buf] of splits) {
+      const names = t2ZipNames(buf);
+      assert.ok(names.includes(`lib/${arch}/libRuntime.so`), `split ${arch} holds its lib`);
+      for (const other of config.archs) {
+        if (other !== arch) assert.ok(!names.some((n) => n.startsWith(`lib/${other}/`)), `split ${arch} isolates ${other}`);
+      }
+      assert.ok(names.includes('AndroidManifest.xml'));
+      assert.ok(names.includes('classes.dex'));
+      assert.ok(names.includes('resources.arsc'));
+    }
+  });
+
+  it('single-arch selection backs exactly one split buffer and no fat lib set', () => {
+    const dir = mkTmp('muse-pack-t2-');
+    const { config } = resolveConfig(['--archs', 'x86_64', '--packaging', 'split'], {}, dir);
+    const splits = t2SplitBuffersFor(config);
+    assert.equal(splits.size, 1);
+    const names = t2ZipNames(splits.get('x86_64'));
+    assert.ok(names.includes('lib/x86_64/libRuntime.so'));
+    assert.ok(!names.some((n) => n.startsWith('lib/arm64-v8a/')));
+  });
+});
+
+describe('T2 TC-PACKAGING-003 — both resolves fat + full split set from the same config.archs', () => {
+  it('fat buffer and split buffers share one selection without reconfiguration', () => {
+    const dir = mkTmp('muse-pack-t2-');
+    const { config } = resolveConfig(['--archs', 'arm64-v8a,x86_64', '--packaging', 'both'], {}, dir);
+    const fatNames = t2ZipNames(t2FatBufferFor(config));
+    const splits = t2SplitBuffersFor(config);
+    assert.ok(fatNames.includes('lib/arm64-v8a/libRuntime.so'));
+    assert.ok(fatNames.includes('lib/x86_64/libRuntime.so'));
+    assert.equal(splits.size, config.archs.length);
+    for (const arch of config.archs) {
+      assert.ok(t2ZipNames(splits.get(arch)).includes(`lib/${arch}/libRuntime.so`));
+    }
+  });
+});
