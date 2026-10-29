@@ -513,3 +513,58 @@ describe('T3 packageStage — dex wiring and fail-closed edges (AC-PACKAGING-015
     }
   });
 });
+
+// Security — LOW-1: engine-lib keys must reject prototype pollution (GR-05 R5.3).
+describe('Security — engineLibs rejects __proto__/constructor/prototype keys (LOW-1)', () => {
+  it("CLI --engine-lib __proto__=<path> throws ConfigError with 'rejected dangerous key'", () => {
+    const dir = mkTmp('muse-pack-eng-');
+    assert.throws(
+      () => resolveConfig(['--engine-lib', '__proto__=/tmp/evil.so'], {}, dir),
+      (err) => {
+        assert.ok(err instanceof ConfigError);
+        assert.match(String(err && err.message), /rejected dangerous key/);
+        assert.match(String(err && err.message), /__proto__/);
+        return true;
+      },
+    );
+  });
+
+  it("env string-form __proto__=<path> throws ConfigError with 'rejected dangerous key'", () => {
+    const dir = mkTmp('muse-pack-eng-');
+    assert.throws(
+      () => resolveConfig([], { MUSE_NATIVE_ENGINE_LIBS: '__proto__=/tmp/evil.so' }, dir),
+      (err) => {
+        assert.ok(err instanceof ConfigError);
+        assert.match(String(err && err.message), /rejected dangerous key/);
+        return true;
+      },
+    );
+  });
+
+  it('file string-form engine_libs __proto__ entry throws ConfigError with rejected dangerous key', () => {
+    const dir = mkTmp('muse-pack-eng-');
+    fs.writeFileSync(
+      path.join(dir, 'muse-native.yaml'),
+      'name: t1\nversion: 0.0.1\nengine_libs: __proto__=/tmp/evil.so\n',
+      'utf8',
+    );
+    assert.throws(
+      () => resolveConfig([], {}, dir),
+      (err) => {
+        assert.ok(err instanceof ConfigError);
+        assert.match(String(err && err.message), /rejected dangerous key/);
+        return true;
+      },
+    );
+  });
+
+  it('legitimate arm64-v8a=<path> control still resolves', () => {
+    const dir = mkTmp('muse-pack-eng-');
+    const { config } = resolveConfig(
+      ['--engine-lib', 'arm64-v8a=/tmp/a.so'],
+      {},
+      dir,
+    );
+    assert.equal(config.engineLibs['arm64-v8a'], '/tmp/a.so');
+  });
+});

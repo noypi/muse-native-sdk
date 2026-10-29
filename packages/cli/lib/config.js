@@ -122,11 +122,12 @@ function defaultEngineLibs() {
 // string, or a comma-separated list of `abi=path` entries. Anything else
 // (including a bare path with no `=`) passes through so the validator
 // below can reject it fail-closed.
-function parseEngineLibsValue(value) {
+function parseEngineLibsValue(value, where) {
   if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
     return { ...value };
   }
   if (typeof value !== 'string') return value;
+  const file = typeof where === 'string' && where ? where : '<config>';
   const map = {};
   for (const part of value.split(',')) {
     const entry = part.trim();
@@ -136,6 +137,9 @@ function parseEngineLibsValue(value) {
     const abi = entry.slice(0, eq).trim();
     const filePath = entry.slice(eq + 1).trim();
     if (!abi || !filePath) return value;
+    if (abi === '__proto__' || abi === 'constructor' || abi === 'prototype') {
+      throw new ConfigError(abi, file, 'rejected dangerous key');
+    }
     map[abi] = filePath;
   }
   return map;
@@ -400,9 +404,9 @@ function readFileLayer(cwd) {
   // one object shape; an explicit `engineLibs:` map in the same file wins
   // entry-by-entry over the alias.
   if (Object.prototype.hasOwnProperty.call(values, 'engine_libs')) {
-    const fromAlias = parseEngineLibsValue(values.engine_libs);
+    const fromAlias = parseEngineLibsValue(values.engine_libs, full);
     const fromCanonical =
-      values.engineLibs !== undefined ? parseEngineLibsValue(values.engineLibs) : {};
+      values.engineLibs !== undefined ? parseEngineLibsValue(values.engineLibs, full) : {};
     delete values.engine_libs;
     if (typeof fromAlias === 'object' && fromAlias !== null && !Array.isArray(fromAlias)) {
       values.engineLibs = { ...fromAlias };
@@ -457,6 +461,9 @@ function readCliLayer(argv) {
       const filePath = eq === -1 ? '' : value.slice(eq + 1).trim();
       if (!abi || !filePath) {
         throw new ConfigError('engineLibs', '<argv>', `malformed --engine-lib entry "${value}", expected <abi=path>`);
+      }
+      if (abi === '__proto__' || abi === 'constructor' || abi === 'prototype') {
+        throw new ConfigError(abi, '<argv>', 'rejected dangerous key');
       }
       if (!ALL_ARCHS.includes(abi)) {
         throw new ConfigError('engineLibs', '<argv>', `unknown ABI "${abi}", expected one of: ${ALL_ARCHS.join(', ')}`, 'CFG-UNKNOWN-ABI');
@@ -555,7 +562,7 @@ function resolveConfig(argv, env, cwd) {
       // T1 (AC-PACKAGING-013): `abi=path` string forms are accepted on the
       // CLI/env layers too — normalize to maps before the type gate.
       if (key === 'engineLibs' && typeof layer.values[key] === 'string') {
-        layer.values[key] = parseEngineLibsValue(layer.values[key]);
+        layer.values[key] = parseEngineLibsValue(layer.values[key], layer.file);
       }
       const actual = typeof layer.values[key];
       if (actual === expected) continue;
