@@ -2,8 +2,24 @@
 # Defaults (used when a key is set in no other layer):
 #   default name: hello-app
 #   default version: 0.0.1
+#   default archs: arm64-v8a, armeabi-v7a, x86_64, x86
+#   default packaging: fat
 name: hello-app
 version: 0.0.1
+# APK/AAB packaging selection. Unedited scaffold builds the default: all
+# four ABIs in a single fat APK. Uncomment one archs combination to narrow
+# the selection:
+#   all devices + emulators (default, same as omitting archs):
+#   # archs: arm64-v8a, armeabi-v7a, x86_64, x86
+#   device-only (physical devices):
+#   # archs: arm64-v8a, armeabi-v7a
+#   emulator-only:
+#   # archs: x86_64
+#   single-arch (example):
+#   # archs: arm64-v8a
+# Packaging mode: fat (one APK covering all archs) | split (one APK per
+# arch) | both (fat + full split set). Default is fat.
+packaging: fat
 # Pinned Muse models per route plus named preset bundles. Validated at
 # build time against the proxy allow-list before any compile work.
 muse:

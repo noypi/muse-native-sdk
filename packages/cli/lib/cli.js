@@ -33,21 +33,22 @@ function loadStages() {
   return ['configure', 'typecheck', 'compile', 'emit', 'native-build', 'package', 'install'];
 }
 
-const ACCEPTED_OPTIONS = '--stage, --print-config, --name, --version, --help, --with-sample, --abi, --release, --modules, --output, --strict';
+const ACCEPTED_OPTIONS = '--stage, --print-config, --name, --version, --help, --with-sample, --abi, --release, --modules, --output, --strict, --archs, --packaging';
 
 // Validate the option layer (`--` flags) of an argv array. Positional
 // operands (the command, `<appDir>`, and the one target operand
 // `examples/m3-gallery`) and `-h`/`--help` are skipped — help
 // and `--print-config` handling is unaffected. Throws OptionError naming
-// the option and the accepted values for: unknown options (including
-// out-of-scope `--archs`, `--packaging`), `--flag=value` form
-// (only `--<name> <value>` is accepted), and a missing/invalid `--stage`
-// value. Never validates config keys — unknown CONFIG keys stay ConfigError
+// the option and the accepted values for: unknown options,
+// `--flag=value` form
+// (only `--<name> <value>` is accepted), a missing/invalid `--stage`
+// value, and an invalid `--packaging` value (only `fat|split|both`).
+// Never validates config keys — unknown CONFIG keys stay ConfigError
 // (T1/T2).
 function validateOptions(argv) {
   const args = Array.isArray(argv) ? argv : [];
   const STAGES = loadStages();
-  const VALUE_FLAGS = new Set(['--stage', '--name', '--version', '--abi', '--modules', '--output']);
+  const VALUE_FLAGS = new Set(['--stage', '--name', '--version', '--abi', '--modules', '--output', '--archs', '--packaging']);
   const BOOL_FLAGS = new Set(['--print-config', '--help', '-h', '--with-sample', '--release', '--strict']);
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
@@ -91,6 +92,11 @@ function validateOptions(argv) {
     if (name === '--stage') {
       if (!STAGES.includes(value)) {
         throw new OptionError(`--stage '${value}'`, `one of: ${STAGES.join(', ')}`);
+      }
+    }
+    if (name === '--packaging') {
+      if (!['fat', 'split', 'both'].includes(value)) {
+        throw new OptionError('--packaging', 'one of: fat, split, both');
       }
     }
   }

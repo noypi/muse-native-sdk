@@ -7,8 +7,11 @@
 // the first failure message plus the location it surfaced at. Stages are
 // fail-closed: everything is validated/computed in memory before anything
 // is written, so a failure leaves `dist/` untouched. Artefact writes stay
-// in `emit` (`dist/ir.json`) and `package` (`dist/tree.mui.bin`), the same
-// two files `build.js` has always produced.
+// in `emit` (`dist/ir.json`) and `package` (`dist/tree.mui.bin` plus the
+// per-`config.packaging` APK placeholders `dist/app-fat.apk` /
+// `dist/app-<arch>.apk` and the release-only AAB placeholder
+// `dist/app.aab`), the same files `build.js` has always produced
+// plus the T4 packaging outputs and the T5 AAB output.
 const fs = require('node:fs');
 const path = require('node:path');
 const ir = require('./ir.js');
@@ -226,16 +229,82 @@ async function packageStage(ctx) {
   assertAppDir(ctx);
   const sources = loadEffectiveSourcesOrThrow(ctx);
   const lowered = lowerAndEncodeOrThrow(ctx.appDir, sources);
+  // T4 (AC-PACKAGING-001/002/003, RULE-PACKAGING-001/002): the same
+  // `config.archs` selection backs every output — never silently narrowed or
+  // widened. Placeholder file-layout outputs per plan A1 (arch-tagged APK
+  // entries as UTF-8 text, NOT signed binaries): `fat` writes a single
+  // `dist/app-fat.apk` covering every selected arch; `split` writes one
+  // `dist/app-<arch>.apk` per selected arch containing only that arch's
+  // entry; `both` writes the fat plus the full split set in one run.
+  const archs =
+    ctx && ctx.config && Array.isArray(ctx.config.archs)
+      ? ctx.config.archs.slice()
+      : ['arm64-v8a', 'armeabi-v7a', 'x86_64', 'x86'];
+  const packaging = (ctx && ctx.config && ctx.config.packaging) || 'fat';
+  // Sink-level enum guard (defense-in-depth: the CLI/config layer already
+  // allowlists this, but the sink must not trust it). Any value outside
+  // fat|split|both fails closed — never ok:true with zero APKs.
+  if (packaging !== 'fat' && packaging !== 'split' && packaging !== 'both') {
+    throw stageError(
+      `unknown packaging '${packaging}'. Expected one of: fat, split, both`,
+      ctx.appDir,
+    );
+  }
   const distDir = path.join(ctx.appDir, 'dist');
   const binPath = path.join(distDir, 'tree.mui.bin');
+  // Compute every payload in memory before touching `dist/` (fail-closed).
+  const writes = [{ filePath: binPath, data: lowered.bin }];
+  if (packaging === 'fat' || packaging === 'both') {
+    writes.push({
+      filePath: path.join(distDir, 'app-fat.apk'),
+      data: archs.map((arch) => `arch: ${arch}\n`).join(''),
+    });
+  }
+  if (packaging === 'split' || packaging === 'both') {
+    for (const arch of archs) {
+      writes.push({
+        filePath: path.join(distDir, `app-${arch}.apk`),
+        data: `arch: ${arch}\n`,
+      });
+    }
+  }
+  // T5 (AC-PACKAGING-007): a release run additionally writes one AAB
+  // covering the same `config.archs` selection in the same run — no second
+  // configuration or rebuild. Placeholder per plan A1 (UTF-8 arch-list
+  // marker, NOT a signed bundle). Non-release runs emit APKs only.
+  const release = Boolean(ctx && ctx.config && ctx.config.release);
+  if (release) {
+    writes.push({
+      filePath: path.join(distDir, 'app.aab'),
+      data: archs.map((arch) => `arch: ${arch}\n`).join(''),
+    });
+  }
+  const written = [];
   try {
     fs.mkdirSync(distDir, { recursive: true });
-    fs.writeFileSync(binPath, lowered.bin);
+    // Path confinement (defense-in-depth): every resolved APK/AAB write
+    // must stay inside the run's distDir. A crafted arch (e.g.
+    // '../evil' or 'x/../../../evil') joins to a path escaping dist and
+    // fails closed here before anything is written.
+    const resolvedDist = path.resolve(distDir);
+    for (const w of writes) {
+      const resolved = path.resolve(w.filePath);
+      if (resolved !== resolvedDist && !resolved.startsWith(resolvedDist + path.sep)) {
+        throw stageError(`refusing to write outside dist: '${w.filePath}'`, distDir);
+      }
+    }
+    for (const w of writes) {
+      if (typeof w.data === 'string') fs.writeFileSync(w.filePath, w.data, 'utf8');
+      else fs.writeFileSync(w.filePath, w.data);
+      written.push(w.filePath);
+    }
   } catch (err) {
-    try {
-      fs.rmSync(binPath, { force: true });
-    } catch (_) {
-      // Best-effort cleanup; the error below is what matters.
+    for (const p of written) {
+      try {
+        fs.rmSync(p, { force: true });
+      } catch (_) {
+        // Best-effort cleanup; the error below is what matters.
+      }
     }
     const detail = err && err.message ? err.message : String(err);
     throw stageError(`cannot write artefacts for '${ctx.appDir}': ${detail}`, binPath);
