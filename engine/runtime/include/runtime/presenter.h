@@ -27,6 +27,10 @@ enum class PresenterCode {
   // minimal OnSurfaceDestroyed below can fail closed with no surface.
   kNoSurface = 8,
   kRecreateFailed = 9,
+  // T5 paced present (FR-RUNTIME-009 / AC-RUNTIME-031): missed vsync and
+  // fail-closed pacing errors. Appended so T1–T4 codes are untouched.
+  kDeadlineMissed = 10,
+  kPacingError = 11,
 };
 
 struct PresenterError {
@@ -44,6 +48,22 @@ enum class ProbeBackend {
 struct BackendProbe {
   ProbeBackend backend = ProbeBackend::kVulkan11Emulated;
   bool android_surface_ext_present = false;
+};
+
+// Render-ahead bound imported from the FR-GRAPHICS-007 pacing policy.
+// Named-constant import, not invented policy: PresentPaced admits at most
+// kMaxRenderAhead presents inside one choreographer deadline window; the
+// excess is clamped (kDeadlineMissed/kPacingError) so no unbounded
+// render-ahead occurs.
+constexpr int kMaxRenderAhead = 2;
+
+// Choreographer vsync deadline. On-device this mirrors the AChoreographer
+// vsync timestamp consumed via the Swappy / ASurfaceControl paced path; on
+// non-Android (host) builds it is an in-process fake carrying explicit
+// nanosecond values — the OS clock is never read and no real
+// AChoreographer/Swappy calls occur on the host lane.
+struct ChoreographerDeadline {
+  long long deadline_ns = 0;
 };
 
 // Attach the JNI-carried ANativeWindow handle, carried opaquely as void*.
@@ -95,5 +115,21 @@ PresenterError OnSurfaceDestroyed();
 PresenterError OnSurfaceRecreated(void* opaque_window);
 PresenterError OnBackground();
 PresenterError OnForeground();
+
+// Paced present on AChoreographer deadlines (FR-RUNTIME-009 / AC-RUNTIME-031,
+// manual gallery TC-031). On-device the frame rides the Swappy /
+// ASurfaceControl paced path; on non-Android (host) builds the deadline is an
+// in-process fake — no real AChoreographer/Swappy calls occur on the host
+// lane. Fail-closed semantics; the return set is closed to
+// kOk | kDeadlineMissed | kPacingError:
+//   - no live swapchain (never attached, never created, backgrounded, or
+//     already destroyed)       -> kPacingError (+ diagnostic), not presented.
+//   - already-expired deadline -> kDeadlineMissed (+ diagnostic), never
+//     presented as on-time.
+//   - more than kMaxRenderAhead presents inside one deadline window
+//                              -> kPacingError (+ diagnostic), excess clamped
+//     so no unbounded render-ahead occurs.
+//   - otherwise                -> kOk (frame paced-presented on the deadline).
+PresenterError PresentPaced(const DrawCmds& cmds, ChoreographerDeadline deadline);
 
 }  // namespace runtime

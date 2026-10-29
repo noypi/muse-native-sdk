@@ -231,6 +231,11 @@ target_link_libraries(swapchain_lifecycle_test PRIVATE runtime)
 target_compile_options(swapchain_lifecycle_test PRIVATE -Wall -Wextra -Wpedantic)
 add_test(NAME swapchain_lifecycle_test COMMAND swapchain_lifecycle_test)
 
+add_executable(paced_present_test tests/paced_present_test.cpp)
+target_link_libraries(paced_present_test PRIVATE runtime)
+target_compile_options(paced_present_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME paced_present_test COMMAND paced_present_test)
+
 # T3 hermetic dual-ABI gate (permanent wiring; no NDK required).
 # Real Android configure (ANDROID_ABI defined via T1 -C lane) skips this;
 # plain host configure defines both <root>-<abi>/libRuntime.so outputs plus

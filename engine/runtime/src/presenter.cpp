@@ -58,6 +58,21 @@ bool LooksLikeWindow(void* opaque_window) {
 #endif
 }
 
+// Paced-present window tracking (T5). Counts presents admitted inside the
+// current choreographer deadline window so the kMaxRenderAhead bound is
+// honored; a new deadline value opens a fresh window. Host-lane fake clock:
+// explicit deadline_ns values only, the OS clock is never read, and no real
+// AChoreographer/Swappy/ASurfaceControl calls occur off-device.
+long long g_paced_window_ns = 0;
+bool g_paced_window_open = false;
+int g_paced_in_window = 0;
+
+void ResetPacedWindow() {
+  g_paced_window_ns = 0;
+  g_paced_window_open = false;
+  g_paced_in_window = 0;
+}
+
 }  // namespace
 
 PresenterError AttachSurface(void* opaque_window) {
@@ -86,6 +101,7 @@ PresenterError DetachSurface() {
   g_surface_created = false;
   g_has_current_frame = false;
   g_backgrounded = false;
+  ResetPacedWindow();
   return {PresenterCode::kOk, ""};
 }
 
@@ -140,6 +156,7 @@ PresenterError OnSurfaceDestroyed() {
   g_has_current_frame = false;
   g_backgrounded = false;
   g_attached_window = nullptr;
+  ResetPacedWindow();
   return {PresenterCode::kOk, ""};
 }
 
@@ -165,6 +182,7 @@ PresenterError OnSurfaceRecreated(void* opaque_window) {
   g_surface_created = true;
   g_has_current_frame = false;
   g_backgrounded = false;
+  ResetPacedWindow();
   return {PresenterCode::kOk, ""};
 }
 
@@ -183,6 +201,42 @@ PresenterError OnForeground() {
             "OnForeground: no surface; nothing to resume"};
   }
   g_backgrounded = false;
+  return {PresenterCode::kOk, ""};
+}
+
+PresenterError PresentPaced(const DrawCmds& cmds, ChoreographerDeadline deadline) {
+  (void)cmds;
+  // No live swapchain: nothing is paced-presented without a live surface.
+  // Backgrounded counts as no live surface here (swapchain retained for
+  // foreground, presentation suspended), reported through the T5 fail-closed
+  // pacing error so the return set stays closed.
+  if (!g_surface_created || g_backgrounded) {
+    return {PresenterCode::kPacingError,
+            "PresentPaced: no live swapchain; frame not presented"};
+  }
+  // An already-expired choreographer deadline is never presented as on-time.
+  // Host-lane fake clock: non-positive deadline_ns values are expired; the OS
+  // clock is never read.
+  if (deadline.deadline_ns <= 0) {
+    return {PresenterCode::kDeadlineMissed,
+            "PresentPaced: choreographer deadline already expired; frame not "
+            "presented as on-time"};
+  }
+#ifndef __ANDROID__
+  // Host lane: in-process window accounting only — no AChoreographer, no
+  // Swappy, no ASurfaceControl calls here.
+#endif
+  if (!g_paced_window_open || deadline.deadline_ns != g_paced_window_ns) {
+    g_paced_window_ns = deadline.deadline_ns;
+    g_paced_window_open = true;
+    g_paced_in_window = 0;
+  }
+  if (g_paced_in_window >= kMaxRenderAhead) {
+    return {PresenterCode::kPacingError,
+            "PresentPaced: render-ahead bound exceeded; excess present "
+            "clamped within the deadline window"};
+  }
+  ++g_paced_in_window;
   return {PresenterCode::kOk, ""};
 }
 
