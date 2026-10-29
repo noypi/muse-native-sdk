@@ -101,17 +101,18 @@ function isBlankViewport(frame) {
 }
 
 // Parse `muse-native gallery-proof --tiers --themes --assert-counts
-// --no-blank [--out <dir>]`. The outDir override is a plain path, never
-// shelled. Unknown flags or a missing `--out` value throw.
+// --no-blank [--out <dir>] [--apk <path>]`. The outDir/apkPath overrides
+// are plain paths, never shelled. Unknown flags or a missing `--out`/`--apk`
+// value throw.
 function parseGalleryProofArgs(argv) {
   const args = Array.isArray(argv) ? argv.slice() : [];
   if (args[0] === 'gallery-proof') args.shift();
-  const known = new Set(['--tiers', '--themes', '--assert-counts', '--no-blank', '--out']);
-  const parsed = { tiers: false, themes: false, assertCounts: false, noBlank: false, outDir: null };
+  const known = new Set(['--tiers', '--themes', '--assert-counts', '--no-blank', '--out', '--apk']);
+  const parsed = { tiers: false, themes: false, assertCounts: false, noBlank: false, outDir: null, apkPath: null };
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
     if (!known.has(arg)) {
-      throw new Error(`Error: ${arg}: Expected one of: --tiers, --themes, --assert-counts, --no-blank, --out <dir>`);
+      throw new Error(`Error: ${arg}: Expected one of: --tiers, --themes, --assert-counts, --no-blank, --out <dir>, --apk <path>`);
     }
     if (arg === '--tiers') parsed.tiers = true;
     else if (arg === '--themes') parsed.themes = true;
@@ -123,6 +124,13 @@ function parseGalleryProofArgs(argv) {
         throw new Error('Error: --out: Expected a value');
       }
       parsed.outDir = next;
+      i++;
+    } else if (arg === '--apk') {
+      const next = args[i + 1];
+      if (typeof next !== 'string' || next.length === 0 || next.startsWith('-')) {
+        throw new Error('Error: --apk: Expected a value');
+      }
+      parsed.apkPath = next;
       i++;
     }
   }
@@ -262,15 +270,16 @@ function logcatFilterArgs() {
   return ['logcat', '-d', 'GalleryPage:I', '*:S'];
 }
 
-// APK / launch wiring for the proof deploy. The gallery APK is the x86_64
-// android-35 build; candidates are checked in install order.
+// APK / launch wiring for the proof deploy. The gallery APK is the signed
+// x86_64 android-35 build; the signed adb-installable candidate
+// (`build/m3-gallery-debug.apk`) is checked first. The CLI package output
+// `dist/app-fat.apk` is NOT an installable APK (INSTALL_PARSE_FAILED_NOT_APK)
+// and is never installed — it is not a candidate.
 function resolveGalleryApkPath(opts) {
-  const galleryDir = (opts && opts.galleryDir)
-    || (opts && opts.apkPath && path.dirname(opts.apkPath))
-    || path.resolve(__dirname, '..', '..', '..', 'examples', 'm3-gallery');
   if (opts && typeof opts.apkPath === 'string' && opts.apkPath.length > 0) return opts.apkPath;
+  const galleryDir = (opts && opts.galleryDir)
+    || path.resolve(__dirname, '..', '..', '..', 'examples', 'm3-gallery');
   const candidates = [
-    path.join(galleryDir, 'dist', 'app-fat.apk'),
     path.join(galleryDir, 'build', 'm3-gallery-debug.apk'),
     path.join(galleryDir, 'build', 'm3-gallery-unsigned.apk'),
   ];
@@ -279,6 +288,7 @@ function resolveGalleryApkPath(opts) {
       if (fs.existsSync(candidate)) return candidate;
     } catch (_) { /* keep looking */ }
   }
+  failWith('io-error', `gallery APK missing; no installable APK at ${candidates.join(' or ')}; run muse-native build first or pass --apk <path>`);
   return candidates[0];
 }
 
