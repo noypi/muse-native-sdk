@@ -14,6 +14,14 @@
 // through a CPU translation layer with Choreographer timing limits; those
 // translator limits are recorded as emulator limits and no GPU path is
 // forced (CPU `gallery_present` rasterizer is the proof medium).
+//
+// Deploy note (TC-M3-021 second-tester fix): the proof owns the device
+// deploy — after the dist/tree.mui.bin → assets/ sync it adb-installs the
+// x86_64 android-35 gallery APK and launches com.muse.host/.MainActivity,
+// then waits for gallery markers before any dumpsys/logcat read. Install
+// always follows the sync so the fresh tree reaches the installed APK.
+// Logcat uses the valid tag-level filter form `GalleryPage:I` (logcat
+// rejects a filter spec with an embedded second colon).
 
 const path = require('node:path');
 const fs = require('node:fs');
@@ -233,7 +241,7 @@ function defaultReadPageIndex({ serial } = {}) {
     failWith('device-unreachable', `page index read failed: ${err.message}`);
   }
   try {
-    const log = adbOrUnreachable(['logcat', '-d', 'GalleryPage:NATIVE_ADVANCE_PAGE:*', '*:S'], serial);
+    const log = adbOrUnreachable(logcatFilterArgs(), serial);
     const found = scan(log ? log.toString('utf8') : '');
     if (found !== null) return Promise.resolve(found);
   } catch (err) {
@@ -246,7 +254,88 @@ function defaultReadPageIndex({ serial } = {}) {
   return Promise.resolve(0);
 }
 
-async function runGalleryProof({ serial, androidJar, outDir, readCounts, capture, advance, readIndex, sync, galleryDir }) {
+// Valid logcat tag-level filter for the gallery markers. Logcat rejects a
+// filter spec containing an embedded second colon, so the filter is the
+// verified-good `GalleryPage:I` form (tag GalleryPage at Info + silence
+// everything else).
+function logcatFilterArgs() {
+  return ['logcat', '-d', 'GalleryPage:I', '*:S'];
+}
+
+// APK / launch wiring for the proof deploy. The gallery APK is the x86_64
+// android-35 build; candidates are checked in install order.
+function resolveGalleryApkPath(opts) {
+  const galleryDir = (opts && opts.galleryDir)
+    || (opts && opts.apkPath && path.dirname(opts.apkPath))
+    || path.resolve(__dirname, '..', '..', '..', 'examples', 'm3-gallery');
+  if (opts && typeof opts.apkPath === 'string' && opts.apkPath.length > 0) return opts.apkPath;
+  const candidates = [
+    path.join(galleryDir, 'dist', 'app-fat.apk'),
+    path.join(galleryDir, 'build', 'm3-gallery-debug.apk'),
+    path.join(galleryDir, 'build', 'm3-gallery-unsigned.apk'),
+  ];
+  for (const candidate of candidates) {
+    try {
+      if (fs.existsSync(candidate)) return candidate;
+    } catch (_) { /* keep looking */ }
+  }
+  return candidates[0];
+}
+
+const GALLERY_ACTIVITY = 'com.muse.host/.MainActivity';
+
+// adb install of the gallery APK. Throws device-unreachable when no device
+// answers; throws io-error when the APK file itself is missing/unreadable.
+function defaultInstallApk({ serial, apkPath, galleryDir } = {}) {
+  const apk = apkPath || resolveGalleryApkPath({ galleryDir });
+  try {
+    if (!fs.existsSync(apk)) {
+      failWith('io-error', `gallery APK missing at ${apk}; run muse-native build first`);
+    }
+  } catch (err) {
+    if (err && err.code === 'io-error') throw err;
+    failWith('io-error', 'gallery APK check failed');
+  }
+  adbOrUnreachable(['install', '-r', apk], serial);
+  return Promise.resolve({ installed: true, apk });
+}
+
+// Launch the gallery host activity.
+function defaultLaunchApp({ serial } = {}) {
+  adbOrUnreachable(['shell', 'am', 'start', '-n', GALLERY_ACTIVITY], serial);
+  return Promise.resolve({ launched: true });
+}
+
+// Wait for gallery markers to appear on-device before any dumpsys/logcat
+// count read. Polls dumpsys for the host pid plus the valid logcat filter;
+// resolves once a marker is seen. `sleepMs`/`attempts`/`sleep` are
+// injectable; the adb read itself stays on the real serial.
+async function waitForGalleryMarkers({ serial, attempts, sleepMs, sleep } = {}) {
+  const tries = Number.isInteger(attempts) && attempts > 0 ? attempts : 10;
+  const delay = Number.isInteger(sleepMs) && sleepMs >= 0 ? sleepMs : 500;
+  const sleepFn = sleep || ((ms) => new Promise((resolve) => { setTimeout(resolve, ms); }));
+  const markerRe = /gallery-page|gallerystorypage|GalleryPage|NATIVE_ADVANCE_PAGE|com\.muse\.host/i;
+  let lastErr = null;
+  for (let i = 0; i < tries; i++) {
+    try {
+      const dumpsys = adbOrUnreachable(['shell', 'dumpsys', 'activity', 'top'], serial);
+      if (dumpsys && markerRe.test(dumpsys.toString('utf8'))) return { ready: true };
+      const log = adbOrUnreachable(logcatFilterArgs(), serial);
+      if (log && markerRe.test(log.toString('utf8'))) return { ready: true };
+    } catch (err) {
+      lastErr = err;
+      if (err && err.code === 'device-unreachable' && i === 0) {
+        // Fall through and retry: the activity may still be starting.
+      }
+    }
+    if (i + 1 < tries) await sleepFn(delay);
+  }
+  if (lastErr && lastErr.code === 'device-unreachable') throw lastErr;
+  failWith('device-unreachable', 'gallery markers unavailable after launch (no GalleryPage/dumpsys marker)');
+  return { ready: false };
+}
+
+async function runGalleryProof({ serial, androidJar, outDir, readCounts, capture, advance, readIndex, sync, galleryDir, apkPath, install, launch, waitForMarkers, sleep }) {
   const deviceSerial = serial || process.env.ANDROID_SERIAL;
   if (!deviceSerial) {
     failWith('device-unreachable', 'no serial/device');
@@ -266,6 +355,39 @@ async function runGalleryProof({ serial, androidJar, outDir, readCounts, capture
   } catch (err) {
     if (err && (err.code === 'io-error' || /missing build output/.test(err.message || ''))) throw err;
     failWith('device-unreachable', `asset-sync failed: ${(err && err.message) || String(err)}`);
+  }
+
+  // Device deploy (production path only): adb-install the x86_64 android-35
+  // gallery APK, launch com.muse.host/.MainActivity, then wait for gallery
+  // markers before any dumpsys/logcat read. The install runs after the
+  // asset sync so the fresh tree reaches the installed APK. Hermetic halves
+  // inject readCounts/capture and never touch a device, so the deploy is
+  // skipped whenever device I/O is injected; every deploy helper is
+  // injectable (`install`/`launch`/`waitForMarkers`) for the same reason.
+  // Deploy failures map to device-unreachable; io-error (missing APK) is
+  // preserved as-is.
+  const hermetic = Boolean(readCounts || capture);
+  if (!hermetic) {
+    const installFn = install || ((args) => defaultInstallApk(args));
+    const launchFn = launch || ((args) => defaultLaunchApp(args));
+    const waitFn = waitForMarkers || ((args) => waitForGalleryMarkers(args));
+    try {
+      await installFn({ serial: deviceSerial, apkPath, galleryDir });
+    } catch (err) {
+      if (err && err.code === 'io-error') throw err;
+      failWith('device-unreachable', `apk install failed: ${(err && err.message) || String(err)}`);
+    }
+    try {
+      await launchFn({ serial: deviceSerial });
+    } catch (err) {
+      failWith('device-unreachable', `activity launch failed: ${(err && err.message) || String(err)}`);
+    }
+    try {
+      await waitFn({ serial: deviceSerial, sleep });
+    } catch (err) {
+      if (err && err.code === 'device-unreachable') throw err;
+      failWith('device-unreachable', `gallery markers wait failed: ${(err && err.message) || String(err)}`);
+    }
   }
 
   // Manifest-derived expectation (no hardcoded rows/pages).
@@ -369,7 +491,7 @@ function readDeviceCounts({ serial } = {}) {
   const direct = scanPairs(dumpsysText);
   if (direct) return Promise.resolve(direct);
   try {
-    const log = adbOrUnreachable(['logcat', '-d', 'GalleryPage:NATIVE_ADVANCE_PAGE:*', '*:S'], serial);
+    const log = adbOrUnreachable(logcatFilterArgs(), serial);
     const text = dumpsysText + '\n' + (log ? log.toString('utf8') : '');
     const paired = scanPairs(text);
     if (paired) return Promise.resolve(paired);
@@ -522,4 +644,9 @@ module.exports = {
   resolveAssetSyncPaths,
   syncAssets,
   pageAllAndVerifyWrap,
+  logcatFilterArgs,
+  resolveGalleryApkPath,
+  defaultInstallApk,
+  defaultLaunchApp,
+  waitForGalleryMarkers,
 };
