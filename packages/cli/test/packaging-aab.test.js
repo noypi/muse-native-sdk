@@ -163,3 +163,106 @@ describe('T5 TC-PACKAGING-007 — release split/both emit AAB with the split set
     assert.ok(!fs.existsSync(fatPath(dir)));
   });
 });
+
+// Batch 3 — T6 TC-PACKAGING-007 vs gallery reference target.
+// Scope: release runs with the `examples/m3-gallery` reference target
+// selected (`--with-sample`) emit one AAB covering `config.archs` together
+// with the selected APK shape in a single `runStages('package')` call —
+// proven from a tmp fake repo modeled on the committed gallery (same
+// fixture pattern as targets.test.js). Hermetic: tmp dirs only, stdlib
+// only; no device/emulator/network/signing.
+// ASSUMPTION (plan Interface `none — test-only` pins no new surface): these
+// cases wire the existing `resolveConfig`/`runStages` surfaces only.
+
+function writeGalleryRepoT6(repo) {
+  const appDir = path.join(repo, 'my-app');
+  fs.mkdirSync(path.join(appDir, 'src'), { recursive: true });
+  fs.writeFileSync(
+    path.join(appDir, 'muse-native.yaml'),
+    'name: gallery-app\nversion: 0.0.1\n',
+    'utf8',
+  );
+  fs.writeFileSync(
+    path.join(appDir, 'src', 'App.tsx'),
+    [
+      "import { View, Text } from '@muse/native';",
+      'export default function App() {',
+      '  return (<View><Text>hi</Text></View>);',
+      '}',
+      '',
+    ].join('\n'),
+    'utf8',
+  );
+  const sampleSrc = path.join(repo, 'examples', 'm3-gallery', 'src');
+  fs.mkdirSync(sampleSrc, { recursive: true });
+  fs.writeFileSync(
+    path.join(sampleSrc, 'Gallery.tsx'),
+    [
+      "import { View, Text } from '@muse/native';",
+      'export default function Gallery() {',
+      '  return (<View><Text>GALLERY-REF-m3-t6</Text></View>);',
+      '}',
+      '',
+    ].join('\n'),
+    'utf8',
+  );
+  return appDir;
+}
+
+describe('T6 TC-PACKAGING-007 — release gallery run emits AAB + APK shapes in one call', () => {
+  it('release both + withSample writes fat + full split set + AAB from one call', async () => {
+    const repo = mkTmp('muse-pack-t6aab-');
+    const appDir = writeGalleryRepoT6(repo);
+    const { config } = resolveConfig(['--with-sample', '--packaging', 'both'], {}, appDir);
+    const results = await runStages('package', { config: withRelease(config), appDir });
+    assert.equal(results.length, 1);
+    assert.equal(results[0].ok, true);
+    assert.ok(fs.existsSync(fatPath(appDir)), 'fat present');
+    for (const arch of ALL_FOUR) {
+      assert.ok(fs.existsSync(splitPath(appDir, arch)), `split ${arch} present`);
+    }
+    assert.ok(fs.existsSync(aabPath(appDir)), 'AAB present with both');
+    const aab = fs.readFileSync(aabPath(appDir), 'utf8');
+    for (const arch of ALL_FOUR) assert.match(aab, new RegExp(arch));
+  });
+
+  it('release split + withSample writes splits + AAB and no fat', async () => {
+    const repo = mkTmp('muse-pack-t6aab-');
+    const appDir = writeGalleryRepoT6(repo);
+    const { config } = resolveConfig(
+      ['--with-sample', '--archs', 'arm64-v8a,x86_64', '--packaging', 'split'],
+      {},
+      appDir,
+    );
+    const results = await runStages('package', { config: withRelease(config), appDir });
+    assert.equal(results[0].ok, true);
+    for (const arch of ['arm64-v8a', 'x86_64']) {
+      assert.ok(fs.existsSync(splitPath(appDir, arch)));
+    }
+    assert.ok(fs.existsSync(aabPath(appDir)), 'AAB alongside splits');
+    const aab = fs.readFileSync(aabPath(appDir), 'utf8');
+    assert.match(aab, /arm64-v8a/);
+    assert.match(aab, /x86_64/);
+    assert.doesNotMatch(aab, /armeabi-v7a/);
+    assert.ok(!fs.existsSync(fatPath(appDir)), 'no fat APK in split mode');
+  });
+
+  it('release withSample with absent gallery fails closed writing no AAB/APK', async () => {
+    const repo = mkTmp('muse-pack-t6aab-');
+    const appDir = path.join(repo, 'my-app');
+    fs.mkdirSync(path.join(appDir, 'src'), { recursive: true });
+    fs.writeFileSync(path.join(appDir, 'muse-native.yaml'), 'name: gallery-app\nversion: 0.0.1\n', 'utf8');
+    fs.writeFileSync(
+      path.join(appDir, 'src', 'App.tsx'),
+      "import { View } from '@muse/native';\nexport default function App() {\n  return (<View />);\n}\n",
+      'utf8',
+    );
+    assert.ok(!fs.existsSync(path.join(repo, 'examples', 'm3-gallery')));
+    const { config } = resolveConfig(['--with-sample'], {}, appDir);
+    const results = await runStages('package', { config: withRelease(config), appDir });
+    assert.equal(results[0].ok, false);
+    assert.match(results[0].error.message, /examples\/m3-gallery/);
+    assert.ok(!fs.existsSync(aabPath(appDir)));
+    assert.ok(!fs.existsSync(fatPath(appDir)));
+  });
+});

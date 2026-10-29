@@ -276,3 +276,156 @@ describe('T4 TC-PACKAGING-003 — both emits fat + full split set in one run', (
     assert.ok(!fs.existsSync(fatPath(dir)));
   });
 });
+
+// Batch 3 — T6 reference-target proofs (TC-PACKAGING-001/002/003/004/005).
+// Scope: the T4 fat/split/both shapes plus T1 fail-closed and T3 template
+// behavior, proven with the `examples/m3-gallery` reference target selected
+// (`--with-sample`) from a tmp fake repo modeled on the committed gallery
+// (app at `<repo>/my-app`, gallery fixture at
+// `<repo>/examples/m3-gallery/src/Gallery.tsx`, mirroring the
+// sample-target fixture pattern from targets.test.js). Hermetic: tmp dirs
+// only, stdlib only; no device/emulator/network/signing.
+// ASSUMPTION (plan Interface `none — test-only` pins no new surface): these
+// cases wire the existing `resolveConfig`/`runStages` surfaces only; the
+// gallery fixture stands in for the committed reference target so no
+// checkout layout or device is required.
+
+const GALLERY_MARKER_T6 = 'GALLERY-REF-m3-t6';
+
+function writeGalleryRepoT6(repo) {
+  const appDir = path.join(repo, 'my-app');
+  fs.mkdirSync(path.join(appDir, 'src'), { recursive: true });
+  fs.writeFileSync(
+    path.join(appDir, 'muse-native.yaml'),
+    'name: gallery-app\nversion: 0.0.1\n',
+    'utf8',
+  );
+  fs.writeFileSync(
+    path.join(appDir, 'src', 'App.tsx'),
+    [
+      "import { View, Text } from '@muse/native';",
+      'export default function App() {',
+      '  return (<View><Text>hi</Text></View>);',
+      '}',
+      '',
+    ].join('\n'),
+    'utf8',
+  );
+  const sampleSrc = path.join(repo, 'examples', 'm3-gallery', 'src');
+  fs.mkdirSync(sampleSrc, { recursive: true });
+  fs.writeFileSync(
+    path.join(sampleSrc, 'Gallery.tsx'),
+    [
+      "import { View, Text } from '@muse/native';",
+      'export default function Gallery() {',
+      `  return (<View><Text>${GALLERY_MARKER_T6}</Text></View>);`,
+      '}',
+      '',
+    ].join('\n'),
+    'utf8',
+  );
+  return appDir;
+}
+
+function writeBareAppT6(repo) {
+  const appDir = path.join(repo, 'my-app');
+  fs.mkdirSync(path.join(appDir, 'src'), { recursive: true });
+  fs.writeFileSync(
+    path.join(appDir, 'muse-native.yaml'),
+    'name: gallery-app\nversion: 0.0.1\n',
+    'utf8',
+  );
+  fs.writeFileSync(
+    path.join(appDir, 'src', 'App.tsx'),
+    [
+      "import { View } from '@muse/native';",
+      'export default function App() {',
+      '  return (<View />);',
+      '}',
+      '',
+    ].join('\n'),
+    'utf8',
+  );
+  return appDir;
+}
+
+describe('T6 TC-PACKAGING-001 — fat shape with gallery reference target selected', () => {
+  it('withSample fat packages the gallery selection covering all four archs', async () => {
+    const repo = mkTmp('muse-pack-t6-');
+    const appDir = writeGalleryRepoT6(repo);
+    const { config } = resolveConfig(['--with-sample'], {}, appDir);
+    assert.equal(config.withSample, true);
+    const results = await runStages('package', { config, appDir });
+    assert.equal(results[0].ok, true);
+    assert.ok(fs.existsSync(fatPath(appDir)), 'dist/app-fat.apk must exist');
+    const body = fs.readFileSync(fatPath(appDir), 'utf8');
+    for (const arch of ALL_FOUR) assert.match(body, new RegExp(arch));
+  });
+
+  it('withSample with absent gallery fails closed naming examples/m3-gallery', async () => {
+    const repo = mkTmp('muse-pack-t6-');
+    const appDir = writeBareAppT6(repo);
+    assert.ok(!fs.existsSync(path.join(repo, 'examples', 'm3-gallery')));
+    const { config } = resolveConfig(['--with-sample'], {}, appDir);
+    const results = await runStages('package', { config, appDir });
+    assert.equal(results[0].ok, false);
+    assert.match(results[0].error.message, /examples\/m3-gallery/);
+    assert.ok(!fs.existsSync(fatPath(appDir)));
+  });
+});
+
+describe('T6 TC-PACKAGING-002/003 — split/both shapes with gallery reference target selected', () => {
+  it('withSample split emits one isolated APK per arch', async () => {
+    const repo = mkTmp('muse-pack-t6-');
+    const appDir = writeGalleryRepoT6(repo);
+    const { config } = resolveConfig(
+      ['--with-sample', '--archs', 'arm64-v8a,x86_64', '--packaging', 'split'],
+      {},
+      appDir,
+    );
+    const results = await runStages('package', { config, appDir });
+    assert.equal(results[0].ok, true);
+    for (const arch of ['arm64-v8a', 'x86_64']) {
+      assert.ok(fs.existsSync(splitPath(appDir, arch)), `dist/app-${arch}.apk must exist`);
+      assert.match(fs.readFileSync(splitPath(appDir, arch), 'utf8'), new RegExp(arch));
+    }
+    assert.doesNotMatch(fs.readFileSync(splitPath(appDir, 'arm64-v8a'), 'utf8'), /x86_64/);
+    assert.ok(!fs.existsSync(fatPath(appDir)), 'no fat APK in split mode');
+  });
+
+  it('withSample both emits fat + full split set in one run', async () => {
+    const repo = mkTmp('muse-pack-t6-');
+    const appDir = writeGalleryRepoT6(repo);
+    const { config } = resolveConfig(['--with-sample', '--packaging', 'both'], {}, appDir);
+    const results = await runStages('package', { config, appDir });
+    assert.equal(results[0].ok, true);
+    assert.ok(fs.existsSync(fatPath(appDir)), 'fat present');
+    for (const arch of ALL_FOUR) {
+      assert.ok(fs.existsSync(splitPath(appDir, arch)), `split ${arch} present`);
+    }
+  });
+});
+
+describe('T6 TC-PACKAGING-004/005 — template grep + fail-closed against gallery app', () => {
+  it('template documents all four ABIs, combos, and the packaging default', () => {
+    const template = path.resolve(__dirname, '..', 'templates', 'muse-native.yaml');
+    const text = fs.readFileSync(template, 'utf8');
+    assert.match(text, /archs/);
+    for (const arch of ALL_FOUR) assert.match(text, new RegExp(arch));
+    assert.match(text, /packaging/);
+  });
+
+  it('unknown ABI fails closed for the gallery app naming value + accepted set', () => {
+    const repo = mkTmp('muse-pack-t6-');
+    const appDir = writeGalleryRepoT6(repo);
+    assert.throws(
+      () => resolveConfig(['--with-sample', '--archs', 'arm64-v8a,mips'], {}, appDir),
+      (err) => {
+        assert.ok(err instanceof ConfigError);
+        assert.match(String(err.message), /mips/);
+        assert.match(String(err.message), /arm64-v8a, armeabi-v7a, x86_64, x86/);
+        return true;
+      },
+    );
+  });
+});

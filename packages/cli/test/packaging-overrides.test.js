@@ -127,3 +127,91 @@ describe('T2 resolveConfig CLI overrides + winning layer (TC-006)', () => {
     });
   });
 });
+
+// Batch 3 — T6 TC-PACKAGING-006 vs gallery reference target.
+// Scope: CLI `--archs`/`--packaging` overrides win over the gallery app's
+// file values with winning layer `cli`, and the resulting split output
+// reflects the CLI selection — proven from a tmp fake repo modeled on
+// `examples/m3-gallery` (same fixture pattern as targets.test.js).
+// Hermetic: tmp dirs only, stdlib only; no device/emulator/network/signing.
+// ASSUMPTION (plan Interface `none — test-only` pins no new surface): these
+// cases wire the existing `resolveConfig`/`runStages` surfaces only.
+
+const { runStages: runStagesT6 } = require('../lib/stages.js');
+
+function writeGalleryRepoT6(repo) {
+  const appDir = path.join(repo, 'my-app');
+  fs.mkdirSync(path.join(appDir, 'src'), { recursive: true });
+  fs.writeFileSync(
+    path.join(appDir, 'muse-native.yaml'),
+    'name: gallery-app\nversion: 0.0.1\narchs: x86\npackaging: fat\n',
+    'utf8',
+  );
+  fs.writeFileSync(
+    path.join(appDir, 'src', 'App.tsx'),
+    [
+      "import { View, Text } from '@muse/native';",
+      'export default function App() {',
+      '  return (<View><Text>hi</Text></View>);',
+      '}',
+      '',
+    ].join('\n'),
+    'utf8',
+  );
+  const sampleSrc = path.join(repo, 'examples', 'm3-gallery', 'src');
+  fs.mkdirSync(sampleSrc, { recursive: true });
+  fs.writeFileSync(
+    path.join(sampleSrc, 'Gallery.tsx'),
+    [
+      "import { View, Text } from '@muse/native';",
+      'export default function Gallery() {',
+      '  return (<View><Text>GALLERY-REF-m3-t6</Text></View>);',
+      '}',
+      '',
+    ].join('\n'),
+    'utf8',
+  );
+  return appDir;
+}
+
+describe('T6 TC-PACKAGING-006 — CLI overrides win for the gallery app', () => {
+  it('CLI --archs/--packaging override gallery file values with layer cli', async () => {
+    const repo = mkTmp('muse-pack-t6over-');
+    const appDir = writeGalleryRepoT6(repo);
+    const { config, winningLayer } = resolveConfig(
+      ['--with-sample', '--archs', 'arm64-v8a,x86_64', '--packaging', 'split'],
+      {},
+      appDir,
+    );
+    assert.deepEqual(config.archs, ['arm64-v8a', 'x86_64']);
+    assert.equal(config.packaging, 'split');
+    assert.equal(winningLayer.archs, 'cli');
+    assert.equal(winningLayer.packaging, 'cli');
+    const results = await runStagesT6('package', { config, appDir });
+    assert.equal(results[0].ok, true);
+    for (const arch of ['arm64-v8a', 'x86_64']) {
+      const p = path.join(appDir, 'dist', `app-${arch}.apk`);
+      assert.ok(fs.existsSync(p), `dist/app-${arch}.apk must exist`);
+      assert.match(fs.readFileSync(p, 'utf8'), new RegExp(arch));
+    }
+    assert.ok(!fs.existsSync(path.join(appDir, 'dist', 'app-fat.apk')));
+  });
+
+  it('CLI --packaging both for the gallery app emits fat + file-arch splits in one run', async () => {
+    const repo = mkTmp('muse-pack-t6over-');
+    const appDir = writeGalleryRepoT6(repo);
+    const { config, winningLayer } = resolveConfig(
+      ['--with-sample', '--packaging', 'both'],
+      {},
+      appDir,
+    );
+    assert.equal(winningLayer.packaging, 'cli');
+    assert.deepEqual(config.archs, ['x86']);
+    assert.equal(winningLayer.archs, 'file');
+    const results = await runStagesT6('package', { config, appDir });
+    assert.equal(results[0].ok, true);
+    assert.ok(fs.existsSync(path.join(appDir, 'dist', 'app-fat.apk')));
+    assert.ok(fs.existsSync(path.join(appDir, 'dist', 'app-x86.apk')));
+    assert.match(fs.readFileSync(path.join(appDir, 'dist', 'app-x86.apk'), 'utf8'), /x86/);
+  });
+});
