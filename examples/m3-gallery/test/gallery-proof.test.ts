@@ -123,6 +123,7 @@ function proofDriver(mod, overrides = {}) {
     serial: 'test-serial-not-real',
     androidJar: 'test-android-jar-not-real',
     outDir,
+    sync: async () => ({ src: 'test-sync-src-not-real', dest: 'test-sync-dest-not-real' }),
     advance: async () => ({ nativeAdvancePage: true }),
     readIndex: async () => 0,
   };
@@ -257,6 +258,7 @@ describe('T3 gallery-proof module contract', () => {
           serial: undefined,
           androidJar: 'test-android-jar-not-real',
           outDir: join(os.tmpdir(), 'gallery-proof-no-serial'),
+          sync: async () => ({ src: 'test-sync-src-not-real', dest: 'test-sync-dest-not-real' }),
           readCounts: async () => ({ rows: 1, pages: 1 }),
           capture: async () => nonBlankFrame(),
           advance: async () => ({ nativeAdvancePage: true }),
@@ -366,6 +368,138 @@ describe('T3 gallery-proof module contract', () => {
     const src = readText(PROOF_LIB);
     assert.ok(/Swappy|Vulkan|translator/i.test(src), 'must record Vulkan/Swappy translator limits as emulator limits');
     assert.ok(!/--force-gpu|forceGpu|FORCE_GPU/.test(src), 'must not force GPU paths');
+  });
+});
+
+describe('T3 tree-oracle + viewport hermetic pins', () => {
+  function fixtureTreeIR() {
+    return {
+      roots: [
+        {
+          file: 'src/Showcase.tsx',
+          children: [
+            { type: 'Button', props: { label: 'Ok', variant: 'filled' } },
+            { type: 'Card', props: { title: 'Hello' } },
+            { type: 'View', props: {} },
+            { type: '#text', value: 'M3 Gallery light' },
+            { type: '#text', value: 'Hello row' },
+            { type: '#text', value: '...skip me' },
+          ],
+        },
+      ],
+    };
+  }
+
+  function mui1Bytes(ir, { magic = 'MUI1', version = 1, corruptJson = false } = {}) {
+    const payload = corruptJson ? Buffer.from('{not-json', 'utf8') : Buffer.from(JSON.stringify(ir), 'utf8');
+    const header = Buffer.alloc(12);
+    header.write(magic, 0, 4, 'ascii');
+    header.writeUInt32LE(version, 4);
+    header.writeUInt32LE(payload.length, 8);
+    return Buffer.concat([header, payload]);
+  }
+
+  function assertIoError(fn, label) {
+    let err = null;
+    try {
+      fn();
+    } catch (e) {
+      err = e;
+    }
+    assert.ok(err, `${label} must throw io-error`);
+    assert.equal(err.code, 'io-error', `${label} must carry io-error (got ${err && err.code})`);
+  }
+
+  it('parseTreeRows filters wrappers/non-alnum and orders components first', () => {
+    const { mod } = tryLoadProof();
+    assert.ok(mod, 'behavior missing: packages/cli/lib/gallery-proof.js not implemented');
+    assert.equal(typeof mod.parseTreeRows, 'function', 'parseTreeRows must be exported');
+    const rows = mod.parseTreeRows(fixtureTreeIR());
+    assert.equal(rows.length, 4, `fixture must yield 4 rows (got ${rows.length})`);
+    assert.deepEqual(rows.map((r) => r.comp), ['Button', 'Card', '', '']);
+    assert.ok(!rows.some((r) => r.comp === 'View'), 'View wrapper must never become a row');
+    assert.ok(!rows.some((r) => r.label === '...skip me'), 'non-alnum text must be skipped');
+  });
+
+  it('deriveTreeCounts over a fixture tree yields rows and paged pages', () => {
+    const { mod } = tryLoadProof();
+    assert.ok(mod, 'behavior missing: packages/cli/lib/gallery-proof.js not implemented');
+    assert.equal(typeof mod.deriveTreeCounts, 'function', 'deriveTreeCounts must be exported');
+    const ir = fixtureTreeIR();
+    const tall = mod.deriveTreeCounts(ir, 3000);
+    assert.equal(tall.rows, 4, 'fixture rows must be 4');
+    assert.equal(tall.pages, 1, 'tall viewport must fit on one page');
+    const short = mod.deriveTreeCounts(mui1Bytes(ir), 300);
+    assert.equal(short.rows, 4, 'MUI1 bytes path must yield the same rows');
+    assert.ok(short.pages >= 1, 'short viewport must yield >= 1 page');
+    assert.ok(short.pages >= tall.pages, 'shorter viewport must not page less');
+  });
+
+  it('decodeTreeIR rejects bad magic/version/length/non-JSON with io-error', () => {
+    const { mod } = tryLoadProof();
+    assert.ok(mod, 'behavior missing: packages/cli/lib/gallery-proof.js not implemented');
+    const ir = fixtureTreeIR();
+    assertIoError(() => mod.decodeTreeIR(mui1Bytes(ir, { magic: 'BAD!' })), 'bad magic');
+    assertIoError(() => mod.decodeTreeIR(mui1Bytes(ir, { version: 2 })), 'bad version');
+    const good = mui1Bytes(ir);
+    const truncated = good.subarray(0, good.length - 5);
+    assertIoError(() => mod.decodeTreeIR(truncated), 'truncated length');
+    assertIoError(() => mod.decodeTreeIR(Buffer.from('short', 'utf8')), 'short buffer');
+    assertIoError(() => mod.decodeTreeIR(mui1Bytes(ir, { corruptJson: true })), 'non-JSON payload');
+  });
+
+  it('missingTreeComponents lists absent manifest components', () => {
+    const { mod } = tryLoadProof();
+    assert.ok(mod, 'behavior missing: packages/cli/lib/gallery-proof.js not implemented');
+    assert.equal(typeof mod.missingTreeComponents, 'function', 'missingTreeComponents must be exported');
+    const manifest = { components: [{ name: 'Button' }, { name: 'Card' }, { name: 'Slider' }] };
+    const rows = [{ comp: 'Button', desc: 'Button', label: 'b' }];
+    assert.deepEqual(mod.missingTreeComponents(manifest, rows), ['Card', 'Slider']);
+    assert.deepEqual(mod.missingTreeComponents(manifest, [{ comp: 'Button' }, { comp: 'Card' }, { comp: 'Slider' }]), []);
+    assert.deepEqual(mod.missingTreeComponents({ components: [{ name: 'View' }, { name: 'Text' }, { name: 'Button' }] }, []), ['Button']);
+  });
+
+  it('logcat viewport filter keeps both tags in valid tag-level form', () => {
+    const { mod } = tryLoadProof();
+    assert.ok(mod, 'behavior missing: packages/cli/lib/gallery-proof.js not implemented');
+    assert.equal(typeof mod.logcatViewportFilterArgs, 'function', 'logcatViewportFilterArgs must be exported');
+    const args = mod.logcatViewportFilterArgs();
+    assert.ok(args.includes('GalleryPage:I'), 'must keep GalleryPage:I');
+    assert.ok(args.some((a) => /^muse-host:I$/i.test(a)), 'must include muse-host:I so the attach marker survives *:S');
+    assert.ok(args.includes('*:S'), 'must silence everything else');
+    for (const a of args.slice(2)) {
+      assert.ok((a.match(/:/g) || []).length <= 1, `filter spec must not embed a second colon (got ${a})`);
+    }
+  });
+
+  it('defaultReadViewport retries an empty scan then resolves the attach marker height', async () => {
+    const { mod } = tryLoadProof();
+    assert.ok(mod, 'behavior missing: packages/cli/lib/gallery-proof.js not implemented');
+    assert.equal(typeof mod.defaultReadViewport, 'function', 'defaultReadViewport must be exported');
+    const cp = require('node:child_process');
+    const orig = cp.execFileSync;
+    let calls = 0;
+    cp.execFileSync = () => {
+      calls++;
+      if (calls <= 2) return Buffer.from('nothing yet', 'utf8');
+      return Buffer.from('nativeAttachSurface: window 1080x2400', 'utf8');
+    };
+    try {
+      const found = await mod.defaultReadViewport({ serial: 'test-serial-not-real', attempts: 4, sleepMs: 0, sleep: async () => {} });
+      assert.equal(found.height, 2400, 'must resolve the attach marker height');
+      assert.equal(found.width, 1080, 'must resolve the attach marker width');
+      assert.ok(calls > 2, `must retry past the first empty scan (calls=${calls})`);
+    } finally {
+      cp.execFileSync = orig;
+    }
+  });
+
+  it('malformed frames fail closed to blank, never throw (GAP reconciliation)', () => {
+    const { mod } = tryLoadProof();
+    assert.ok(mod, 'behavior missing: packages/cli/lib/gallery-proof.js not implemented');
+    assert.equal(mod.isBlankViewport({ width: 8, height: 8, pixels: 'not-bytes-not-real' }), true);
+    assert.equal(mod.isBlankViewport({ width: 8, height: 8 }), true);
+    assert.equal(mod.isBlankViewport(null), true);
   });
 });
 
