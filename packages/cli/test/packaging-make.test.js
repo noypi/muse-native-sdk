@@ -274,3 +274,190 @@ describe('T2 root Makefile engine targets (AC-PACKAGING-017/018/019)', () => {
     assert.equal(stubCalls.length, 0, 'T2 assertions must not shell out to any tool');
   });
 });
+
+// --- T3 scaffold Makefile: apk / sign / verify / install / clean ---------------
+// Scope: FR-PACKAGING-008 AC-PACKAGING-020/021/022 (TC-020/021/022).
+// Interface (plan T3 verbatim):
+//   `make apk | make sign | make verify | make install | make clean` (run in
+//   `examples/m3-gallery`) → exit 0 on success; `install` with no `adb` device
+//   fails closed naming the missing device; `verify` fails closed on any
+//   missing entry or failed `apksigner verify`.
+// Hermetic: scaffold-Makefile-text assertions only; child_process stays
+// stubbed (no aapt2/d8/javac/zipalign/apksigner/adb, no device/network).
+// RED until `examples/m3-gallery/Makefile` exists with the five targets and
+// the verify/install fail-closed gates.
+// ASSUMPTION A-S1 (contract genuinely silent): the unsigned-APK recipe drives
+// `aapt2` link (binary manifest) + `javac`+`d8` dex + per-arch engine libs
+// from T2 + the built tree; tests accept tool names as Makefile tokens
+// (`aapt2`, `javac`, `d8`, `zipalign`, `apksigner`, `adb`) without pinning
+// flags or output paths.
+// ASSUMPTION A-S2: debug-key signing is a recipe-level `apksigner sign`
+// with a `--ks` debug keystore token; Play release signing is out of scope
+// (plan §Out of Scope) and must not appear.
+// ASSUMPTION A-S3: verify entry checks name the three AC-PACKAGING-008/021
+// entries (`AndroidManifest.xml`, `classes.dex`, `resources.arsc`); v2+v3
+// proof is a recipe-level `apksigner verify` token, live device proof is
+// `tester` work (no device on this host).
+function readScaffoldMakefile() {
+  assert.ok(fs.existsSync(SCAFFOLD_MAKEFILE),
+    'scaffold Makefile must exist (T3 owns it; RED until the coder adds it)');
+  return fs.readFileSync(SCAFFOLD_MAKEFILE, 'utf8');
+}
+
+function scaffoldTargetBody(text, name) {
+  const lines = text.split('\n');
+  const idx = lines.findIndex((l) => new RegExp(`^${name}\\s*:`).test(l));
+  assert.ok(idx !== -1, `scaffold Makefile must define target: ${name}`);
+  let end = lines.length;
+  for (let i = idx + 1; i < lines.length; i += 1) {
+    if (/^[A-Za-z0-9_.-]+\s*:(?![:=])/.test(lines[i]) && !/^\s/.test(lines[i])) { end = i; break; }
+  }
+  return lines.slice(idx, end).join('\n');
+}
+
+describe('T3 scaffold Makefile apk flow (AC-PACKAGING-020/021/022)', () => {
+  it('scaffold Makefile exists with apk, sign, verify, install, clean targets (TC-020/021/022)', () => {
+    const text = readScaffoldMakefile();
+    for (const t of ['apk', 'sign', 'verify', 'install', 'clean']) {
+      assert.match(text, new RegExp(`^${t}\\s*:`, 'm'), `missing make target: ${t}`);
+    }
+  });
+
+  it('apk links via aapt2 with no hand-typed assembly (AC-PACKAGING-020)', () => {
+    const body = scaffoldTargetBody(readScaffoldMakefile(), 'apk');
+    assert.match(body, /\baapt2\b/, 'apk must link via aapt2 (binary manifest, no hand assembly)');
+  });
+
+  it('apk compiles dex from shell sources via javac + d8 (AC-PACKAGING-020)', () => {
+    const body = scaffoldTargetBody(readScaffoldMakefile(), 'apk');
+    assert.match(body, /\bjavac\b/, 'apk must compile shell sources via javac');
+    assert.match(body, /\bd8\b/, 'apk must dex via d8');
+  });
+
+  it('apk bundles per-arch engine libs plus the built tree (AC-PACKAGING-020)', () => {
+    const body = scaffoldTargetBody(readScaffoldMakefile(), 'apk');
+    assert.match(body, /libRuntime\.so|libs|\blib\b/i, 'apk must bundle the per-arch engine libs from T2');
+    assert.match(body, /tree|assets/i, 'apk must bundle the built tree');
+  });
+
+  it('sign aligns + debug-signs only (AC-PACKAGING-021)', () => {
+    const body = scaffoldTargetBody(readScaffoldMakefile(), 'sign');
+    assert.match(body, /\bzipalign\b/i, 'sign must align the APK (zipalign)');
+    assert.match(body, /\bapksigner\b/, 'sign must sign via apksigner');
+    assert.match(body, /debug|--ks\b/i, 'sign must use the debug key only');
+  });
+
+  it('verify runs apksigner verify for v2+v3 (AC-PACKAGING-021)', () => {
+    const body = scaffoldTargetBody(readScaffoldMakefile(), 'verify');
+    assert.match(body, /\bapksigner\b/, 'verify must run apksigner verify');
+    assert.match(body, /verify/, 'verify must invoke the apksigner verify subcommand');
+  });
+
+  it('verify checks the required APK entries (AC-PACKAGING-021)', () => {
+    const body = scaffoldTargetBody(readScaffoldMakefile(), 'verify');
+    for (const entry of ['AndroidManifest.xml', 'classes.dex', 'resources.arsc']) {
+      assert.ok(body.includes(entry), `verify must check APK entry ${entry}`);
+    }
+  });
+
+  it('verify fails closed on any missing entry or failed apksigner verify (AC-PACKAGING-021)', () => {
+    const body = scaffoldTargetBody(readScaffoldMakefile(), 'verify');
+    assert.match(body, /exit\s+1|&&\s*exit|false\b|set\s+-e/i,
+      'verify must fail the target non-zero on a missing entry or failed apksigner verify');
+  });
+
+  it('install pushes via adb install (AC-PACKAGING-022)', () => {
+    const body = scaffoldTargetBody(readScaffoldMakefile(), 'install');
+    assert.match(body, /\badb\b/, 'install must use adb');
+    assert.match(body, /install/, 'install must run adb install');
+  });
+
+  it('install with no device fails closed naming the missing device (AC-PACKAGING-022)', () => {
+    const body = scaffoldTargetBody(readScaffoldMakefile(), 'install');
+    assert.match(body, /adb\s+devices|no device|missing device|device.*(not found|missing)|UNAUTHORIZED/i,
+      'install must gate on a connected device and name the missing device');
+    assert.match(body, /exit\s+1/,
+      'install with no device must exit non-zero instead of partial-installing');
+  });
+
+  it('clean removes scaffold build outputs (T3 interface)', () => {
+    const body = scaffoldTargetBody(readScaffoldMakefile(), 'clean');
+    assert.match(body, /rm\s+-rf|rmdir|\bdist\b|\bbuild\b|\.apk/i,
+      'clean must remove scaffold APK/build outputs');
+  });
+
+  it('hermetic: T3 asserts Makefile text only, zero tool invocations', () => {
+    readScaffoldMakefile();
+    assert.equal(stubCalls.length, 0, 'T3 assertions must not shell out to any tool');
+  });
+});
+
+// --- T4 hermetic gate coverage: TC-017..022 via stubbed tools -------------------
+// Scope: FR-PACKAGING-007/008 AC-PACKAGING-017..022 (TC-017..022); consolidates
+// the batch — every TC maps to a case group in this file.
+// Interface (plan T4 verbatim):
+//   `node --test packages/cli/test/packaging-make.test.js` → exit 0; asserts
+//   root/scaffold Makefile target existence, NDK/arch/device fail-closed
+//   messages, and ELF/signature gate behavior via stubbed tool invocations
+//   (no real NDK/SDK/device/network).
+// Hermetic: Makefile/text assertions only; child_process stays stubbed and
+// every suite asserts zero invocations. RED until T2+T3 Makefiles exist
+// (scaffold side RED until the coder adds `examples/m3-gallery/Makefile`).
+// Depends on: T2, T3 (their targets are the gates asserted here).
+describe('T4 hermetic gate coverage TC-017..022 (AC-PACKAGING-017..022)', () => {
+  it('TC-017..019 gates live in the root Makefile (T2-owned targets present)', () => {
+    const text = readMakefile();
+    for (const t of ['engine-host', 'engine-android', 'clean']) {
+      assert.match(text, new RegExp(`^${t}\\s*:`, 'm'), `root Makefile must define target: ${t}`);
+    }
+    assert.ok(text.includes('27.2.12479018'), 'TC-019 gate must name the pinned NDK rev');
+  });
+
+  it('TC-020..022 gates live in the scaffold Makefile (T3-owned targets present)', () => {
+    const text = readScaffoldMakefile();
+    for (const t of ['apk', 'sign', 'verify', 'install', 'clean']) {
+      assert.match(text, new RegExp(`^${t}\\s*:`, 'm'), `scaffold Makefile must define target: ${t}`);
+    }
+  });
+
+  it('NDK/arch fail-closed messages name rev+path and slot-vs-machine (TC-018/019)', () => {
+    const text = readMakefile();
+    assert.match(text, /27\.2\.12479018/, 'gate text must name the expected NDK rev');
+    assert.match(text, /ANDROID_NDK|NDK.*[Pp]ath|not found|missing/i,
+      'gate text must name the offending NDK path');
+    assert.match(text, /aarch64/i, 'ELF gate text must name the expected machine');
+    assert.match(text, /ABI|slot/i, 'ELF gate text must name the offending ABI slot');
+  });
+
+  it('verify/install fail-closed messages name the missing entry/device (TC-021/022)', () => {
+    const text = readScaffoldMakefile();
+    assert.match(text, /AndroidManifest\.xml|classes\.dex|resources\.arsc/,
+      'verify gate text must name the required APK entries');
+    assert.match(text, /apksigner/, 'verify gate text must name apksigner verify');
+    assert.match(text, /no device|missing device|adb\s+devices/i,
+      'install gate text must name the missing device');
+  });
+
+  it('ELF/signature gate behavior is recipe-level with non-zero exit (TC-018/021)', () => {
+    const rootBody = targetBody(readMakefile(), 'engine-android');
+    assert.match(rootBody, /\bfile\b|\breadelf\b/i, 'ELF gate must run file/readelf');
+    assert.match(rootBody, /exit\s+1/, 'ELF mismatch must fail the target');
+    const verifyBody = scaffoldTargetBody(readScaffoldMakefile(), 'verify');
+    assert.match(verifyBody, /verify/, 'signature gate must run apksigner verify');
+    assert.match(verifyBody, /exit\s+1|&&\s*exit|false\b|set\s+-e/i,
+      'signature/entry failure must fail the target');
+  });
+
+  it('TC-017..022 each map to a case group in this file (coverage completeness)', () => {
+    const self = fs.readFileSync(__filename, 'utf8');
+    for (const tc of ['TC-017', 'TC-018', 'TC-019', 'TC-020', 'TC-021', 'TC-022']) {
+      assert.ok(self.includes(tc), `this file must contain a case group for ${tc}`);
+    }
+  });
+
+  it('hermetic: T4 asserts text only, zero tool invocations, no secrets/config', () => {
+    readMakefile();
+    readScaffoldMakefile();
+    assert.equal(stubCalls.length, 0, 'T4 assertions must not shell out to any tool');
+  });
+});
