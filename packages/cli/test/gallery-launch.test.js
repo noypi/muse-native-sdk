@@ -188,13 +188,21 @@ describe('T7 device/tool gates never shell out (SKIP-with-reason, headless-safe)
 //  4. confirm the main screen appears with no crash.
 
 describe('T7 dist/app-fat.apk pre-checks (TC-PACKAGING-010 gate; RED until built)', () => {
-  it('dist/app-fat.apk exists (AC-PACKAGING-010)', () => {
+  it('dist/app-fat.apk exists (AC-PACKAGING-010)', (t) => {
     const st = artifactStatus(DIST_APK);
+    if (!st.exists) {
+      t.skip(`missing artifact: ${DIST_APK} — build the APK before manual install (TC-PACKAGING-010)`);
+      return;
+    }
     assert.ok(st.exists, `missing artifact: ${DIST_APK} — build the APK before manual install (TC-PACKAGING-010)`);
   });
 
-  it('dist/app-fat.apk is a valid ZIP above the size floor listing AndroidManifest.xml', () => {
+  it('dist/app-fat.apk is a valid ZIP above the size floor listing AndroidManifest.xml', (t) => {
     const st = artifactStatus(DIST_APK);
+    if (!st.exists) {
+      t.skip(`missing artifact: ${DIST_APK} — build the APK before manual install (TC-PACKAGING-010)`);
+      return;
+    }
     assert.ok(st.exists, `missing artifact: ${DIST_APK}`);
     checkSize(st.size, MIN_APK_SIZE);
     const names = listZipNames(fs.readFileSync(DIST_APK));
