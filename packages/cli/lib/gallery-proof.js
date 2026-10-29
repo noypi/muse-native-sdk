@@ -292,6 +292,7 @@ async function runGalleryProof({ serial, androidJar, outDir, readCounts, capture
   // build/gallery-proof/ (fixed error codes carry no paths/serials). A
   // missing frame rejects blank-viewport instead of passing silently.
   const captureViewportFn = capture || captureViewport;
+  const advanceForShots = advance || ((opts) => defaultAdvancePage({ ...opts, serial: deviceSerial }));
   fs.mkdirSync(resolvedOut, { recursive: true });
   const shots = [];
   for (let page = 0; page < pages; page++) {
@@ -302,6 +303,9 @@ async function runGalleryProof({ serial, androidJar, outDir, readCounts, capture
     const shot = path.join(resolvedOut, `page-${String(page + 1).padStart(2, '0')}.png`);
     await saveScreenshot({ serial: deviceSerial, page, shot, frame });
     shots.push(shot);
+    if (page + 1 < pages) {
+      await advanceForShots({ nativeAdvancePage: true, serial: deviceSerial, page });
+    }
   }
   return { rows, pages, shots };
 }
@@ -428,7 +432,7 @@ function decodePngToPixels(png) {
         let v = cur[x];
         if (filter === 1) v = (v + a) & 0xff;
         else if (filter === 2) v = (v + b) & 0xff;
-        else if (filter === 3) v = (v + a + ((b / 2) | 0)) & 0xff;
+        else if (filter === 3) v = (v + (((a + b) / 2) | 0)) & 0xff;
         else if (filter === 4) {
           const pa = Math.abs(b - c);
           const pb = Math.abs(a - c);
@@ -476,9 +480,10 @@ function captureViewport({ serial, page } = {}) {
 
 function saveScreenshot({ serial, page, shot, frame } = {}) {
   // Persists the captured frame bytes for this page to outDir page-NN.png
-  // so shots[] are real artifacts. Prefers the in-hand frame (png bytes or
-  // decoded RGBA pixels); falls back to a fresh screencap when no frame was
-  // handed in. Never writes a 0-byte placeholder.
+  // so shots[] are real artifacts. Prefers the in-hand frame.png bytes (a
+  // valid PNG); falls back to a fresh screencap when no PNG bytes were
+  // handed in. Never writes raw RGBA pixels to the .png path and never
+  // writes a 0-byte placeholder.
   const writeBytes = (target, bytes) => {
     fs.mkdirSync(path.dirname(target), { recursive: true });
     fs.writeFileSync(target, bytes);
@@ -488,13 +493,6 @@ function saveScreenshot({ serial, page, shot, frame } = {}) {
       writeBytes(shot, frame.png);
       return Promise.resolve(shot);
     }
-    const pixelBuf = frame && frame.pixels
-      ? (Buffer.isBuffer(frame.pixels) ? frame.pixels : Buffer.from(frame.pixels))
-      : null;
-    if (pixelBuf && pixelBuf.length > 0) {
-      writeBytes(shot, pixelBuf);
-      return Promise.resolve(shot);
-    }
     const out = adbOrUnreachable(['exec-out', 'screencap', '-p'], serial);
     if (!out || out.length === 0) {
       failWith('blank-viewport', 'page ' + page + ' screenshot unavailable');
@@ -502,7 +500,8 @@ function saveScreenshot({ serial, page, shot, frame } = {}) {
     writeBytes(shot, Buffer.from(out));
   } catch (err) {
     if (err && (err.code === 'blank-viewport' || err.code === 'device-unreachable')) throw err;
-    failWith('device-unreachable', 'screenshot write failed: ' + err.message);
+    if (err && err.code) throw err;
+    failWith('io-error', 'screenshot write failed: ' + err.message);
   }
   return Promise.resolve(shot);
 }
