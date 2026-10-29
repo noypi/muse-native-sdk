@@ -24,14 +24,6 @@ void* Runtime_create();
 void Runtime_destroy(void* handle);
 }  // namespace runtime
 
-jint JNI_OnLoad(JavaVM* vm, void* reserved) {
-  (void)reserved;
-  if (vm == nullptr) {
-    return JNI_ERR;
-  }
-  return JNI_VERSION_1_6;
-}
-
 extern "C" jlong Java_com_muse_host_MainActivity_nativeLoadTree(
     JNIEnv* env, jobject thiz, jbyteArray treeBytes) {
   (void)thiz;
