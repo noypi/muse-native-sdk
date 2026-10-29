@@ -1,0 +1,45 @@
+name: docs-exec
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  docs-exec:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash --noprofile --norc -euo pipefail
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Assert README exists
+        run: |
+          set -euo pipefail
+          test -f README.md || { echo "README.md missing" >&2; exit 1; }
+      - name: Assert README names setup surface
+        run: |
+          set -euo pipefail
+          grep -q 'scripts/check-prerequisites.sh' README.md
+          grep -q 'sdkmanager' README.md
+      - name: Run prerequisite check
+        run: |
+          set -euo pipefail
+          ./scripts/check-prerequisites.sh
+          # Note: --self-test is a local fallback for debugging only; CI runs with no args.
+      - name: Assert build script is executable
+        run: |
+          set -euo pipefail
+          test -x scripts/build-sample.sh
+      - name: Build sample
+        run: |
+          set -euo pipefail
+          ./scripts/build-sample.sh examples/m3-gallery
+      - name: Assert README documents build script
+        run: |
+          set -euo pipefail
+          grep -q 'build-sample.sh' README.md
