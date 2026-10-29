@@ -56,6 +56,41 @@ function checkBlob(value, label) {
   return value;
 }
 
+const ELF_MACHINE_FOR_ABI = {
+  'arm64-v8a': 183,
+  'armeabi-v7a': 40,
+  x86_64: 62,
+  x86: 3,
+};
+
+function validateElfArch(bytes, abi) {
+  const expected = ELF_MACHINE_FOR_ABI[abi];
+  if (expected === undefined) {
+    throw new Error(`arch mismatch for ${String(abi)}: unknown ABI (expected one of: arm64-v8a, armeabi-v7a, x86_64, x86)`);
+  }
+  const len = Buffer.isBuffer(bytes) ? bytes.length : -1;
+  let actual = null;
+  let isElf = false;
+  if (Buffer.isBuffer(bytes) && bytes.length >= 20) {
+    isElf =
+      bytes[0] === 0x7f &&
+      bytes[1] === 0x45 &&
+      bytes[2] === 0x4c &&
+      bytes[3] === 0x46;
+    if (isElf) actual = bytes.readUInt16LE(18);
+    else if (bytes.length >= 20) actual = bytes.readUInt16LE(18);
+  }
+  if (!isElf || actual !== expected) {
+    const actualDesc =
+      actual === null
+        ? (Buffer.isBuffer(bytes) ? `truncated (${bytes.length} bytes, no ELF header)` : 'non-ELF input')
+        : (isElf ? String(actual) : `non-ELF (e_machine field ${actual})`);
+    throw new Error(
+      `arch mismatch for ${String(abi)}: expected e_machine ${expected}, got ${actualDesc}`,
+    );
+  }
+}
+
 function checkLibName(part, label) {
   if (typeof part !== 'string' || part.length === 0) fail(`${label} must be a non-empty string`);
   if (part.trim().length === 0) fail(`${label} must not be empty or whitespace`);
@@ -160,4 +195,4 @@ function buildApk(input) {
   return Buffer.concat([...chunks, ...central, eocd]);
 }
 
-module.exports = { buildApk };
+module.exports = { buildApk, validateElfArch };

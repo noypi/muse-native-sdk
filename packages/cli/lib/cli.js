@@ -33,7 +33,7 @@ function loadStages() {
   return ['configure', 'typecheck', 'compile', 'emit', 'native-build', 'package', 'install'];
 }
 
-const ACCEPTED_OPTIONS = '--stage, --print-config, --name, --version, --help, --with-sample, --abi, --release, --modules, --output, --strict, --archs, --packaging, --keystore, --key-alias';
+const ACCEPTED_OPTIONS = '--stage, --print-config, --name, --version, --help, --with-sample, --abi, --release, --modules, --output, --strict, --archs, --packaging, --keystore, --key-alias, --engine-lib';
 
 // Validate the option layer (`--` flags) of an argv array. Positional
 // operands (the command, `<appDir>`, and the one target operand
@@ -48,7 +48,7 @@ const ACCEPTED_OPTIONS = '--stage, --print-config, --name, --version, --help, --
 function validateOptions(argv) {
   const args = Array.isArray(argv) ? argv : [];
   const STAGES = loadStages();
-  const VALUE_FLAGS = new Set(['--stage', '--name', '--version', '--abi', '--modules', '--output', '--archs', '--packaging', '--keystore', '--key-alias']);
+  const VALUE_FLAGS = new Set(['--stage', '--name', '--version', '--abi', '--modules', '--output', '--archs', '--packaging', '--keystore', '--key-alias', '--engine-lib']);
   const BOOL_FLAGS = new Set(['--print-config', '--help', '-h', '--with-sample', '--release', '--strict']);
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];

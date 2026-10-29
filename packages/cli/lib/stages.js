@@ -15,7 +15,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const ir = require('./ir.js');
-const { buildApk } = require('./apk.js');
+const { buildApk, validateElfArch } = require('./apk.js');
 
 const STAGES = [
   'configure',
@@ -289,14 +289,51 @@ async function packageStage(ctx) {
   } else {
     dexBytes = Buffer.from('DEX-STAGE-FALLBACK-classes', 'utf8');
     resourcesArsc = Buffer.from('ARSC-STAGE-FALLBACK-resources', 'utf8');
-    // Arch-tagged fallback lib bytes keep the T4 arch-listPositive shape
-    // (utf8 body still names each arch) inside real ZIP entries.
-    libsByAbi = new Map(
-      archs.map((abi) => [
-        abi,
-        { abi, name: 'libRuntime.so', bytes: Buffer.from(`arch: ${abi}\n`, 'utf8') },
-      ]),
-    );
+    // T1 (AC-PACKAGING-013): file-backed engine libs from the named inputs
+    // (`config.engineLibs`: CLI `--engine-lib` over file `engine_libs:`
+    // over the per-ABI default lookup, resolved in config.js). Every
+    // selected arch must name a library — a missing entry fails closed
+    // here, in memory before any `dist/` write, naming the arch. An entry
+    // whose file cannot be read falls back to the generated fixture bytes
+    // so callers without engine outputs (reference-target and regression
+    // runs) still emit real ZIPs; see Notes for Review on tightening this.
+    const engineLibs =
+      ctx && ctx.config && ctx.config.engineLibs && typeof ctx.config.engineLibs === 'object'
+        ? ctx.config.engineLibs
+        : {};
+    const loaded = [];
+    for (const arch of archs) {
+      const libPath = engineLibs[arch];
+      if (typeof libPath !== 'string' || libPath.length === 0) {
+        throw stageError(`missing native lib for arch '${arch}'`, ctx.appDir);
+      }
+      let bytes = null;
+      try {
+        bytes = fs.readFileSync(libPath);
+      } catch (_) {
+        bytes = null;
+      }
+      if (!bytes || bytes.length === 0) {
+        // Arch-tagged fallback lib bytes keep the T4 arch-listPositive shape
+        // (utf8 body still names each arch) inside real ZIP entries.
+        bytes = Buffer.from(`arch: ${arch}\n`, 'utf8');
+      }
+      loaded.push([arch, { abi: arch, name: 'libRuntime.so', bytes }]);
+    }
+    libsByAbi = new Map(loaded);
+  }
+  // T2 (AC-PACKAGING-014): ELF arch gate — every lib's e_machine must
+  // match its slot ABI. Runs in memory before buildApk/dist writes for
+  // both file-backed T1 inputs and `ctx._hostInputs` fakes (fail-closed).
+  for (const arch of archs) {
+    const lib = libsByAbi.get(arch);
+    const bytes = lib && lib.bytes;
+    try {
+      validateElfArch(bytes, arch);
+    } catch (err) {
+      const detail = err && err.message ? err.message : String(err);
+      throw stageError(detail, ctx.appDir);
+    }
   }
   // `ctx._tree` (Buffer from the compile/emit lane) seeds
   // assets/tree.mui.bin; otherwise the stage lowers sources in memory.
@@ -444,4 +481,4 @@ async function runStages(stageName, ctx) {
   return results;
 }
 
-module.exports = { STAGES, runStages, SAMPLE_TARGET, isSampleSelected, resolveSampleDir };
+module.exports = { STAGES, runStages, SAMPLE_TARGET, isSampleSelected, resolveSampleDir, validateElfArch };

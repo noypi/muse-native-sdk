@@ -28,6 +28,7 @@ const SCHEMA = {
   keystore: 'string',
   keyAlias: 'string',
   storepass: 'string',
+  engineLibs: 'object',
 };
 
 const DEFAULTS = {
@@ -45,6 +46,7 @@ const DEFAULTS = {
   keystore: path.join(__dirname, '..', 'templates', 'android', 'debug.keystore'),
   keyAlias: 'androiddebugkey',
   storepass: undefined,
+  engineLibs: undefined,
 };
 
 const ENV_PREFIX = 'MUSE_NATIVE_';
@@ -105,6 +107,60 @@ function assertPackagingValue(value, where) {
   }
 }
 
+// T1 (AC-PACKAGING-013): per-ABI default lookup root for engine native
+// libraries. Every selected arch resolves to
+// `<engine-out>/<abi>/libRuntime.so` unless a nearer layer overrides it.
+function defaultEngineLibs() {
+  const root = path.join(__dirname, '..', '..', '..', 'engine', 'out');
+  const map = {};
+  for (const abi of ALL_ARCHS) map[abi] = path.join(root, abi, 'libRuntime.so');
+  return map;
+}
+
+// Parse one `engine_libs` layer value into `{ abi: filePath }`. Accepts an
+// object already (`{ 'arm64-v8a': '/path/a.so' }`), a single `abi=path`
+// string, or a comma-separated list of `abi=path` entries. Anything else
+// (including a bare path with no `=`) passes through so the validator
+// below can reject it fail-closed.
+function parseEngineLibsValue(value) {
+  if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
+    return { ...value };
+  }
+  if (typeof value !== 'string') return value;
+  const map = {};
+  for (const part of value.split(',')) {
+    const entry = part.trim();
+    if (entry === '') continue;
+    const eq = entry.indexOf('=');
+    if (eq === -1) return value;
+    const abi = entry.slice(0, eq).trim();
+    const filePath = entry.slice(eq + 1).trim();
+    if (!abi || !filePath) return value;
+    map[abi] = filePath;
+  }
+  return map;
+}
+
+// Fail-closed entry check for a resolved `engineLibs` map: every key must
+// name a known ABI and every value must be a non-empty path string.
+// Throws ConfigError naming the offending entry; never returns partial.
+function assertEngineLibsMap(map, where) {
+  if (!map || typeof map !== 'object' || Array.isArray(map)) {
+    throw new ConfigError('engineLibs', where, 'object');
+  }
+  for (const abi of Object.keys(map)) {
+    if (abi === '__proto__' || abi === 'constructor' || abi === 'prototype') {
+      throw new ConfigError(abi, where, 'rejected dangerous key');
+    }
+    if (!ALL_ARCHS.includes(abi)) {
+      throw new ConfigError('engineLibs', where, `unknown ABI "${abi}", expected one of: ${ALL_ARCHS.join(', ')}`, 'CFG-UNKNOWN-ABI');
+    }
+    if (typeof map[abi] !== 'string' || map[abi].length === 0) {
+      throw new ConfigError('engineLibs', where, `expected a file path for arch '${abi}'`);
+    }
+  }
+}
+
 // Schema validator: fail closed on unknown keys / wrong value types.
 // Throws ConfigError naming the key, the file, and the expected type;
 // never returns a partial config. Called by resolveConfig before any
@@ -154,6 +210,10 @@ function validateConfig(raw, file) {
   // value + fat/split/both (CFG-BAD-PACKAGING); empty never defaults.
   if (raw.archs !== undefined) assertArchsList(raw.archs, where);
   if (raw.packaging !== undefined) assertPackagingValue(raw.packaging, where);
+  // T1 (AC-PACKAGING-013): engine-lib entries are validated at configure
+  // time. Unknown ABIs name the value + accepted set (CFG-UNKNOWN-ABI);
+  // empty/non-string paths fail closed naming the arch.
+  if (raw.engineLibs !== undefined) assertEngineLibsMap(raw.engineLibs, where);
 }
 
 function envNameFor(key) {
@@ -334,6 +394,28 @@ function readFileLayer(cwd) {
         : parsed.value;
     }
   }
+  // T1 (AC-PACKAGING-013): the file layer spells the map `engine_libs:`
+  // (snake_case, comma-separated `abi=path` entries). Fold it into the
+  // canonical `engineLibs` key before validation so the schema gate sees
+  // one object shape; an explicit `engineLibs:` map in the same file wins
+  // entry-by-entry over the alias.
+  if (Object.prototype.hasOwnProperty.call(values, 'engine_libs')) {
+    const fromAlias = parseEngineLibsValue(values.engine_libs);
+    const fromCanonical =
+      values.engineLibs !== undefined ? parseEngineLibsValue(values.engineLibs) : {};
+    delete values.engine_libs;
+    if (typeof fromAlias === 'object' && fromAlias !== null && !Array.isArray(fromAlias)) {
+      values.engineLibs = { ...fromAlias };
+      if (typeof fromCanonical === 'object' && fromCanonical !== null && !Array.isArray(fromCanonical)) {
+        Object.assign(values.engineLibs, fromCanonical);
+      }
+    } else {
+      // Malformed alias value: keep it under the canonical key so
+      // validateConfig rejects it fail-closed instead of silently dropping
+      // it (an unknown `engine_libs` key must never pass validation).
+      values.engineLibs = fromAlias;
+    }
+  }
   return { values, file: full, muse: museLines.length ? parseMuseSubtree(museLines.join('\n'), full) : undefined };
 }
 
@@ -361,6 +443,31 @@ function readCliLayer(argv) {
     if (typeof arg !== 'string' || !arg.startsWith('--')) continue;
     if (arg === '--print-config') continue;
     const rawKey = arg.slice(2);
+    // T1 (AC-PACKAGING-013): `--engine-lib <abi=path>` is repeatable; each
+    // occurrence adds one abi→path entry to `engineLibs` (later wins per
+    // abi). A missing value or a malformed `abi=path` entry throws
+    // ConfigError fail-closed.
+    if (rawKey === 'engine-lib') {
+      const value = args[i + 1];
+      if (typeof value !== 'string' || value.startsWith('--')) {
+        throw new ConfigError('engineLibs', '<argv>', 'object');
+      }
+      const eq = value.indexOf('=');
+      const abi = eq === -1 ? '' : value.slice(0, eq).trim();
+      const filePath = eq === -1 ? '' : value.slice(eq + 1).trim();
+      if (!abi || !filePath) {
+        throw new ConfigError('engineLibs', '<argv>', `malformed --engine-lib entry "${value}", expected <abi=path>`);
+      }
+      if (!ALL_ARCHS.includes(abi)) {
+        throw new ConfigError('engineLibs', '<argv>', `unknown ABI "${abi}", expected one of: ${ALL_ARCHS.join(', ')}`, 'CFG-UNKNOWN-ABI');
+      }
+      if (typeof values.engineLibs !== 'object' || values.engineLibs === null || Array.isArray(values.engineLibs)) {
+        values.engineLibs = {};
+      }
+      values.engineLibs[abi] = filePath;
+      i++;
+      continue;
+    }
     // Accept kebab-case on the CLI (`--with-sample`) for camelCase keys.
     const key = rawKey.replace(/-([a-z])/g, (_, c) => c.toUpperCase());
     if (!Object.prototype.hasOwnProperty.call(SCHEMA, key)) {
@@ -445,6 +552,11 @@ function resolveConfig(argv, env, cwd) {
       if (key === 'archs' && typeof layer.values[key] === 'string') {
         layer.values[key] = parseArchsValue(layer.values[key]);
       }
+      // T1 (AC-PACKAGING-013): `abi=path` string forms are accepted on the
+      // CLI/env layers too — normalize to maps before the type gate.
+      if (key === 'engineLibs' && typeof layer.values[key] === 'string') {
+        layer.values[key] = parseEngineLibsValue(layer.values[key]);
+      }
       const actual = typeof layer.values[key];
       if (actual === expected) continue;
       // Env values arrive via String() and CLI booleans use bare flags:
@@ -458,6 +570,7 @@ function resolveConfig(argv, env, cwd) {
     // accepted set at configure time, before anything merges.
     if (layer.values.archs !== undefined) assertArchsList(layer.values.archs, layer.file);
     if (layer.values.packaging !== undefined) assertPackagingValue(layer.values.packaging, layer.file);
+    if (layer.values.engineLibs !== undefined) assertEngineLibsMap(layer.values.engineLibs, layer.file);
   }
 
   const config = {};
@@ -477,6 +590,23 @@ function resolveConfig(argv, env, cwd) {
       winningLayer[key] = 'default';
     }
   }
+  // T1 (AC-PACKAGING-013): `engineLibs` merges per-ABI — CLI entries over
+  // the file `engine_libs:` map over the per-ABI default lookup — so a
+  // single `--engine-lib` override never drops the defaults for the other
+  // arches. The winning layer names the nearest layer that contributed any
+  // entry (the generic loop above already records it wholesale).
+  config.engineLibs = {
+    ...defaultEngineLibs(),
+    ...(typeof fileValues.engineLibs === 'object' && fileValues.engineLibs !== null && !Array.isArray(fileValues.engineLibs)
+      ? fileValues.engineLibs
+      : {}),
+    ...(typeof envValues.engineLibs === 'object' && envValues.engineLibs !== null && !Array.isArray(envValues.engineLibs)
+      ? envValues.engineLibs
+      : {}),
+    ...(typeof cliValues.engineLibs === 'object' && cliValues.engineLibs !== null && !Array.isArray(cliValues.engineLibs)
+      ? cliValues.engineLibs
+      : {}),
+  };
   return { config, winningLayer };
 }
 
