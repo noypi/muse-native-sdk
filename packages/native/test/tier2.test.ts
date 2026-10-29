@@ -436,7 +436,7 @@ function behavioralRow(name) {
   let opacityOk = true;
   for (const [state, key] of Object.entries(OPACITY_STATE_KEYS)) {
     const driven = driveState(name, state);
-    if (driven.layer.props.opacity !== String(row.opacity[key])) {
+    if (String(driven.layer.props.opacity) !== String(row.opacity[key])) {
       opacityOk = false;
     }
   }

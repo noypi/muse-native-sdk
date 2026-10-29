@@ -16,58 +16,38 @@ const manifest = require('./muse.manifest.json');
 // package surface keeps one registry map.
 const { TextInput, createTextInput } = require('./textinput.js');
 
-// FR-M3-001 / AC-M3-002 — shared Ripple/state layer (T4).
-// Every interactive primitive routes state transitions through driveState so
-// hover/focus/pressed/disabled output stays token-role only and consistent.
-// Opacity values are measured in the T1 matrix (engine/layout/m3_matrix.json:
-// hover 0.08 / focus 0.12 / press 0.16); driveState emits String(row value)
-// per target so the behavioral proof compares exact matrix strings. Disabled
-// has no matrix opacity key and keeps a token-role value (unchecked by the
-// behavioral row, asserted only for Ripple shape upstream).
-let MATRIX_OPACITY_BY_TARGET = null;
-function opacityByTarget() {
-  if (MATRIX_OPACITY_BY_TARGET !== null) return MATRIX_OPACITY_BY_TARGET;
-  const fallback = { hover: '0.08', focus: '0.12', press: '0.16' };
-  try {
-    const rows = require('../../engine/layout/m3_matrix.json').components;
-    const byTarget = {};
-    for (const entry of rows) {
-      if (entry && typeof entry.name === 'string' && entry.opacity !== undefined) {
-        byTarget[entry.name] = {
-          hover: String(entry.opacity.hover),
-          focus: String(entry.opacity.focus),
-          press: String(entry.opacity.press),
-        };
-      }
-    }
-    MATRIX_OPACITY_BY_TARGET = { byTarget, fallback };
-  } catch {
-    MATRIX_OPACITY_BY_TARGET = { byTarget: {}, fallback };
-  }
-  return MATRIX_OPACITY_BY_TARGET;
-}
-
-const STATE_TO_OPACITY_KEY = {
-  hover: 'hover',
-  focus: 'focus',
-  pressed: 'press',
+// FR-M3-008 / AC-M3-018 — numeric M3 state-layer opacities resolved from the
+// M3 token table (T1). Each driveState spelling maps to the state-layer role
+// token used by the engine/layout token path (`md.sys.state.<state>.opacity`,
+// see engine/layout/m3_states.js STATE_LAYER_TOKENS), and each role token
+// resolves to its numeric M3 value from the token table: hover 0.08,
+// focus 0.12, pressed 0.16 per AC-M3-018. The disabled numeric is the
+// conformance-baseline value (plan A1); the baseline records no numeric yet,
+// so the documented M3 disabled state-layer value applies until T3 pins the
+// exact row. Opacity stays a number — never a symbolic string.
+const STATE_OPACITY_TOKEN = {
+  hover: 'md.sys.state.hovered.opacity',
+  focus: 'md.sys.state.focused.opacity',
+  pressed: 'md.sys.state.pressed.opacity',
+  disabled: 'md.sys.state.disabled.opacity',
 };
 
-const DISABLED_OPACITY = 'disabled-opacity';
+const STATE_OPACITY = {
+  'md.sys.state.hovered.opacity': 0.08,
+  'md.sys.state.focused.opacity': 0.12,
+  'md.sys.state.pressed.opacity': 0.16,
+  'md.sys.state.disabled.opacity': 0.38,
+};
 
 function driveState(target, state) {
   if (typeof state !== 'string') {
     throw new TypeError(`Unknown state: ${String(state)}`);
   }
-  if (state !== 'hover' && state !== 'focus' && state !== 'pressed' && state !== 'disabled') {
+  const token = STATE_OPACITY_TOKEN[state];
+  if (token === undefined) {
     throw new RangeError(`Unknown state: ${state}`);
   }
-  let opacity = DISABLED_OPACITY;
-  if (state !== 'disabled') {
-    const { byTarget, fallback } = opacityByTarget();
-    const row = byTarget[target] ?? fallback;
-    opacity = row[STATE_TO_OPACITY_KEY[state]];
-  }
+  const opacity = STATE_OPACITY[token];
   return {
     target,
     state,
