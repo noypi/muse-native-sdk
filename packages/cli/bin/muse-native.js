@@ -8,6 +8,12 @@
   const argv = process.argv.slice(2);
   if (argv[0] !== 'gallery-proof') return;
   const proof = require('../lib/gallery-proof.js');
+  if (argv.includes('--help') || argv.includes('-h')) {
+    process.stdout.write(
+      'Usage: muse-native gallery-proof --tiers --themes --assert-counts --no-blank [--out <dir>] [--apk <path>]\n',
+    );
+    return;
+  }
   let opts;
   try {
     opts = proof.parseGalleryProofArgs(argv);

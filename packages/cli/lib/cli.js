@@ -3,7 +3,7 @@
 // FR-WORKFLOW owns command options later; this file only routes argv.
 const path = require('node:path');
 
-const COMMANDS = ['init', 'build', 'dev', 'run'];
+const COMMANDS = ['init', 'build', 'dev', 'run', 'gallery-proof'];
 const INVOKED = path.basename(process.argv[1] || '', '.js');
 
 if (INVOKED === 'muse') {
@@ -105,13 +105,14 @@ function validateOptions(argv) {
 function printHelp() {
   process.stdout.write(
     [
-      'Usage: muse-native <init|build|dev|run> [args]',
+      'Usage: muse-native <init|build|dev|run|gallery-proof> [args]',
       '',
       'Commands:',
       '  init    scaffold a new project',
       '  build   build the project',
       '  dev     start the dev server',
       '  run     run the project',
+      '  gallery-proof    run the gallery device proof',
       '',
       'Options:',
       '  -h, --help    show this help',
@@ -120,8 +121,26 @@ function printHelp() {
   );
 }
 
+function printGalleryProofHelp() {
+  process.stdout.write(
+    [
+      'Usage: muse-native gallery-proof --tiers --themes --assert-counts --no-blank [--out <dir>] [--apk <path>]',
+      '',
+      'Options:',
+      '  --tiers            check tiers',
+      '  --themes           check themes',
+      '  --assert-counts    assert row/page counts against the device',
+      '  --no-blank         fail on blank/diagnostic-only viewports',
+      '  --out <dir>        output directory for page screenshots',
+      '  --apk <path>       gallery APK to install',
+      '  -h, --help         show this help',
+      '',
+    ].join('\n'),
+  );
+}
+
 function printUsageError(message) {
-  process.stderr.write(`${message}\nUsage: muse-native <init|build|dev|run> [args]\n`);
+  process.stderr.write(`${message}\nUsage: muse-native <init|build|dev|run|gallery-proof> [args]\n`);
 }
 
 function printBuildHelp() {
@@ -141,6 +160,37 @@ function printBuildHelp() {
 
 function main() {
   const argv = process.argv.slice(2);
+  if (argv[0] === 'gallery-proof') {
+    if (argv.includes('--help') || argv.includes('-h')) {
+      printGalleryProofHelp();
+      process.exitCode = 0;
+      return;
+    }
+    const proof = require('./gallery-proof.js');
+    let opts;
+    try {
+      opts = proof.parseGalleryProofArgs(argv);
+    } catch (err) {
+      process.stderr.write(`${(err && err.message) || String(err)}\nUsage: muse-native gallery-proof --tiers --themes --assert-counts --no-blank [--out <dir>] [--apk <path>]\n`);
+      process.exitCode = 2;
+      return;
+    }
+    proof.runGalleryProof({
+      serial: process.env.ANDROID_SERIAL,
+      androidJar: process.env.ANDROID_JAR,
+      outDir: opts.outDir,
+      apkPath: opts.apkPath || undefined,
+    }).then(
+      (result) => {
+        process.stdout.write(`gallery-proof ok: rows=${result.rows} pages=${result.pages} shots=${result.shots.length}\n`);
+      },
+      (err) => {
+        process.stderr.write(`${(err && err.message) || String(err)}\n`);
+        process.exitCode = 1;
+      },
+    );
+    return;
+  }
   if (argv[0] === 'build' && (argv.includes('--help') || argv.includes('-h'))) {
     printBuildHelp();
     process.exitCode = 0;
@@ -148,7 +198,7 @@ function main() {
   }
   if (argv.includes('-h') || argv.includes('--help') || argv.length === 0) {
     if (argv.length === 0) {
-      printUsageError('Usage: muse-native <init|build|dev|run> [args]');
+      printUsageError('Usage: muse-native <init|build|dev|run|gallery-proof> [args]');
       process.exitCode = 2;
       return;
     }
