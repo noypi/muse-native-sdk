@@ -174,11 +174,17 @@ describe('T1 runStages package — file-backed libs + fail-closed missing arch (
       {},
       dir,
     );
-    const results = await runStages('package', { config, appDir: dir });
+    const signMark = Buffer.from('MARKED-BY-FAKE-SIGNAPK-T1', 'utf8');
+    const results = await runStages('package', {
+      config,
+      appDir: dir,
+      _signApk: async (buf) => Buffer.concat([Buffer.from(buf), signMark]),
+    });
     assert.equal(results.length, 1);
     assert.equal(results[0].ok, true);
     assert.ok(fs.existsSync(fatPath(dir)), 'dist/app-fat.apk must exist');
     const apkBytes = fs.readFileSync(fatPath(dir));
+    assert.ok(apkBytes.includes(signMark), 'fat APK must pass through the signed lane');
     const entry = zipEntryData(apkBytes, 'lib/arm64-v8a/libRuntime.so');
     assert.ok(entry, 'fat APK holds lib/arm64-v8a/libRuntime.so');
     assert.deepEqual(Buffer.from(entry), soBytes);
@@ -454,6 +460,7 @@ describe('T3 packageStage — dex wiring and fail-closed edges (AC-PACKAGING-015
     writeStageApp(dir);
     const { config } = resolveConfig(['--archs', 'arm64-v8a'], {}, dir);
     const magicDex = Buffer.concat([Buffer.from('dex\n035\0', 'binary'), Buffer.from('hermetic-seam')]);
+    const signMark = Buffer.from('MARKED-BY-FAKE-SIGNAPK-T3', 'utf8');
     const results = await runStages('package', {
       config,
       appDir: dir,
@@ -462,10 +469,12 @@ describe('T3 packageStage — dex wiring and fail-closed edges (AC-PACKAGING-015
         resourcesArsc: Buffer.from('ARSC-SEAM', 'utf8'),
         nativeLibs: [{ abi: 'arm64-v8a', name: 'libRuntime.so', bytes: makeElf(183, 'RUNTIME') }],
       },
+      _signApk: async (buf) => Buffer.concat([Buffer.from(buf), signMark]),
     });
     assert.equal(results.length, 1);
     assert.equal(results[0].ok, true);
     const apkBytes = fs.readFileSync(fatPath(dir));
+    assert.ok(apkBytes.includes(signMark), 'APK must pass through the signed lane');
     const entry = zipEntryData(apkBytes, 'classes.dex');
     assert.ok(entry, 'APK must contain classes.dex');
     assert.equal(Buffer.from(entry).subarray(0, 4).toString('utf8'), DEX_MAGIC_4);

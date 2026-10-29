@@ -9,7 +9,7 @@
 // is written, so a failure leaves `dist/` untouched. Artefact writes stay
 // in `emit` (`dist/ir.json`) and `package` (`dist/tree.mui.bin` plus the
 // per-`config.packaging` real APK bytes `dist/app-fat.apk` /
-// `dist/app-<arch>.apk` (T1 assembler + T3 sign pass-through)
+// `dist/app-<arch>.apk` (T1 assembler + T4 real align+sign lane)
 // and the release-only AAB `dist/app.aab`), the same files `build.js` has always produced
 // plus the T4 packaging outputs and the T5 AAB output.
 const fs = require('node:fs');
@@ -17,6 +17,7 @@ const path = require('node:path');
 const ir = require('./ir.js');
 const { buildApk, validateElfArch } = require('./apk.js');
 const { compileDex } = require('./dex.js');
+const { signApk } = require('./signing.js');
 
 const STAGES = [
   'configure',
@@ -493,14 +494,54 @@ async function packageStage(ctx) {
   };
   const fatLibs = archs.map((arch) => libsFor(arch)[0]);
   // Compute every payload in memory before touching `dist/` (fail-closed),
-  // including the injectable T3 sign pass-through (contract A-H2:
-  // `ctx._signApk = async (unsignedBytes) => signedBytes`; absent fake
-  // leaves bytes unsigned).
+  // including the T4 sign lane: `ctx._signApk = async (unsignedBytes) =>
+  // signedBytes` wins as the hermetic-test override; otherwise every APK is
+  // really aligned+signed via `signApk` with the resolved debug keystore
+  // (`config.keystore`/`--keystore`, `config.keyAlias`/`--key-alias`
+  // defaults). The storepass resolves from `config.storepass`
+  // (`MUSE_NATIVE_STOREPASS`) with the standard debug-key default
+  // ('android') so the default lane signs with no extra config; the release
+  // AAB below stays unsigned. A sign failure throws fail-closed naming the
+  // tool before any `dist/` artefact write, with the passphrase redacted.
+  const keystorePath = ctx && ctx.config && ctx.config.keystore;
+  const keyAlias = ctx && ctx.config && ctx.config.keyAlias;
+  const configuredPass =
+    ctx && ctx.config && typeof ctx.config.storepass === 'string' ? ctx.config.storepass : '';
+  const storepass = configuredPass.length > 0 ? configuredPass : 'android';
+  let signBuildToolsDir;
+  try {
+    const sdk = resolveSdkDexToolchain();
+    if (sdk.ok) signBuildToolsDir = sdk.buildToolsDir;
+  } catch (_) {
+    signBuildToolsDir = undefined;
+  }
   const signFn = ctx && typeof ctx._signApk === 'function' ? ctx._signApk : null;
   async function signed(buf) {
-    if (!signFn) return buf;
-    const out = await signFn(buf);
-    return Buffer.isBuffer(out) ? out : Buffer.from(out);
+    try {
+      if (signFn) {
+        const out = await signFn(buf);
+        return Buffer.isBuffer(out) ? out : Buffer.from(out);
+      }
+      return await signApk({
+        apkBytes: buf,
+        keystorePath,
+        alias: keyAlias,
+        storepass,
+        buildToolsDir: signBuildToolsDir,
+      });
+    } catch (err) {
+      const raw = err && err.message ? err.message : String(err);
+      const redacted =
+        configuredPass.length > 0 ? raw.split(configuredPass).join('[redacted]') : raw;
+      // Plan Risks: a signer/toolchain failure names the tool and revision.
+      // The build-tools dir is factual diagnostic context (never a secret).
+      const toolCtx =
+        typeof signBuildToolsDir === 'string' && signBuildToolsDir.length > 0
+          ? ` (build-tools '${signBuildToolsDir}')`
+          : '';
+      if (/zipalign|apksigner|signing/.test(redacted)) throw stageError(redacted + toolCtx, ctx.appDir);
+      throw stageError(`signing: sign failed: ${redacted}${toolCtx}`, ctx.appDir);
+    }
   }
   const distDir = path.join(ctx.appDir, 'dist');
   const binPath = path.join(distDir, 'tree.mui.bin');
