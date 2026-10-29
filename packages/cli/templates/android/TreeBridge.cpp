@@ -6,6 +6,11 @@
 // this boundary; handles travel as opaque jlong slots. No C++ exception and
 // no pending JNI exception ever escapes into the VM: every failure returns 0
 // (load) or no-ops (render).
+//
+// Note: the JNI load entry lives solely in engine/runtime/src/jni_bridge.cpp
+// (single-definition link, null-VM fail-closed gate kept there); this
+// template declares only the runtime lifecycle below and defines no load
+// entry, so it links against the engine symbol without duplicating it.
 
 #include <jni.h>
 
