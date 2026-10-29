@@ -429,3 +429,88 @@ describe('T6 TC-PACKAGING-004/005 — template grep + fail-closed against galler
     );
   });
 });
+
+// Security review coverage (RULE-PACKAGING-002 defense-in-depth; path
+// traversal defense-in-depth). Scope: the `packageStage` sink reached by
+// direct API misuse bypassing `resolveConfig` (all production callers route
+// through `build.js` configure first, so these pin the sink itself).
+// Hermetic: same node:test/stdlib/tmp-dir conventions as the T4 cases above.
+
+describe('Security — stage sink fail-closed on invalid packaging value', () => {
+  it("direct-API packaging 'universal' errors instead of ok:true with zero APKs", async () => {
+    const dir = mkTmp('muse-pack-sec-');
+    writeStageApp(dir);
+    const { config } = resolveConfig([], {}, dir);
+    const results = await runStages(
+      'package',
+      { config: { ...config, packaging: 'universal' }, appDir: dir },
+    );
+    assert.equal(results.length, 1);
+    assert.equal(results[0].ok, false, 'truthy-invalid packaging at the sink must fail closed, never ok:true');
+    assert.equal(typeof results[0].error.message, 'string');
+    assert.ok(!fs.existsSync(fatPath(dir)), 'no fat APK on fail-closed run');
+    for (const arch of ALL_FOUR) {
+      assert.ok(!fs.existsSync(splitPath(dir, arch)), `no split ${arch} on fail-closed run`);
+    }
+  });
+});
+
+describe('Security — duplicate-ABI semantics documented (not changed)', () => {
+  it('DOCUMENTED: resolveConfig preserves duplicate archs in author order (no silent dedupe, no reject)', () => {
+    const dir = mkTmp('muse-pack-sec-');
+    const { config } = resolveConfig(['--archs', 'arm64-v8a,arm64-v8a'], {}, dir);
+    assert.deepEqual(config.archs, ['arm64-v8a', 'arm64-v8a']);
+  });
+
+  it('DOCUMENTED: stage tolerates preserved duplicates — same-path rewrite, still ok:true', async () => {
+    const dir = mkTmp('muse-pack-sec-');
+    writeStageApp(dir);
+    const { config } = resolveConfig(
+      ['--archs', 'arm64-v8a,arm64-v8a', '--packaging', 'split'],
+      {},
+      dir,
+    );
+    assert.deepEqual(config.archs, ['arm64-v8a', 'arm64-v8a']);
+    const results = await runStages('package', { config, appDir: dir });
+    assert.equal(results[0].ok, true);
+    assert.ok(fs.existsSync(splitPath(dir, 'arm64-v8a')), 'split APK present after redundant rewrite');
+  });
+});
+
+describe('Security — arch path-separator containment at the filename sink', () => {
+  it("hostile arch '../evil' fails closed: ok:false, zero artefacts, nothing outside dist", async () => {
+    const dir = mkTmp('muse-pack-sec-');
+    writeStageApp(dir);
+    const { config } = resolveConfig([], {}, dir);
+    const results = await runStages(
+      'package',
+      { config: { ...config, packaging: 'split', archs: ['../evil'] }, appDir: dir },
+    );
+    assert.equal(results[0].ok, false, 'separator arch at the sink must fail closed');
+    assert.equal(typeof results[0].error.message, 'string');
+    assert.deepEqual(fs.readdirSync(path.join(dir, 'dist')), [], 'dist left with zero artefacts');
+    assert.deepEqual(fs.readdirSync(dir).sort(), ['dist', 'muse-native.yaml', 'src']);
+    assert.ok(!fs.existsSync(path.join(dir, 'evil.apk')));
+    assert.ok(!fs.existsSync(path.join(dir, 'app-evil.apk')));
+  });
+
+  it('deep-escape arch never writes outside dist (sink allowlist guard required)', async () => {
+    const root = mkTmp('muse-pack-sec-');
+    const dir = path.join(root, 'inner', 'app');
+    writeStageApp(dir);
+    const { config } = resolveConfig([], {}, dir);
+    // dist/inner/app/dist + 'app-x/../../../evil.apk' normalizes to
+    // root/inner/evil.apk — outside appDir/dist but inside the tmp root so
+    // the test stays hermetic (afterEach removes the tmp root).
+    const results = await runStages(
+      'package',
+      { config: { ...config, packaging: 'split', archs: ['x/../../../evil'] }, appDir: dir },
+    );
+    assert.equal(results.length, 1);
+    assert.equal(results[0].ok, false, 'escaping arch at the sink must fail closed, never ok:true');
+    assert.ok(
+      !fs.existsSync(path.join(root, 'inner', 'evil.apk')),
+      'no file may be written outside dist',
+    );
+  });
+});

@@ -241,6 +241,15 @@ async function packageStage(ctx) {
       ? ctx.config.archs.slice()
       : ['arm64-v8a', 'armeabi-v7a', 'x86_64', 'x86'];
   const packaging = (ctx && ctx.config && ctx.config.packaging) || 'fat';
+  // Sink-level enum guard (defense-in-depth: the CLI/config layer already
+  // allowlists this, but the sink must not trust it). Any value outside
+  // fat|split|both fails closed — never ok:true with zero APKs.
+  if (packaging !== 'fat' && packaging !== 'split' && packaging !== 'both') {
+    throw stageError(
+      `unknown packaging '${packaging}'. Expected one of: fat, split, both`,
+      ctx.appDir,
+    );
+  }
   const distDir = path.join(ctx.appDir, 'dist');
   const binPath = path.join(distDir, 'tree.mui.bin');
   // Compute every payload in memory before touching `dist/` (fail-closed).
@@ -273,6 +282,17 @@ async function packageStage(ctx) {
   const written = [];
   try {
     fs.mkdirSync(distDir, { recursive: true });
+    // Path confinement (defense-in-depth): every resolved APK/AAB write
+    // must stay inside the run's distDir. A crafted arch (e.g.
+    // '../evil' or 'x/../../../evil') joins to a path escaping dist and
+    // fails closed here before anything is written.
+    const resolvedDist = path.resolve(distDir);
+    for (const w of writes) {
+      const resolved = path.resolve(w.filePath);
+      if (resolved !== resolvedDist && !resolved.startsWith(resolvedDist + path.sep)) {
+        throw stageError(`refusing to write outside dist: '${w.filePath}'`, distDir);
+      }
+    }
     for (const w of writes) {
       if (typeof w.data === 'string') fs.writeFileSync(w.filePath, w.data, 'utf8');
       else fs.writeFileSync(w.filePath, w.data);
