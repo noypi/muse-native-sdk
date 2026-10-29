@@ -377,16 +377,37 @@ function failWith(code, detail) {
 // hermetic use; the defaults below go through adb against the emulator
 // serial and throw device-unreachable when no device answers — the wrap
 // assertion never silently passes.
-async function pageAllAndVerifyWrap({ pageCount, advance, readIndex, serial }) {
+//
+// Settle note: the device render + logcat page marker lands ~100-500ms after
+// the advance broadcast, so the index is read only after a settle delay
+// (`settleMs`, default 700ms; `sleep` injectable for hermetic use). Without
+// the settle, rapid reads see the stale pre-advance index and report
+// no-motion even though the advance landed.
+async function pageAllAndVerifyWrap({ pageCount, advance, readIndex, serial, sleep, settleMs }) {
   const advancePage = advance || ((opts) => defaultAdvancePage({ ...opts, serial }));
   const getIndex = readIndex || (() => defaultReadPageIndex({ serial }));
+  const settleDelay = Number.isInteger(settleMs) && settleMs >= 0 ? settleMs : 700;
+  const sleepFn = sleep || ((ms) => new Promise((resolve) => { setTimeout(resolve, ms); }));
   const startIndex = await getIndex();
+  // Dead-advance guard (F6): a broadcast with no receiver leaves the page
+  // index pinned at start, and start==end after a full cycle then passes
+  // vacuously. Require observing a non-start page index mid-cycle so a dead
+  // advance fails counts-mismatch instead of passing without motion.
+  // Single-page galleries (pageCount <= 1) cannot leave the start index by
+  // definition, so the motion requirement only applies past one page.
+  let sawMotion = false;
   for (let page = 0; page < pageCount; page++) {
     await advancePage({ nativeAdvancePage: true, serial });
+    await sleepFn(settleDelay);
+    const midIndex = await getIndex();
+    if (midIndex !== startIndex) sawMotion = true;
   }
   const wrappedIndex = await getIndex();
   if (wrappedIndex !== startIndex) {
     failWith('counts-mismatch', `page wrap mismatch (start=${startIndex} end=${wrappedIndex}, pages=${pageCount})`);
+  }
+  if (pageCount > 1 && !sawMotion) {
+    failWith('counts-mismatch', `page advance showed no motion (start=${startIndex} end=${wrappedIndex}, pages=${pageCount}); advance path did not page`);
   }
   return { wrapped: true };
 }
@@ -435,8 +456,17 @@ function defaultReadPageIndex({ serial } = {}) {
   const scan = (text) => {
     if (!text) return null;
     for (const re of PAGE_PATTERNS) {
-      const m = re.exec(text);
-      if (m) return Number(m[1]);
+      // Accumulated dumpsys/logcat dumps contain every marker since launch,
+      // so the first match is the stale launch-time page. Iterate globally
+      // and keep the last match: the most recent marker is the live index.
+      const flags = re.flags.includes('g') ? re.flags : `${re.flags}g`;
+      const global = new RegExp(re.source, flags);
+      let m = null;
+      let last = null;
+      while ((m = global.exec(text)) !== null) {
+        last = m;
+      }
+      if (last) return Number(last[1]);
     }
     return null;
   };
@@ -621,7 +651,7 @@ async function defaultReadViewport({ serial, attempts, sleepMs, sleep } = {}) {
   return null;
 }
 
-async function runGalleryProof({ serial, androidJar, outDir, readCounts, capture, advance, readIndex, sync, galleryDir, apkPath, install, launch, waitForMarkers, sleep, readViewport }) {
+async function runGalleryProof({ serial, androidJar, outDir, readCounts, capture, advance, readIndex, sync, galleryDir, apkPath, install, launch, waitForMarkers, sleep, settleMs, readViewport }) {
   const deviceSerial = serial || process.env.ANDROID_SERIAL;
   if (!deviceSerial) {
     failWith('device-unreachable', 'no serial/device');
@@ -731,7 +761,7 @@ async function runGalleryProof({ serial, androidJar, outDir, readCounts, capture
   const pages = deviceCounts.pages;
 
   // Page via nativeAdvancePage and verify wrap on the emulator count.
-  await pageAllAndVerifyWrap({ pageCount: pages, advance, readIndex, serial: deviceSerial });
+  await pageAllAndVerifyWrap({ pageCount: pages, advance, readIndex, serial: deviceSerial, sleep, settleMs });
 
   // Per-page viewport + screenshot artifacts: one shot per page under
   // build/gallery-proof/ (fixed error codes carry no paths/serials). A
@@ -744,6 +774,8 @@ async function runGalleryProof({ serial, androidJar, outDir, readCounts, capture
     failWith('io-error', 'screenshot write failed');
   }
   const shots = [];
+  const shotSettleDelay = Number.isInteger(settleMs) && settleMs >= 0 ? settleMs : 700;
+  const shotSleepFn = sleep || ((ms) => new Promise((resolve) => { setTimeout(resolve, ms); }));
   for (let page = 0; page < pages; page++) {
     const frame = await captureViewportFn({ serial: deviceSerial, page });
     if (!frame || isBlankViewport(frame)) {
@@ -754,6 +786,7 @@ async function runGalleryProof({ serial, androidJar, outDir, readCounts, capture
     shots.push(shot);
     if (page + 1 < pages) {
       await advanceForShots({ nativeAdvancePage: true, serial: deviceSerial, page });
+      await shotSleepFn(shotSettleDelay);
     }
   }
   return { rows, pages, shots };

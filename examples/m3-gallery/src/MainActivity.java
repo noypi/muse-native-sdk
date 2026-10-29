@@ -1,6 +1,11 @@
 package com.muse.host;
 
 import android.app.Activity;
+import android.content.BroadcastReceiver;
+import android.content.Context;
+import android.content.Intent;
+import android.content.IntentFilter;
+import android.os.Build;
 import android.os.Bundle;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
@@ -21,6 +26,21 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     }
 
     private long engineHandle = 0;
+
+    /** Broadcast action the proof pages through (same entry as the tap path). */
+    static final String ACTION_NATIVE_ADVANCE_PAGE = "muse.native.NATIVE_ADVANCE_PAGE";
+
+    /** Receiver for the proof's advance broadcast; same path as the tap entry. */
+    private final BroadcastReceiver advanceReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            if (ACTION_NATIVE_ADVANCE_PAGE.equals(intent != null ? intent.getAction() : null)
+                    && engineHandle != 0) {
+                nativeAdvancePage(engineHandle);
+                nativeRenderFrame(engineHandle);
+            }
+        }
+    };
 
     /** Instantiate the engine tree from raw tree bytes. Returns opaque handle or 0. */
     private static native long nativeLoadTree(byte[] treeBytes);
@@ -50,6 +70,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         surfaceView.setOnClickListener(v -> {
             if (engineHandle != 0) {
                 nativeAdvancePage(engineHandle);
+                nativeRenderFrame(engineHandle);
             }
         });
         setContentView(surfaceView);
@@ -57,6 +78,29 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         if (treeBytes != null) {
             engineHandle = nativeLoadTree(treeBytes);
         }
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        IntentFilter filter = new IntentFilter(ACTION_NATIVE_ADVANCE_PAGE);
+        if (Build.VERSION.SDK_INT >= 33) {
+            // Trigger is `adb shell am broadcast` from outside the app, so the
+            // receiver must be exported to receive it.
+            registerReceiver(advanceReceiver, filter, Context.RECEIVER_EXPORTED);
+        } else {
+            registerReceiver(advanceReceiver, filter);
+        }
+    }
+
+    @Override
+    protected void onPause() {
+        try {
+            unregisterReceiver(advanceReceiver);
+        } catch (IllegalArgumentException ignored) {
+            // Receiver was not registered (e.g. paused without resume).
+        }
+        super.onPause();
     }
 
     @Override

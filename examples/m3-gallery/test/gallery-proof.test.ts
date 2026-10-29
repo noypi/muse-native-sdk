@@ -299,9 +299,12 @@ describe('T3 gallery-proof module contract', () => {
     const { mod } = tryLoadProof();
     assert.ok(mod, 'behavior missing: packages/cli/lib/gallery-proof.js not implemented');
     const expected = mod.deriveExpectedCounts(loadManifestForExpectation());
+    let idx = 0;
     const { opts, restore } = proofDriver(mod, {
       readCounts: async () => ({ rows: expected.rows, pages: expected.pages }),
       capture: async () => blankFrame(),
+      advance: async () => { idx = (idx + 1) % expected.pages; return { nativeAdvancePage: true }; },
+      readIndex: async () => idx,
     });
     try {
       await rejectsWithCode(mod.runGalleryProof(opts), 'blank-viewport');
@@ -314,9 +317,12 @@ describe('T3 gallery-proof module contract', () => {
     const { mod } = tryLoadProof();
     assert.ok(mod, 'behavior missing: packages/cli/lib/gallery-proof.js not implemented');
     const expected = mod.deriveExpectedCounts(loadManifestForExpectation());
+    let idx = 0;
     const { opts, restore } = proofDriver(mod, {
       readCounts: async () => ({ rows: expected.rows, pages: expected.pages }),
       capture: async () => null,
+      advance: async () => { idx = (idx + 1) % expected.pages; return { nativeAdvancePage: true }; },
+      readIndex: async () => idx,
     });
     try {
       await rejectsWithCode(mod.runGalleryProof(opts), 'blank-viewport');
