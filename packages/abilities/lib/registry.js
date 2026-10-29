@@ -29,9 +29,16 @@ function createRegistry(options) {
   }
 
   function call(name, args, ctx) {
+    // Precedence: missing turnId (stale-id) > high-water staleness
+    // (stale-id) > unknown-ability > capability-denied. A stale turn with
+    // an unknown name therefore reports stale-id.
     const turnId = ctx && ctx.turnId;
     if (typeof turnId !== 'string' || turnId.length === 0) {
       fail('stale-id', `call "${name}" rejected: missing turn id`);
+    }
+    const seq = parseSeq(turnId);
+    if (seq !== null && seq < highWater) {
+      fail('stale-id', `stale turn for "${name}": ${turnId}`);
     }
     const ability = byName.get(name);
     if (!ability) {
@@ -42,10 +49,6 @@ function createRegistry(options) {
       if (!granted.has(cap)) {
         fail('capability-denied', `capability denied for "${name}": ${cap}`);
       }
-    }
-    const seq = parseSeq(turnId);
-    if (seq !== null && seq < highWater) {
-      fail('stale-id', `stale turn for "${name}": ${turnId}`);
     }
     if (seq !== null && seq > highWater) {
       highWater = seq;

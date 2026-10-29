@@ -13,6 +13,21 @@ const ALLOWED_ARG_KINDS = new Set([
 
 function defineAbility(spec) {
   const { name, capabilities, args, invoke } = spec || {};
+  if (typeof name !== 'string' || name.length === 0) {
+    const err = new Error(`invalid ability descriptor: name must be a non-empty string`);
+    err.code = 'ABILITY_INVALID_DESCRIPTOR';
+    throw err;
+  }
+  if (!Array.isArray(capabilities)) {
+    const err = new Error(`invalid ability descriptor "${name}": capabilities must be an array`);
+    err.code = 'ABILITY_INVALID_DESCRIPTOR';
+    throw err;
+  }
+  if (typeof invoke !== 'function') {
+    const err = new Error(`invalid ability descriptor "${name}": invoke must be a function`);
+    err.code = 'ABILITY_INVALID_DESCRIPTOR';
+    throw err;
+  }
   const kinds = args || {};
   for (const key of Object.keys(kinds)) {
     if (!ALLOWED_ARG_KINDS.has(kinds[key])) {

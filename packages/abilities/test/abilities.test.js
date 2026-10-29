@@ -279,3 +279,68 @@ describe('T3 — tools() snapshot derived from registered abilities', () => {
     assert.deepEqual(second[0].capabilities, ['gallery.read']);
   });
 });
+
+describe('SEC — malformed descriptor named-code rejection (ABILITY_INVALID_DESCRIPTOR)', () => {
+  function catchErr(fn) {
+    try {
+      fn();
+    } catch (err) {
+      return err;
+    }
+    return undefined;
+  }
+
+  it('missing name throws { code: ABILITY_INVALID_DESCRIPTOR } (never uncoded TypeError)', () => {
+    const { name, ...rest } = validAbility();
+    assert.equal(name, 'gallery.open'); // guard: the fixture really carried a name
+    const err = catchErr(() => abilities.defineAbility(rest));
+    assert.ok(err instanceof Error, 'must throw instead of returning');
+    assert.equal(err.code, 'ABILITY_INVALID_DESCRIPTOR');
+  });
+
+  it('non-string name throws { code: ABILITY_INVALID_DESCRIPTOR }', () => {
+    for (const badName of [42, null, {}, ['gallery.open']]) {
+      const err = catchErr(() =>
+        abilities.defineAbility(validAbility({ name: badName }))
+      );
+      assert.ok(err instanceof Error, `name ${String(badName)} must throw`);
+      assert.equal(err.code, 'ABILITY_INVALID_DESCRIPTOR');
+    }
+  });
+
+  it('missing capabilities throws { code: ABILITY_INVALID_DESCRIPTOR }', () => {
+    const { capabilities, ...rest } = validAbility();
+    assert.deepEqual(capabilities, ['gallery.read']); // guard: fixture carried some
+    const err = catchErr(() => abilities.defineAbility(rest));
+    assert.ok(err instanceof Error, 'must throw instead of returning');
+    assert.equal(err.code, 'ABILITY_INVALID_DESCRIPTOR');
+  });
+
+  it('non-array capabilities throws { code: ABILITY_INVALID_DESCRIPTOR }', () => {
+    for (const badCaps of ['gallery.read', {}, 42, null]) {
+      const err = catchErr(() =>
+        abilities.defineAbility(validAbility({ capabilities: badCaps }))
+      );
+      assert.ok(err instanceof Error, `capabilities ${String(badCaps)} must throw`);
+      assert.equal(err.code, 'ABILITY_INVALID_DESCRIPTOR');
+    }
+  });
+
+  it('missing invoke throws { code: ABILITY_INVALID_DESCRIPTOR }', () => {
+    const { invoke, ...rest } = validAbility();
+    assert.equal(typeof invoke, 'function'); // guard: fixture really carried one
+    const err = catchErr(() => abilities.defineAbility(rest));
+    assert.ok(err instanceof Error, 'must throw instead of returning');
+    assert.equal(err.code, 'ABILITY_INVALID_DESCRIPTOR');
+  });
+
+  it('non-function invoke throws { code: ABILITY_INVALID_DESCRIPTOR }', () => {
+    for (const badInvoke of ['invoke', 42, null, {}]) {
+      const err = catchErr(() =>
+        abilities.defineAbility(validAbility({ invoke: badInvoke }))
+      );
+      assert.ok(err instanceof Error, 'must throw instead of returning');
+      assert.equal(err.code, 'ABILITY_INVALID_DESCRIPTOR');
+    }
+  });
+});

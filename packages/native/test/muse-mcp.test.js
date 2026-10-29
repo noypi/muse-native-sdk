@@ -229,3 +229,87 @@ describe('T4 — one-way dep: no transport/provider fields (TC-MUSE-040)', () =>
     assert.ok(!/apiKey/.test(src), 'muse-mcp.js must not mention apiKey');
   });
 });
+
+describe('SEC — hostile getTurn() shapes fail closed with stale-id', () => {
+  it('getTurn() that throws fails closed with { code: stale-id } (never raw propagation)', async () => {
+    const hostile = new Error('hostile-control-boom');
+    const handle = createMuseMcp({
+      abilities: [ability()],
+      control: {
+        getTurn: () => {
+          throw hostile;
+        },
+      },
+      capabilities: ['gallery.read'],
+    });
+    const code = await callCode(undefined, () =>
+      handle.call('gallery.open', { itemId: 'x' })
+    );
+    assert.equal(code, 'stale-id');
+  });
+
+  it('getTurn() returning null fails closed with { code: stale-id }', async () => {
+    const handle = createMuseMcp({
+      abilities: [ability()],
+      control: { getTurn: () => null },
+      capabilities: ['gallery.read'],
+    });
+    const code = await callCode(undefined, () =>
+      handle.call('gallery.open', { itemId: 'x' })
+    );
+    assert.equal(code, 'stale-id');
+  });
+
+  it('getTurn() returning undefined fails closed with { code: stale-id }', async () => {
+    const handle = createMuseMcp({
+      abilities: [ability()],
+      control: { getTurn: () => undefined },
+      capabilities: ['gallery.read'],
+    });
+    const code = await callCode(undefined, () =>
+      handle.call('gallery.open', { itemId: 'x' })
+    );
+    assert.equal(code, 'stale-id');
+  });
+
+  it('getTurn() returning a malformed turn (no string id) fails closed with { code: stale-id }', async () => {
+    for (const malformed of [{}, { id: 42 }, { id: null }, { turnId: 'turn-1-wrong-key' }]) {
+      const handle = createMuseMcp({
+        abilities: [ability()],
+        control: { getTurn: () => malformed },
+        capabilities: ['gallery.read'],
+      });
+      const code = await callCode(undefined, () =>
+        handle.call('gallery.open', { itemId: 'x' })
+      );
+      assert.equal(code, 'stale-id');
+    }
+  });
+});
+
+describe('SEC — proto-inherited forbidden keys are not honored (own-property guard only)', () => {
+  for (const key of ['transport', 'providerUrl', 'apiKey', 'client']) {
+    it(`inherited ${key} on the prototype is ignored: construction succeeds and call() works`, async () => {
+      const opts = Object.create({ [key]: 'forbidden-value' });
+      opts.abilities = [ability()];
+      opts.control = { turnId: 'turn-9-proto-guard' };
+      opts.capabilities = ['gallery.read'];
+      const handle = createMuseMcp(opts);
+      const out = await handle.call('gallery.open', { itemId: 'x' });
+      assert.deepEqual(out, { args: { itemId: 'x' }, turnId: 'turn-9-proto-guard' });
+    });
+
+    it(`own-property ${key} still throws TypeError`, () => {
+      assert.throws(
+        () =>
+          createMuseMcp({
+            abilities: [ability()],
+            control: { turnId: 'turn-9-own-guard' },
+            capabilities: ['gallery.read'],
+            [key]: 'forbidden-value',
+          }),
+        (err) => err instanceof TypeError
+      );
+    });
+  }
+});

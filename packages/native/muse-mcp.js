@@ -6,9 +6,14 @@ const { createRegistry } = require('../abilities');
 
 function readTurnId(control) {
   if (control && typeof control.getTurn === 'function') {
-    const turn = control.getTurn();
+    let turn;
+    try {
+      turn = control.getTurn();
+    } catch {
+      throw staleId('stale turn id: control turn unavailable');
+    }
     if (turn && typeof turn.id === 'string') return turn.id;
-    return undefined;
+    throw staleId('stale turn id: control turn unavailable');
   }
   if (control && typeof control.turnId === 'string') return control.turnId;
   return undefined;
@@ -48,8 +53,15 @@ function createMuseMcp(options) {
   function dispose() {
     bound = false;
   }
-  const tools = registry.tools();
-  return { registry, tools, call, dispose };
+  const handle = { registry, call, dispose };
+  Object.defineProperty(handle, 'tools', {
+    enumerable: true,
+    configurable: true,
+    get() {
+      return registry.tools();
+    },
+  });
+  return handle;
 }
 
 module.exports = { createMuseMcp };
