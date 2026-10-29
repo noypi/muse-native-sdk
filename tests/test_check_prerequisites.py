@@ -50,7 +50,12 @@ def write_exe(path, body):
 
 
 def make_farm(root):
-    """Create fake toolchain farm; return (bin_dir, env)."""
+    """Create fake toolchain farm; return (bin_dir, env).
+
+    Plants fake `java`/`javac`/`adb`/`android` (plus legacy
+    `sdkmanager` for accept-both) on a prepended PATH plus
+    JAVA_HOME/ANDROID_HOME/ANDROID_NDK_HOME trees.
+    """
     bin_dir = os.path.join(root, "bin")
     os.makedirs(bin_dir, exist_ok=True)
     write_exe(os.path.join(bin_dir, "java"), "#!/bin/sh\necho fake-java\n")
@@ -461,3 +466,97 @@ class TestBatch1T2DoctorChecks(unittest.TestCase):
                         "licenses fix must be either an `android sdk` "
                         "license form or an $ANDROID_HOME/licenses "
                         "file-existence form: %r" % (fix,))
+
+
+# ---------------------------------------------------------------------------
+# Batch 2 (bug-build-008: T4) — hermetic refresh: fake-android farm +
+# verify-surface grep gate.
+#
+# Hermetic: stdlib unittest only. Shell gates run through function-level
+# sourcing (see run_shell_func); the repo-wide sweep reads committed text
+# files only. No network, secret, config, or live SDK is touched.
+# ---------------------------------------------------------------------------
+
+VERIFY_SWEEP = (
+    "README.md",
+    os.path.join("docs", "troubleshooting.md"),
+    os.path.join("device-lab", "README.md"),
+    os.path.join("scripts", "check-prerequisites.sh"),
+    os.path.join("tools", "cli", "lib", "doctor-checks.js"),
+)
+
+VERIFY_LIST_DOCS = (
+    "README.md",
+    os.path.join("docs", "troubleshooting.md"),
+)
+
+
+class TestBatch2T4VerifySurface(CheckPrerequisitesCase):
+    """T4: fake-android farm + verify-surface grep gate (TC-SAMPLE-005/007/008 proxy)."""
+
+    def test_android_only_farm_passes_check_sdk(self):
+        solo, env = make_android_only_farm(self.tmp.name)
+        proc = run_shell_func("check_sdk", solo, env)
+        self.assertEqual(proc.returncode, 0,
+                         "android-only farm must pass check_sdk:\n%s\n%s"
+                         % (proc.stdout, proc.stderr))
+        self.assertIn("OK: Android SDK", proc.stdout)
+
+    def test_missing_output_android_spelling_no_sdkmanager(self):
+        proc = run_check(self.bin, ["--self-test"], self.env)
+        combined = proc.stdout + proc.stderr
+        self.assertIn("android sdk install", combined,
+                      "--self-test MISSING output must name the android fix")
+        self.assertNotIn("sdkmanager", combined,
+                         "MISSING output must not name sdkmanager")
+
+    def test_repo_grep_gate_zero_sdkmanager(self):
+        hits = []
+        for rel in VERIFY_SWEEP:
+            path = os.path.join(REPO_ROOT, rel)
+            with open(path, encoding="utf-8") as fh:
+                for lineno, line in enumerate(fh, 1):
+                    if "sdkmanager" in line:
+                        hits.append("%s:%d: %s" % (rel, lineno, line.strip()))
+        self.assertEqual(hits, [],
+                         "verify surface must not reference sdkmanager:\n%s"
+                         % "\n".join(hits))
+
+    def test_repo_grep_gate_android_spellings_present(self):
+        for rel in VERIFY_LIST_DOCS:
+            path = os.path.join(REPO_ROOT, rel)
+            with open(path, encoding="utf-8") as fh:
+                body = fh.read()
+            self.assertIn("android sdk install", body,
+                          "%s must document `android sdk install`" % rel)
+            self.assertIn("android sdk list", body,
+                          "%s must document `android sdk list`" % rel)
+
+    def test_readonly_sdk_verifies_via_file_existence(self):
+        # Read-only mount: SDK dir present with the pinned trees, but no
+        # CLI on PATH and no lock writability — file-existence probes for
+        # platform/cmake must still report OK without invoking any CLI.
+        empty = os.path.join(self.tmp.name, "readonlybin")
+        os.makedirs(empty, exist_ok=True)
+        for func, ok in (("check_platform",
+                          "OK: Android SDK platform android-35 found"),
+                         ("check_cmake", "OK: CMake 3.28.0 found")):
+            proc = run_shell_func(func, empty, self.env)
+            self.assertEqual(proc.returncode, 0,
+                             "%s must pass via file-existence on a "
+                             "read-only mount:\n%s\n%s"
+                             % (func, proc.stdout, proc.stderr))
+            self.assertIn(ok, proc.stdout)
+
+    def test_cmake_absent_reports_missing_with_fix(self):
+        solo, env = make_android_only_farm(self.tmp.name)
+        sdk = env["ANDROID_HOME"]
+        self.assertFalse(os.path.exists(os.path.join(sdk, "cmake", "3.28.0")),
+                         "farm must leave cmake/3.28.0 absent")
+        proc = run_shell_func("check_cmake", solo, env)
+        self.assertNotEqual(proc.returncode, 0,
+                            "absent cmake/3.28.0 must report MISSING")
+        out = proc.stdout + proc.stderr
+        self.assertIn("MISSING: CMake 3.28.0 is missing", out)
+        self.assertIn("android sdk install", out)
+        self.assertIn('"cmake;3.28.0"', out)

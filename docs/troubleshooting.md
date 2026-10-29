@@ -47,25 +47,34 @@ the wrong NDK revision (expected `27.2.12479018`).
 **Fix:** Install the pinned Android packages:
 
 ```sh
-sdkmanager install "ndk;27.2.12479018" "cmake;3.28.0" "platform-tools" "platforms;android-35"
+android sdk install "ndk;27.2.12479018" "cmake;3.28.0" "platform-tools" "platforms;android-35"
 ```
 
-Then point the environment at the SDK and the pinned NDK, plus JDK 17+:
+Then point the environment at the SDK and the pinned NDK, plus JDK 21:
 
 ```sh
-export ANDROID_HOME=$HOME/Android/Sdk
+export ANDROID_HOME=/media/saif/EXTRA/sdk/android
 export ANDROID_NDK_HOME=$ANDROID_HOME/ndk/27.2.12479018
-export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
+export JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64
 export PATH="$JAVA_HOME/bin:$PATH"
 ```
 
 Verify the toolchain:
 
 ```sh
-sdkmanager --list_installed | grep -e "ndk;27.2.12479018" -e "cmake;3.28.0" -e "platforms;android-35"
+android sdk list | grep -e "ndk;27.2.12479018" -e "cmake;3.28.0" -e "platforms;android-35"
 java -version
 muse-native --version
 muse --version
+```
+
+On a read-only SDK mount (`android sdk list` cannot take `.sdk/lock`),
+verify via file existence instead (primary on this mount):
+
+```sh
+ls $ANDROID_HOME/platforms/android-35
+ls $ANDROID_HOME/ndk/27.2.12479018
+ls $ANDROID_HOME/cmake/3.28.0
 ```
 
 ## 4. Stale build cache

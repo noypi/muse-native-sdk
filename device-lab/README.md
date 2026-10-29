@@ -21,7 +21,7 @@ external`).
 ## AVD boot
 
 ```sh
-sdkmanager "platform-tools" "platforms;android-29" "system-images;android-29;google_apis;x86_64" "emulator"
+android sdk install "platform-tools" "platforms;android-29" "system-images;android-29;google_apis;x86_64" "emulator"
 echo no | avdmanager create avd -n device-lab-api29 -k "system-images;android-29;google_apis;x86_64" --device "pixel"
 emulator -avd device-lab-api29 -no-snapshot -no-window -gpu swiftshader_indirect &
 adb wait-for-device
