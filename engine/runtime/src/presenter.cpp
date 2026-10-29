@@ -16,8 +16,21 @@ namespace {
 // Currently attached opaque handle; nullptr when detached.
 void* g_attached_window = nullptr;
 
-// Surface+swapchain created flag; cleared on DetachSurface().
+// Surface+swapchain created flag; cleared on DetachSurface() and
+// OnSurfaceDestroyed(). Retained across OnBackground()/OnForeground() so a
+// background/foreground cycle resumes without a window argument.
 bool g_surface_created = false;
+
+// Backgrounded flag; set by OnBackground(), cleared by OnForeground(),
+// OnSurfaceRecreated(), DetachSurface(), and OnSurfaceDestroyed(). The tree
+// handle is never touched here (RULE-RUNTIME-004): only presentation state.
+bool g_backgrounded = false;
+
+// DAG-recorded current-frame currency. Set only by the DAG record hook;
+// PresentFrame never infers currency from list shape (empty vs non-empty),
+// so hand-built lists that were never DAG-recorded always fail closed with
+// kNoCurrentFrame. Cleared on DetachSurface()/OnSurfaceDestroyed().
+bool g_has_current_frame = false;
 
 // Magic word identifying a host-side window handle. On host builds the
 // ANativeWindow is a fake whose first word carries this magic behind the
@@ -71,6 +84,8 @@ PresenterError AttachSurface(void* opaque_window) {
 PresenterError DetachSurface() {
   g_attached_window = nullptr;
   g_surface_created = false;
+  g_has_current_frame = false;
+  g_backgrounded = false;
   return {PresenterCode::kOk, ""};
 }
 
@@ -90,6 +105,84 @@ PresenterError CreateSurfaceAndSwapchain(const BackendProbe& probe) {
             "window before creating surface+swapchain"};
   }
   g_surface_created = true;
+  return {PresenterCode::kOk, ""};
+}
+
+PresenterError PresentFrame(const DrawCmds& cmds) {
+  (void)cmds;
+  // No dangling-surface present: without a live swapchain nothing is
+  // presented, whatever cmds holds.
+  if (!g_surface_created) {
+    return {PresenterCode::kNoSwapchain,
+            "PresentFrame: no swapchain; frame not presented"};
+  }
+  // Currency is DAG-recorded state, never inferred from list shape: only the
+  // DAG-recorded current-frame set may be presented, so an empty or stale
+  // (hand-built, never-DAG-recorded) acquisition fails closed here. The kOk
+  // visible-frames path is proven manually via examples/m3-gallery TC-029.
+  if (!g_has_current_frame) {
+    return {PresenterCode::kNoCurrentFrame,
+            "PresentFrame: no DAG-recorded current-frame DrawCmds; frame "
+            "not presented"};
+  }
+  return {PresenterCode::kOk, ""};
+}
+
+PresenterError OnSurfaceDestroyed() {
+  if (!g_surface_created) {
+    return {PresenterCode::kNoSurface,
+            "OnSurfaceDestroyed: no surface; nothing to destroy"};
+  }
+  // RULE-RUNTIME-006 teardown-before-window: destroy the swapchain (and drop
+  // current-frame currency) before releasing the window handle, so no present
+  // can race window teardown and no dangling surface remains.
+  g_surface_created = false;
+  g_has_current_frame = false;
+  g_backgrounded = false;
+  g_attached_window = nullptr;
+  return {PresenterCode::kOk, ""};
+}
+
+PresenterError OnSurfaceRecreated(void* opaque_window) {
+  if (opaque_window == nullptr) {
+    return {PresenterCode::kNoSurface,
+            "OnSurfaceRecreated: null window handle; surface not recreated"};
+  }
+  if (reinterpret_cast<std::uintptr_t>(opaque_window) <
+      kMinPlausibleAddress) {
+    return {PresenterCode::kNoSurface,
+            "OnSurfaceRecreated: invalid window handle (unmapped address); "
+            "surface not recreated"};
+  }
+  if (!LooksLikeWindow(opaque_window)) {
+    return {PresenterCode::kRecreateFailed,
+            "OnSurfaceRecreated: invalid window handle (not an "
+            "ANativeWindow); surface not recreated"};
+  }
+  // Fresh window replaces any prior handle; swapchain is re-created on it.
+  // Currency stays dropped until the DAG records the next current frame.
+  g_attached_window = opaque_window;
+  g_surface_created = true;
+  g_has_current_frame = false;
+  g_backgrounded = false;
+  return {PresenterCode::kOk, ""};
+}
+
+PresenterError OnBackground() {
+  if (!g_surface_created) {
+    return {PresenterCode::kNoSurface,
+            "OnBackground: no surface; nothing to suspend"};
+  }
+  g_backgrounded = true;
+  return {PresenterCode::kOk, ""};
+}
+
+PresenterError OnForeground() {
+  if (!g_surface_created) {
+    return {PresenterCode::kNoSurface,
+            "OnForeground: no surface; nothing to resume"};
+  }
+  g_backgrounded = false;
   return {PresenterCode::kOk, ""};
 }
 
