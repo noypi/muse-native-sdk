@@ -46,3 +46,15 @@ With a JDK installed outside the default location, point at JDK 17+ with:
 export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
 export PATH="$JAVA_HOME/bin:$PATH"
 ```
+
+## Deferred behaviours
+
+The following behaviours are Deferred in this sample (not supported here),
+each linked to the spec recording the exclusion:
+
+- `.capo` SFC authoring — Deferred; see [specs-tsx-dialect.md](manual-context.local/specs-tsx-dialect.md).
+- `.vue` input — Deferred; see [specs-tsx-dialect.md](manual-context.local/specs-tsx-dialect.md).
+- `watchAsync` — Deferred; see [specs-muse-core.md](manual-context.local/specs-muse-core.md).
+- `watchEffectAsync` — Deferred; see [specs-muse-core.md](manual-context.local/specs-muse-core.md).
+- Arbitrary lazy components — Deferred; see [specs-tsx-dialect.md](manual-context.local/specs-tsx-dialect.md).
+- Update lifecycle hooks (`onUpdated`/`onBeforeUpdate`) — Deferred; see [specs-muse-core.md](manual-context.local/specs-muse-core.md).
