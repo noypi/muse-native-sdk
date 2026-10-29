@@ -58,8 +58,15 @@ function checkBlob(value, label) {
 
 function checkLibName(part, label) {
   if (typeof part !== 'string' || part.length === 0) fail(`${label} must be a non-empty string`);
+  if (part.trim().length === 0) fail(`${label} must not be empty or whitespace`);
   if (part.includes('/') || part.includes('\\') || part.includes('..')) {
     fail(`${label} must not contain path separators: ${part}`);
+  }
+  // NUL/control characters truncate or alias entry names on some
+  // unzip/PackageManager implementations, collapsing two distinct names
+  // into one on extraction. Fail closed before the entry is emitted.
+  if (/[\0-\x1f\x7f]/.test(part)) {
+    fail(`${label} must not contain control characters: ${part}`);
   }
 }
 
@@ -86,6 +93,14 @@ function buildApk(input) {
     entries.push({ name: `lib/${lib.abi}/${lib.name}`, data: bytes });
   }
   entries.push({ name: 'assets/tree.mui.bin', data: treeBytes });
+
+  // Duplicate ZIP entry names alias on extraction (two entries collapsing
+  // to one). Fail closed naming the duplicate before any bytes are emitted.
+  const seenNames = new Set();
+  for (const entry of entries) {
+    if (seenNames.has(entry.name)) fail(`duplicate entry ${entry.name}`);
+    seenNames.add(entry.name);
+  }
 
   const { time, date } = dosDateTime(new Date());
   const chunks = [];

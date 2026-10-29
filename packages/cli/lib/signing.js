@@ -22,13 +22,23 @@ function sanitize(text, secrets) {
 }
 
 function toolPath(buildToolsDir, tool) {
-  if (typeof buildToolsDir === 'string' && buildToolsDir.length > 0) {
-    return path.join(buildToolsDir, tool);
+  // `buildToolsDir` selects the executed binary, so resolve every tool path
+  // under it. An absent dir keeps the bare tool name (PATH lookup); a
+  // provided dir must be a non-empty string and is resolved to an absolute
+  // path so the exact invoked binary is unambiguous and visible in the
+  // sign-time log below.
+  if (buildToolsDir === undefined) return tool;
+  if (typeof buildToolsDir !== 'string' || buildToolsDir.length === 0) {
+    fail('buildToolsDir must be a non-empty absolute path');
   }
-  return tool;
+  return path.resolve(buildToolsDir, tool);
 }
 
 function runTool(tool, cmd, args) {
+  // Log the exact binary path invoked at sign time so a substituted binary
+  // is visible. Only the binary path is logged — never the argv, which
+  // carries `--ks-pass pass:<secret>` for the sign step.
+  console.error(`signing: invoking ${cmd} (${tool})`);
   return new Promise((resolve, reject) => {
     cp.execFile(cmd, args, (err, stdout, stderr) => {
       if (err) {
@@ -51,8 +61,14 @@ async function signApk(input) {
   if (typeof keystorePath !== 'string' || keystorePath.length === 0) {
     fail('keystorePath must be a non-empty string');
   }
+  if (keystorePath.startsWith('-')) {
+    fail('keystorePath must not start with -');
+  }
   if (typeof alias !== 'string' || alias.length === 0) {
     fail('alias must be a non-empty string');
+  }
+  if (alias.startsWith('-')) {
+    fail('alias must not start with -');
   }
   if (typeof storepass !== 'string' || storepass.length === 0) {
     fail('storepass must be a non-empty string');

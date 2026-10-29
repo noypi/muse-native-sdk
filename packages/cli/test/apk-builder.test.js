@@ -256,3 +256,59 @@ describe('T1 ASSUMPTION A-T1b — empty nativeLibs emits lib-less but valid ZIP'
     assert.ok(!names.some((n) => n.startsWith('lib/')), 'no lib/ entries without archs');
   });
 });
+
+describe('security: NUL/control-char entry names rejected (apk: ...)', () => {
+  it("rejects NUL in nativeLib name 'a\\0b.so'", () => {
+    assert.throws(
+      () =>
+        buildApk(
+          fixtureInput({
+            nativeLibs: [{ abi: 'arm64-v8a', name: 'a\0b.so', bytes: Buffer.from('SO-FAKE-NUL', 'utf8') }],
+          }),
+        ),
+      (err) => {
+        assert.ok(err instanceof Error);
+        assert.match(err.message, /^apk: /);
+        return true;
+      },
+    );
+  });
+
+  it('rejects control char \\x1f in nativeLib name', () => {
+    assert.throws(
+      () =>
+        buildApk(
+          fixtureInput({
+            nativeLibs: [{ abi: 'arm64-v8a', name: 'evil\x1f.so', bytes: Buffer.from('SO-FAKE-CTRL', 'utf8') }],
+          }),
+        ),
+      (err) => {
+        assert.ok(err instanceof Error);
+        assert.match(err.message, /^apk: /);
+        return true;
+      },
+    );
+  });
+});
+
+describe('security: duplicate ZIP entry names rejected (apk: duplicate entry ...)', () => {
+  it('two identical nativeLib entries throw `apk: duplicate entry <name>`', () => {
+    const dup = { abi: 'arm64-v8a', name: 'libRuntime.so', bytes: Buffer.from('SO-FAKE-DUP', 'utf8') };
+    assert.throws(
+      () =>
+        buildApk(
+          fixtureInput({
+            nativeLibs: [
+              { ...dup, bytes: Buffer.from(dup.bytes) },
+              { ...dup, bytes: Buffer.from(dup.bytes) },
+            ],
+          }),
+        ),
+      (err) => {
+        assert.ok(err instanceof Error);
+        assert.match(err.message, /^apk: duplicate entry lib\/arm64-v8a\/libRuntime\.so/);
+        return true;
+      },
+    );
+  });
+});

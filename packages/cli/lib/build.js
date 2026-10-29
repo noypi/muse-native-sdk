@@ -196,7 +196,19 @@ function runBuild(appDir, rest) {
     return;
   }
   if (argv.includes('--print-config')) {
-    process.stdout.write(JSON.stringify(resolvedConfig, null, 2) + '\n');
+    // Secrets must never enter log pipelines via `--print-config` stdout:
+    // redact every explicit secret key before printing. `undefined` stays
+    // `undefined` (key absent); any set value prints as `[redacted]`.
+    // `winningLayer` still names the winning layer per key.
+    const SECRET_KEYS = ['storepass'];
+    const printable = {
+      ...resolvedConfig,
+      config: { ...(resolvedConfig && resolvedConfig.config) },
+    };
+    for (const key of SECRET_KEYS) {
+      if (printable.config[key] !== undefined) printable.config[key] = '[redacted]';
+    }
+    process.stdout.write(JSON.stringify(printable, null, 2) + '\n');
     process.exitCode = getExitCode('ok');
     return;
   }

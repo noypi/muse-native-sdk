@@ -449,3 +449,61 @@ describe('T4 resolveConfig signing keys + layers (AC-PACKAGING-009)', () => {
     });
   });
 });
+
+describe('security: --print-config redacts storepass (AC-PACKAGING-009)', () => {
+  it('stdout contains [redacted] and never the fake secret', () => {
+    const dir = mkTmp('muse-pack-printcfg-');
+    const secret = 'STOREPASS-FAKE-PRINT-1';
+    const prev = process.env.MUSE_NATIVE_STOREPASS;
+    process.env.MUSE_NATIVE_STOREPASS = secret;
+    const writes = [];
+    const origWrite = process.stdout.write;
+    const prevExit = process.exitCode;
+    process.stdout.write = function fakeOut(chunk, enc, cb) {
+      writes.push(String(chunk));
+      return true;
+    };
+    try {
+      const runBuild = require('../lib/build.js');
+      runBuild(dir, ['--print-config']);
+      const out = writes.join('');
+      assert.match(out, /\[redacted\]/);
+      assert.ok(!out.includes(secret), 'stdout must never contain the passphrase');
+    } finally {
+      process.stdout.write = origWrite;
+      process.exitCode = prevExit;
+      if (prev === undefined) delete process.env.MUSE_NATIVE_STOREPASS;
+      else process.env.MUSE_NATIVE_STOREPASS = prev;
+    }
+  });
+});
+
+describe('security: leading-dash keystorePath/alias rejected with zero tool calls', () => {
+  it("rejects keystorePath '--help' with `signing: ... must not start with -`", async () => {
+    const stub = stubTools([{ ok: true }, { ok: true }, { ok: true }]);
+    try {
+      const { signApk } = loadSigning();
+      await assert.rejects(signApk({ ...FAKE_OPTS, keystorePath: '--help' }), (err) => {
+        assert.match(String(err && err.message), /^signing: keystorePath must not start with -/);
+        return true;
+      });
+      assert.equal(stub.calls.length, 0, 'must not shell out for option-injection input');
+    } finally {
+      stub.restore();
+    }
+  });
+
+  it("rejects alias '--help' with `signing: ... must not start with -`", async () => {
+    const stub = stubTools([{ ok: true }, { ok: true }, { ok: true }]);
+    try {
+      const { signApk } = loadSigning();
+      await assert.rejects(signApk({ ...FAKE_OPTS, alias: '--help' }), (err) => {
+        assert.match(String(err && err.message), /^signing: alias must not start with -/);
+        return true;
+      });
+      assert.equal(stub.calls.length, 0, 'must not shell out for option-injection input');
+    } finally {
+      stub.restore();
+    }
+  });
+});
