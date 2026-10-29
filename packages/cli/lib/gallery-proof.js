@@ -293,7 +293,12 @@ async function runGalleryProof({ serial, androidJar, outDir, readCounts, capture
   // missing frame rejects blank-viewport instead of passing silently.
   const captureViewportFn = capture || captureViewport;
   const advanceForShots = advance || ((opts) => defaultAdvancePage({ ...opts, serial: deviceSerial }));
-  fs.mkdirSync(resolvedOut, { recursive: true });
+  try {
+    fs.mkdirSync(resolvedOut, { recursive: true });
+  } catch (err) {
+    if (err && (err.code === 'blank-viewport' || err.code === 'device-unreachable')) throw err;
+    failWith('io-error', 'screenshot write failed: ' + err.message);
+  }
   const shots = [];
   for (let page = 0; page < pages; page++) {
     const frame = await captureViewportFn({ serial: deviceSerial, page });
@@ -500,7 +505,6 @@ function saveScreenshot({ serial, page, shot, frame } = {}) {
     writeBytes(shot, Buffer.from(out));
   } catch (err) {
     if (err && (err.code === 'blank-viewport' || err.code === 'device-unreachable')) throw err;
-    if (err && err.code) throw err;
     failWith('io-error', 'screenshot write failed: ' + err.message);
   }
   return Promise.resolve(shot);
