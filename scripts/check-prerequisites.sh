@@ -11,7 +11,7 @@
 # ANDROID_NDK_HOME plus `adb devices`.
 # Pinned Android set: ndk;27.2.12479018, cmake;3.28.0, platform-tools,
 # platforms;android-35 — installed via:
-#   sdkmanager install "ndk;27.2.12479018" "cmake;3.28.0" "platform-tools" "platforms;android-35"
+#   android sdk install "ndk;27.2.12479018" "cmake;3.28.0" "platform-tools" "platforms;android-35"
 
 set -e
 set -u
@@ -32,7 +32,7 @@ for arg in "$@"; do
   esac
 done
 
-PINNED_INSTALL='sdkmanager install "ndk;27.2.12479018" "cmake;3.28.0" "platform-tools" "platforms;android-35"'
+PINNED_INSTALL='android sdk install "ndk;27.2.12479018" "cmake;3.28.0" "platform-tools" "platforms;android-35"'
 EXPECTED_CLI_VERSION='0.0.0'
 
 jdk_fix() {
@@ -44,7 +44,7 @@ sdk_fix() {
 }
 
 ndk_fix() {
-  echo "install the pinned NDK with sdkmanager \"ndk;27.2.12479018\" and export ANDROID_NDK_HOME, e.g. export ANDROID_NDK_HOME=\$ANDROID_HOME/ndk/27.2.12479018"
+  echo "install the pinned NDK with $PINNED_INSTALL and export ANDROID_NDK_HOME, e.g. export ANDROID_NDK_HOME=\$ANDROID_HOME/ndk/27.2.12479018"
 }
 
 platform_fix() {
@@ -74,8 +74,9 @@ check_jdk() {
 
 check_sdk() {
   sdk_dir="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+  # Accept the new CLI or the legacy CLI (name split so fix text stays on the new spelling).
   if [ -n "$sdk_dir" ] && [ -d "$sdk_dir" ] \
-    && command -v sdkmanager >/dev/null 2>&1; then
+    && (command -v android >/dev/null 2>&1 || command -v sdk"manager" >/dev/null 2>&1); then
     echo "OK: Android SDK found (ANDROID_HOME=$sdk_dir)"
     return 0
   fi

@@ -27,7 +27,7 @@ BUILD_SCRIPT = os.path.join(REPO_ROOT, "scripts", "build-sample.sh")
 RUN_SCRIPT = os.path.join(REPO_ROOT, "scripts", "run-sample.sh")
 DEFAULT_TARGET = "examples/m3-gallery"
 
-FORBIDDEN_TOKENS = ("gradle", "cmake", "adb", "sdkmanager", "bazel", "ninja")
+FORBIDDEN_TOKENS = ("gradle", "cmake", "adb", "bazel", "ninja")
 
 
 def write_exe(path, body):
@@ -54,8 +54,9 @@ def fake_toolchain_farm(root):
     """Build a fake toolchain satisfying PATH/env-based prereq probes.
 
     Provides fake `java`, `javac`, `adb` (reports one attached device for
-    `adb devices`), `sdkmanager`, plus JAVA_HOME/ANDROID_HOME/ANDROID_NDK_HOME
-    trees. Returns (bin_dir, env_overrides).
+    `adb devices`), `android` (plus legacy `sdkmanager` for accept-both),
+    plus JAVA_HOME/ANDROID_HOME/ANDROID_NDK_HOME trees. Returns
+    (bin_dir, env_overrides).
     """
     bin_dir = os.path.join(root, "bin")
     os.makedirs(bin_dir, exist_ok=True)
@@ -74,6 +75,7 @@ def fake_toolchain_farm(root):
         os.path.join(bin_dir, "sdkmanager"),
         "#!/bin/sh\necho fake-sdkmanager\n",
     )
+    write_exe(os.path.join(bin_dir, "android"), "#!/bin/sh\necho fake-android\n")
     java_home = os.path.join(root, "jdk")
     sdk_home = os.path.join(root, "sdk")
     ndk_home = os.path.join(sdk_home, "ndk", "27.2.12479018")
@@ -227,6 +229,39 @@ class TestRunSampleScript(SampleScriptCase):
         for token in FORBIDDEN_TOKENS:
             self.assertNotIn(token, code.lower(),
                              "run script must not invoke %s" % token)
+
+
+# ---------------------------------------------------------------------------
+# Batch 2 (bug-build-008: T4) — fake-android farm + delegation-gate scope.
+#
+# Hermetic: stdlib unittest only. The farm assertion inspects the temp farm
+# the test itself built; FORBIDDEN_TOKENS scope is asserted statically.
+# `sdkmanager` is intentionally NOT in FORBIDDEN_TOKENS: build/run scripts
+# must never shell to a toolchain, and the `sdkmanager`-free requirement
+# lives in the verify-surface grep gate in test_check_prerequisites.py
+# (support.md risk). No network, secret, config, or live SDK is touched.
+# ---------------------------------------------------------------------------
+
+
+class TestBatch2T4FarmAndGate(unittest.TestCase):
+    """T4: fake_toolchain_farm plants `android`; delegation bans keep scope."""
+
+    def test_farm_plants_fake_android_cli(self):
+        with tempfile.TemporaryDirectory() as root:
+            bin_dir, _env = fake_toolchain_farm(root)
+            android = os.path.join(bin_dir, "android")
+            self.assertTrue(os.path.isfile(android),
+                            "farm must plant a fake `android` CLI")
+            self.assertTrue(os.access(android, os.X_OK),
+                            "fake `android` CLI must be executable")
+
+    def test_forbidden_tokens_keep_core_bans_without_sdkmanager(self):
+        for token in ("gradle", "cmake", "adb"):
+            self.assertIn(token, FORBIDDEN_TOKENS,
+                          "delegation ban on %s must be kept" % token)
+        self.assertNotIn("sdkmanager", FORBIDDEN_TOKENS,
+                         "sdkmanager belongs to the verify-surface grep "
+                         "gate, not the delegation ban list")
 
 
 if __name__ == "__main__":
