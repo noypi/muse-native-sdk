@@ -1,10 +1,13 @@
 'use strict';
 // T3 — demo3 hands-free voice router (FR-SAMPLE-013, AC-SAMPLE-038).
 // Maps pinned utterance strings to the canonical abilities in
-// phoneAbilities.js and connects via the T2 `createMuseMcp()` connector.
-// Unknown/blank utterances fall through to `reason-fallback`, never silent;
-// ungranted abilities deny with named `capability-denied` and no action.
-// Minimal host harness only — no FR-SAMPLE-009 behaviour.
+// phoneAbilities.js and connects via the merged `createMuseMcp()` connector.
+// Unknown/blank utterances fall through to `reason-fallback` without touching
+// the registry, never silent; the merged `call()` THROWS
+// (`stale-id`/`unknown-ability`/`capability-denied`), so thrown errors are
+// caught and mapped to the `{ ok: false, code, ability, turnId }` shape with
+// the calling turnId stamped by the router. Minimal host harness only —
+// no FR-SAMPLE-009 behaviour.
 
 const { createMuseMcp } = require('../../../../packages/native/muse-mcp.js');
 const { ABILITY_NAMES, TOUCH_EQUIVALENTS, abilities } = require('./phoneAbilities.js');
@@ -47,11 +50,11 @@ async function routeUtterance(text, ctx) {
   const capabilities = ctx && ctx.capabilities !== undefined ? ctx.capabilities : ABILITY_NAMES;
   const handle = createMuseMcp({ abilities, control: { turnId }, capabilities });
   try {
-    const res = await handle.call(ability, {});
-    if (res.ok) {
-      return { ok: true, ability, turnId };
-    }
-    return { ok: false, code: res.code, ability, turnId };
+    await handle.call(ability, {});
+    return { ok: true, ability, turnId };
+  } catch (err) {
+    const code = err && typeof err.code === 'string' ? err.code : 'unknown-ability';
+    return { ok: false, code, ability, turnId };
   } finally {
     handle.dispose();
   }

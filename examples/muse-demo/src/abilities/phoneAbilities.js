@@ -1,7 +1,7 @@
 'use strict';
 // T3 — demo3 hands-free domain abilities (FR-SAMPLE-013, AC-SAMPLE-038).
-// Authors the five demo verbs via the T1 `defineAbility()` framework; the
-// single canonical name list lives here and is consumed by registration
+// Authors the five demo verbs via the merged `defineAbility()` framework;
+// the single canonical name list lives here and is consumed by registration
 // and routing. Minimal host harness only — no FR-SAMPLE-009 behaviour.
 
 const { defineAbility } = require('../../../../packages/abilities/lib/abilities.js');
@@ -23,10 +23,11 @@ const TOUCH_EQUIVALENTS = {
   'reason-fallback': { screen: 'home', action: 'tap-assistant' },
 };
 
-// Each ability keeps a tappable fallback echo; run returns a value stamped
-// by the registry with the calling turnId (T1 registry behaviour).
+// Per-ability capability names: each ability is granted by its own name;
+// the default granted set is all five names. `invoke` (not `run`) performs
+// the domain action; the router stamps the calling turnId itself.
 const abilities = ABILITY_NAMES.map((name) =>
-  defineAbility({ name, args: {}, run: () => `${name}-value` }),
+  defineAbility({ name, capabilities: [name], args: {}, invoke: () => `${name}-value` }),
 );
 
 module.exports = { ABILITY_NAMES, TOUCH_EQUIVALENTS, abilities };

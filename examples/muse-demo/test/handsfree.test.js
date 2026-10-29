@@ -1,18 +1,27 @@
 'use strict';
 // T3+T4 — demo3 hands-free operation layer (FR-SAMPLE-013, AC-SAMPLE-038).
-// Failing-first: MUST FAIL until examples/muse-demo/src/abilities/phoneAbilities.js
-// and examples/muse-demo/src/abilities/voiceRouter.js exist.
-// Shared-file rule: this one test file covers both T3 and T4 (assigned to T3,
-// mapped in both contracts); hermetic unit assertions live here, the
-// TC-SAMPLE-038-RESULT.md evidence file is written by the T4 verification, not here.
-// Hermetic: node:test + node:assert/strict only. Real T1/T2 modules are consumed
-// (packages/abilities/lib/abilities.js, packages/native/muse-mcp.js) — never re-stubbed.
-// Fixed turnId doubles; no network, no secrets, no config, no live services.
+// Fresh tester pass against the MERGED framework API (PR #125, ac2f40b):
+//   defineAbility({ name, capabilities, args?, invoke }) — throws
+//     ABILITY_INVALID_DESCRIPTOR / ABILITY_NON_SERIALIZABLE_ARG
+//   createRegistry({ capabilities }).call(name, args, { turnId }) — THROWS
+//     stale-id / unknown-ability / capability-denied (stale > unknown > denied)
+//   createMuseMcp({ abilities, control, capabilities }) — { registry,
+//     tools getter, call (throws), dispose }
+// Settled decisions (user-confirmed): per-ability capability names
+// (`capabilities: [<own-name>]`, default grant = all five); router catches
+// thrown registry errors into `{ ok, ability|code, turnId }` and stamps the
+// calling turnId; fixed turnIds kept (no `turn-<seq>` needed).
+// Shared-file rule: this one file covers T3+T4 (owned by T3, mapped in T4).
+// Hermetic: node:test + node:assert/strict only. Real merged modules are
+// consumed (never re-stubbed). Fixed turnId doubles; no network, secrets,
+// config, or live services. No production code written here.
 //
-// Plan T3 Interface (verbatim):
-// `routeUtterance(text: string, ctx: { turnId: string }): Promise<{ ok: true, ability: "profile.open-settings" | "gallery.open" | "gallery.select" | "gallery.image.select" | "app.close", turnId: string } | { ok: true, ability: "reason-fallback", turnId: string } | { ok: false, code: "capability-denied", ability: string, turnId: string }>`; `touchEquivalent(ability: string): { screen: string, action: string }` — every voice ability has a non-null touch equivalent; unknown utterances resolve to `reason-fallback`, never silent.
-// Plan T4 Interface (verbatim):
-// `verifyHandsFreeFlow(): Promise<{ steps: [...5 abilities with echo + touchEquivalent...], denial: { ok: false, code: "capability-denied" }, verdict: "pass" | "fail" }>`
+// Plan T3 Interface (verbatim, merged):
+// `defineAbility({ name: string, capabilities: string[], args?: Record<string, "string"|"number"|"boolean"|"null"|"array"|"object">, invoke: (args: object, ctx: { turnId: string }) => unknown }): AbilityDef`;
+// `createMuseMcp({ abilities?: AbilityDef[], control?: { turnId: string } | { getTurn(): { id: string } }, capabilities?: string[] }): { registry: Registry, tools: getter Array<{ name: string, args: object, capabilities: string[] }>, call(name: string, args?: object): unknown, dispose(): void }`;
+// demo surface `routeUtterance(text: string, ctx: { turnId: string, capabilities?: string[] }): Promise<{ ok: true, ability: "profile.open-settings" | "gallery.open" | "gallery.select" | "gallery.image.select" | "app.close", turnId: string } | { ok: true, ability: "reason-fallback", turnId: string } | { ok: false, code: "capability-denied" | "unknown-ability" | "stale-id", ability: string, turnId: string }>` + `touchEquivalent(ability: string): { screen: string, action: string } | null`
+// Plan T4 Interface (verbatim, merged):
+// `verifyHandsFreeFlow(): Promise<{ steps: Array<{ step: 1|2|3|4|5, ability: string, turnId: string, echo: "numbered-voice+tappable-fallback", touchEquivalent: boolean }>, denial: { ok: false, code: "capability-denied" }, verdict: "pass" | "fail" }>`
 
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
@@ -28,7 +37,7 @@ const {
 
 const TURN = 'turn-handsfree-001';
 
-// Canonical five demo verbs (single list lives in phoneAbilities.js; asserted here).
+// Canonical five demo verbs (single list lives in phoneAbilities.js).
 const FIVE = [
   'profile.open-settings',
   'gallery.open',
@@ -107,10 +116,10 @@ describe('T3 — unknown utterances resolve to reason-fallback, never silent (AC
 });
 
 describe('T3 — ungranted ability denies with capability-denied and performs no action (AC-SAMPLE-038)', () => {
-  it('restricted-capability host denies the ungranted ability via real T1/T2 modules', async () => {
+  it('restricted-capability handle throws capability-denied via real merged modules and invoke never executes', () => {
     let ran = 0;
     const defs = FIVE.map((name) =>
-      defineAbility({ name, args: {}, run: () => { ran += 1; return `${name}-value`; } }),
+      defineAbility({ name, capabilities: [name], invoke: () => { ran += 1; return `${name}-value`; } }),
     );
     const handle = createMuseMcp({
       abilities: defs,
@@ -118,15 +127,14 @@ describe('T3 — ungranted ability denies with capability-denied and performs no
       capabilities: ['gallery.open'],
     });
     try {
-      const res = await handle.call('app.close', {});
-      assert.deepEqual(res, { ok: false, code: 'capability-denied', turnId: TURN });
+      assert.throws(() => handle.call('app.close', {}), (err) => err && err.code === 'capability-denied');
       assert.equal(ran, 0, 'denied ability must perform no action');
     } finally {
       handle.dispose();
     }
   });
 
-  it('router reports ungranted ability as { ok: false, code: capability-denied, ability, turnId }', async () => {
+  it('router maps the thrown denial to { ok: false, code: capability-denied, ability, turnId }', async () => {
     const res = await routeUtterance(UTTERANCES['app.close'], { turnId: TURN, capabilities: ['gallery.open'] });
     assert.equal(res.ok, false);
     assert.equal(res.code, 'capability-denied');
