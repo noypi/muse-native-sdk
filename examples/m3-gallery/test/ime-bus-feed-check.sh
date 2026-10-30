@@ -105,6 +105,40 @@ else
   fail "pre-30 fallback uses getSystemWindowInsetBottom() compat shape"
 fi
 
+# T3-POLL-1 (regression, bug-runtime-004 t5r3 device 127.0.0.1:6569 API 29,
+# evidence t5r3_logcat_full.txt + t5r3_dumpsys_ime_shown.txt): keyboard shows
+# but onInsetsFrame never delivers nonzero heights — the SDK<30 fallback reads
+# getSystemWindowInsetBottom() once under ADJUST_PAN (always 0) with no
+# per-frame sampler. The fallback must register a poll-based
+# visible-display-frame sampler (ViewTreeObserver OnGlobalLayoutListener or
+# equivalent: addOnGlobalLayoutListener / OnLayoutChangeListener /
+# getViewTreeObserver). Scanned over the full fallback region (else-branch to
+# method end) so a multi-line sampler is not cut off by the 12-line API29
+# window above. FAILS until the sampler lands.
+FALLBACK_FULL=""
+if [ -n "${ELSE_LINE:-}" ]; then
+  FALLBACK_FULL=$(awk -v start="$ELSE_LINE" 'NR>=start{print} NR>start && /^    \}/{exit}' "$JAVA_FILE")
+fi
+if [ -n "$FALLBACK_FULL" ] && printf '%s\n' "$FALLBACK_FULL" | grep -qE 'OnGlobalLayoutListener|addOnGlobalLayoutListener|OnLayoutChangeListener|addOnLayoutChangeListener|getViewTreeObserver'; then
+  pass "pre-30 fallback registers a poll-based layout sampler"
+else
+  fail "pre-30 fallback registers a poll-based layout sampler"
+fi
+
+# T3-POLL-2 (regression, bug-runtime-004 t5r3): the sampler must compute a
+# keyboard height from the visible display frame (getWindowVisibleDisplayFrame
+# / root-view height delta) and forward it through the SAME onInsetsFrame
+# entry (same channel, no parallel setter — single-feed denial stays: exactly
+# one onInsetsFrame definition per T3-SINGLE-1). Both signals must appear in
+# the fallback region; FAILS until the sampler lands.
+if [ -n "$FALLBACK_FULL" ] \
+  && printf '%s\n' "$FALLBACK_FULL" | grep -q 'getWindowVisibleDisplayFrame' \
+  && printf '%s\n' "$FALLBACK_FULL" | grep -q 'onInsetsFrame'; then
+  pass "pre-30 sampler forwards visible-display-frame height via onInsetsFrame"
+else
+  fail "pre-30 sampler forwards visible-display-frame height via onInsetsFrame"
+fi
+
 if [ "$FAILURES" -gt 0 ]; then
   printf 'ime-bus-feed-check: %d failing\n' "$FAILURES"
   printf 'device half (tester, 127.0.0.1:6569):\n'

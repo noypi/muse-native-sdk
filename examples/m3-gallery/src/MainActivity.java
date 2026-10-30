@@ -5,12 +5,14 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.graphics.Rect;
 import android.os.Build;
 import android.os.Bundle;
 import android.view.MotionEvent;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
 import android.view.View;
+import android.view.ViewTreeObserver;
 import android.view.WindowInsets;
 import android.view.WindowInsetsAnimation;
 import android.view.inputmethod.InputMethodManager;
@@ -309,6 +311,22 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                 onInsetsFrame((float) insets.getSystemWindowInsetBottom());
                 return insets;
             });
+            // Poll-based visible-display-frame sampler (t5r3, API 29): under
+            // ADJUST_PAN getSystemWindowInsetBottom() above reads 0, so sample
+            // the keyboard height per layout pass from the visible display
+            // frame and feed the SAME onInsetsFrame entry (no parallel feed,
+            // no window-behavior change).
+            root.getViewTreeObserver().addOnGlobalLayoutListener(
+                    new ViewTreeObserver.OnGlobalLayoutListener() {
+                        @Override
+                        public void onGlobalLayout() {
+                            Rect visible = new Rect();
+                            root.getWindowVisibleDisplayFrame(visible);
+                            int keyboardHeight = Math.max(
+                                    0, root.getRootView().getHeight() - visible.bottom);
+                            onInsetsFrame((float) keyboardHeight);
+                        }
+                    });
         }
     }
 
