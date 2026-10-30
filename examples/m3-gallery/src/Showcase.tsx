@@ -138,6 +138,7 @@ export function LayeringPage() {
       <View theme="dark" dimmed={true}>
         <Text>Layering content dimmed dark</Text>
       </View>
+      <TextInput value="" placeholder="Layering IME probe" insetSource="FR-LAYOUT-012" />
       <OverlayHost onScrimTap="dismiss-topmost">
         <Surface tone="scrim" />
         <Dialog open={true} title="Layering dialog" />

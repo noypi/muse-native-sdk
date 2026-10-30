@@ -1939,6 +1939,9 @@ bool PresentGallery(const void* mui1Data, std::size_t len, Renderer& renderer,
       title.bounds = {0.0f, yOff, static_cast<float>(kPresentW),
                       static_cast<float>(kHeaderH)};
       title.nodeId = static_cast<std::uint32_t>(900000 + p * 2);
+      title.opacity = 1.0f;
+      title.payload.stateColor = kLightPrimary;
+      title.payload.stateOpacity = 1.0f;
       cmds.push_back(title);
       DrawCmd footer;
       footer.kind = PrimitiveKind::Rect;
@@ -1946,6 +1949,9 @@ bool PresentGallery(const void* mui1Data, std::size_t len, Renderer& renderer,
                        static_cast<float>(kPresentW),
                        static_cast<float>(kFooterH)};
       footer.nodeId = static_cast<std::uint32_t>(900000 + p * 2 + 1);
+      footer.opacity = 1.0f;
+      footer.payload.stateColor = kFooterBg;
+      footer.payload.stateOpacity = 1.0f;
       cmds.push_back(footer);
       int start = starts[static_cast<std::size_t>(p)];
       int end = starts[static_cast<std::size_t>(p + 1)];
@@ -2379,12 +2385,16 @@ void paintLayeringPage(const LayeringScene& scene, Renderer& renderer,
     scrim.bounds = {0.0f, 0.0f, static_cast<float>(kPresentW),
                     static_cast<float>(kPresentH)};
     scrim.nodeId = 1;
+    scrim.opacity = 1.0f;
     scrim.payload.scrimColor = kLightInverseSurface;
     scrim.payload.scrimAlpha = 0.25f;
     cmds.push_back(scrim);
     // Five overlay contents in submission order; strictly increasing node
     // ids so later submission draws above. BottomSheet (index 1) rides the
-    // live sheetY bound per frame by anchorSheetToImeInset.
+    // live sheetY bound per frame by anchorSheetToImeInset. Each content
+    // carries an explicit opaque fill (F1: no payload-0 washout — the
+    // retained Swapchain rasterizes Rect/RoundedRect from stateColor, so a
+    // default 0 payload would present as transparent/washed out).
     for (std::uint32_t i = 0; i < 5; ++i) {
       DrawCmd content;
       content.kind =
@@ -2394,6 +2404,9 @@ void paintLayeringPage(const LayeringScene& scene, Renderer& renderer,
       content.bounds = {64.0f, y, static_cast<float>(kPresentW - 128), 120.0f};
       if (content.kind == PrimitiveKind::RoundedRect) content.radius = 20.0f;
       content.nodeId = 2 + i;
+      content.opacity = 1.0f;
+      content.payload.stateColor = kWhite;
+      content.payload.stateOpacity = 1.0f;
       cmds.push_back(content);
     }
     DrawError derr = renderer.draw(cmds, target);
@@ -2415,6 +2428,11 @@ void anchorSheetToImeInset(LayeringScene& scene, float insetPx) {
     // Per-frame bind of the animated layout inset: sheet tracks the value
     // exactly; fullRelayouts stays untouched (no full-tree relayout).
     scene.sheetY = insetPx;
+    std::printf(
+        "[layering] per-frame evidence sheetY=%.1f inset=%.1f relayout=none "
+        "fullRelayouts=%u\n",
+        static_cast<double>(scene.sheetY), static_cast<double>(insetPx),
+        scene.fullRelayouts);
   } catch (...) {
     // Never throws across the boundary; keep last good sheetY on failure.
   }
@@ -2453,6 +2471,7 @@ DismissResult onScrimTap(bool scrimHit, bool isDrag,
     out.dismissed = "topmost";
     out.remaining = overlayCount - 1;
     out.reason = "";
+    std::printf("[layering] dismiss=topmost remaining=%d\n", out.remaining);
     return out;
   } catch (...) {
     DismissResult out;

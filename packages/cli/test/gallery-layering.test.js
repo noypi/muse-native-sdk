@@ -614,3 +614,57 @@ describe('L6 — gallery_layering_test executable + add_test wiring', () => {
     );
   });
 });
+
+// ─── Batch 4 — L7 per-frame evidence emission ───
+// FR-M3-010 / AC-M3-022 IME clause (L7). F1 (washout render fix) needs no
+// new hermetic case: the L2 painter halves (scrim-first, quarter alpha,
+// 6-cmd submission order in gallery_layering_test.cpp) already pin the
+// crisp scrim-over-content compositing; the F1 on-device washout proof is
+// tester territory per plan A4 (see L7.md mapping).
+// APPENDED — all green L4/L5/L6 cases above are untouched. Hermetic:
+// source-text reads of the committed presenter only (existing file style);
+// no compile, no device, no network, no secrets.
+// ASSUMPTIONS (contract genuinely silent on marker spelling; coder owns
+// the exact wording — reconcile paths, not verdicts):
+// - A-L7-1: per-frame evidence emission names sheet-Y + inset + a
+//   relayout/frame marker on the layering page path (observable in logcat
+//   during the adb keyboard show/hide series).
+// - A-F1-1: the layering painter keeps crisp scrim-over-content compositing
+//   (OverlayScrim scrim + content chrome: RoundedRect radius / nodeId order);
+//   mapped here as an emission-presence guard, not pixel math (device PNG
+//   proof stays tester territory per plan A4).
+describe('L7 — layering per-frame evidence emission', () => {
+  const PRESENTER_PATH_L7 = path.join(
+    CHECKOUT_ROOT,
+    'engine',
+    'runtime',
+    'src',
+    'gallery_present.cpp',
+  );
+
+  it('layering path emits per-frame sheet-Y + inset + relayout-marker evidence (L7)', () => {
+    const src = fs.readFileSync(PRESENTER_PATH_L7, 'utf8');
+    const anchorAt = src.indexOf('anchorSheetToImeInset');
+    assert.ok(anchorAt !== -1, 'presenter must keep anchorSheetToImeInset (L2/L4 path)');
+    // Code only: strip //-comments so prose about frames cannot satisfy
+    // an emission assertion (GR-08 T1.12 — the assertion must be able to fail).
+    const window = src
+      .slice(anchorAt, anchorAt + 6000)
+      .replace(/\/\/[^\n]*/g, '');
+    const namesSheetY = /sheetY/i.test(window);
+    const namesInset = /inset/i.test(window);
+    const emitsEvidence =
+      /printf/i.test(window) ||
+      /LOG/i.test(window) ||
+      /__android_log/i.test(window) ||
+      /recordEvidence/i.test(window) ||
+      /emitEvidence/i.test(window) ||
+      /evidence\.log/i.test(window);
+    const namesRelayout =
+      /relayout/i.test(window) || /fullRelayouts/i.test(window);
+    assert.ok(
+      namesSheetY && namesInset && emitsEvidence && namesRelayout,
+      'layering path must emit per-frame evidence naming sheet Y + inset + relayout/frame marker (L7)',
+    );
+  });
+});

@@ -123,6 +123,30 @@ test('layering scene declares the scrim dismiss hook site (L3 contract)', () => 
   );
 });
 
+// ─── Batch 4 — L7 IME keyboard path (FR-M3-010 / AC-M3-022 IME clause) ───
+// APPENDED — the 8 green L1/L4 cases above are untouched. Hermetic:
+// source-text read of the LayeringPage body only (existing file style).
+// ASSUMPTION (contract genuinely silent on the widget spelling): the
+// affordance is exactly one focusable editor the IME can target — a
+// `<TextField`, `<TextInput`, or `<TextFieldEditCore` tag (or an
+// `editable`/`focusable` marker) inside the LayeringPage body, bound to
+// the FR-LAYOUT-012 inset path (no one-off inset copy). The coder owns
+// the exact widget spelling — reconcile paths, not verdicts.
+
+test('LayeringPage exposes a single focusable editor the IME can target (L7)', () => {
+  const body = layeringBody(read(SHOWCASE_URL));
+  const hits =
+    countOccurrences(body, '<TextField') +
+    countOccurrences(body, '<TextInput') +
+    countOccurrences(body, 'editable') +
+    countOccurrences(body, 'focusable');
+  assert.equal(
+    hits,
+    1,
+    'LayeringPage must expose exactly one focusable editor affordance (TextField/TextInput/editable) for the device IME frame series (L7)',
+  );
+});
+
 test('LayeringPage BottomSheet usage satisfies the L4 imeSafe/insetSource contract', () => {
   const body = layeringBody(read(SHOWCASE_URL));
   const match = body.match(/<BottomSheet[^>]*>/);

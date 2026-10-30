@@ -109,8 +109,7 @@ test('non-dismissals never throw', () => {
   );
 });
 
-test('Dialog passes the dismiss contract through without owning geometry', () => {
-  const src = read(DIALOG_URL);
+test('Dialog passes the dismiss contract through without owning geometry', () => {  const src = read(DIALOG_URL);
   const hits =
     countOccurrences(src, 'onScrimTap') + countOccurrences(src, 'onDismiss');
   assert.ok(
@@ -120,5 +119,30 @@ test('Dialog passes the dismiss contract through without owning geometry', () =>
   assert.ok(
     !src.includes('sheetY') && !src.includes('anchorSheetToImeInset'),
     'Dialog composite must not own geometry — scrim hit-target geometry stays in the L2 presenter',
+  );
+});
+
+// ─── Batch 4 — F2 dismiss observability (FR-M3-010 / AC-M3-022) ───
+// APPENDED — the 6 green L3 cases above are untouched. Hermetic:
+// source-text read of the presenter only (existing file style).
+// ASSUMPTION (contract genuinely silent on the log spelling): the
+// scrim-tap dismiss path emits an observable record (log line, evidence
+// printf/LOG, or recorded dismiss marker naming the dismissed layer plus
+// the remaining count) so before/after state is confirmable on-device via
+// logcat. The coder owns the exact spelling — reconcile paths, not verdicts.
+test('scrim-tap dismiss emits an observable dismiss record (F2)', () => {
+  const cpp = read(PRESENTER_URL);
+  const at = cpp.indexOf('onScrimTap');
+  assert.notEqual(at, -1, 'onScrimTap must exist before its observability can be checked (F2)');
+  const window = cpp.slice(at, at + 4000);
+  assert.ok(
+    /dismiss/i.test(window) &&
+      (/log/i.test(window) ||
+        /evidence/i.test(window) ||
+        /printf/i.test(window) ||
+        /LOG/i.test(window) ||
+        /record/i.test(window) ||
+        /observable/i.test(window)),
+    'onScrimTap must emit an observable dismiss log/evidence record (dismiss + remaining) confirmable on-device (F2)',
   );
 });
