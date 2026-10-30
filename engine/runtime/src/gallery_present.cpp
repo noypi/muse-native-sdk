@@ -2420,4 +2420,47 @@ void anchorSheetToImeInset(LayeringScene& scene, float insetPx) {
   }
 }
 
+// ---- Scrim-tap-dismiss (L3: FR-M3-010 / AC-M3-022 scrim-tap-dismiss clause,
+// AC-INPUT-020) ----
+//
+// Layering-page-only routing over the already resolved scrim hit-target.
+// Rides the real post-007 tap chain: the arena/slop stage governs
+// hit-testing upstream, so by the time this entry runs `scrimHit` already
+// distinguishes scrim taps from content mis-hits and `isDrag` already marks
+// drags. Dismiss stays narrowly scoped to the scrim hit-target — content
+// taps and drags resolve { dismissed: 'none', reason: 'miss' | 'drag' }
+// without touching the overlay stack — so drag-no-fire holds. Dismiss pops
+// exactly the topmost overlay once (remaining decrements by one).
+DismissResult onScrimTap(bool scrimHit, bool isDrag,
+                         int overlayCount) noexcept {
+  try {
+    if (overlayCount < 0) overlayCount = 0;
+    if (isDrag) {
+      DismissResult out;
+      out.dismissed = "none";
+      out.remaining = overlayCount;
+      out.reason = "drag";
+      return out;
+    }
+    if (!scrimHit || overlayCount == 0) {
+      DismissResult out;
+      out.dismissed = "none";
+      out.remaining = overlayCount;
+      out.reason = "miss";
+      return out;
+    }
+    DismissResult out;
+    out.dismissed = "topmost";
+    out.remaining = overlayCount - 1;
+    out.reason = "";
+    return out;
+  } catch (...) {
+    DismissResult out;
+    out.dismissed = "none";
+    out.remaining = 0;
+    out.reason = "miss";
+    return out;
+  }
+}
+
 }  // namespace runtime
