@@ -184,9 +184,11 @@ function retainSelection(args) {
   const selectedId = args && args.selectedId;
   const freshHierarchy = args && args.freshHierarchy;
   if (typeof selectedId !== 'string' || !freshHierarchy) return { selectedId: null };
+  const groups = freshHierarchy && Array.isArray(freshHierarchy.groups) ? freshHierarchy.groups : [];
   const retained = new Set();
-  for (const g of (freshHierarchy && freshHierarchy.groups) || []) {
-    for (const item of (g && g.items) || []) {
+  for (const g of groups) {
+    const items = g && Array.isArray(g.items) ? g.items : [];
+    for (const item of items) {
       if (item && typeof item.id === 'string') retained.add(item.id);
     }
   }

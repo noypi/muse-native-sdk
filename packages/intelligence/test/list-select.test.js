@@ -173,6 +173,28 @@ describe('retainSelection — preserve selection across renderMode re-request (A
     assert.deepEqual(res, { selectedId: null });
   });
 
+  it('clears to null with no throw when groups is a non-array truthy value (CWE-755 regression)', () => {
+    seedDispatchFake(async () => ({ status: 200, body: HIERARCHY }));
+    const { retainSelection } = freshList();
+    for (const groups of [{}, 42]) {
+      let res;
+      assert.doesNotThrow(() => { res = retainSelection({ selectedId: 'r1', freshHierarchy: { summary: 'S.', groups } }); });
+      assert.deepEqual(res, { selectedId: null });
+    }
+  });
+
+  it('clears to null with no throw when a group items is a non-array truthy value (CWE-755 regression)', () => {
+    seedDispatchFake(async () => ({ status: 200, body: HIERARCHY }));
+    const { retainSelection } = freshList();
+    const fresh = {
+      summary: 'S.',
+      groups: [{ label: 'Negative', sentiment: 'negative', items: 42 }],
+    };
+    let res;
+    assert.doesNotThrow(() => { res = retainSelection({ selectedId: 'r1', freshHierarchy: fresh }); });
+    assert.deepEqual(res, { selectedId: null });
+  });
+
   it('fires no structure call while retaining (ASSUMPTION: retainSelection is pure)', () => {
     let calls = 0;
     seedDispatchFake(async () => { calls += 1; return { status: 200, body: HIERARCHY }; });
