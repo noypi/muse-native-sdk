@@ -7,6 +7,7 @@
 // test). The coder provides the headers/sources; these tests then compile
 // and run unmodified (call-site reconciliation only, per ASSUMPTIONs).
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <string>
 
@@ -134,6 +135,40 @@ static bool check_diagnostic_leaks_no_secrets() {
   return true;
 }
 
+// Security (5): init diagnostic is exactly stage + fixed reason — no
+// internals, no config/context material. Pins the Fail("init", ...) literal.
+static bool check_init_diagnostic_exact_fixed_shape() {
+  graphics::EglProbeResult r =
+      graphics::run_egl_probe(make_opts(true /* force_fail_init */));
+  const std::string want =
+      "EGL-PROBE-DIAGNOSTIC: init forced failure before eglGetDisplay";
+  if (r.diagnostic != want) return false;
+  if (r.verdict_line != "EGL-PROBE-VERDICT: FAIL init") return false;
+  return true;
+}
+
+// Security (5): even with a planted env secret, no failure or clean path
+// echoes it into diagnostic/verdict. run_egl_probe never reads env.
+static bool check_diagnostic_never_echoes_env_secret() {
+  const char* planted = "s3cr3t-planted-xyz-123";
+#if defined(_WIN32)
+  (void)planted;
+  return true;  // setenv-based planting is POSIX-only; shape pinned above.
+#else
+  ::setenv("EFAIL_PLANTED_SECRET_FOR_TEST", planted, 1);
+  graphics::EglProbeResult fail =
+      graphics::run_egl_probe(make_opts(true /* force_fail_init */));
+  graphics::EglProbeResult pass =
+      graphics::run_egl_probe(make_opts(false));
+  ::unsetenv("EFAIL_PLANTED_SECRET_FOR_TEST");
+  if (fail.diagnostic.find(planted) != std::string::npos) return false;
+  if (fail.verdict_line.find(planted) != std::string::npos) return false;
+  if (pass.diagnostic.find(planted) != std::string::npos) return false;
+  if (pass.verdict_line.find(planted) != std::string::npos) return false;
+  return true;
+#endif
+}
+
 #define RUN_CASE(name)                                       \
   do {                                                       \
     if (!(name)()) {                                         \
@@ -156,6 +191,8 @@ int main() {
   RUN_CASE(check_probe_returns_without_input);
   RUN_CASE(check_probe_never_silently_skips);
   RUN_CASE(check_diagnostic_leaks_no_secrets);
+  RUN_CASE(check_init_diagnostic_exact_fixed_shape);
+  RUN_CASE(check_diagnostic_never_echoes_env_secret);
   if (failures > 0) {
     std::printf("egl_probe_force_fail.test: %d failing\n", failures);
     return 1;
