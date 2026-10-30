@@ -347,6 +347,30 @@ describe('T3 scaffold Makefile apk flow (AC-PACKAGING-020/021/022)', () => {
     assert.match(body, /debug|--ks\b/i, 'sign must use the debug key only');
   });
 
+  it('sign assigns DEBUG_KEYSTORE to the standard debug key (AC-PACKAGING-021, TC-PACKAGING-021)', () => {
+    const text = readScaffoldMakefile();
+    const m = /^DEBUG_KEYSTORE\s*[:?+]*=\s*(.+?)\s*$/m.exec(text);
+    assert.ok(m, 'scaffold Makefile must assign DEBUG_KEYSTORE (e.g. DEBUG_KEYSTORE = ~/.android/debug.keystore)');
+    assert.equal(m[1].trim(), '~/.android/debug.keystore',
+      'DEBUG_KEYSTORE must equal the standard debug-key path ~/.android/debug.keystore, not a bare project-relative debug.keystore');
+  });
+
+  it('sign rejects a bare project-relative debug.keystore value (AC-PACKAGING-021 negative control)', () => {
+    const text = readScaffoldMakefile();
+    const m = /^DEBUG_KEYSTORE\s*[:?+]*=\s*(.+?)\s*$/m.exec(text);
+    assert.ok(m, 'scaffold Makefile must assign DEBUG_KEYSTORE');
+    assert.notEqual(m[1].trim(), 'debug.keystore',
+      'a bare project-relative debug.keystore dangles (no such file) — must be ~/.android/debug.keystore');
+    assert.ok(m[1].trim().length > 'debug.keystore'.length,
+      'DEBUG_KEYSTORE value must be the full standard path, not the bare filename');
+  });
+
+  it('sign recipe consumes $(DEBUG_KEYSTORE) via --ks (AC-PACKAGING-021, TC-PACKAGING-021)', () => {
+    const body = scaffoldTargetBody(readScaffoldMakefile(), 'sign');
+    assert.ok(body.includes('--ks $(DEBUG_KEYSTORE)'),
+      'sign must pass --ks $(DEBUG_KEYSTORE) so the standard debug key feeds apksigner');
+  });
+
   it('verify runs apksigner verify for v2+v3 (AC-PACKAGING-021)', () => {
     const body = scaffoldTargetBody(readScaffoldMakefile(), 'verify');
     assert.match(body, /\bapksigner\b/, 'verify must run apksigner verify');
