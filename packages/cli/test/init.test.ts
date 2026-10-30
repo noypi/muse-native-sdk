@@ -341,6 +341,29 @@ describe('T4 — init copies the extended nine-file tree with rollback (AC-SAMPL
     );
   });
 
+  it('hostile target-dir basename is sanitized before APP_NAME interpolation (no Make injection, exit 0)', () => {
+    // Security-review LOW (D4 hardening of the T4 rewrite): a hostile
+    // basename (spaces, `$`, `;`, newline, `:`) must be sanitized —
+    // `[^A-Za-z0-9_.-]` → `-`, fallback `hello-app` when empty — before
+    // interpolation into the scaffolded `Makefile` `APP_NAME =` line.
+    // Fail-closed: no Make injection, scaffold still exits 0.
+    const hostile = 'my app;$evil\npwn:evil';
+    const dir = path.join(scratch, hostile);
+    const r = runCli(BIN_NATIVE, ['init', dir]);
+    assert.equal(r.status, 0, `init with a hostile basename must still exit 0, got ${r.status}: ${r.stderr}`);
+    const makefile = fs.readFileSync(path.join(dir, 'Makefile'), 'utf8');
+    const appLines = makefile.split('\n').filter((line) => /^APP_NAME\s*=/.test(line));
+    assert.equal(appLines.length, 1, `scaffolded Makefile must carry exactly one APP_NAME line, found ${appLines.length}`);
+    const value = appLines[0].replace(/^APP_NAME\s*=\s*/, '');
+    const want = hostile.replace(/[^A-Za-z0-9_.-]/g, '-') || 'hello-app';
+    assert.equal(value, want, `APP_NAME must be the sanitized basename, got: ${value}`);
+    assert.match(value, /^[A-Za-z0-9_.-]+$/, `APP_NAME must use only the safe charset, got: ${value}`);
+    assert.ok(
+      !makefile.split('\n').some((line) => line === 'pwn:evil'),
+      'hostile basename must not inject an extra make target line',
+    );
+  });
+
   it('init into a non-empty dir without --force refuses with exit 1 and adds no res/ tree', () => {
     const dir = path.join(scratch, 'existing');
     fs.mkdirSync(dir, { recursive: true });

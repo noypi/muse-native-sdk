@@ -26,7 +26,8 @@ const TEMPLATE_FILES = [
 function rewriteMakefileAppName(makefilePath, targetDir) {
   const raw = fs.readFileSync(makefilePath, 'utf8');
   const base = path.basename(String(targetDir));
-  const name = base && base.length > 0 ? base : 'hello-app';
+  const sanitized = base.replace(/[^A-Za-z0-9_.-]/g, '-');
+  const name = sanitized.length > 0 ? sanitized : 'hello-app';
   const next = raw.replace(/^APP_NAME\s*=.*$/m, `APP_NAME = ${name}`);
   if (next !== raw) {
     fs.writeFileSync(makefilePath, next, 'utf8');
