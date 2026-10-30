@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { View, Text, manifest, components, TopAppBar, NavigationRail, OverlayHost } from '@muse/native';
 import { spring } from '@muse/core';
 import ButtonScreen from "./screens/ButtonScreen";
+import { LayeringPage } from "./Showcase";
 import { buildStories } from "./stories";
 import { shuffleRemix, encodeRemix, decodeRemix } from "./remix";
 
@@ -120,6 +121,7 @@ export default function App() {
         </View>
       ) : null}
       <ButtonScreen />
+      <LayeringPage />
       {stories.map((story, index) => {
         const rendered = story.render();
         // Map the descriptor type string through the real @muse/native

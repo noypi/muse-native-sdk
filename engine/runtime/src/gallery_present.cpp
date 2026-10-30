@@ -2353,4 +2353,71 @@ bool PresentDeviceGalleryPage(const std::vector<GalleryRow>& rows, int page,
   }
 }
 
+// ---- Layering page (L2: BUG-M3-FIDELITY-008 / FR-M3-010 / AC-M3-022) ----
+//
+// Single-OverlayHost scene: one dim scrim plus the five overlay contents in
+// submission order (Dialog, BottomSheet, Menu, SnackbarHost, Tooltip).
+// Extends the retained OverlayScrim mapping to this scene: the scrim is the
+// only OverlayScrim here, so BottomSheet/SnackbarHost layer as content over
+// it (FamilyKind's per-row mapping is untouched). z-order is submission
+// order — later submissions draw above. The sheet content rides the
+// FR-LAYOUT-012 animated inset per frame (scene.sheetY, bound by
+// anchorSheetToImeInset): no one-off copy, no full-tree relayout marker.
+// The CPU-mock path is this same geometry (identical bounds/node order),
+// so hermetic checks observe the retained ordering directly.
+void paintLayeringPage(const LayeringScene& scene, Renderer& renderer,
+                       Swapchain& target, std::string* error) {
+  try {
+    if (!scene.valid) {
+      if (error != nullptr) *error = "layering scene invalid (no-paint)";
+      return;
+    }
+    std::vector<DrawCmd> cmds;
+    cmds.reserve(6);
+    DrawCmd scrim;
+    scrim.kind = PrimitiveKind::OverlayScrim;
+    scrim.bounds = {0.0f, 0.0f, static_cast<float>(kPresentW),
+                    static_cast<float>(kPresentH)};
+    scrim.nodeId = 1;
+    scrim.payload.scrimColor = kLightInverseSurface;
+    scrim.payload.scrimAlpha = 0.25f;
+    cmds.push_back(scrim);
+    // Five overlay contents in submission order; strictly increasing node
+    // ids so later submission draws above. BottomSheet (index 1) rides the
+    // live sheetY bound per frame by anchorSheetToImeInset.
+    for (std::uint32_t i = 0; i < 5; ++i) {
+      DrawCmd content;
+      content.kind =
+          (i == 3) ? PrimitiveKind::Rect : PrimitiveKind::RoundedRect;
+      float y = 240.0f + static_cast<float>(i) * 160.0f;
+      if (i == 1) y = scene.sheetY;
+      content.bounds = {64.0f, y, static_cast<float>(kPresentW - 128), 120.0f};
+      if (content.kind == PrimitiveKind::RoundedRect) content.radius = 20.0f;
+      content.nodeId = 2 + i;
+      cmds.push_back(content);
+    }
+    DrawError derr = renderer.draw(cmds, target);
+    if (derr != DrawError::None) {
+      if (error != nullptr) *error = "layering present rejected primitive";
+    }
+  } catch (...) {
+    if (error != nullptr) *error = "layering paint failed (exception)";
+  }
+}
+
+void anchorSheetToImeInset(LayeringScene& scene, float insetPx) {
+  try {
+    if (!std::isfinite(insetPx)) {
+      scene.sheetY = 0.0f;
+      return;
+    }
+    if (insetPx < 0.0f) insetPx = 0.0f;
+    // Per-frame bind of the animated layout inset: sheet tracks the value
+    // exactly; fullRelayouts stays untouched (no full-tree relayout).
+    scene.sheetY = insetPx;
+  } catch (...) {
+    // Never throws across the boundary; keep last good sheetY on failure.
+  }
+}
+
 }  // namespace runtime

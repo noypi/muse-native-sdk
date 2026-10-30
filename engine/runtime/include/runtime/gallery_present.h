@@ -127,4 +127,30 @@ bool ResolveGalleryShapedRun(std::uint32_t handle,
                              std::vector<std::uint32_t>* glyphs,
                              std::vector<float>* advances);
 
+// ---- Layering page (L2: BUG-M3-FIDELITY-008 / FR-M3-010 / AC-M3-022) ----
+//
+// Hermetic layering scene for RULE-M3-006: dimmed content plus the five
+// overlay contents stacked on a single OverlayHost in submission order.
+// The CPU-mock path (paintLayeringPage) mirrors the retained geometry so
+// hermetic checks observe identical ordering and sheet placement.
+struct LayeringScene {
+  bool valid = false;
+  float sheetY = 0.0f;
+  std::uint32_t fullRelayouts = 0;
+};
+
+// Emit the layering scene through the retained path: one OverlayScrim
+// (alpha 0.25) then the five overlay contents in submission order
+// (Dialog, BottomSheet, Menu, SnackbarHost, Tooltip). Later submissions
+// draw above earlier ones. Invalid scene (valid == false) is a no-paint
+// with a non-blank diagnostic, never a crash; error == nullptr tolerated.
+void paintLayeringPage(const LayeringScene& scene, Renderer& renderer,
+                       Swapchain& target, std::string* error);
+
+// Bind the sheet Y to the animated layout inset (FR-LAYOUT-012) per frame.
+// Consumes the inset value in place (no one-off copy, no full-tree
+// relayout: fullRelayouts untouched). Non-finite inset resolves to 0.
+// Never throws.
+void anchorSheetToImeInset(LayeringScene& scene, float insetPx);
+
 }  // namespace runtime
