@@ -22,8 +22,6 @@ struct Host {
   bool surface_live = false;
   std::size_t tree_nodes = 0;
   bool backgrounded = false;
-  int button_fire_count = 0;
-  float list_scroll_offset = 0.0f;
 };
 
 // Create gives a live surface and a non-empty tree.
@@ -39,8 +37,6 @@ inline void destroy_host(Host& h) {
   h.surface_live = false;
   h.tree_nodes = 0;
   h.backgrounded = false;
-  h.button_fire_count = 0;
-  h.list_scroll_offset = 0.0f;
 }
 
 inline bool surface_alive(const Host& h) { return h.surface_live; }

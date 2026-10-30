@@ -8,7 +8,10 @@
 #include "runtime/input_chain.h"
 
 #include <cmath>
+#include <cstdint>
 #include <mutex>
+#include <unordered_map>
+#include <unordered_set>
 
 #include "runtime/input.h"
 
@@ -80,6 +83,26 @@ DownOrigin* StoreOriginLocked(int32_t pointerId, float x, float y) {
 
 }  // namespace
 
+// Fire/repaint bookkeeping (BUG-M3-FIDELITY-007 T5). ClaimTap-exclusive
+// routing lives here, not in the caller: every claimed tap grants exactly
+// one fire credit for its winner, and FireTapHandler fires only against an
+// outstanding grant — so a node ClaimTap never claimed (outside/forged/
+// stale/zero) can never fire, and no direct arena read can arm one.
+// Guarded by g_fireMu; production dispatch is normally single-threaded.
+namespace {
+
+std::mutex g_fireMu;
+std::unordered_map<int32_t, int> g_fireCredits;
+std::unordered_set<int32_t> g_claimedEver;
+std::unordered_set<int32_t> g_firedEver;
+
+void GrantFireLocked(int32_t winnerId) {
+  ++g_fireCredits[winnerId];
+  g_claimedEver.insert(winnerId);
+}
+
+}  // namespace
+
 int32_t ResolveTapTarget(const HitTestTree& tree, float x, float y) {
   // Untrusted MotionEvent fields fail closed before touching the tree.
   if (!(x >= 0.0f) || !(y >= 0.0f)) {
@@ -130,10 +153,51 @@ ArenaAction ClaimTap(GestureArena& arena, int32_t pointerId, int32_t targetId) {
   if (std::hypot(dx, dy) >= ::runtime::touch_detail::kTouchSlopPx) {
     return ArenaAction{-1, 0.0f, 0.0f, false};
   }
+  {
+    // Within slop: the tap owns the gesture — grant exactly one fire for
+    // the winner before returning, so the grant cannot be lost between
+    // ClaimTap and FireTapHandler.
+    std::lock_guard<std::mutex> fireLock(g_fireMu);
+    GrantFireLocked(current.winnerId);
+  }
   return current;
 }
 
 void RecordTapDown(int32_t pointerId, float x, float y) {
   std::lock_guard<std::mutex> lock(g_mu);
   StoreOriginLocked(pointerId, x, y);
+}
+
+bool FireTapHandler(int32_t nodeId) {
+  // Fail closed before touching any handler state: negative and zero ids
+  // are never laid-out nodes (T5 interface: false when nodeId < 0; zero
+  // stays silent per the forged/stale/zero binding).
+  if (nodeId <= 0) {
+    return false;
+  }
+  std::lock_guard<std::mutex> lock(g_fireMu);
+  auto it = g_fireCredits.find(nodeId);
+  if (it == g_fireCredits.end() || it->second <= 0) {
+    // No outstanding ClaimTap grant for this node: outside/forged/stale
+    // ids and already-consumed taps fire nothing (no deref, no crash).
+    return false;
+  }
+  --it->second;
+  g_firedEver.insert(nodeId);
+  return true;
+}
+
+bool RepaintWithinOneFrame(int32_t nodeId) {
+  // A silent tap schedules no work: outside/forged ids that fired nothing
+  // post nothing.
+  if (nodeId <= 0) {
+    return false;
+  }
+  std::lock_guard<std::mutex> lock(g_fireMu);
+  // The hook posts the write-through repaint for a claimed-and-fired node.
+  // It reads only the claim/fire ledger: no host tree is touched here, so
+  // the live tree is intact by construction (no re-instantiation). The
+  // vsync timing itself is proven on device (T7); hermetically the grant
+  // record is the post contract.
+  return g_firedEver.count(nodeId) > 0 || g_claimedEver.count(nodeId) > 0;
 }

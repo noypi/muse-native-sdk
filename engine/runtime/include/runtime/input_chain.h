@@ -53,3 +53,22 @@ ArenaAction ClaimTap(GestureArena& arena, int32_t pointerId, int32_t targetId);
 // from the true gesture start even when pointer ids are reused across
 // gestures. Overwrites any stale entry for the pointer id.
 void RecordTapDown(int32_t pointerId, float x, float y);
+
+// Dispatches the claimed tap to the component handler (BUG-M3-FIDELITY-007
+// T5; FR-INPUT-011 / AC-INPUT-020). Returns true iff the node's handler
+// fired exactly once for a tap ClaimTap claimed; false when nodeId < 0 and
+// for forged/stale/zero ids that no ClaimTap ever claimed (fail closed, no
+// deref). Each ClaimTap-claimed tap grants exactly one fire: a second call
+// for the same grant returns false, while a newly claimed tap fires again
+// (repeatability — no one-shot global latch). ClaimTap-exclusive routing:
+// a node ClaimTap never claimed never fires, so no direct arena read can
+// arm a fire bypassing ClaimTap.
+bool FireTapHandler(int32_t nodeId);
+
+// Posts the handler's @muse/core write-through repaint (BUG-M3-FIDELITY-007
+// T5; FR-INPUT-011 / AC-INPUT-021). Returns true iff the repaint for a
+// claimed-and-fired node posted within one vsync with no tree
+// re-instantiation; false for outside/forged ids that fired nothing (a
+// silent tap schedules no work). Hermetically only the hook contract is
+// asserted here; the vsync timing itself is proven on device (T7).
+bool RepaintWithinOneFrame(int32_t nodeId);

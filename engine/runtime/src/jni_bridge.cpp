@@ -11,9 +11,15 @@
 #include <cstring>
 #include <mutex>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 #include "runtime/gallery_present.h"
+#include "runtime/input_chain.h"
+
+#include "gesture_arena.h"
+#include "hit_test.h"
+#include "input/event_model.h"
 
 #ifdef __ANDROID__
 #include <android/log.h>
@@ -209,15 +215,46 @@ struct GalleryHandle {
   std::string parseError;
   bool parsed = false;
   int page = 0;
+  // Device tap chain state (BUG-M3-FIDELITY-007 T5): layout-bounds hit-test
+  // tree plus the gesture arena the valid-env dispatch body drives. The
+  // tree is populated from the layout engine's laid-out bounds; until then
+  // it is empty and every tap resolves -1 (fail closed, never a phantom
+  // node). Guarded by mu like the rest of the handle.
+  HitTestTree tapTree;
+  GestureArena tapArena;
 #ifdef __ANDROID__
   ANativeWindow* window = nullptr;
 #endif
   std::mutex mu;
 };
 
+// Validated handle registry (cleared-review SECURITY MEDIUM, binding a):
+// the raw jlong slot is never cast-and-dereferenced blindly. Only handles
+// created by nativeLoadTree and still live resolve; forged/stale/zero
+// handles fail closed (nullptr → -1/no-op, no deref). Unregister happens
+// exactly once in nativeDestroy, which also zeroes the Java-side slot
+// (MainActivity.onDestroy sets engineHandle = 0 after the call).
+std::mutex g_handleRegistryMu;
+std::unordered_set<GalleryHandle*> g_liveHandles;
+
+void RegisterHandle(GalleryHandle* g) {
+  if (g == nullptr) return;
+  std::lock_guard<std::mutex> lock(g_handleRegistryMu);
+  g_liveHandles.insert(g);
+}
+
+void UnregisterHandle(GalleryHandle* g) {
+  if (g == nullptr) return;
+  std::lock_guard<std::mutex> lock(g_handleRegistryMu);
+  g_liveHandles.erase(g);
+}
+
 GalleryHandle* ToGallery(jlong handle) {
   if (handle == 0) return nullptr;
-  return reinterpret_cast<GalleryHandle*>(static_cast<intptr_t>(handle));
+  GalleryHandle* g =
+      reinterpret_cast<GalleryHandle*>(static_cast<intptr_t>(handle));
+  std::lock_guard<std::mutex> lock(g_handleRegistryMu);
+  return g_liveHandles.count(g) > 0 ? g : nullptr;
 }
 
 #ifdef __ANDROID__
@@ -317,6 +354,7 @@ extern "C" MUSE_JNI_EXPORT jlong Java_com_muse_host_MainActivity_nativeLoadTree(
     g->rows = ::runtime::ParseGalleryRows(g->tree.data(), g->tree.size(),
                                           &g->parseError);
     g->parsed = true;
+    RegisterHandle(g);
 #ifdef __ANDROID__
     char msg[192];
     std::snprintf(msg, sizeof(msg),
@@ -450,25 +488,25 @@ extern "C" MUSE_JNI_EXPORT jint Java_com_muse_host_MainActivity_nativeAdvancePag
   }
 }
 
-// JNI touch entry (BUG-M3-FIDELITY-007 T3; FR-INPUT-011 / AC-INPUT-020).
+// JNI touch entry (BUG-M3-FIDELITY-007 T3/T5; FR-INPUT-011 / AC-INPUT-020).
 // Java forwards raw MotionEvent fields (action, x, y, pointerId,
 // timestampMs); node-id resolution happens natively from laid-out bounds —
 // never a pre-decided node id from Java (plan A1). Fail-closed mirror of the
-// sibling entries: null env, pending exception, or zero handle yields -1
-// with no exception crossing into the VM. Coordinates cross raw and are only
-// trusted once the env/handle guards pass.
-// The valid-env dispatch core (hit-test/arena/handler via input_chain) and
-// the MainActivity.java onTouchEvent forwarding land with T5; until then no
-// node claims the tap and this returns -1 after logging the dispatch line
-// under the muse-host tag.
+// sibling entries: null env, pending exception, or an unregistered (zero,
+// forged, stale) handle yields -1 with no exception crossing into the VM
+// and no dereference. Coordinates cross raw and are only trusted once the
+// env/handle guards pass; ResolveTapTarget fails negative/NaN closed.
+// Valid-env dispatch core (T5): ACTION_DOWN records the down origin and adds
+// the pointer; ACTION_UP resolves the target from laid-out bounds, claims
+// via ClaimTap, and fires exactly once via FireTapHandler (ClaimTap-
+// exclusive: no direct arena read bypasses the claim). A fired tap posts
+// its write-through repaint hook and re-renders on the gallery path; the
+// one-frame vsync proof itself is device-measured (T7).
+// Returns the claimed-and-fired node id, or -1 when nothing fired.
 extern "C" MUSE_JNI_EXPORT jint Java_com_muse_host_MainActivity_nativeDispatchTouch(
     JNIEnv* env, jobject thiz, jlong handle, jint action, jfloat x, jfloat y,
     jint pointerId, jlong timestampMs) {
   (void)thiz;
-  (void)action;
-  (void)x;
-  (void)y;
-  (void)pointerId;
   (void)timestampMs;
   if (env == nullptr || env->ExceptionCheck() == JNI_TRUE) {
     return -1;
@@ -478,16 +516,60 @@ extern "C" MUSE_JNI_EXPORT jint Java_com_muse_host_MainActivity_nativeDispatchTo
     return -1;
   }
   try {
+    // MotionEvent action codes (platform constants, mirrored hermetically
+    // in jni_touch_dispatch_shape_test.cpp).
+    constexpr jint kActionDown = 0;
+    constexpr jint kActionUp = 1;
+    input::AxisState axes{};
+    axes.x = x;
+    axes.y = y;
+    axes.pressure = 1.0f;
+    const input::NormalizedEvent ev = input::NormalizeMotion(
+        pointerId, input::ToolType::Touch, 0u, axes, 0u,
+        input::SourceClass::Touch);
+    std::lock_guard<std::mutex> lock(g->mu);
+    if (action == kActionDown) {
 #ifdef __ANDROID__
-    char msg[128];
-    std::snprintf(msg, sizeof(msg),
-                  "nativeDispatchTouch: action=%d x=%.1f y=%.1f pointer=%d",
-                  static_cast<int>(action), static_cast<double>(x),
-                  static_cast<double>(y), static_cast<int>(pointerId));
-    MuseLogInfo(msg);
-#else
-    (void)g;
+      char msg[128];
+      std::snprintf(msg, sizeof(msg),
+                    "nativeDispatchTouch: action=%d x=%.1f y=%.1f pointer=%d",
+                    static_cast<int>(action), static_cast<double>(x),
+                    static_cast<double>(y), static_cast<int>(pointerId));
+      MuseLogInfo(msg);
 #endif
+      RecordTapDown(pointerId, x, y);
+      g->tapArena.AddPointer(ev, g->tapTree);
+      return -1;
+    }
+    if (action == kActionUp) {
+      const int32_t target = ResolveTapTarget(g->tapTree, x, y);
+      if (target < 0) {
+        return -1;
+      }
+      const ArenaAction claim = ClaimTap(g->tapArena, pointerId, target);
+      if (!claim.claimed) {
+        return -1;
+      }
+      if (!FireTapHandler(target)) {
+        return -1;
+      }
+      const bool posted = RepaintWithinOneFrame(target);
+      (void)posted;
+#ifdef __ANDROID__
+      RenderLocked(g);
+      {
+        char msg[128];
+        std::snprintf(msg, sizeof(msg),
+                      "nativeDispatchTouch: tap fired node=%d repaint=%d",
+                      static_cast<int>(target), posted ? 1 : 0);
+        MuseLogInfo(msg);
+      }
+#endif
+      return static_cast<jint>(target);
+    }
+    // MOVE and other actions: keep the arena displacement current so the
+    // UP slop verdict measures the full gesture; never fires.
+    g->tapArena.AddPointer(ev, g->tapTree);
     return -1;
   } catch (...) {
     if (env->ExceptionCheck() == JNI_TRUE) {
@@ -532,6 +614,10 @@ extern "C" MUSE_JNI_EXPORT void Java_com_muse_host_MainActivity_nativeDestroy(
   }
   GalleryHandle* g = ToGallery(handle);
   if (g == nullptr) return;
+  // Single unregistration: the handle leaves the live registry here, so any
+  // stale slot reuse after destroy fails closed in ToGallery (no deref).
+  // The Java side zeroes its slot after this call (engineHandle = 0).
+  UnregisterHandle(g);
   try {
 #ifdef __ANDROID__
     std::lock_guard<std::mutex> lock(g->mu);

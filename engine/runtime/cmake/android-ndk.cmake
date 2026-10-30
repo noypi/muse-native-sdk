@@ -77,6 +77,12 @@ else()
         src/vulkan_baseline.cpp
         src/renderer.cpp
         src/jni_bridge.cpp
+        src/input_chain.cpp
+        src/gallery_present.cpp
+        src/presenter.cpp
+        ../input/src/event_model.cpp
+        ../input/src/hit_test.cpp
+        ../input/src/gesture_arena.cpp
       )
       set_target_properties(${_muse_tgt} PROPERTIES
         OUTPUT_NAME Runtime
@@ -88,6 +94,7 @@ else()
         VISIBILITY_INLINES_HIDDEN ON
       )
       target_include_directories(${_muse_tgt} PUBLIC include)
+      target_include_directories(${_muse_tgt} PRIVATE ../input/include)
       if(JNI_FOUND)
         target_include_directories(${_muse_tgt} PUBLIC ${JNI_INCLUDE_DIRS})
       endif()

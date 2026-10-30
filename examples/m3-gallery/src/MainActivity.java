@@ -7,6 +7,7 @@ import android.content.Intent;
 import android.content.IntentFilter;
 import android.os.Build;
 import android.os.Bundle;
+import android.view.MotionEvent;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
 import java.io.ByteArrayOutputStream;
@@ -54,6 +55,16 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     /** Advance one gallery page and render it. Returns the new page index. */
     private static native int nativeAdvancePage(long handle);
 
+    /**
+     * Dispatch a raw touch event to the native tap chain (Option A input
+     * entry, BUG-M3-FIDELITY-007). Forwards raw MotionEvent fields only —
+     * never a pre-decided node id; the node resolves natively from
+     * laid-out bounds. Returns the claimed-and-fired node id, or -1 when
+     * the gesture fired nothing (outside, drag, unclaimed).
+     */
+    private static native int nativeDispatchTouch(
+            long handle, int action, float x, float y, int pointerId, long timestampMs);
+
     /** Release the attached surface without destroying the handle. */
     private static native void nativeDetachSurface(long handle);
 
@@ -65,13 +76,34 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         super.onCreate(savedInstanceState);
         SurfaceView surfaceView = new SurfaceView(this);
         surfaceView.getHolder().addCallback(this);
-        // Tap anywhere to page through the gallery (host input entry; all
-        // pixels are still drawn natively, never a View).
-        surfaceView.setOnClickListener(v -> {
-            if (engineHandle != 0) {
-                nativeAdvancePage(engineHandle);
+        // Tap routing (BUG-M3-FIDELITY-007 disposition): every touch goes to
+        // the native tap chain first with raw MotionEvent fields. The old
+        // `setOnClickListener -> nativeAdvancePage` page-flip is gone as a
+        // tap handler — a tap that claims a button fires the button only and
+        // never turns the page. Page advance survives solely as the
+        // no-claim fallback below (dispatch returned -1: outside every
+        // button, or a drag the arena did not claim as a tap), so a tap
+        // cannot both fire and flip.
+        surfaceView.setOnTouchListener((v, event) -> {
+            if (engineHandle == 0) {
+                return false;
+            }
+            int action = event.getActionMasked();
+            int index = event.getActionIndex();
+            int claimed = nativeDispatchTouch(
+                    engineHandle,
+                    action,
+                    event.getX(index),
+                    event.getY(index),
+                    event.getPointerId(index),
+                    event.getEventTime());
+            if (action == MotionEvent.ACTION_UP) {
+                if (claimed < 0) {
+                    nativeAdvancePage(engineHandle);
+                }
                 nativeRenderFrame(engineHandle);
             }
+            return true;
         });
         setContentView(surfaceView);
         byte[] treeBytes = readTreeAsset();

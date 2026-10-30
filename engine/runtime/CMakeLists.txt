@@ -27,6 +27,16 @@ target_include_directories(runtime PUBLIC include)
 target_include_directories(runtime PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../input/include)
 target_compile_options(runtime PRIVATE -Wall -Wextra -Wpedantic)
 
+# BUG-M3-FIDELITY-007 T5: the valid-env touch dispatch body in jni_bridge.cpp
+# drives ResolveTapTarget/ClaimTap/FireTapHandler (input_chain.cpp) over the
+# consume-only engine/input units, so their TUs compile into the static
+# runtime (engine/input itself is untouched — consumed, never modified).
+target_sources(runtime PRIVATE
+  ../input/src/event_model.cpp
+  ../input/src/hit_test.cpp
+  ../input/src/gesture_arena.cpp
+)
+
 # T4 pacing link fix (Android-configured static lane): under the Android
 # toolchain __ANDROID__ is defined, so presenter.cpp's device lane calls
 # pacing::selectIntendedFrameRate/tryQueueFrame and every hermetic test
@@ -78,6 +88,9 @@ if(DEFINED ANDROID_ABI AND NOT TARGET Runtime)
     src/input_chain.cpp
     src/gallery_present.cpp
     src/presenter.cpp
+    ../input/src/event_model.cpp
+    ../input/src/hit_test.cpp
+    ../input/src/gesture_arena.cpp
     ../graphics/pacing/frame_rate.cc
     ../graphics/pacing/render_ahead.cc
   )
@@ -201,9 +214,18 @@ target_compile_options(host_lifecycle_test PRIVATE -Wall -Wextra -Wpedantic)
 add_test(NAME host_lifecycle_test COMMAND host_lifecycle_test)
 
 add_executable(touch_dispatch_test tests/touch_dispatch_test.cpp)
-target_link_libraries(touch_dispatch_test PRIVATE runtime)
+target_include_directories(touch_dispatch_test PRIVATE ../input/include)
+target_link_libraries(touch_dispatch_test PRIVATE runtime muse_input_units)
 target_compile_options(touch_dispatch_test PRIVATE -Wall -Wextra -Wpedantic)
 add_test(NAME touch_dispatch_test COMMAND touch_dispatch_test)
+
+# BUG-M3-FIDELITY-007 batch 3 (T5): component-handler dispatch +
+# write-through one-frame repaint halves of the device tap chain.
+add_executable(tap_handler_repaint_test tests/tap_handler_repaint_test.cpp)
+target_include_directories(tap_handler_repaint_test PRIVATE ../input/include)
+target_link_libraries(tap_handler_repaint_test PRIVATE runtime muse_input_units)
+target_compile_options(tap_handler_repaint_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME tap_handler_repaint_test COMMAND tap_handler_repaint_test)
 
 add_executable(config_change_test tests/config_change_test.cpp)
 target_link_libraries(config_change_test PRIVATE runtime)
