@@ -20,6 +20,7 @@
 #include <cstring>
 
 #include "runtime/layout.h"
+#include "runtime/renderer.h"
 #include "runtime/tree.h"
 
 namespace runtime {
@@ -48,7 +49,7 @@ bool ReadEnvelope(const void* data, std::size_t len, const char*& json,
                            (static_cast<std::uint32_t>(b[9]) << 8) |
                            (static_cast<std::uint32_t>(b[10]) << 16) |
                            (static_cast<std::uint32_t>(b[11]) << 24);
-  if (declared == 0 || 12u + declared > len) {
+  if (declared == 0 || static_cast<std::uint64_t>(declared) + 12 > len) {
     if (error != nullptr) *error = "envelope length out of range";
     return false;
   }
@@ -1555,6 +1556,262 @@ int RasterGalleryPage(const std::vector<GalleryRow>& rows, int page,
   } catch (...) {
     if (error != nullptr) *error = "raster failed (exception)";
     return 0;
+  }
+}
+
+// ---- Retained present path (T9: FR-GRAPHICS-010 / AC-GRAPHICS-030) ----
+// Fixed present viewport: matches the RasterGalleryPage reference geometry
+// (720x1600) so retained DrawCmd bounds diff against the CPU oracle 1:1.
+// The virtual canvas stacks every page at pageIndex * kPresentH; golden
+// tooling slices it back into per-page PNGs.
+constexpr int kPresentW = 720;
+constexpr int kPresentH = 1600;
+constexpr std::uint32_t kShadowBlack = RGBA(0x00, 0x00, 0x00, 0xFF);
+
+// Content-kind assignment per component family. Every family maps to a
+// distinct retained kind so the per-page goldens exercise the whole T2-T8
+// vocabulary; unknown components fall back to a tonal Rect (never blank).
+PrimitiveKind FamilyKind(const std::string& comp) {
+  if (comp == "Button" || comp == "ExtendedFab" || comp == "Chip" ||
+      comp == "Checkbox" || comp == "Switch" || comp == "Slider" ||
+      comp == "LinearProgress") {
+    return PrimitiveKind::StateLayer;
+  }
+  if (comp == "IconButton" || comp == "Fab") return PrimitiveKind::Ripple;
+  if (comp == "Dialog" || comp == "Menu" || comp == "Tooltip") {
+    return PrimitiveKind::OverlayScrim;
+  }
+  if (comp == "Icon" || comp == "Avatar" || comp == "Image") {
+    return PrimitiveKind::VectorIcon;
+  }
+  if (comp == "CircularProgress" || comp == "Radio" || comp == "Badge") {
+    return PrimitiveKind::CircleArc;
+  }
+  if (comp == "TextFieldEditCore" || comp == "TextInput" ||
+      comp == "SearchBar" || comp == "Carousel") {
+    return PrimitiveKind::Image;
+  }
+  if (comp == "Card" || comp == "Divider" || comp == "BottomSheet" ||
+      comp == "NavigationBar" || comp == "SegmentedButton" ||
+      comp == "ButtonGroup" || comp == "SplitButton" ||
+      comp == "NavigationRail" || comp == "NavigationDrawer" ||
+      comp == "BottomAppBar" || comp == "SnackbarHost") {
+    return PrimitiveKind::Rect;
+  }
+  return PrimitiveKind::ShapedText;
+}
+
+// One accent content cmd for a component row: centered control rect with
+// theme payload colors. nodeId (== rowIndex + 1, never the 0 sentinel) is
+// the row key golden tooling uses to resolve label strings.
+void EmitFamilyCmd(const GalleryRow& /*row*/, PrimitiveKind kind, int bx,
+                   int by, int bw, int bh, std::uint32_t node,
+                   std::vector<DrawCmd>& out) {
+  int cx = bx + bw / 2;
+  int cw = bw - 96;
+  if (cw > 320) cw = 320;
+  if (cw < 64) cw = 64;
+  int ch = bh - 56;
+  if (ch > 56) ch = 56;
+  if (ch < 24) ch = 24;
+  int x0 = cx - cw / 2;
+  int y0 = by + 12;
+  DrawCmd cmd;
+  cmd.kind = kind;
+  cmd.nodeId = node;
+  switch (kind) {
+    case PrimitiveKind::StateLayer:
+      cmd.bounds = {static_cast<float>(x0), static_cast<float>(y0),
+                    static_cast<float>(cw), static_cast<float>(ch)};
+      cmd.radius = static_cast<float>(ch) / 2.0f;
+      cmd.payload.stateColor = kLightPrimary;
+      cmd.payload.stateOpacity = 0.9f;
+      break;
+    case PrimitiveKind::Ripple: {
+      int s = ch < cw ? ch : cw;
+      cmd.bounds = {static_cast<float>(cx - s / 2),
+                    static_cast<float>(y0 + ch / 2 - s / 2),
+                    static_cast<float>(s), static_cast<float>(s)};
+      cmd.payload.rippleBounds = cmd.bounds;
+      cmd.payload.rippleProgress = 0.5f;
+      cmd.payload.rippleColor = kLightPrimary;
+      break;
+    }
+    case PrimitiveKind::OverlayScrim:
+      cmd.bounds = {static_cast<float>(bx + 8), static_cast<float>(by + 8),
+                    static_cast<float>(bw - 16),
+                    static_cast<float>(bh - 52)};
+      cmd.payload.scrimColor = kLightInverseSurface;
+      cmd.payload.scrimAlpha = 0.25f;
+      break;
+    case PrimitiveKind::VectorIcon:
+      cmd.bounds = {static_cast<float>(cx - 72), static_cast<float>(y0),
+                    48.0f, 48.0f};
+      cmd.payload.assetId = node;
+      cmd.payload.tintColor = kLightOnPrimaryContainer;
+      break;
+    case PrimitiveKind::CircleArc: {
+      int s = ch < 60 ? ch : 60;
+      cmd.bounds = {static_cast<float>(cx - s / 2),
+                    static_cast<float>(y0 + ch / 2 - s / 2),
+                    static_cast<float>(s), static_cast<float>(s)};
+      cmd.payload.arcStartDeg = 0.0f;
+      cmd.payload.arcSweepDeg = 270.0f;
+      cmd.payload.strokeWidth = 8.0f;
+      cmd.payload.arcColor = kLightPrimary;
+      break;
+    }
+    case PrimitiveKind::Image:
+      cmd.bounds = {static_cast<float>(x0), static_cast<float>(y0),
+                    static_cast<float>(cw), static_cast<float>(ch)};
+      cmd.radius = 16.0f;
+      break;
+    case PrimitiveKind::Rect:
+      cmd.bounds = {static_cast<float>(bx + 32), static_cast<float>(y0 + 8),
+                    static_cast<float>(bw - 64),
+                    static_cast<float>(ch - 16)};
+      break;
+    case PrimitiveKind::ShapedText:
+    default:
+      cmd.kind = PrimitiveKind::ShapedText;
+      cmd.bounds = {static_cast<float>(bx + 40), static_cast<float>(y0 + 4),
+                    static_cast<float>(bw - 80), 28.0f};
+      cmd.payload.glyphRunId = node;
+      cmd.payload.textColor = kLightOnSurface;
+      break;
+  }
+  out.push_back(cmd);
+}
+
+// Caption strip cmd shared by component and text rows (golden tooling
+// resolves ShortCaption(row) via nodeId and paints it with DrawText).
+void EmitCaptionCmd(int bx, int by, int bw, int bh, std::uint32_t node,
+                    std::vector<DrawCmd>& out) {
+  DrawCmd cmd;
+  cmd.kind = PrimitiveKind::Text;
+  cmd.bounds = {static_cast<float>(bx + 16),
+                static_cast<float>(by + bh - 14 - kScale * 7),
+                static_cast<float>(bw - 32), 14.0f};
+  cmd.nodeId = node;
+  cmd.payload.glyphRunId = node;
+  cmd.payload.textColor = kLightOnSurfaceVariant;
+  out.push_back(cmd);
+}
+
+void EmitComponentRowCmds(const GalleryRow& row, int bx, int by, int bw,
+                          int bh, std::uint32_t node,
+                          std::vector<DrawCmd>& out) {
+  DrawCmd shadow;
+  shadow.kind = PrimitiveKind::ElevationShadow;
+  shadow.bounds = {static_cast<float>(bx), static_cast<float>(by),
+                   static_cast<float>(bw), static_cast<float>(bh)};
+  shadow.radius = 20.0f;
+  shadow.nodeId = node;
+  shadow.payload.elevationDp = 2.0f;
+  shadow.payload.shadowBlur = 4.0f;
+  shadow.payload.shadowColor = kShadowBlack;
+  out.push_back(shadow);
+  DrawCmd card;
+  card.kind = PrimitiveKind::RoundedRect;
+  card.bounds = shadow.bounds;
+  card.radius = 20.0f;
+  card.nodeId = node;
+  out.push_back(card);
+  EmitFamilyCmd(row, FamilyKind(row.comp), bx, by, bw, bh, node, out);
+  EmitCaptionCmd(bx, by, bw, bh, node, out);
+}
+
+void EmitTextRowCmds(const GalleryRow& row, int bx, int by, int bw, int bh,
+                     std::uint32_t node, std::vector<DrawCmd>& out) {
+  (void)row;
+  DrawCmd band;
+  band.kind = PrimitiveKind::RoundedRect;
+  band.bounds = {static_cast<float>(bx), static_cast<float>(by),
+                 static_cast<float>(bw), static_cast<float>(bh)};
+  band.radius = 18.0f;
+  band.nodeId = node;
+  out.push_back(band);
+  EmitCaptionCmd(bx, by, bw, bh, node, out);
+}
+
+bool PresentGallery(const void* mui1Data, std::size_t len, Renderer& renderer,
+                    Swapchain& target, std::string* error) {
+  try {
+    std::string parseError;
+    std::vector<GalleryRow> rows =
+        ParseGalleryRows(mui1Data, len, &parseError);
+    if (rows.empty()) {
+      if (error != nullptr) {
+        *error = parseError.empty()
+                     ? "Showcase root produced no gallery rows"
+                     : parseError;
+      }
+      return false;
+    }
+    // Page packing mirrors RasterGalleryPage (same RowHeight/PageStarts
+    // metrics); each page lands at pageIndex * kPresentH in the virtual
+    // canvas so per-page goldens slice back out exactly.
+    std::vector<DrawCmd> cmds;
+    cmds.reserve(rows.size() * 4 + 2);
+    std::vector<int> starts = PageStarts(rows, kPresentH);
+    int pages = static_cast<int>(starts.size()) - 1;
+    if (pages < 1) {
+      pages = 1;
+      starts = {0, static_cast<int>(rows.size())};
+    }
+    for (int p = 0; p < pages; ++p) {
+      float yOff = static_cast<float>(p * kPresentH);
+      DrawCmd title;
+      title.kind = PrimitiveKind::Rect;
+      title.bounds = {0.0f, yOff, static_cast<float>(kPresentW),
+                      static_cast<float>(kHeaderH)};
+      title.nodeId = static_cast<std::uint32_t>(900000 + p * 2);
+      cmds.push_back(title);
+      DrawCmd footer;
+      footer.kind = PrimitiveKind::Rect;
+      footer.bounds = {0.0f, yOff + kPresentH - kFooterH,
+                       static_cast<float>(kPresentW),
+                       static_cast<float>(kFooterH)};
+      footer.nodeId = static_cast<std::uint32_t>(900000 + p * 2 + 1);
+      cmds.push_back(footer);
+      int start = starts[static_cast<std::size_t>(p)];
+      int end = starts[static_cast<std::size_t>(p + 1)];
+      float cursor = static_cast<float>(kPad);
+      for (int i = start; i < end; ++i) {
+        const GalleryRow& row = rows[static_cast<std::size_t>(i)];
+        int rh = RowHeight(row);
+        int bx = kPad;
+        int bw = kPresentW - 2 * kPad;
+        int by = static_cast<int>(cursor) + kHeaderH +
+                 static_cast<int>(yOff);
+        std::uint32_t node = static_cast<std::uint32_t>(i + 1);
+        if (row.comp.empty()) {
+          EmitTextRowCmds(row, bx, by, bw, rh, node, cmds);
+        } else {
+          EmitComponentRowCmds(row, bx, by, bw, rh, node, cmds);
+        }
+        cursor += static_cast<float>(rh + kGap);
+      }
+    }
+    DrawError derr = renderer.draw(cmds, target);
+    if (derr != DrawError::None) {
+      if (error != nullptr) {
+        if (derr == DrawError::UnsupportedBaseline) {
+          if (renderer.lastError().empty()) {
+            *error = "unsupported baseline: retained present refused";
+          } else {
+            *error = renderer.lastError();
+          }
+        } else {
+          *error = "retained present rejected primitive";
+        }
+      }
+      return false;
+    }
+    return true;
+  } catch (...) {
+    if (error != nullptr) *error = "present failed (exception)";
+    return false;
   }
 }
 
