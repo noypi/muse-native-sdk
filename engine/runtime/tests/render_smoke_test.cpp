@@ -296,6 +296,128 @@ static bool check_unknown_kind_among_new_vocabulary_fail_closed() {
   return sawOk;
 }
 
+// T3: Ripple renders bounded wash at progress — recorded cmd keeps
+// rippleBounds/rippleProgress/rippleColor; draw returns None.
+static bool check_ripple_records_bounded_wash_at_progress() {
+  runtime::Renderer renderer(baseline_device());
+  FakeSwapchain target;
+  runtime::DrawCmd cmd = make_cmd(runtime::PrimitiveKind::Ripple, 1.0f, 101);
+  cmd.bounds = {0.0f, 0.0f, 48.0f, 48.0f};
+  cmd.payload.rippleBounds = {8.0f, 8.0f, 32.0f, 32.0f};
+  cmd.payload.rippleProgress = 0.5f;
+  cmd.payload.rippleColor = 0xFF998877u;
+  if (renderer.draw({cmd}, target) != runtime::DrawError::None) return false;
+  if (target.captured.size() != 1) return false;
+  const runtime::DrawCmd& recorded = target.captured[0];
+  if (recorded.kind != runtime::PrimitiveKind::Ripple) return false;
+  if (recorded.nodeId != 101) return false;
+  if (recorded.payload.rippleProgress != 0.5f) return false;
+  if (recorded.payload.rippleColor != 0xFF998877u) return false;
+  return recorded.payload.rippleBounds.x == 8.0f &&
+         recorded.payload.rippleBounds.y == 8.0f &&
+         recorded.payload.rippleBounds.w == 32.0f &&
+         recorded.payload.rippleBounds.h == 32.0f;
+}
+
+// T3 boundary: Ripple progress edges 0.0/1.0 round-trip exactly.
+static bool check_ripple_progress_edges_zero_and_one() {
+  runtime::Renderer renderer(baseline_device());
+  FakeSwapchain target;
+  runtime::DrawCmd zero = make_cmd(runtime::PrimitiveKind::Ripple, 1.0f, 102);
+  zero.payload.rippleBounds = {0.0f, 0.0f, 16.0f, 16.0f};
+  zero.payload.rippleProgress = 0.0f;
+  zero.payload.rippleColor = 0xFF0000FFu;
+  runtime::DrawCmd one = make_cmd(runtime::PrimitiveKind::Ripple, 1.0f, 103);
+  one.payload.rippleBounds = {0.0f, 0.0f, 16.0f, 16.0f};
+  one.payload.rippleProgress = 1.0f;
+  one.payload.rippleColor = 0xFF0000FFu;
+  if (renderer.draw({zero, one}, target) != runtime::DrawError::None) {
+    return false;
+  }
+  if (target.captured.size() != 2) return false;
+  return target.captured[0].payload.rippleProgress == 0.0f &&
+         target.captured[1].payload.rippleProgress == 1.0f;
+}
+
+// T4: ElevationShadow renders blurred rounded shadow of bounds/radius —
+// recorded cmd keeps elevationDp/shadowBlur/shadowColor; draw None.
+static bool check_elevationshadow_records_blur_of_bounds() {
+  runtime::Renderer renderer(baseline_device());
+  FakeSwapchain target;
+  runtime::DrawCmd cmd =
+      make_cmd(runtime::PrimitiveKind::ElevationShadow, 1.0f, 111);
+  cmd.bounds = {4.0f, 4.0f, 120.0f, 40.0f};
+  cmd.radius = 12.0f;
+  cmd.payload.elevationDp = 8.0f;
+  cmd.payload.shadowBlur = 6.0f;
+  cmd.payload.shadowColor = 0xFF334455u;
+  if (renderer.draw({cmd}, target) != runtime::DrawError::None) return false;
+  if (target.captured.size() != 1) return false;
+  const runtime::DrawCmd& recorded = target.captured[0];
+  if (recorded.kind != runtime::PrimitiveKind::ElevationShadow) return false;
+  if (recorded.nodeId != 111) return false;
+  if (recorded.bounds.w != 120.0f || recorded.bounds.h != 40.0f) return false;
+  if (recorded.radius != 12.0f) return false;
+  return recorded.payload.elevationDp == 8.0f &&
+         recorded.payload.shadowBlur == 6.0f &&
+         recorded.payload.shadowColor == 0xFF334455u;
+}
+
+// T4 boundary: zero elevation renders no shadow but still submits with
+// DrawError::None.
+static bool check_elevationshadow_zero_elevation_still_none() {
+  runtime::Renderer renderer(baseline_device());
+  FakeSwapchain target;
+  runtime::DrawCmd cmd =
+      make_cmd(runtime::PrimitiveKind::ElevationShadow, 1.0f, 112);
+  cmd.payload.elevationDp = 0.0f;
+  cmd.payload.shadowBlur = 0.0f;
+  cmd.payload.shadowColor = 0xFF000000u;
+  if (renderer.draw({cmd}, target) != runtime::DrawError::None) return false;
+  if (target.captured.size() != 1) return false;
+  return target.captured[0].payload.elevationDp == 0.0f;
+}
+
+// T5: CircleArc renders ring/arc in bounds — recorded cmd keeps
+// arcStartDeg/arcSweepDeg/strokeWidth/arcColor; draw None.
+static bool check_circlearc_records_arc_in_bounds() {
+  runtime::Renderer renderer(baseline_device());
+  FakeSwapchain target;
+  runtime::DrawCmd cmd =
+      make_cmd(runtime::PrimitiveKind::CircleArc, 1.0f, 121);
+  cmd.bounds = {0.0f, 0.0f, 40.0f, 40.0f};
+  cmd.payload.arcStartDeg = 90.0f;
+  cmd.payload.arcSweepDeg = 180.0f;
+  cmd.payload.strokeWidth = 4.0f;
+  cmd.payload.arcColor = 0xFF667788u;
+  if (renderer.draw({cmd}, target) != runtime::DrawError::None) return false;
+  if (target.captured.size() != 1) return false;
+  const runtime::DrawCmd& recorded = target.captured[0];
+  if (recorded.kind != runtime::PrimitiveKind::CircleArc) return false;
+  if (recorded.nodeId != 121) return false;
+  return recorded.payload.arcStartDeg == 90.0f &&
+         recorded.payload.arcSweepDeg == 180.0f &&
+         recorded.payload.strokeWidth == 4.0f &&
+         recorded.payload.arcColor == 0xFF667788u;
+}
+
+// T5 boundary: full 360 sweep yields closed ring — recorded exactly,
+// draw None.
+static bool check_circlearc_full_360_sweep_closed_ring() {
+  runtime::Renderer renderer(baseline_device());
+  FakeSwapchain target;
+  runtime::DrawCmd cmd =
+      make_cmd(runtime::PrimitiveKind::CircleArc, 1.0f, 122);
+  cmd.bounds = {0.0f, 0.0f, 40.0f, 40.0f};
+  cmd.payload.arcStartDeg = 0.0f;
+  cmd.payload.arcSweepDeg = 360.0f;
+  cmd.payload.strokeWidth = 4.0f;
+  cmd.payload.arcColor = 0xFF112233u;
+  if (renderer.draw({cmd}, target) != runtime::DrawError::None) return false;
+  if (target.captured.size() != 1) return false;
+  return target.captured[0].payload.arcSweepDeg == 360.0f;
+}
+
 #define RUN_CASE(name)                           \
   do {                                           \
     if (!(name)()) {                             \
@@ -312,6 +434,12 @@ int main() {
   RUN_CASE(check_payload_copyable_cmd_copy_preserves);
   RUN_CASE(check_statelayer_records_tint_at_bounds);
   RUN_CASE(check_statelayer_opacity_edges_zero_and_one);
+  RUN_CASE(check_ripple_records_bounded_wash_at_progress);
+  RUN_CASE(check_ripple_progress_edges_zero_and_one);
+  RUN_CASE(check_elevationshadow_records_blur_of_bounds);
+  RUN_CASE(check_elevationshadow_zero_elevation_still_none);
+  RUN_CASE(check_circlearc_records_arc_in_bounds);
+  RUN_CASE(check_circlearc_full_360_sweep_closed_ring);
   RUN_CASE(check_each_primitive_kind_draws);
   RUN_CASE(check_per_node_opacity_recorded);
   RUN_CASE(check_opacity_edges_zero_and_one);
