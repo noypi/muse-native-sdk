@@ -32,14 +32,20 @@ int32_t ResolveTapTarget(const HitTestTree& tree, float x, float y);
 // Offset bookkeeping: the consume-only arena keeps only the latest absolute
 // position per pointer, so the down origin is tracked here in a bounded
 // per-pointer table (GestureArena-sized: 32 slots, oldest evicted). The
-// table is seeded two ways:
-//   1. Production: T5 calls RecordTapDown at ACTION_DOWN, which (over)-
-//      writes the origin for that pointer id.
-//   2. Tests: contract cases drive AddPointer directly with no down call, so
-//      the first ClaimTap sighting of an unrecorded pointer seeds the origin
-//      from the arena's current position and returns the arena's claim.
-// There is deliberately no multi-pointer winner-lock logic here (plan Risks:
-// open run decision, not invented).
+// table is seeded one way only:
+//   Production: T5 calls RecordTapDown at ACTION_DOWN, which (over)-
+//   writes the origin for that pointer id (latest-wins on pointer-id reuse).
+// A ClaimTap with no prior RecordTapDown for that pointer fails closed
+// (unclaimed, no arena mutation, no table write) — there is deliberately no
+// first-sighting seeding fallback and no multi-pointer winner-lock logic
+// here (plan Risks: open run decision, not invented).
+//
+// Lifetime: every production gesture starts with RecordTapDown before
+// AddPointer, so ClaimTap always reads a fresh origin; this per-gesture
+// refresh is the documented equivalent of arena-lifetime scoping.
+// Thread safety: the table is mutex-guarded; production dispatch
+// (onTouchEvent) is normally single-threaded, so the mutex is uncontended
+// there and exists to keep any off-thread use safe.
 ArenaAction ClaimTap(GestureArena& arena, int32_t pointerId, int32_t targetId);
 
 // Records the ACTION_DOWN origin for pointerId. T5's dispatch must call this

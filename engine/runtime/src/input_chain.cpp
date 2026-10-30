@@ -8,6 +8,7 @@
 #include "runtime/input_chain.h"
 
 #include <cmath>
+#include <mutex>
 
 #include "runtime/input.h"
 
@@ -18,6 +19,18 @@ namespace {
 // bound across gestures. Keyed by pointer id only — never by arena — so a
 // reused MotionEvent pointer id resolves against its latest recorded down
 // (see RecordTapDown); there is no cross-pointer logic here.
+//
+// Lifetime: entries are (over)written by every gesture's ACTION_DOWN via
+// RecordTapDown, which T5 calls before AddPointer on the production path, so
+// a ClaimTap on the device path always reads a fresh origin for its gesture;
+// a stale entry can only survive for a pointer id that never sees another
+// ACTION_DOWN, in which case no new gesture (and no ClaimTap) exists for it.
+// This is the documented equivalent of arena-lifetime scoping: origins are
+// always refreshed at gesture start, never read stale.
+//
+// Thread safety: guarded by g_mu. Production dispatch (onTouchEvent) is
+// normally single-threaded, so the mutex is uncontended there; it exists so
+// any off-thread dispatch or test interleaving cannot corrupt the table.
 struct DownOrigin {
   bool used = false;
   int32_t pointerId = 0;
@@ -28,8 +41,9 @@ struct DownOrigin {
 constexpr int kMaxOrigins = 32;
 DownOrigin g_downOrigins[kMaxOrigins];
 int g_evictNext = 0;
+std::mutex g_mu;
 
-DownOrigin* FindOrigin(int32_t pointerId) {
+DownOrigin* FindOriginLocked(int32_t pointerId) {
   for (auto& slot : g_downOrigins) {
     if (slot.used && slot.pointerId == pointerId) {
       return &slot;
@@ -38,8 +52,8 @@ DownOrigin* FindOrigin(int32_t pointerId) {
   return nullptr;
 }
 
-DownOrigin* StoreOrigin(int32_t pointerId, float x, float y) {
-  if (DownOrigin* hit = FindOrigin(pointerId)) {
+DownOrigin* StoreOriginLocked(int32_t pointerId, float x, float y) {
+  if (DownOrigin* hit = FindOriginLocked(pointerId)) {
     hit->x = x;
     hit->y = y;
     return hit;
@@ -80,24 +94,39 @@ ArenaAction ClaimTap(GestureArena& arena, int32_t pointerId, int32_t targetId) {
   if (targetId < 0) {
     return ArenaAction{-1, 0.0f, 0.0f, false};
   }
-  // The plan chain's Claim step: also the only public read of the pointer's
-  // latest position. Unknown pointers fail closed here (claimed=false).
+  // Fail-closed-when-absent, decided BEFORE touching the arena: a ClaimTap
+  // with no prior RecordTapDown for this pointer returns unclaimed and
+  // performs no arena mutation and no origin-table write. The old first-
+  // sighting seeding fallback is gone: it let AddPointer-only callers claim.
+  float originX = 0.0f;
+  float originY = 0.0f;
+  {
+    std::lock_guard<std::mutex> lock(g_mu);
+    DownOrigin* origin = FindOriginLocked(pointerId);
+    if (origin == nullptr) {
+      return ArenaAction{-1, 0.0f, 0.0f, false};
+    }
+    originX = origin->x;
+    originY = origin->y;
+  }
+  // The plan chain's Claim step: also the only position read the
+  // consume-only arena offers (GestureArena exposes AddPointer/Claim only).
+  // Ordering: the absent-origin check above already ran before any arena
+  // mutation. The slop verdict below converts a past-slop Claim into an
+  // unclaimed return so the tap never fires; note the consume-only arena has
+  // no un-claim operation, so its stored claimed flag (pre-marked by the
+  // production path's AddPointer) is not rewound here — the tap claim itself
+  // is what stays unclaimed, and a follow-up ClaimTap re-derives the same
+  // slop displacement and stays unclaimed.
   ArenaAction current = arena.Claim(targetId, pointerId);
   if (!current.claimed) {
     return current;
   }
-  DownOrigin* origin = FindOrigin(pointerId);
-  if (origin == nullptr) {
-    // No RecordTapDown seen (contract hermetic cases drive AddPointer
-    // directly): seed from the arena's current position and return its
-    // claim; displacement is zero so slop cannot trip on this path.
-    StoreOrigin(pointerId, current.offsetX, current.offsetY);
-    return current;
-  }
-  const float dx = current.offsetX - origin->x;
-  const float dy = current.offsetY - origin->y;
-  // Existing slop semantics (runtime/input.h): magnitude at/over slop is a
-  // scroll — the tap never fires.
+  const float dx = current.offsetX - originX;
+  const float dy = current.offsetY - originY;
+  // Existing slop semantics (runtime/input.h kTouchSlopPx, the sole slop
+  // source of truth): magnitude at/over slop is a scroll — the tap never
+  // fires.
   if (std::hypot(dx, dy) >= ::runtime::touch_detail::kTouchSlopPx) {
     return ArenaAction{-1, 0.0f, 0.0f, false};
   }
@@ -105,5 +134,6 @@ ArenaAction ClaimTap(GestureArena& arena, int32_t pointerId, int32_t targetId) {
 }
 
 void RecordTapDown(int32_t pointerId, float x, float y) {
-  StoreOrigin(pointerId, x, y);
+  std::lock_guard<std::mutex> lock(g_mu);
+  StoreOriginLocked(pointerId, x, y);
 }
