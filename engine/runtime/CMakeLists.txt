@@ -435,6 +435,14 @@ target_link_libraries(gallery_handle_lifecycle_test PRIVATE runtime)
 target_compile_options(gallery_handle_lifecycle_test PRIVATE -Wall -Wextra -Wpedantic)
 add_test(NAME gallery_handle_lifecycle_test COMMAND gallery_handle_lifecycle_test)
 
+# BUG-M3-FIDELITY-008 L6: layering-scene emitter order + inset-step probe
+# (scrim-before-content, submission-order stacking, sheet tracks animated
+# inset with no jump and no full-tree relayout).
+add_executable(gallery_layering_test tests/gallery_layering_test.cpp)
+target_link_libraries(gallery_layering_test PRIVATE runtime)
+target_compile_options(gallery_layering_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME gallery_layering_test COMMAND gallery_layering_test)
+
 # T3 hermetic dual-ABI gate (permanent wiring; no NDK required).
 # Real Android configure (ANDROID_ABI defined via T1 -C lane) skips this;
 # plain host configure defines both <root>-<abi>/libRuntime.so outputs plus

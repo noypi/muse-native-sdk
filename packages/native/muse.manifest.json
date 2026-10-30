@@ -331,7 +331,8 @@
       "base": "Surface",
       "props": {
         "open": { "type": "boolean", "required": true },
-        "content": { "type": "slot" }
+        "content": { "type": "slot" },
+        "imeSafe": { "type": "boolean", "required": true }
       }
     },
     {

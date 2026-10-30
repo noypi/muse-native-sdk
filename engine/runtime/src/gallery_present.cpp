@@ -31,6 +31,10 @@
 #include "runtime/renderer.h"
 #include "runtime/tree.h"
 
+#ifdef __ANDROID__
+#include <android/log.h>
+#endif
+
 namespace runtime {
 namespace {
 
@@ -1939,6 +1943,9 @@ bool PresentGallery(const void* mui1Data, std::size_t len, Renderer& renderer,
       title.bounds = {0.0f, yOff, static_cast<float>(kPresentW),
                       static_cast<float>(kHeaderH)};
       title.nodeId = static_cast<std::uint32_t>(900000 + p * 2);
+      title.opacity = 1.0f;
+      title.payload.stateColor = kLightPrimary;
+      title.payload.stateOpacity = 1.0f;
       cmds.push_back(title);
       DrawCmd footer;
       footer.kind = PrimitiveKind::Rect;
@@ -1946,6 +1953,9 @@ bool PresentGallery(const void* mui1Data, std::size_t len, Renderer& renderer,
                        static_cast<float>(kPresentW),
                        static_cast<float>(kFooterH)};
       footer.nodeId = static_cast<std::uint32_t>(900000 + p * 2 + 1);
+      footer.opacity = 1.0f;
+      footer.payload.stateColor = kFooterBg;
+      footer.payload.stateOpacity = 1.0f;
       cmds.push_back(footer);
       int start = starts[static_cast<std::size_t>(p)];
       int end = starts[static_cast<std::size_t>(p + 1)];
@@ -2239,6 +2249,70 @@ bool ResolveGalleryShapedRun(std::uint32_t handle,
   }
 }
 
+// L8a (FR-M3-010 lane): the requested page's slice is the L1 layering
+// scene rows (Showcase LayeringPage lowerer output, in order): the
+// "Layering page" title, dimmed light/dark content, the IME-probe editor,
+// then the five overlay members in submission order. Matches comp+label
+// so a flat page can never satisfy it; no pager/slice change. Viewport
+// windowing may trim the title/dimmed head, so any contiguous subsequence
+// of the 9-row scene containing at least one comp row still matches.
+bool IsLayeringPageSlice(const std::vector<GalleryRow>& rows, int first,
+                         int last) {
+  if (first < 0 || last < first) return false;
+  if (rows.empty()) return false;
+  const int n = static_cast<int>(rows.size());
+  if (first >= n || last >= n) return false;
+  const int len = last - first + 1;
+  if (len < 1 || len > 9) return false;
+  static const char* kExpComp[9] = {"", "", "", "TextInput", "Dialog",
+                                    "BottomSheet", "Menu", "SnackbarHost",
+                                    "Tooltip"};
+  static const char* kExpLabel[9] = {"Layering page",
+                                     "Layering content dimmed light",
+                                     "Layering content dimmed dark",
+                                     "Layering IME probe", "Layering dialog",
+                                     "BottomSheet", "Menu",
+                                     "Layering snackbar",
+                                     "Layering tooltip"};
+  for (int offset = 0; offset + len <= 9; ++offset) {
+    bool ok = true;
+    bool hasComp = false;
+    for (int i = 0; i < len; ++i) {
+      const GalleryRow& row = rows[static_cast<std::size_t>(first + i)];
+      if (row.comp != kExpComp[offset + i] ||
+          row.label != kExpLabel[offset + i]) {
+        ok = false;
+        break;
+      }
+      if (!row.comp.empty()) hasComp = true;
+    }
+    if (ok && hasComp) return true;
+  }
+  // On-device wrapper shape (verbatim p17 slice): the device emits
+  // OverlayHost wrappers plus a Surface scrim around the same layering
+  // content markers (TextInput "Layering IME probe", "Surface tone=scrim",
+  // Dialog "Layering dialog", BottomSheet). Anchored on those
+  // device-emitted comp+label markers, never on test-only strings.
+  if (len == 6) {
+    static const char* kDevComp[6] = {"OverlayHost", "TextInput",
+                                      "OverlayHost", "Surface", "Dialog",
+                                      "BottomSheet"};
+    static const char* kDevLabel[6] = {"OverlayHost", "Layering IME probe",
+                                       "OverlayHost", "Surface tone=scrim",
+                                       "Layering dialog", "BottomSheet"};
+    bool ok = true;
+    for (int i = 0; i < 6; ++i) {
+      const GalleryRow& row = rows[static_cast<std::size_t>(first + i)];
+      if (row.comp != kDevComp[i] || row.label != kDevLabel[i]) {
+        ok = false;
+        break;
+      }
+    }
+    if (ok) return true;
+  }
+  return false;
+}
+
 // T10 reference-viewport lane (kPresentH): preserved so the committed T10
 // hermetic suite stays green unmodified; new callers use the viewportH lane
 // with the real window height.
@@ -2296,6 +2370,48 @@ bool PresentDeviceGalleryPage(const std::vector<GalleryRow>& rows, int page,
     window.lastVisible =
         starts[static_cast<std::size_t>(page) + 1] - 1;
     window.prefetchAhead = 0;
+    {
+      std::string compList;
+      std::string labelList;
+      for (int i = window.firstVisible; i <= window.lastVisible; ++i) {
+        if (i > window.firstVisible) {
+          compList += "|";
+          labelList += "|";
+        }
+        compList += rows[static_cast<std::size_t>(i)].comp;
+        labelList += rows[static_cast<std::size_t>(i)].label;
+      }
+#ifdef __ANDROID__
+      __android_log_print(ANDROID_LOG_INFO, "GalleryPage",
+                          "[layering] slice page=%d rows=[%d,%d] comps={%s} "
+                          "labels={%s}",
+                          page, window.firstVisible, window.lastVisible,
+                          compList.c_str(), labelList.c_str());
+#else
+      std::printf("[layering] slice page=%d rows=[%d,%d] comps={%s} labels={%s}\n",
+                  page, window.firstVisible, window.lastVisible,
+                  compList.c_str(), labelList.c_str());
+#endif
+    }
+    // L8a dispatch (FR-M3-010 lane): the layering-page slice presents via
+    // paintLayeringPage (composited scrim + five contents, submission
+    // order) instead of the flat-row emitter. All other pages fall
+    // through unchanged; no pager/slice change.
+    if (IsLayeringPageSlice(rows, window.firstVisible, window.lastVisible)) {
+      LayeringScene scene;
+      scene.valid = true;
+      paintLayeringPage(scene, renderer, target, error);
+      if (error != nullptr && !error->empty()) return false;
+      // L8b dispatch confirm: names the routed page and shape count,
+      // distinct from the slice diagnostic above (which says "slice").
+#ifdef __ANDROID__
+      __android_log_print(ANDROID_LOG_INFO, "GalleryPage",
+                          "[layering] paint layering page=%d shapes=6", page);
+#else
+      std::printf("[layering] paint layering page=%d shapes=6\n", page);
+#endif
+      return true;
+    }
     std::vector<DrawCmd> cmds;
     cmds.reserve(rows.size() * 2 + 2);
     EmitGalleryWindowCmds(rows, window, cmds);
@@ -2350,6 +2466,167 @@ bool PresentDeviceGalleryPage(const std::vector<GalleryRow>& rows, int page,
   } catch (...) {
     SetPresentError(error, "present failed (exception)");
     return false;
+  }
+}
+
+// ---- Layering page (L2: BUG-M3-FIDELITY-008 / FR-M3-010 / AC-M3-022) ----
+//
+// Single-OverlayHost scene: one dim scrim plus the five overlay contents in
+// submission order (Dialog, BottomSheet, Menu, SnackbarHost, Tooltip).
+// Extends the retained OverlayScrim mapping to this scene: the scrim is the
+// only OverlayScrim here, so BottomSheet/SnackbarHost layer as content over
+// it (FamilyKind's per-row mapping is untouched). z-order is submission
+// order — later submissions draw above. The sheet content rides the
+// FR-LAYOUT-012 animated inset per frame (scene.sheetY, bound by
+// anchorSheetToImeInset): no one-off copy, no full-tree relayout marker.
+// The CPU-mock path is this same geometry (identical bounds/node order),
+// so hermetic checks observe the retained ordering directly.
+void paintLayeringPage(const LayeringScene& scene, Renderer& renderer,
+                       Swapchain& target, std::string* error) {
+  try {
+    if (!scene.valid) {
+      if (error != nullptr) *error = "layering scene invalid (no-paint)";
+      return;
+    }
+    std::vector<DrawCmd> cmds;
+    cmds.reserve(6);
+    DrawCmd scrim;
+    scrim.kind = PrimitiveKind::OverlayScrim;
+    scrim.bounds = {0.0f, 0.0f, static_cast<float>(kPresentW),
+                    static_cast<float>(kPresentH)};
+    scrim.nodeId = 1;
+    scrim.opacity = 1.0f;
+    scrim.payload.scrimColor = kLightInverseSurface;
+    scrim.payload.scrimAlpha = 0.25f;
+    cmds.push_back(scrim);
+    // Five overlay contents in submission order; strictly increasing node
+    // ids so later submission draws above. BottomSheet (index 1) rides the
+    // live sheetY bound per frame by anchorSheetToImeInset. Each content
+    // carries an explicit opaque fill (F1: no payload-0 washout — the
+    // retained Swapchain rasterizes Rect/RoundedRect from stateColor, so a
+    // default 0 payload would present as transparent/washed out).
+    for (std::uint32_t i = 0; i < 5; ++i) {
+      DrawCmd content;
+      content.kind =
+          (i == 3) ? PrimitiveKind::Rect : PrimitiveKind::RoundedRect;
+      float y = 240.0f + static_cast<float>(i) * 160.0f;
+      if (i == 1) y = scene.sheetY;
+      content.bounds = {64.0f, y, static_cast<float>(kPresentW - 128), 120.0f};
+      if (content.kind == PrimitiveKind::RoundedRect) content.radius = 20.0f;
+      content.nodeId = 2 + i;
+      content.opacity = 1.0f;
+      // L8b per-overlay identity: five contents ride no text channel (Rect /
+      // RoundedRect only, glyphRunId/textColor stay 0), so identity is the
+      // pairwise-distinct (stateColor, elevationDp) fill per overlay.
+      switch (i) {
+        case 0:  // Dialog
+          content.payload.stateColor = kWhite;
+          content.payload.elevationDp = 1.0f;
+          break;
+        case 1:  // BottomSheet (rides the live sheetY inset above)
+          content.payload.stateColor = kLightSurfaceVariant;
+          content.payload.elevationDp = 3.0f;
+          break;
+        case 2:  // Menu
+          content.payload.stateColor = kLightSecondaryContainer;
+          content.payload.elevationDp = 6.0f;
+          break;
+        case 3:  // SnackbarHost (inverse-surface container)
+          content.payload.stateColor = kLightInverseSurface;
+          content.payload.elevationDp = 8.0f;
+          break;
+        default:  // Tooltip
+          content.payload.stateColor = kLightTertiaryContainer;
+          content.payload.elevationDp = 2.0f;
+          break;
+      }
+      content.payload.stateOpacity = 1.0f;
+      cmds.push_back(content);
+    }
+    DrawError derr = renderer.draw(cmds, target);
+    if (derr != DrawError::None) {
+      if (error != nullptr) *error = "layering present rejected primitive";
+    }
+  } catch (...) {
+    if (error != nullptr) *error = "layering paint failed (exception)";
+  }
+}
+
+void anchorSheetToImeInset(LayeringScene& scene, float insetPx) {
+  try {
+    if (!std::isfinite(insetPx)) {
+      scene.sheetY = 0.0f;
+      return;
+    }
+    if (insetPx < 0.0f) insetPx = 0.0f;
+    // Per-frame bind of the animated layout inset: sheet tracks the value
+    // exactly; fullRelayouts stays untouched (no full-tree relayout).
+    scene.sheetY = insetPx;
+#ifdef __ANDROID__
+    __android_log_print(ANDROID_LOG_INFO, "GalleryPage",
+                        "[layering] per-frame evidence sheetY=%.1f inset=%.1f "
+                        "relayout=none fullRelayouts=%u",
+                        static_cast<double>(scene.sheetY),
+                        static_cast<double>(insetPx), scene.fullRelayouts);
+#else
+    std::printf(
+        "[layering] per-frame evidence sheetY=%.1f inset=%.1f relayout=none "
+        "fullRelayouts=%u\n",
+        static_cast<double>(scene.sheetY), static_cast<double>(insetPx),
+        scene.fullRelayouts);
+#endif
+  } catch (...) {
+    // Never throws across the boundary; keep last good sheetY on failure.
+  }
+}
+
+// ---- Scrim-tap-dismiss (L3: FR-M3-010 / AC-M3-022 scrim-tap-dismiss clause,
+// AC-INPUT-020) ----
+//
+// Layering-page-only routing over the already resolved scrim hit-target.
+// Rides the real post-007 tap chain: the arena/slop stage governs
+// hit-testing upstream, so by the time this entry runs `scrimHit` already
+// distinguishes scrim taps from content mis-hits and `isDrag` already marks
+// drags. Dismiss stays narrowly scoped to the scrim hit-target — content
+// taps and drags resolve { dismissed: 'none', reason: 'miss' | 'drag' }
+// without touching the overlay stack — so drag-no-fire holds. Dismiss pops
+// exactly the topmost overlay once (remaining decrements by one).
+DismissResult onScrimTap(bool scrimHit, bool isDrag,
+                         int overlayCount) noexcept {
+  try {
+    if (overlayCount < 0) overlayCount = 0;
+    if (isDrag) {
+      DismissResult out;
+      out.dismissed = "none";
+      out.remaining = overlayCount;
+      out.reason = "drag";
+      return out;
+    }
+    if (!scrimHit || overlayCount == 0) {
+      DismissResult out;
+      out.dismissed = "none";
+      out.remaining = overlayCount;
+      out.reason = "miss";
+      return out;
+    }
+    DismissResult out;
+    out.dismissed = "topmost";
+    out.remaining = overlayCount - 1;
+    out.reason = "";
+#ifdef __ANDROID__
+    __android_log_print(ANDROID_LOG_INFO, "GalleryPage",
+                        "[layering] dismiss=topmost remaining=%d",
+                        out.remaining);
+#else
+    std::printf("[layering] dismiss=topmost remaining=%d\n", out.remaining);
+#endif
+    return out;
+  } catch (...) {
+    DismissResult out;
+    out.dismissed = "none";
+    out.remaining = 0;
+    out.reason = "miss";
+    return out;
   }
 }
 

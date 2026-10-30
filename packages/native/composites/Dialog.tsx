@@ -10,6 +10,11 @@ export interface DialogProps {
   title: string;
   content?: unknown;
   actions?: unknown;
+  // L3 scrim-tap-dismiss contract passthrough (FR-M3-010 / AC-M3-022):
+  // the composite forwards the dismiss prop only — scrim hit-target
+  // geometry stays in the L2 presenter. Either name satisfies the hook.
+  onDismiss?: () => void;
+  onScrimTap?: () => void;
   [key: string]: unknown;
 }
 

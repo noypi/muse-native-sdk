@@ -3,7 +3,7 @@
 // FR-WORKFLOW owns command options later; this file only routes argv.
 const path = require('node:path');
 
-const COMMANDS = ['init', 'build', 'dev', 'run', 'gallery-proof', 'renderer-prims', 'gallery-diff', 'gallery-scroll', 'scroll-deadlines', 'gallery-tap', 'gallery-tap-repaint', 'gallery-text', 'gallery-text-goldens', 'egl-probe'];
+const COMMANDS = ['init', 'build', 'dev', 'run', 'gallery-proof', 'renderer-prims', 'gallery-diff', 'gallery-layering', 'gallery-scroll', 'scroll-deadlines', 'gallery-tap', 'gallery-tap-repaint', 'gallery-text', 'gallery-text-goldens', 'egl-probe'];
 const INVOKED = path.basename(process.argv[1] || '', '.js');
 
 if (INVOKED === 'muse') {
@@ -105,7 +105,7 @@ function validateOptions(argv) {
 function printHelp() {
   process.stdout.write(
     [
-      'Usage: muse-native <init|build|dev|run|gallery-proof|renderer-prims|gallery-diff|gallery-scroll|scroll-deadlines|gallery-text|gallery-text-goldens|egl-probe> [args]',
+      'Usage: muse-native <init|build|dev|run|gallery-proof|renderer-prims|gallery-diff|gallery-layering|gallery-scroll|scroll-deadlines|gallery-text|gallery-text-goldens|egl-probe> [args]',
       '',
       'Commands:',
       '  init    scaffold a new project',
@@ -116,6 +116,7 @@ function printHelp() {
       '  gallery-proof    run the gallery device proof',
       '  renderer-prims    assert the retained 11-kind M3 primitive set',
       '  gallery-diff    diff the committed per-page goldens within tolerance',
+      '  gallery-layering    assert the layering page z-order, scrim dismiss, and IME safety',
   '  gallery-scroll    assert windowed-only gallery scroll paint',
   '  scroll-deadlines    audit vsync deadline misses per refresh rate',
   '  gallery-text    assert the retained vector ShapedText path with atlas reuse',
@@ -147,7 +148,7 @@ function printGalleryProofHelp() {
 }
 
 function printUsageError(message) {
-  process.stderr.write(`${message}\nUsage: muse-native <init|build|dev|run|gallery-proof|renderer-prims|gallery-diff|gallery-scroll|scroll-deadlines|gallery-text|gallery-text-goldens|egl-probe> [args]\n`);
+  process.stderr.write(`${message}\nUsage: muse-native <init|build|dev|run|gallery-proof|renderer-prims|gallery-diff|gallery-layering|gallery-scroll|scroll-deadlines|gallery-text|gallery-text-goldens|egl-probe> [args]\n`);
 }
 
 function printBuildHelp() {
@@ -207,9 +208,13 @@ function main() {
     require('./egl-probe.js')(argv.slice(1));
     return;
   }
+  if (argv[0] === 'gallery-layering') {
+    require('./gallery-layering.js')(argv.slice(1));
+    return;
+  }
   if (argv.includes('-h') || argv.includes('--help') || argv.length === 0) {
     if (argv.length === 0) {
-      printUsageError('Usage: muse-native <init|build|dev|run|gallery-proof|renderer-prims|gallery-diff|gallery-scroll|scroll-deadlines|gallery-text|gallery-text-goldens|egl-probe> [args]');
+      printUsageError('Usage: muse-native <init|build|dev|run|gallery-proof|renderer-prims|gallery-diff|gallery-layering|gallery-scroll|scroll-deadlines|gallery-text|gallery-text-goldens|egl-probe> [args]');
       process.exitCode = 2;
       return;
     }
@@ -268,6 +273,10 @@ function main() {
   }
   if (command === 'gallery-diff') {
     require('./gallery-diff.js')(argv.slice(1));
+    return;
+  }
+  if (command === 'gallery-layering') {
+    require('./gallery-layering.js')(argv.slice(1));
     return;
   }
   if (command === 'gallery-scroll') {

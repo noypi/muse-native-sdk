@@ -127,4 +127,50 @@ bool ResolveGalleryShapedRun(std::uint32_t handle,
                              std::vector<std::uint32_t>* glyphs,
                              std::vector<float>* advances);
 
+// ---- Layering page (L2: BUG-M3-FIDELITY-008 / FR-M3-010 / AC-M3-022) ----
+//
+// Hermetic layering scene for RULE-M3-006: dimmed content plus the five
+// overlay contents stacked on a single OverlayHost in submission order.
+// The CPU-mock path (paintLayeringPage) mirrors the retained geometry so
+// hermetic checks observe identical ordering and sheet placement.
+struct LayeringScene {
+  bool valid = false;
+  float sheetY = 0.0f;
+  std::uint32_t fullRelayouts = 0;
+};
+
+// Emit the layering scene through the retained path: one OverlayScrim
+// (alpha 0.25) then the five overlay contents in submission order
+// (Dialog, BottomSheet, Menu, SnackbarHost, Tooltip). Later submissions
+// draw above earlier ones. Invalid scene (valid == false) is a no-paint
+// with a non-blank diagnostic, never a crash; error == nullptr tolerated.
+void paintLayeringPage(const LayeringScene& scene, Renderer& renderer,
+                       Swapchain& target, std::string* error);
+
+// Bind the sheet Y to the animated layout inset (FR-LAYOUT-012) per frame.
+// Consumes the inset value in place (no one-off copy, no full-tree
+// relayout: fullRelayouts untouched). Non-finite inset resolves to 0.
+// Never throws.
+void anchorSheetToImeInset(LayeringScene& scene, float insetPx);
+
+// ---- Scrim-tap-dismiss (L3: BUG-M3-FIDELITY-008 / FR-M3-010 / AC-M3-022,
+// AC-INPUT-020) ----
+//
+// Dismiss routing for the layering page only. Rides the real post-007 tap
+// chain (arena/slop governs hit-testing); this entry consumes the already
+// resolved scrim hit-target outcome, so drag-no-fire holds by construction.
+struct DismissResult {
+  std::string dismissed;  // "topmost" on dismiss, "none" otherwise
+  int remaining = 0;      // overlay count after routing (decrements by one)
+  std::string reason;     // "" on dismiss, "miss" | "drag" otherwise
+};
+
+// Route one resolved tap on the layering-page scrim hit-target. A tap
+// inside the scrim dismisses exactly the topmost overlay once; a content
+// tap is a mis-hit (no dismiss); a drag never fires dismiss (AC-INPUT-020).
+// Non-dismissals resolve { dismissed: 'none', reason: 'miss' | 'drag' }.
+// Never throws.
+DismissResult onScrimTap(bool scrimHit, bool isDrag,
+                         int overlayCount) noexcept;
+
 }  // namespace runtime

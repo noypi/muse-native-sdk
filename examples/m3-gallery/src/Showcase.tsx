@@ -122,3 +122,31 @@ export default function Showcase() {
     </View>
   );
 }
+
+// BUG-M3-FIDELITY-008 L1 — layering page (FR-M3-010 / AC-M3-022 / RULE-M3-006).
+// Static scene: dimmed content background plus all five overlays stacked on
+// exactly one OverlayHost in submission order, dimming layer submitted before
+// overlay content. The dismiss hook site is declared on the host below; the
+// dismiss behavior itself is owned by L3.
+export function LayeringPage() {
+  return (
+    <View sharedId="layering-page">
+      <Text>Layering page</Text>
+      <View theme="light" dimmed={true}>
+        <Text>Layering content dimmed light</Text>
+      </View>
+      <View theme="dark" dimmed={true}>
+        <Text>Layering content dimmed dark</Text>
+      </View>
+      <TextInput value="" placeholder="Layering IME probe" insetSource="FR-LAYOUT-012" />
+      <OverlayHost onScrimTap="dismiss-topmost">
+        <Surface tone="scrim" />
+        <Dialog open={true} title="Layering dialog" />
+        <BottomSheet open={true} imeSafe={true as const} insetSource="FR-LAYOUT-012" />
+        <Menu open={true} />
+        <SnackbarHost message="Layering snackbar" />
+        <Tooltip text="Layering tooltip" />
+      </OverlayHost>
+    </View>
+  );
+}
