@@ -31,6 +31,10 @@
 #include "runtime/renderer.h"
 #include "runtime/vulkan_baseline.h"
 
+#if !defined(_WIN32)
+#include <unistd.h>
+#endif
+
 namespace {
 
 runtime::DeviceCaps baseline_device() {
@@ -491,6 +495,132 @@ bool check_device_shape_slice_routes_to_paint_shape() {
   return true;
 }
 
+// L8b texture half (tester round-7, tester-owned RED): the composited
+// 6-shape from paintLayeringPage carries per-overlay identity for all 5
+// contents (Dialog/BottomSheet/Menu/SnackbarHost/Tooltip).
+//
+// TEXT-CHANNEL ABSENCE (read from the painter's current content emission
+// in gallery_present.cpp paintLayeringPage): the five contents are emitted
+// as Rect/RoundedRect cmds only — no Text/ShapedText cmd, glyphRunId == 0
+// and textColor == 0 on every content — so there is no text channel in
+// which labels could ride. Identity is therefore asserted via distinct
+// (stateColor, elevationDp) per overlay content: all five pairs must be
+// pairwise distinct. Current painter state RED: every content carries the
+// same fill (stateColor == kWhite, elevationDp == 0.0f), so the distinct
+// check below fails on the first comparison.
+bool check_layering_paint_emits_per_overlay_identity() {
+  runtime::LayeringScene scene = valid_scene();
+  runtime::Renderer renderer(baseline_device());
+  FakeSwapchain target;
+  std::string error;
+  runtime::paintLayeringPage(scene, renderer, target, &error);
+  if (!error.empty()) return false;
+  if (target.captured.size() != 6) return false;
+  // Contents are indices 1..5 (index 0 is the scrim).
+  for (std::size_t i = 1; i < target.captured.size(); ++i) {
+    const runtime::DrawCmd& cmd = target.captured[i];
+    if (cmd.kind == runtime::PrimitiveKind::Text ||
+        cmd.kind == runtime::PrimitiveKind::ShapedText) {
+      return false;  // identity must not ride a text channel that the
+                     // composited shape does not emit
+    }
+    if (cmd.payload.glyphRunId != 0 || cmd.payload.textColor != 0) {
+      return false;  // no text channel on overlay contents
+    }
+  }
+  for (std::size_t i = 1; i < target.captured.size(); ++i) {
+    for (std::size_t j = i + 1; j < target.captured.size(); ++j) {
+      const bool sameColor = target.captured[i].payload.stateColor ==
+                             target.captured[j].payload.stateColor;
+      const bool sameElev =
+          std::fabs(target.captured[i].payload.elevationDp -
+                    target.captured[j].payload.elevationDp) < 1e-6f;
+      if (sameColor && sameElev) return false;  // overlays i,j indistinguishable
+    }
+  }
+  return true;
+}
+
+#if !defined(_WIN32)
+// Capture stdout emitted during fn() into out (in-process pipe + dup2;
+// hermetic: no filesystem, no env, no network).
+void capture_stdout_during(void (*fn)(), std::string* out) {
+  std::fflush(stdout);
+  const int saved = dup(STDOUT_FILENO);
+  int fds[2];
+  if (pipe(fds) != 0) {
+    if (saved >= 0) close(saved);
+    return;
+  }
+  dup2(fds[1], STDOUT_FILENO);
+  fn();
+  std::fflush(stdout);
+  dup2(saved, STDOUT_FILENO);
+  close(saved);
+  close(fds[1]);
+  char buf[4096];
+  ssize_t n = 0;
+  while ((n = read(fds[0], buf, sizeof(buf))) > 0) {
+    out->append(buf, static_cast<std::size_t>(n));
+  }
+  close(fds[0]);
+}
+
+namespace {
+struct ConfirmProbe {
+  static const std::vector<runtime::GalleryRow>* rows;
+  static runtime::Renderer* renderer;
+  static FakeSwapchain* target;
+  static int viewportH;
+  static void run() {
+    std::string error;
+    runtime::PresentDeviceGalleryPage(*rows, 1, *renderer, *target,
+                                      viewportH, &error);
+  }
+};
+const std::vector<runtime::GalleryRow>* ConfirmProbe::rows = nullptr;
+runtime::Renderer* ConfirmProbe::renderer = nullptr;
+FakeSwapchain* ConfirmProbe::target = nullptr;
+int ConfirmProbe::viewportH = 0;
+}  // namespace
+#endif
+
+// L8b confirm-log half (tester round-7, tester-owned RED): the dispatch
+// path emits a confirm line naming the routed slice —
+// `[layering] paint layering page=<p> shapes=6` — distinguishable from the
+// pre-existing slice diagnostic (`[layering] slice page=... comps={...}
+// labels={...}`). Current dispatch state RED: PresentDeviceGalleryPage
+// emits only the slice diagnostic and paintLayeringPage prints nothing, so
+// no `paint layering page` confirm line exists on stdout.
+bool check_layering_dispatch_emits_confirm_log() {
+#if defined(_WIN32)
+  return false;  // stdout-capture probe is POSIX-only; coder adds the log
+                 // and this case is verified on the POSIX host
+#else
+  const std::vector<runtime::GalleryRow> rows = DeviceShapeSliceRows();
+  if (runtime::GalleryPageCount(rows, kDeviceSliceViewportH) != 2) {
+    return false;  // packing guard: verbatim device slice must be page 1
+  }
+  runtime::Renderer renderer(baseline_device());
+  FakeSwapchain target;
+  ConfirmProbe::rows = &rows;
+  ConfirmProbe::renderer = &renderer;
+  ConfirmProbe::target = &target;
+  ConfirmProbe::viewportH = kDeviceSliceViewportH;
+  std::string captured;
+  capture_stdout_during(&ConfirmProbe::run, &captured);
+  ConfirmProbe::rows = nullptr;
+  if (target.captured.size() != 6) return false;  // must route to paint shape
+  // The confirm names the routed page and shape count and is not the slice
+  // diagnostic (which says "slice", never "paint layering page").
+  if (captured.find("paint layering page=1") == std::string::npos) {
+    return false;
+  }
+  if (captured.find("shapes=6") == std::string::npos) return false;
+  return true;
+#endif
+}
+
 }  // namespace
 
 #define RUN_CASE(name)                      \
@@ -517,6 +647,8 @@ int main() {
   RUN_CASE(check_layering_dispatch_null_error_ptr_never_throws);
   RUN_CASE(check_viewport_windowed_layering_subset_routes_to_paint_shape);
   RUN_CASE(check_device_shape_slice_routes_to_paint_shape);
+  RUN_CASE(check_layering_paint_emits_per_overlay_identity);
+  RUN_CASE(check_layering_dispatch_emits_confirm_log);
   if (failures > 0) {
     std::printf("gallery_layering_test: %d failing\n", failures);
     return 1;

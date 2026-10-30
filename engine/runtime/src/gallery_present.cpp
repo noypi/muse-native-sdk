@@ -2402,6 +2402,14 @@ bool PresentDeviceGalleryPage(const std::vector<GalleryRow>& rows, int page,
       scene.valid = true;
       paintLayeringPage(scene, renderer, target, error);
       if (error != nullptr && !error->empty()) return false;
+      // L8b dispatch confirm: names the routed page and shape count,
+      // distinct from the slice diagnostic above (which says "slice").
+#ifdef __ANDROID__
+      __android_log_print(ANDROID_LOG_INFO, "GalleryPage",
+                          "[layering] paint layering page=%d shapes=6", page);
+#else
+      std::printf("[layering] paint layering page=%d shapes=6\n", page);
+#endif
       return true;
     }
     std::vector<DrawCmd> cmds;
@@ -2507,7 +2515,31 @@ void paintLayeringPage(const LayeringScene& scene, Renderer& renderer,
       if (content.kind == PrimitiveKind::RoundedRect) content.radius = 20.0f;
       content.nodeId = 2 + i;
       content.opacity = 1.0f;
-      content.payload.stateColor = kWhite;
+      // L8b per-overlay identity: five contents ride no text channel (Rect /
+      // RoundedRect only, glyphRunId/textColor stay 0), so identity is the
+      // pairwise-distinct (stateColor, elevationDp) fill per overlay.
+      switch (i) {
+        case 0:  // Dialog
+          content.payload.stateColor = kWhite;
+          content.payload.elevationDp = 1.0f;
+          break;
+        case 1:  // BottomSheet (rides the live sheetY inset above)
+          content.payload.stateColor = kLightSurfaceVariant;
+          content.payload.elevationDp = 3.0f;
+          break;
+        case 2:  // Menu
+          content.payload.stateColor = kLightSecondaryContainer;
+          content.payload.elevationDp = 6.0f;
+          break;
+        case 3:  // SnackbarHost (inverse-surface container)
+          content.payload.stateColor = kLightInverseSurface;
+          content.payload.elevationDp = 8.0f;
+          break;
+        default:  // Tooltip
+          content.payload.stateColor = kLightTertiaryContainer;
+          content.payload.elevationDp = 2.0f;
+          break;
+      }
       content.payload.stateOpacity = 1.0f;
       cmds.push_back(content);
     }
