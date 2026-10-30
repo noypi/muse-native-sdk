@@ -39,6 +39,11 @@ Dependencies
 24. {fmt} — Licence: MIT — Owner: core — Link: static
 25. magic_enum — Licence: MIT — Owner: core — Link: static
 26. simdjson — Licence: Apache-2.0 — Owner: build — Link: static
+27. Roboto + bundled last-resort face — Licence: Apache-2.0 — Owner: text — Link: system
+   (FR-TEXT-016 Notes: Roboto fallback per script/locale resolved via the NDK system-font
+   lookup in engine/text/src/font_discovery_android.cpp; the bundled last-resort face covers
+   first paint where no system face resolves. No downloads; the downloadable-font provider
+   stays nullable and is never consulted by the lookup.)
 
 Licence texts and pointers
 --------------------------

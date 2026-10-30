@@ -8,6 +8,11 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 add_library(muse_text STATIC
   src/shaper.cpp
   src/font_discovery.cpp
+  # T2 (FR-TEXT-016): production Android NDK lookup TU. Compiled on every
+  # build; contributes the NDK-backed SystemFontEnumerator only when
+  # MUSE_TEXT_ANDROID_NDK is defined (com.muse.host device build), so host
+  # builds keep the stub enumerator and need no NDK headers.
+  src/font_discovery_android.cpp
   src/layout_cache.cpp
   src/bidi.cpp
   src/emoji.cpp
