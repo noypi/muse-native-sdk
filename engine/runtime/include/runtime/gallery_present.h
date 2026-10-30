@@ -7,6 +7,9 @@
 
 namespace runtime {
 
+class Renderer;
+class Swapchain;
+
 // One gallery row extracted from the built tree IR (Showcase root).
 // Produced by the structural TSX lowerer, so rows carry only literal text
 // and literal props — never evaluated expressions (no JS engine on device).
@@ -35,5 +38,15 @@ int RasterGalleryPage(const std::vector<GalleryRow>& rows, int page,
 
 // Page count for the given viewport (same row metrics as RasterGalleryPage).
 int GalleryPageCount(const std::vector<GalleryRow>& rows, int height);
+
+// Retained entry point (FR-GRAPHICS-010 / AC-GRAPHICS-030): parse the MUI1
+// envelope with the existing ParseGalleryRows gate, then emit every row as
+// one or more DrawCmds from the 11-kind vocabulary through renderer.draw
+// into target (no direct CPU raster fallback). Returns true on success with
+// *error left untouched; false + a non-blank diagnostic (nothing recorded)
+// on bad envelope, zero rows, or a non-None draw result. Never throws;
+// error == nullptr is tolerated on every leg.
+bool PresentGallery(const void* mui1Data, std::size_t len, Renderer& renderer,
+                    Swapchain& target, std::string* error);
 
 }  // namespace runtime

@@ -9,8 +9,45 @@
 #include <vector>
 
 #include "runtime/gallery_present.h"
+#include "runtime/renderer.h"
+#include "runtime/vulkan_baseline.h"
 
 namespace {
+
+// Baseline device caps: Vulkan 1.1 with no extensions required.
+runtime::DeviceCaps baseline_device() {
+  runtime::DeviceCaps caps;
+  caps.apiMajor = 1;
+  caps.apiMinor = 1;
+  return caps;
+}
+
+// In-process fake swapchain: records every submitted cmd. No GPU.
+class FakeSwapchain : public runtime::Swapchain {
+ public:
+  void submit(const runtime::DrawCmd& cmd) override {
+    captured.push_back(cmd);
+  }
+  std::vector<runtime::DrawCmd> captured;
+};
+
+bool is_declared_kind(runtime::PrimitiveKind kind) {
+  switch (kind) {
+    case runtime::PrimitiveKind::Rect:
+    case runtime::PrimitiveKind::RoundedRect:
+    case runtime::PrimitiveKind::Image:
+    case runtime::PrimitiveKind::Text:
+    case runtime::PrimitiveKind::StateLayer:
+    case runtime::PrimitiveKind::Ripple:
+    case runtime::PrimitiveKind::ElevationShadow:
+    case runtime::PrimitiveKind::CircleArc:
+    case runtime::PrimitiveKind::VectorIcon:
+    case runtime::PrimitiveKind::ShapedText:
+    case runtime::PrimitiveKind::OverlayScrim:
+      return true;
+  }
+  return false;
+}
 
 // Minimal IR with one static Showcase-style root: two headers (light/dark),
 // two labels, and two literal-prop components.
@@ -162,6 +199,119 @@ static bool check_comment_lines_skipped() {
   return rows[0].label == "M3 Gallery light";
 }
 
+// T9 named case: every gallery row emits one or more DrawCmds from the
+// 11-kind vocabulary to renderer/target (retained path, no direct CPU
+// raster). Binds only to the T9 Interface: line.
+static bool check_present_gallery_emits_draw_cmds_for_every_row() {
+  std::vector<std::uint8_t> asset = MakeAsset();
+  std::string parseError;
+  std::vector<runtime::GalleryRow> rows = runtime::ParseGalleryRows(
+      asset.data(), asset.size(), &parseError);
+  if (rows.empty()) return false;
+  runtime::Renderer renderer(baseline_device());
+  FakeSwapchain target;
+  std::string error;
+  if (!runtime::PresentGallery(asset.data(), asset.size(), renderer, target,
+                               &error)) {
+    return false;
+  }
+  if (!error.empty()) return false;
+  // One or more DrawCmds per row, all from the declared 11-kind vocabulary.
+  if (target.captured.size() < rows.size()) return false;
+  for (const auto& cmd : target.captured) {
+    if (!is_declared_kind(cmd.kind)) return false;
+  }
+  return true;
+}
+
+// T9 named case: routing proof — with an unsupported-baseline Renderer,
+// PresentGallery must fail (Renderer::draw reports UnsupportedBaseline and
+// records nothing) instead of falling back to a direct-buffer raster that
+// bypasses the retained path. Any recorded cmd here is a fallback bypass.
+static bool check_present_gallery_routes_every_row_through_renderer_draw() {
+  std::vector<std::uint8_t> asset = MakeAsset();
+  runtime::DeviceCaps caps;
+  caps.apiMajor = 1;
+  caps.apiMinor = 0;  // unsupported baseline: draw is a recording no-op.
+  runtime::Renderer renderer(caps);
+  FakeSwapchain target;
+  std::string error;
+  if (runtime::PresentGallery(asset.data(), asset.size(), renderer, target,
+                              &error)) {
+    return false;
+  }
+  if (error.empty()) return false;
+  return target.captured.empty();
+}
+
+// T9 named case: bad MUI1 envelope (existing envelope/parse gate) still
+// fails closed through the new entry point — false + non-blank diagnostic,
+// never blank, never throws across the boundary.
+static bool check_present_gallery_bad_envelope_diagnostic_never_blank() {
+  runtime::Renderer renderer(baseline_device());
+  FakeSwapchain target;
+  const char bad[12] = {'X', 'X', 'X', 'X', 1, 0, 0, 0, 0, 0, 0, 0};
+  std::string error;
+  if (runtime::PresentGallery(bad, sizeof(bad), renderer, target, &error)) {
+    return false;
+  }
+  if (error.empty()) return false;
+  if (!target.captured.empty()) return false;
+  error.clear();
+  if (runtime::PresentGallery(nullptr, 0, renderer, target, &error)) {
+    return false;
+  }
+  return !error.empty() && target.captured.empty();
+}
+
+// T9 named case: a null error out-param never throws across the boundary —
+// both the success and failure legs tolerate error == nullptr.
+static bool check_present_gallery_null_error_ptr_never_throws() {
+  std::vector<std::uint8_t> asset = MakeAsset();
+  runtime::Renderer renderer(baseline_device());
+  FakeSwapchain target;
+  if (!runtime::PresentGallery(asset.data(), asset.size(), renderer, target,
+                               nullptr)) {
+    return false;
+  }
+  if (target.captured.empty()) return false;
+  FakeSwapchain rejected;
+  const char bad[12] = {'X', 'X', 'X', 'X', 1, 0, 0, 0, 0, 0, 0, 0};
+  if (runtime::PresentGallery(bad, sizeof(bad), renderer, rejected, nullptr)) {
+    return false;
+  }
+  return rejected.captured.empty();
+}
+
+// T9 named case: a well-formed envelope with no gallery rows still reports
+// false + a non-blank diagnostic (never a blank screen, never throws).
+static bool check_present_gallery_no_rows_diagnostic_never_blank() {
+  const char json[] = "{\"version\":1,\"roots\":[]}";
+  std::string fixed(json);
+  std::vector<std::uint8_t> out = {static_cast<std::uint8_t>('M'),
+                                   static_cast<std::uint8_t>('U'),
+                                   static_cast<std::uint8_t>('I'),
+                                   static_cast<std::uint8_t>('1'),
+                                   1,
+                                   0,
+                                   0,
+                                   0};
+  std::uint32_t n = static_cast<std::uint32_t>(fixed.size());
+  out.push_back(static_cast<std::uint8_t>(n & 0xFFu));
+  out.push_back(static_cast<std::uint8_t>((n >> 8) & 0xFFu));
+  out.push_back(static_cast<std::uint8_t>((n >> 16) & 0xFFu));
+  out.push_back(static_cast<std::uint8_t>((n >> 24) & 0xFFu));
+  for (char c : fixed) out.push_back(static_cast<std::uint8_t>(c));
+  runtime::Renderer renderer(baseline_device());
+  FakeSwapchain target;
+  std::string error;
+  if (runtime::PresentGallery(out.data(), out.size(), renderer, target,
+                              &error)) {
+    return false;
+  }
+  return !error.empty() && target.captured.empty();
+}
+
 #define RUN_CASE(name)                      \
   do {                                      \
     if (!(name)()) {                        \
@@ -179,6 +329,11 @@ int main() {
   RUN_CASE(check_page_raster_paints);
   RUN_CASE(check_empty_rows_draw_diagnostic);
   RUN_CASE(check_comment_lines_skipped);
+  RUN_CASE(check_present_gallery_emits_draw_cmds_for_every_row);
+  RUN_CASE(check_present_gallery_routes_every_row_through_renderer_draw);
+  RUN_CASE(check_present_gallery_bad_envelope_diagnostic_never_blank);
+  RUN_CASE(check_present_gallery_null_error_ptr_never_throws);
+  RUN_CASE(check_present_gallery_no_rows_diagnostic_never_blank);
   if (failures > 0) {
     std::printf("gallery_present_test: %d failing\n", failures);
     return 1;
