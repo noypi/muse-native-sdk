@@ -38,6 +38,84 @@
   );
 })();
 
-if (process.argv.slice(2)[0] !== 'gallery-proof') {
+(function galleryPresentEntry() {
+  const argv = process.argv.slice(2);
+  if (argv[0] !== 'gallery-present') return;
+  const present = require('../lib/gallery-present.js');
+  if (argv.includes('--help') || argv.includes('-h')) {
+    process.stdout.write(
+      'Usage: muse-native gallery-present [--path egl|cpu] [--dump-frame <png>]\n',
+    );
+    return;
+  }
+  let opts;
+  try {
+    opts = present.parseGalleryPresentArgs(argv);
+  } catch (err) {
+    process.stderr.write(`${(err && err.message) || String(err)}\nUsage: muse-native gallery-present [--path egl|cpu] [--dump-frame <png>]\n`);
+    process.exitCode = 2;
+    return;
+  }
+  present.runGalleryPresent({
+    serial: process.env.ANDROID_SERIAL,
+    path: opts.path,
+    dumpFrame: opts.dumpFrame || undefined,
+  }).then(
+    (result) => {
+      if (result && result.frame) {
+        process.stdout.write(`gallery-present ok: path=${result.path} frame=${result.frame}\n`);
+      } else {
+        process.stdout.write(`gallery-present ok: path=${result.path}\n`);
+      }
+    },
+    (err) => {
+      process.stderr.write(`${(err && err.message) || String(err)}\n`);
+      process.exitCode = 1;
+    },
+  );
+})();
+
+(function galleryParityEntry() {
+  const argv = process.argv.slice(2);
+  if (argv[0] !== 'gallery-parity') return;
+  const parity = require('../lib/gallery-parity.js');
+  if (argv.includes('--help') || argv.includes('-h')) {
+    process.stdout.write(
+      'Usage: muse-native gallery-parity --cpu-vs-egl --assert-md5\n',
+    );
+    return;
+  }
+  let opts;
+  try {
+    opts = parity.parseGalleryParityArgs(argv);
+  } catch (err) {
+    process.stderr.write(`${(err && err.message) || String(err)}\nUsage: muse-native gallery-parity --cpu-vs-egl --assert-md5\n`);
+    process.exitCode = 2;
+    return;
+  }
+  if (!opts.cpuVsEgl || !opts.assertMd5) {
+    const missing = !opts.cpuVsEgl ? '--cpu-vs-egl' : '--assert-md5';
+    process.stderr.write(`Error: missing required flag ${missing}\nUsage: muse-native gallery-parity --cpu-vs-egl --assert-md5\n`);
+    process.exitCode = 2;
+    return;
+  }
+  parity.runGalleryParity({
+    serial: opts.serial || process.env.ANDROID_SERIAL,
+    assertMd5: true,
+  }).then(
+    (result) => {
+      process.stdout.write(`gallery-parity ok: cpuMd5=${result.cpuMd5} eglMd5=${result.eglMd5} equal=${result.equal}\n`);
+      if (result.cpuMd5 !== result.eglMd5 || !result.equal) {
+        process.exitCode = 1;
+      }
+    },
+    (err) => {
+      process.stderr.write(`${(err && err.message) || String(err)}\n`);
+      process.exitCode = 1;
+    },
+  );
+})();
+
+if (process.argv.slice(2)[0] !== 'gallery-proof' && process.argv.slice(2)[0] !== 'gallery-present' && process.argv.slice(2)[0] !== 'gallery-parity') {
   require('../lib/cli.js');
 }
