@@ -26,6 +26,15 @@
 // ASSUMPTION A-C3: `make -n` prints recipes without executing them, so live
 // gate refusal is proven for the parse-time HOME gate only; recipe-gate
 // refusal is proven textually (non-zero `exit 1` after each gate).
+// SECURITY COVERAGE (security-reviewer, 0 findings, 2 coverage requests):
+// S-C1 malformed VERSION content (wrong line count / non-SemVer line 1 /
+//   line 2 missing `sha=`+date / line 3 missing `abis=`) is refused with the
+//   SDK-VERSION-MISSING shape before compilation (textual gates + live `make`
+//   refusal against a sandbox HOME; live run executes no compile tool).
+// S-C2 `sdk_pin` extraction strictness: affixed/range/commented `sdk:` values
+//   (`^0.1.0`, `~0.1.0`, `>=0.1.0`, `0.1.x`, trailing `# comment`,
+//   commented-out key) never equal the expected version — warn-or-mismatch
+//   naming both versions, never equality.
 
 const { describe, it, beforeEach, afterEach } = require('node:test');
 const assert = require('node:assert/strict');
@@ -251,5 +260,106 @@ describe('T3 negative control: gate order is machine-checked, not assumed', () =
       'fixture sanity: this ordering is wrong');
     assert.ok(homeIdx > fixture.indexOf('test -s'),
       'the order assertion must catch a gate placed after test -s');
+  });
+});
+
+describe('T3 malformed VERSION refused before compilation (S-C1)', () => {
+  const GOOD = '0.1.0\nsha=abcdef date=2026-10-30T00:00:00Z\nabis=arm64-v8a armeabi-v7a x86_64 x86\n';
+  const MALFORMED = [
+    ['wrong line count (2 lines)', '0.1.0\nsha=abcdef date=2026-10-30T00:00:00Z\n'],
+    ['wrong line count (4 lines)', `${GOOD}extra=1\n`],
+    ['non-SemVer line 1', GOOD.replace('0.1.0', 'v0.1')],
+    ['line 2 missing sha=+date', GOOD.replace('sha=abcdef date=2026-10-30T00:00:00Z', 'rev=abcdef')],
+    ['line 3 missing abis=', GOOD.replace('abis=arm64-v8a armeabi-v7a x86_64 x86', 'archs=all')],
+  ];
+
+  function sandboxVersion(content) {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sdk-home-'));
+    sandboxes.push(dir);
+    fs.writeFileSync(path.join(dir, 'VERSION'), content);
+    for (const abi of ABIS) {
+      fs.mkdirSync(path.join(dir, `android-${abi}`), { recursive: true });
+      fs.writeFileSync(path.join(dir, `android-${abi}`, 'libRuntime.so'), 'ELF');
+    }
+    return dir;
+  }
+
+  function makeLive(dir, home) {
+    return cp.spawnSync('make', ['apk'],
+      { cwd: dir, encoding: 'utf8', env: { ...process.env, MUSE_NATIVE_HOME: home } });
+  }
+
+  it('wrong line count / non-SemVer line 1 / bad line 2 / bad line 3 fail closed before compile', () => {
+    const body = apkBody(readScaffold());
+    const firstCompile = Math.min(
+      ...['aapt2', 'javac', 'd8'].map((t) => (body.indexOf(t) === -1 ? Infinity : body.indexOf(t))),
+    );
+    assert.ok(firstCompile !== Infinity, 'apk must compile via aapt2/javac/d8');
+    for (const probe of ["print NR", "sed -n '1p'", "sed -n '2p'", "sed -n '3p'"]) {
+      const idx = body.indexOf(probe);
+      assert.ok(idx !== -1, `malformed gate ${probe} must exist`);
+      assert.ok(idx < firstCompile, `malformed gate ${probe} must precede compilation`);
+      assert.match(body.slice(idx, idx + 600), /exit\s+1/,
+        `malformed gate ${probe} must stop the build non-zero`);
+    }
+    assert.match(body, /malformed/i, 'malformed gates must name the failure shape');
+    for (const [label, content] of MALFORMED) {
+      const home = sandboxVersion(content);
+      const r = makeLive(GALLERY_DIR, home);
+      const out = `${r.stdout}${r.stderr}`;
+      assert.notEqual(r.status, 0, `${label}: malformed VERSION must fail the make check`);
+      assert.match(out, /malformed/i, `${label}: failure must name the malformed shape`);
+      assert.match(out, /VERSION/, `${label}: failure must name the VERSION file`);
+      assert.ok(!/aapt2|javac|\bd8\b/.test(out),
+        `${label}: compilation must never run on malformed VERSION`);
+    }
+  });
+});
+
+describe('T3 sdk_pin extraction strictness (S-C2)', () => {
+  function extractPin(yamlText) {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'yaml-pin-'));
+    sandboxes.push(dir);
+    fs.writeFileSync(path.join(dir, 'muse-native.yaml'), yamlText);
+    const r = cp.spawnSync('sh', ['-c',
+      "grep -E '^[[:space:]]*sdk:' muse-native.yaml 2>/dev/null"
+      + " | head -n 1 | sed 's/^[[:space:]]*sdk:[[:space:]]*//;s/[[:space:]]*$//'"],
+    { cwd: dir, encoding: 'utf8' });
+    assert.equal(r.status, 0, 'extraction pipeline must run hermetically');
+    return (r.stdout || '').replace(/\n$/, '');
+  }
+
+  it('affixed/range/commented sdk: values never equal the expected version', () => {
+    const body = apkBody(readScaffold());
+    assert.ok(body.includes('^[[:space:]]*sdk:'),
+      'extraction must anchor on a line-start sdk: key (commented-out keys never match)');
+    assert.ok(body.includes('[ "$$sdk_pin" != "$$sdk_ver" ]'),
+      'comparison must be exact string inequality, never a range/pattern match');
+    assert.match(body, /warning.*no 'sdk:' pin/i,
+      'empty pin must warn instead of matching');
+    const mismatchIdx = Math.max(body.indexOf('SDK version mismatch'), body.indexOf('$$sdk_pin'));
+    assert.ok(mismatchIdx !== -1, 'a mismatch branch must exist');
+    const branch = body.slice(mismatchIdx, mismatchIdx + 600);
+    assert.ok(branch.includes('sdk_ver') || /expected/.test(branch),
+      'mismatch must name the expected VERSION line-1 value');
+    assert.ok(branch.includes('sdk_pin') || /found/.test(branch),
+      'mismatch must name the found sdk: value');
+    assert.match(branch, /exit\s+1/, 'mismatch must stop the build non-zero');
+    for (const line of [
+      'sdk: ^0.1.0',
+      'sdk: ~0.1.0',
+      'sdk: >=0.1.0',
+      'sdk: 0.1.x',
+      'sdk: v0.1.0',
+      'sdk: 0.1.0 # comment',
+      '# sdk: 0.1.0',
+    ]) {
+      const got = extractPin(`name: gallery\n${line}\n`);
+      assert.notEqual(got, '0.1.0', `${line} must never extract as the expected version`);
+    }
+    assert.equal(extractPin('name: gallery\nsdk: 0.1.0\n'), '0.1.0',
+      'exact pin still extracts verbatim');
+    assert.equal(extractPin('name: gallery\n  sdk: 0.1.0\n'), '0.1.0',
+      'indented exact pin still extracts verbatim');
   });
 });
