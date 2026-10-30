@@ -11,8 +11,11 @@ import android.view.MotionEvent;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
 import android.view.View;
+import android.view.WindowInsets;
+import android.view.WindowInsetsAnimation;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.FrameLayout;
+import java.util.List;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -103,6 +106,9 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
 
     /** Release the attached surface without destroying the handle. */
     private static native void nativeDetachSurface(long handle);
+
+    /** Feed one animated IME frame into the typed inset bus (deps.insets.imeBottom px). */
+    private static native void nativeSetImeBottom(long handle, float imeBottomPx);
 
     /** Destroy the engine handle. */
     private static native void nativeDestroy(long handle);
@@ -206,6 +212,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         root.addView(inputViewTextInput, imeParams);
         root.addView(inputViewMuseField, imeParams);
         setContentView(root);
+        attachImeInsetListener(root);
         byte[] treeBytes = readTreeAsset();
         if (treeBytes != null) {
             engineHandle = nativeLoadTree(treeBytes);
@@ -265,6 +272,46 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             if (imm != null) {
                 imm.showSoftInput(anchor, 0);
             }
+        }
+    }
+
+    /**
+     * Register the animated IME inset listener (T3, FR-LAYOUT-012 typed
+     * inset bus). Each animation frame reads the animated ime() height
+     * and forwards it through the single feed below into
+     * deps.insets.imeBottom px — no parallel channel.
+     */
+    private void attachImeInsetListener(View root) {
+        if (Build.VERSION.SDK_INT >= 30) {
+            root.setWindowInsetsAnimationCallback(
+                    new WindowInsetsAnimation.Callback(
+                            WindowInsetsAnimation.Callback.DISPATCH_MODE_CONTINUE_ON_SUBTREE) {
+                        @Override
+                        public WindowInsets onProgress(
+                                WindowInsets insets,
+                                List<WindowInsetsAnimation> runningAnimations) {
+                            onInsetsFrame(
+                                    (float) insets.getInsets(WindowInsets.Type.ime()).bottom);
+                            return insets;
+                        }
+                    });
+        } else {
+            root.setOnApplyWindowInsetsListener((v, insets) -> {
+                onInsetsFrame(
+                        (float) insets.getInsets(WindowInsets.Type.ime()).bottom);
+                return insets;
+            });
+        }
+    }
+
+    /**
+     * Single inset feed: carry one animated frame height into the JNI
+     * setter backing deps.insets.imeBottom (same px field the T1 anchor
+     * consumes). Sole entry point — keep exactly one definition.
+     */
+    void onInsetsFrame(float imeBottomPx) {
+        if (engineHandle != 0) {
+            nativeSetImeBottom(engineHandle, imeBottomPx);
         }
     }
 
