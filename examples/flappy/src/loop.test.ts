@@ -3,7 +3,7 @@
 // Hermetic: node:test + node:assert/strict only. No network, no secrets, no
 // application configuration, no live services, no device. The unit under
 // test (`stepGame`/`resetGame` from `./loop.ts`) runs for real; the local
-// deterministic `game-engine-sample` physics it drives is an in-process
+// deterministic `box2d-sample` physics it drives is an in-process
 // collaborator, not a live dependency. Each test builds its own state via
 // `resetGame()`; no shared mutable state, no ordering dependency.
 //

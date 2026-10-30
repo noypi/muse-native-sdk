@@ -14,14 +14,14 @@
 #             (the CLI reports unknown targets).
 #
 # Self-test mode (`--self-test-missing-package`, TC-SAMPLE-021): shadows
-# `@muse/game-engine-sample` out of the local registry inside a temp
-# sandbox ONLY (a mktemp dir holding a symlink farm of node_modules/@muse
+# `@thirdparty/box2d-sample` out of the local registry inside a temp
+# sandbox ONLY (a mktemp dir holding a symlink farm of node_modules/@thirdparty
 # minus the package, plus a copy of the flappy sources — the real registry
 # and the checkout are never mutated), rebuilds the sandboxed flappy copy,
 # then resolves the demo's declared dependency through the Muse package
 # loader (`packages/pkg/lib/loader.js`) against the shadow registry. That
 # resolution must exit non-zero with stderr naming the package-loader error
-# for `game-engine-sample` (a loader PkgError, not a generic bundler miss),
+# for `box2d-sample` (a loader PkgError, not a generic bundler miss),
 # proving the dependency is real rather than vendored. The trap removes the
 # sandbox afterwards (restore). Prints PASS and exits 0 when the expectation
 # holds, FAIL and exits 1 otherwise.
@@ -38,8 +38,8 @@ set -o pipefail 2>/dev/null || true
 SCRIPT_DIR="$(dirname "$0")"
 
 self_test_missing_package() {
-  PKG_NAME="game-engine-sample"
-  SCOPED="@muse/${PKG_NAME}"
+  PKG_NAME="box2d-sample"
+  SCOPED="@thirdparty/${PKG_NAME}"
   REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
   LOADER="${REPO_ROOT}/packages/pkg/lib/loader.js"
   FLAPPY_DIR="${REPO_ROOT}/examples/flappy"
@@ -68,12 +68,12 @@ self_test_missing_package() {
   cleanup() { rm -rf "$SANDBOX"; }
   trap cleanup EXIT INT TERM
 
-  # Shadow registry: symlink farm of the local node_modules/@muse scope
-  # MINUS game-engine-sample. Symlinks only read the real registry; nothing
+  # Shadow registry: symlink farm of the local node_modules/@thirdparty scope
+  # MINUS box2d-sample. Symlinks only read the real registry; nothing
   # outside $SANDBOX is created, moved, or removed.
-  SHADOW_SCOPE="${SANDBOX}/node_modules/@muse"
+  SHADOW_SCOPE="${SANDBOX}/node_modules/@thirdparty"
   mkdir -p "$SHADOW_SCOPE"
-  REAL_SCOPE="${REPO_ROOT}/node_modules/@muse"
+  REAL_SCOPE="${REPO_ROOT}/node_modules/@thirdparty"
   if [ -d "$REAL_SCOPE" ]; then
     for entry in "$REAL_SCOPE"/*; do
       [ -e "$entry" ] || continue
