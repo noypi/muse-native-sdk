@@ -173,6 +173,31 @@ describe('T1 — shell Prev/Next navigation over the manifest story list', () =>
     assert.equal(n.current().index, 0);
   });
 
+  it('openStoryLink with a 1MB rawId rejects fail-closed without throwing or hanging', () => {
+    const n = navigatorFor(demoStories());
+    requireNav();
+    assert.equal(typeof nav.parseStoryLink, 'function', 'galleryNav must export parseStoryLink()');
+    const huge = 'a'.repeat(1024 * 1024);
+    const link = `gallery://story/${huge}`;
+    const start = Date.now();
+    let out;
+    assert.doesNotThrow(() => {
+      out = n.openStoryLink(link);
+    }, '1MB link must not throw');
+    assert.ok(
+      out && (out.code === 'unknown-story' || out.code === 'boundary'),
+      'oversized link must reject with unknown-story/boundary',
+    );
+    assert.equal(n.current().index, 0, 'oversized-link rejection must keep the current story');
+    assert.ok(Date.now() - start < 5000, 'oversized-link rejection must not hang');
+    let parsed;
+    assert.doesNotThrow(() => {
+      parsed = nav.parseStoryLink(link);
+    }, 'parseStoryLink must not throw on a 1MB link');
+    assert.ok(parsed && (parsed.code === 'unknown-story' || typeof parsed.id === 'string'),
+      'parseStoryLink must return { id } or { code: unknown-story } without throwing');
+  });
+
   it('App onOpenStoryLink agrees with galleryNav.openStoryLink (single storyIdOf rule, id !== component)', () => {
     requireNav();
     const { readFileSync } = require('node:fs');
