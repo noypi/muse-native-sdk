@@ -19,6 +19,169 @@ const DIMENSION_LITERAL = /\b\d+(?:\.\d+)?(?:px|dp|sp|pt)\b/;
 
 const SKIP_DIRS = new Set(['test', 'scripts', 'node_modules', '.git']);
 
+// FR-LAYOUT-016 T3 / AC-LAYOUT-052+053 — per-component token-table gate.
+// Fails when (a) a matrix/registry component has no token table, (b) a table
+// fails STRUCTURAL validation (six facets present; container/label/shape/
+// elevation/typescale strings; state string array; sources record with only
+// component|role|theme|default values), or (c) resolveTokens(component, mode)
+// role set differs from the tabled role set for light and dark (exact set
+// equality). No md.comp.<slug>.<facet> namespace rule. Runs after the
+// literal detection above and never weakens it: literal violations still
+// exit 1 first.
+const CHECKOUT_ROOT = path.join(__dirname, '..', '..', '..');
+const MATRIX_JSON = path.join(CHECKOUT_ROOT, 'engine', 'layout', 'm3_matrix.json');
+const REGISTRY_JS = path.join(CHECKOUT_ROOT, 'engine', 'layout', 'm3_registry.js');
+const THEME_JS = path.join(__dirname, '..', 'theme.js');
+
+const TOKEN_FACETS = ['container', 'label', 'state', 'shape', 'elevation', 'typescale'];
+const TOKEN_MODES = ['light', 'dark'];
+const TOKEN_SOURCES = new Set(['component', 'role', 'theme', 'default']);
+
+function isWellFormedTable(table) {
+  // STRUCTURAL validation only (no namespace rule): facet presence plus
+  // string/array types plus a valid sources record.
+  if (table === null || typeof table !== 'object' || Array.isArray(table)) return false;
+  for (const facet of TOKEN_FACETS) {
+    if (!Object.hasOwn(table, facet)) return false;
+  }
+  for (const facet of ['container', 'label', 'shape', 'elevation', 'typescale']) {
+    if (typeof table[facet] !== 'string') return false;
+  }
+  if (!Array.isArray(table.state)) return false;
+  for (const role of table.state) {
+    if (typeof role !== 'string') return false;
+  }
+  if (table.sources === null || typeof table.sources !== 'object' || Array.isArray(table.sources)) {
+    return false;
+  }
+  for (const facet of TOKEN_FACETS) {
+    if (!Object.hasOwn(table.sources, facet)) return false;
+    if (!TOKEN_SOURCES.has(table.sources[facet])) return false;
+  }
+  return true;
+}
+
+function registryComponentNames() {
+  let registry = null;
+  try {
+    // eslint-disable-next-line global-require
+    registry = require(REGISTRY_JS);
+  } catch (err) {
+    registry = null;
+  }
+  const names = [];
+  if (registry !== null) {
+    for (const key of ['NATIVE_COMPONENTS', 'COMPOSITE_COMPONENTS']) {
+      if (Array.isArray(registry[key])) {
+        for (const name of registry[key]) {
+          if (typeof name === 'string' && name !== '') names.push(name);
+        }
+      }
+    }
+    if (names.length > 0) return names;
+  }
+  // Registry lists are module-private: fall back to reading the
+  // NATIVE_COMPONENTS / COMPOSITE_COMPONENTS literals from its source.
+  try {
+    const source = fs.readFileSync(REGISTRY_JS, 'utf8');
+    for (const list of ['NATIVE_COMPONENTS', 'COMPOSITE_COMPONENTS']) {
+      const block = source.match(new RegExp(`const ${list} = \\[([\\s\\S]*?)\\];`));
+      if (!block) continue;
+      for (const match of block[1].matchAll(/'([^']+)'/g)) names.push(match[1]);
+    }
+  } catch (err) {
+    // Matrix remains authoritative; a missing registry source just means no
+    // extra names beyond the matrix.
+  }
+  return names;
+}
+
+// Returns a list of { component, detail } gate failures (empty when clean).
+function checkTokenTables() {
+  const failures = [];
+  let matrix;
+  try {
+    matrix = JSON.parse(fs.readFileSync(MATRIX_JSON, 'utf8'));
+  } catch (err) {
+    throw new Error(`cannot read token matrix at ${MATRIX_JSON}: ${err.message}`);
+  }
+  const matrixNames = Array.isArray(matrix.components)
+    ? matrix.components.map((c) => c && c.name).filter((n) => typeof n === 'string')
+    : [];
+  const universe = new Set([...matrixNames, ...registryComponentNames()]);
+  // Raw tabled role sets, read straight from the matrix JSON the gate
+  // already parsed: the registry helper normalizes its return to the six
+  // facets, so an extra role address added to the matrix would be invisible
+  // through the helper alone. Branch (c) compares against these raw sets.
+  const rawTables = new Map();
+  for (const entry of matrix.components || []) {
+    if (!entry || typeof entry.name !== 'string') continue;
+    const raw =
+      entry.tokenTable !== null && typeof entry.tokenTable === 'object' && !Array.isArray(entry.tokenTable)
+        ? entry.tokenTable
+        : entry.tokens !== null && typeof entry.tokens === 'object' && !Array.isArray(entry.tokens)
+          ? entry.tokens
+          : null;
+    if (raw !== null) rawTables.set(entry.name, raw);
+  }
+  // eslint-disable-next-line global-require
+  const registry = require(REGISTRY_JS);
+  // eslint-disable-next-line global-require
+  const theme = require(THEME_JS);
+  if (
+    typeof registry.getComponentTokenTable !== 'function' ||
+    typeof theme.resolveTokens !== 'function'
+  ) {
+    throw new Error('token table gate requires getComponentTokenTable and resolveTokens');
+  }
+  for (const name of universe) {
+    let table;
+    try {
+      table = registry.getComponentTokenTable(name);
+    } catch (err) {
+      failures.push({ component: name, detail: 'missing token table' });
+      continue;
+    }
+    if (!isWellFormedTable(table)) {
+      failures.push({ component: name, detail: 'tabled roles are malformed' });
+      continue;
+    }
+    for (const mode of TOKEN_MODES) {
+      let resolved;
+      try {
+        resolved = theme.resolveTokens(name, mode);
+      } catch (err) {
+        failures.push({ component: name, detail: `resolveTokens threw for mode "${mode}"` });
+        break;
+      }
+      // Branch (c): exact role-set equality at address level — the resolved
+      // role set (excluding the `mode` echo field) must equal the tabled
+      // role set (excluding the `sources` record). Compared against the raw
+      // matrix table so an extra role address cannot hide behind helper
+      // normalization. Values are seed/dynamic-derived, so no value
+      // comparison is asserted here.
+      const rawTable = rawTables.get(name) || table;
+      const resolvedKeys = Object.keys(resolved)
+        .filter((key) => key !== 'mode')
+        .sort();
+      const tabledKeys = Object.keys(rawTable)
+        .filter((key) => key !== 'sources')
+        .sort();
+      if (
+        resolvedKeys.length !== tabledKeys.length ||
+        resolvedKeys.some((key, index) => key !== tabledKeys[index])
+      ) {
+        failures.push({
+          component: name,
+          detail: `resolveTokens role set differs from the tabled role set for mode "${mode}"`,
+        });
+        break;
+      }
+    }
+  }
+  return failures;
+}
+
 function hasLiteral(line) {
   return (
     HEX_LITERAL.test(line) || FN_COLOR_LITERAL.test(line) || DIMENSION_LITERAL.test(line)
@@ -72,6 +235,19 @@ function main() {
   }
   if (violations.length > 0) {
     for (const v of violations) console.error(`check-tokens: literal token value at ${v}`);
+    process.exit(1);
+  }
+  let tableFailures;
+  try {
+    tableFailures = checkTokenTables();
+  } catch (err) {
+    console.error(`check-tokens: token table gate error: ${err.message}`);
+    process.exit(1);
+  }
+  if (tableFailures.length > 0) {
+    for (const f of tableFailures) {
+      console.error(`check-tokens: token table gate failed for component "${f.component}" — ${f.detail}`);
+    }
     process.exit(1);
   }
   console.log(`check-tokens: OK — ${files.length} library files token-only`);
