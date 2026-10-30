@@ -10,6 +10,9 @@ import android.os.Bundle;
 import android.view.MotionEvent;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
+import android.view.View;
+import android.view.inputmethod.InputMethodManager;
+import android.widget.FrameLayout;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -41,6 +44,25 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     private float downX = 0f;
     private float downY = 0f;
     private int downPointerId = -1;
+
+    /**
+     * Focusable input view backing the TextInput widget (tier-2 native
+     * component, {@code packages/native/textinput.js}). Plain focusable
+     * {@link View} host — deliberately not an editor subclass — so the
+     * InputMethodManager gains a showable {@code com.muse.host} target.
+     * Sized 1x1 and never touch-consuming, so the native tap chain stays
+     * first (A3).
+     */
+    private View inputViewTextInput;
+
+    /**
+     * Focusable input view backing the MuseField field surface
+     * ({@code packages/intelligence/lib/field.js}). Same host form as the
+     * TextInput view above: a plain focusable {@link View}, not an editor
+     * subclass. Both views share one 1x1 host parent and are focused
+     * together on the L7 probe tap path.
+     */
+    private View inputViewMuseField;
 
     /** Broadcast action the proof pages through (same entry as the tap path). */
     static final String ACTION_NATIVE_ADVANCE_PAGE = "muse.native.NATIVE_ADVANCE_PAGE";
@@ -146,6 +168,13 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                 downPointerId = -1;
                 if (claimed < 0 && !dragged) {
                     nativeAdvancePage(engineHandle);
+                } else if (claimed >= 0) {
+                    // L7 probe tap path (T2): the native chain already ran
+                    // first and claimed a node (e.g. the Layering IME probe
+                    // row) — focus the TextInput + MuseField-backed input
+                    // view and hand InputMethodManager a showable target.
+                    // Page-flip fallback above is untouched.
+                    requestImeForProbeTap();
                 }
                 nativeRenderFrame(engineHandle);
             } else if (action == MotionEvent.ACTION_CANCEL) {
@@ -153,7 +182,30 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             }
             return true;
         });
-        setContentView(surfaceView);
+        FrameLayout root = new FrameLayout(this);
+        root.addView(surfaceView);
+        // D1 input-view host (T2): TextInput + MuseField-backed focusable
+        // input view. A 1x1 focusable plain-View pair parked at the origin —
+        // focusable so dumpsys input_method reports a focusable
+        // com.muse.host target, but never clickable/touch-consuming so every
+        // touch still enters the native tap chain first (A3) and the
+        // outside-tap page-flip fallback above is untouched.
+        inputViewTextInput = new View(this);
+        inputViewTextInput.setFocusable(true);
+        inputViewTextInput.setFocusableInTouchMode(true);
+        inputViewTextInput.setClickable(false);
+        inputViewTextInput.setContentDescription("TextInput IME probe input view");
+        inputViewTextInput.setTag("TextInput");
+        inputViewMuseField = new View(this);
+        inputViewMuseField.setFocusable(true);
+        inputViewMuseField.setFocusableInTouchMode(true);
+        inputViewMuseField.setClickable(false);
+        inputViewMuseField.setContentDescription("MuseField IME probe input view");
+        inputViewMuseField.setTag("MuseField");
+        FrameLayout.LayoutParams imeParams = new FrameLayout.LayoutParams(1, 1);
+        root.addView(inputViewTextInput, imeParams);
+        root.addView(inputViewMuseField, imeParams);
+        setContentView(root);
         byte[] treeBytes = readTreeAsset();
         if (treeBytes != null) {
             engineHandle = nativeLoadTree(treeBytes);
@@ -193,8 +245,30 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         super.onDestroy();
     }
 
-    /** Reads the bundled tree asset (assets/tree.mui.bin). Returns null on failure. */
-    private byte[] readTreeAsset() {
+    /**
+     * Focus the TextInput + MuseField-backed input view after a claimed tap
+     * (L7 probe row) and ask InputMethodManager to show — the IME summon
+     * leg (AC-RUNTIME-009). Runs strictly after nativeDispatchTouch claimed
+     * the gesture, so native-first routing is preserved.
+     */
+    private void requestImeForProbeTap() {
+        if (inputViewTextInput != null) {
+            inputViewTextInput.requestFocus();
+        }
+        if (inputViewMuseField != null) {
+            inputViewMuseField.requestFocus();
+        }
+        View anchor = inputViewTextInput != null ? inputViewTextInput : inputViewMuseField;
+        if (anchor != null) {
+            InputMethodManager imm =
+                    (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
+            if (imm != null) {
+                imm.showSoftInput(anchor, 0);
+            }
+        }
+    }
+
+    /** Reads the bundled tree asset (assets/tree.mui.bin). Returns null on failure. */    private byte[] readTreeAsset() {
         try (InputStream in = getAssets().open("tree.mui.bin");
                 ByteArrayOutputStream out = new ByteArrayOutputStream()) {
             byte[] buf = new byte[8192];

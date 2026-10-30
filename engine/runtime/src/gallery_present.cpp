@@ -2555,8 +2555,7 @@ void paintLayeringPage(const LayeringScene& scene, Renderer& renderer,
 void anchorSheetToImeInset(LayeringScene& scene, float insetPx) {
   try {
     if (!std::isfinite(insetPx)) {
-      scene.sheetY = 0.0f;
-      return;
+      insetPx = 0.0f;
     }
     if (insetPx < 0.0f) insetPx = 0.0f;
     // Per-frame bind of the animated layout inset: sheet tracks the value
