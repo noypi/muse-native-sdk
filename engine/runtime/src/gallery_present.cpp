@@ -31,6 +31,10 @@
 #include "runtime/renderer.h"
 #include "runtime/tree.h"
 
+#ifdef __ANDROID__
+#include <android/log.h>
+#endif
+
 namespace runtime {
 namespace {
 
@@ -2284,6 +2288,28 @@ bool IsLayeringPageSlice(const std::vector<GalleryRow>& rows, int first,
     }
     if (ok && hasComp) return true;
   }
+  // On-device wrapper shape (verbatim p17 slice): the device emits
+  // OverlayHost wrappers plus a Surface scrim around the same layering
+  // content markers (TextInput "Layering IME probe", "Surface tone=scrim",
+  // Dialog "Layering dialog", BottomSheet). Anchored on those
+  // device-emitted comp+label markers, never on test-only strings.
+  if (len == 6) {
+    static const char* kDevComp[6] = {"OverlayHost", "TextInput",
+                                      "OverlayHost", "Surface", "Dialog",
+                                      "BottomSheet"};
+    static const char* kDevLabel[6] = {"OverlayHost", "Layering IME probe",
+                                       "OverlayHost", "Surface tone=scrim",
+                                       "Layering dialog", "BottomSheet"};
+    bool ok = true;
+    for (int i = 0; i < 6; ++i) {
+      const GalleryRow& row = rows[static_cast<std::size_t>(first + i)];
+      if (row.comp != kDevComp[i] || row.label != kDevLabel[i]) {
+        ok = false;
+        break;
+      }
+    }
+    if (ok) return true;
+  }
   return false;
 }
 
@@ -2344,6 +2370,29 @@ bool PresentDeviceGalleryPage(const std::vector<GalleryRow>& rows, int page,
     window.lastVisible =
         starts[static_cast<std::size_t>(page) + 1] - 1;
     window.prefetchAhead = 0;
+    {
+      std::string compList;
+      std::string labelList;
+      for (int i = window.firstVisible; i <= window.lastVisible; ++i) {
+        if (i > window.firstVisible) {
+          compList += "|";
+          labelList += "|";
+        }
+        compList += rows[static_cast<std::size_t>(i)].comp;
+        labelList += rows[static_cast<std::size_t>(i)].label;
+      }
+#ifdef __ANDROID__
+      __android_log_print(ANDROID_LOG_INFO, "GalleryPage",
+                          "[layering] slice page=%d rows=[%d,%d] comps={%s} "
+                          "labels={%s}",
+                          page, window.firstVisible, window.lastVisible,
+                          compList.c_str(), labelList.c_str());
+#else
+      std::printf("[layering] slice page=%d rows=[%d,%d] comps={%s} labels={%s}\n",
+                  page, window.firstVisible, window.lastVisible,
+                  compList.c_str(), labelList.c_str());
+#endif
+    }
     // L8a dispatch (FR-M3-010 lane): the layering-page slice presents via
     // paintLayeringPage (composited scrim + five contents, submission
     // order) instead of the flat-row emitter. All other pages fall
@@ -2481,11 +2530,19 @@ void anchorSheetToImeInset(LayeringScene& scene, float insetPx) {
     // Per-frame bind of the animated layout inset: sheet tracks the value
     // exactly; fullRelayouts stays untouched (no full-tree relayout).
     scene.sheetY = insetPx;
+#ifdef __ANDROID__
+    __android_log_print(ANDROID_LOG_INFO, "GalleryPage",
+                        "[layering] per-frame evidence sheetY=%.1f inset=%.1f "
+                        "relayout=none fullRelayouts=%u",
+                        static_cast<double>(scene.sheetY),
+                        static_cast<double>(insetPx), scene.fullRelayouts);
+#else
     std::printf(
         "[layering] per-frame evidence sheetY=%.1f inset=%.1f relayout=none "
         "fullRelayouts=%u\n",
         static_cast<double>(scene.sheetY), static_cast<double>(insetPx),
         scene.fullRelayouts);
+#endif
   } catch (...) {
     // Never throws across the boundary; keep last good sheetY on failure.
   }
@@ -2524,7 +2581,13 @@ DismissResult onScrimTap(bool scrimHit, bool isDrag,
     out.dismissed = "topmost";
     out.remaining = overlayCount - 1;
     out.reason = "";
+#ifdef __ANDROID__
+    __android_log_print(ANDROID_LOG_INFO, "GalleryPage",
+                        "[layering] dismiss=topmost remaining=%d",
+                        out.remaining);
+#else
     std::printf("[layering] dismiss=topmost remaining=%d\n", out.remaining);
+#endif
     return out;
   } catch (...) {
     DismissResult out;

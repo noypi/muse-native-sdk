@@ -402,6 +402,95 @@ bool check_viewport_windowed_layering_subset_routes_to_paint_shape() {
   return true;
 }
 
+// L8a predicate-fix (round-6 device-shape, tester-owned RED): verbatim
+// on-device slice p17 [107,112] (tester round-6, 127.0.0.1:6569):
+//   comps=`{OverlayHost|TextInput|OverlayHost|Surface|Dialog|BottomSheet}`
+//   labels=`{OverlayHost|Layering IME probe|OverlayHost|Surface tone=scrim|Layering dialog|BottomSheet}`
+// The on-device layering slice carries WRAPPER rows (OverlayHost x2, Surface
+// scrim, TextInput IME probe) the 9-row L1 scene contract never named — that
+// is why no offset ever aligned. This case feeds EXACTLY that 6-row slice as
+// page 1 (9 fillers + 1 Button on page 0, 6 verbatim rows on page 1 at
+// viewportH 1000: avail 844; page 0 used 752, +112 > 844 breaks at 10;
+// page 1 used 826 <= 844) and requires routing to paintLayeringPage
+// (composited 6-shape). Pre-fix RED: the predicate knows only the
+// wrapper-less 9-row scene, so the flat emitter runs instead.
+std::vector<runtime::GalleryRow> DeviceShapeSliceRows() {
+  std::vector<runtime::GalleryRow> rows;
+  for (int i = 0; i < 9; ++i) {
+    runtime::GalleryRow row;
+    row.label = "Device filler " + std::to_string(i);
+    rows.push_back(row);
+  }
+  runtime::GalleryRow button;
+  button.comp = "Button";
+  button.label = "Device button";
+  button.desc = "Button label=Device button";
+  rows.push_back(button);
+  struct Comp {
+    const char* comp;
+    const char* label;
+    const char* desc;
+  };
+  const Comp dev[] = {
+      {"OverlayHost", "OverlayHost", "OverlayHost"},
+      {"TextInput", "Layering IME probe",
+       "TextInput placeholder=Layering IME probe"},
+      {"OverlayHost", "OverlayHost", "OverlayHost"},
+      {"Surface", "Surface tone=scrim", "Surface tone=scrim"},
+      {"Dialog", "Layering dialog", "Dialog title=Layering dialog"},
+      {"BottomSheet", "BottomSheet", "BottomSheet"},
+  };
+  for (const Comp& c : dev) {
+    runtime::GalleryRow row;
+    row.comp = c.comp;
+    row.label = c.label;
+    row.desc = c.desc;
+    rows.push_back(row);
+  }
+  return rows;
+}
+
+constexpr int kDeviceSliceViewportH = 1000;
+
+bool check_device_shape_slice_routes_to_paint_shape() {
+  const std::vector<runtime::GalleryRow> rows = DeviceShapeSliceRows();
+  if (runtime::GalleryPageCount(rows, kDeviceSliceViewportH) != 2) {
+    return false;  // packing guard: the 6-row verbatim slice must be page 1
+  }
+  runtime::Renderer renderer(baseline_device());
+  FakeSwapchain target;
+  std::string error;
+  if (!runtime::PresentDeviceGalleryPage(rows, 1, renderer, target,
+                                         kDeviceSliceViewportH, &error)) {
+    return false;
+  }
+  if (!error.empty()) return false;
+  if (target.captured.size() != 6) return false;
+  const runtime::DrawCmd& scrim = target.captured.front();
+  if (scrim.kind != runtime::PrimitiveKind::OverlayScrim) return false;
+  if (std::fabs(scrim.payload.scrimAlpha - 0.25f) > 1e-6f) return false;
+  if (scrim.bounds.w != 720.0f || scrim.bounds.h != 1600.0f) return false;
+  for (std::size_t i = 0; i < target.captured.size(); ++i) {
+    if (target.captured[i].nodeId != static_cast<std::uint32_t>(i + 1)) {
+      return false;
+    }
+    const runtime::PrimitiveKind kind = target.captured[i].kind;
+    if (kind == runtime::PrimitiveKind::Text ||
+        kind == runtime::PrimitiveKind::ShapedText ||
+        kind == runtime::PrimitiveKind::ElevationShadow) {
+      return false;  // flat-row marker leaked into the composited present
+    }
+  }
+  for (std::size_t i = 1; i < target.captured.size(); ++i) {
+    if (target.captured[i].kind ==
+        runtime::PrimitiveKind::OverlayScrim) {
+      return false;
+    }
+    if (target.captured[i].payload.stateOpacity != 1.0f) return false;
+  }
+  return true;
+}
+
 }  // namespace
 
 #define RUN_CASE(name)                      \
@@ -427,6 +516,7 @@ int main() {
   RUN_CASE(check_non_layering_page_keeps_flat_row_emission);
   RUN_CASE(check_layering_dispatch_null_error_ptr_never_throws);
   RUN_CASE(check_viewport_windowed_layering_subset_routes_to_paint_shape);
+  RUN_CASE(check_device_shape_slice_routes_to_paint_shape);
   if (failures > 0) {
     std::printf("gallery_layering_test: %d failing\n", failures);
     return 1;
