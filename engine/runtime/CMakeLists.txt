@@ -233,6 +233,15 @@ target_link_libraries(tap_handler_repaint_test PRIVATE runtime muse_input_units)
 target_compile_options(tap_handler_repaint_test PRIVATE -Wall -Wextra -Wpedantic)
 add_test(NAME tap_handler_repaint_test COMMAND tap_handler_repaint_test)
 
+# BUG-M3-FIDELITY-007 T5 lifetime re-audit (security MEDIUM: ToGallery waiter
+# UAF — registry lock released before use; fix: counted lifetime). Entry-shape
+# pins for the registry-guarding JNI entries (null-env fail-closed halves);
+# the live-handle + waiter halves are JVM/device-only (ASSUMPTION → T7).
+add_executable(gallery_registry_lifetime_test tests/gallery_registry_lifetime_test.cpp)
+target_link_libraries(gallery_registry_lifetime_test PRIVATE runtime)
+target_compile_options(gallery_registry_lifetime_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME gallery_registry_lifetime_test COMMAND gallery_registry_lifetime_test)
+
 add_executable(config_change_test tests/config_change_test.cpp)
 target_link_libraries(config_change_test PRIVATE runtime)
 target_compile_options(config_change_test PRIVATE -Wall -Wextra -Wpedantic)

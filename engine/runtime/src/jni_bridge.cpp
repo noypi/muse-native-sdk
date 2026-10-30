@@ -9,9 +9,10 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <memory>
 #include <mutex>
 #include <string>
-#include <unordered_set>
+#include <unordered_map>
 #include <vector>
 
 #include "runtime/gallery_present.h"
@@ -228,43 +229,58 @@ struct GalleryHandle {
   std::mutex mu;
 };
 
-// Validated handle registry (cleared-review SECURITY MEDIUM, binding a):
+// Validated handle registry (cleared-review SECURITY MEDIUM, binding a;
+// re-audit MEDIUM fix: counted lifetime for the ToGallery waiter):
 // the raw jlong slot is never cast-and-dereferenced blindly. Only handles
 // created by nativeLoadTree and still live resolve; forged/stale/zero
-// handles fail closed (nullptr → -1/no-op, no deref). Unregister happens
-// exactly once in nativeDestroy, which also zeroes the Java-side slot
+// handles fail closed (nullptr → -1/no-op, no deref). The registry holds
+// one shared-ownership ref per live handle; every lookup returns a counted
+// reference the caller holds across its g->mu critical section, so a racing
+// destroy (erase + teardown) can never free a handle an earlier holder is
+// about to lock: destroy drops only the registry ref and the object dies
+// when the last in-flight ref drains. Unregister happens exactly once in
+// nativeDestroy, which also zeroes the Java-side slot
 // (MainActivity.onDestroy sets engineHandle = 0 after the call).
 std::mutex g_handleRegistryMu;
-std::unordered_set<GalleryHandle*> g_liveHandles;
+std::unordered_map<GalleryHandle*, std::shared_ptr<GalleryHandle>>
+    g_liveHandles;
 
-void RegisterHandle(GalleryHandle* g) {
+void RegisterHandle(const std::shared_ptr<GalleryHandle>& g) {
   if (g == nullptr) return;
   std::lock_guard<std::mutex> lock(g_handleRegistryMu);
-  g_liveHandles.insert(g);
+  g_liveHandles.emplace(g.get(), g);
 }
 
-GalleryHandle* ToGallery(jlong handle) {
+// Counted lookup: returns a shared ref held across the caller's g->mu
+// critical section (never a bare pointer outliving the registry lock).
+std::shared_ptr<GalleryHandle> ToGallery(jlong handle) {
   if (handle == 0) return nullptr;
-  GalleryHandle* g =
+  GalleryHandle* raw =
       reinterpret_cast<GalleryHandle*>(static_cast<intptr_t>(handle));
   std::lock_guard<std::mutex> lock(g_handleRegistryMu);
-  return g_liveHandles.count(g) > 0 ? g : nullptr;
+  const auto it = g_liveHandles.find(raw);
+  return it != g_liveHandles.end() ? it->second : nullptr;
 }
 
 // Atomic destroy claim (SECURITY MEDIUM): lookup + erase under the one
-// registry lock, returning the live handle exactly once. A second destroy
+// registry lock, handing the live handle out exactly once. A second destroy
 // (or any racing entry) finds the handle already erased and fails closed,
 // so teardown below runs exclusively and re-entry during destroy is barred.
-GalleryHandle* ClaimForDestroy(jlong handle) {
+// New dispatches fail closed too (erased from the live set); an in-flight
+// dispatch keeps its own counted ref, so the object outlives this destroy
+// until that critical section drains.
+std::shared_ptr<GalleryHandle> ClaimForDestroy(jlong handle) {
   if (handle == 0) return nullptr;
-  GalleryHandle* g =
+  GalleryHandle* raw =
       reinterpret_cast<GalleryHandle*>(static_cast<intptr_t>(handle));
   std::lock_guard<std::mutex> lock(g_handleRegistryMu);
-  if (g_liveHandles.count(g) == 0) {
+  const auto it = g_liveHandles.find(raw);
+  if (it == g_liveHandles.end()) {
     return nullptr;
   }
-  g_liveHandles.erase(g);
-  return g;
+  std::shared_ptr<GalleryHandle> claimed = std::move(it->second);
+  g_liveHandles.erase(it);
+  return claimed;
 }
 
 #ifdef __ANDROID__
@@ -273,7 +289,7 @@ GalleryHandle* ClaimForDestroy(jlong handle) {
 // `GalleryPage` tag so the `GalleryPage:I` logcat filter sees them. Counts
 // always come from the live row model + pager (rows.size() and
 // GalleryPageCount with the attached window height) — never constants.
-// Callers must hold g->mu.
+// Callers must hold a counted registry ref and g->mu.
 void EmitGalleryMarkersLocked(GalleryHandle* g, int pages, int w, int h) {
   (void)w;
   (void)h;
@@ -352,13 +368,13 @@ extern "C" MUSE_JNI_EXPORT jlong Java_com_muse_host_MainActivity_nativeLoadTree(
 #endif
       return 0;
     }
-    GalleryHandle* g = new GalleryHandle();
+    std::shared_ptr<GalleryHandle> g = std::make_shared<GalleryHandle>();
     g->tree.resize(static_cast<std::size_t>(len));
     env->GetByteArrayRegion(treeBytes, 0, len,
                             reinterpret_cast<jbyte*>(g->tree.data()));
     if (env->ExceptionCheck() == JNI_TRUE) {
       env->ExceptionClear();
-      delete g;
+      // g is a counted ref: returning drops it, no explicit delete.
       return 0;
     }
     g->rows = ::runtime::ParseGalleryRows(g->tree.data(), g->tree.size(),
@@ -390,7 +406,7 @@ extern "C" MUSE_JNI_EXPORT jlong Java_com_muse_host_MainActivity_nativeLoadTree(
       GalleryLogInfo(marker);
     }
 #endif
-    return static_cast<jlong>(reinterpret_cast<intptr_t>(g));
+    return static_cast<jlong>(reinterpret_cast<intptr_t>(g.get()));
   } catch (...) {
     if (env != nullptr && env->ExceptionCheck() == JNI_TRUE) {
       env->ExceptionClear();
@@ -405,7 +421,7 @@ extern "C" MUSE_JNI_EXPORT void Java_com_muse_host_MainActivity_nativeAttachSurf
   if (env == nullptr || env->ExceptionCheck() == JNI_TRUE) {
     return;
   }
-  GalleryHandle* g = ToGallery(handle);
+  std::shared_ptr<GalleryHandle> g = ToGallery(handle);
   if (g == nullptr) return;
   try {
 #ifdef __ANDROID__
@@ -457,12 +473,12 @@ extern "C" MUSE_JNI_EXPORT void Java_com_muse_host_MainActivity_nativeRenderFram
   if (env->ExceptionCheck() == JNI_TRUE) {
     return;
   }
-  GalleryHandle* g = ToGallery(handle);
+  std::shared_ptr<GalleryHandle> g = ToGallery(handle);
   if (g == nullptr) return;
   try {
 #ifdef __ANDROID__
     std::lock_guard<std::mutex> lock(g->mu);
-    RenderLocked(g);
+    RenderLocked(g.get());
 #endif
   } catch (...) {
     if (env->ExceptionCheck() == JNI_TRUE) {
@@ -477,13 +493,13 @@ extern "C" MUSE_JNI_EXPORT jint Java_com_muse_host_MainActivity_nativeAdvancePag
   if (env == nullptr || env->ExceptionCheck() == JNI_TRUE) {
     return 0;
   }
-  GalleryHandle* g = ToGallery(handle);
+  std::shared_ptr<GalleryHandle> g = ToGallery(handle);
   if (g == nullptr) return 0;
   try {
 #ifdef __ANDROID__
     std::lock_guard<std::mutex> lock(g->mu);
     g->page += 1;
-    RenderLocked(g);
+    RenderLocked(g.get());
     {
       // A page turn is a deliberate user action: always worth one line.
       char msg[64];
@@ -526,7 +542,7 @@ extern "C" MUSE_JNI_EXPORT jint Java_com_muse_host_MainActivity_nativeDispatchTo
   if (env == nullptr || env->ExceptionCheck() == JNI_TRUE) {
     return -1;
   }
-  GalleryHandle* g = ToGallery(handle);
+  std::shared_ptr<GalleryHandle> g = ToGallery(handle);
   if (g == nullptr) {
     return -1;
   }
@@ -571,7 +587,7 @@ extern "C" MUSE_JNI_EXPORT jint Java_com_muse_host_MainActivity_nativeDispatchTo
       const bool posted = RepaintWithinOneFrame(target);
       (void)posted;
 #ifdef __ANDROID__
-      RenderLocked(g);
+      RenderLocked(g.get());
       {
         char msg[128];
         std::snprintf(msg, sizeof(msg),
@@ -600,7 +616,7 @@ extern "C" MUSE_JNI_EXPORT void Java_com_muse_host_MainActivity_nativeDetachSurf
   if (env == nullptr || env->ExceptionCheck() == JNI_TRUE) {
     return;
   }
-  GalleryHandle* g = ToGallery(handle);
+  std::shared_ptr<GalleryHandle> g = ToGallery(handle);
   if (g == nullptr) return;
   try {
 #ifdef __ANDROID__
@@ -631,23 +647,23 @@ extern "C" MUSE_JNI_EXPORT void Java_com_muse_host_MainActivity_nativeDestroy(
   // live handle out exactly once (re-entry during destroy, stale-slot reuse
   // after destroy, and racing destroys all fail closed in ClaimForDestroy
   // with no deref). New dispatches fail closed too (erased from the live
-  // set); the in-flight dispatch, if any, already holds g->mu, which the
-  // teardown lock below waits on before delete. The Java side zeroes its
+  // set). The teardown lock below waits on g->mu, so an in-flight dispatch
+  // — which holds its own counted ref across its critical section — finishes
+  // first; the object itself dies only when that last in-flight ref drains
+  // (the local `claimed` going out of scope here). The Java side zeroes its
   // slot after this call (engineHandle = 0).
-  GalleryHandle* g = ClaimForDestroy(handle);
-  if (g == nullptr) return;
+  std::shared_ptr<GalleryHandle> claimed = ClaimForDestroy(handle);
+  if (claimed == nullptr) return;
   try {
 #ifdef __ANDROID__
-    std::lock_guard<std::mutex> lock(g->mu);
-    if (g->window != nullptr) {
-      ANativeWindow_release(g->window);
-      g->window = nullptr;
+    std::lock_guard<std::mutex> lock(claimed->mu);
+    if (claimed->window != nullptr) {
+      ANativeWindow_release(claimed->window);
+      claimed->window = nullptr;
     }
 #endif
   } catch (...) {
   }
-  try {
-    delete g;
-  } catch (...) {
-  }
+  // No explicit delete: `claimed` going out of scope drops the destroy-side
+  // ref; in-flight holders keep the handle alive until they release g->mu.
 }
