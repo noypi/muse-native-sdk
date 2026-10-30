@@ -49,7 +49,7 @@ bool ReadEnvelope(const void* data, std::size_t len, const char*& json,
                            (static_cast<std::uint32_t>(b[9]) << 8) |
                            (static_cast<std::uint32_t>(b[10]) << 16) |
                            (static_cast<std::uint32_t>(b[11]) << 24);
-  if (declared == 0 || 12u + declared > len) {
+  if (declared == 0 || static_cast<std::uint64_t>(declared) + 12 > len) {
     if (error != nullptr) *error = "envelope length out of range";
     return false;
   }
