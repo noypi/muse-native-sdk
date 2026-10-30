@@ -100,8 +100,31 @@ PresenterError PresentGalleryWindow(const std::vector<DrawCmd>& windowCmds,
 // non-None draw result (fail-closed, same error shape as PresentGallery).
 // Keeps the glyphRunId == 0 fail-closed untouched. C++ only, zero JNI on
 // the per-frame path; error == nullptr is tolerated on every leg.
+//
+// T11 keeps this 5-arg entry as the reference-viewport (kPresentH) lane so
+// the committed T10 hermetic suite stays green unmodified; new callers pass
+// the real viewport height through the 6-arg overload below.
 bool PresentDeviceGalleryPage(const std::vector<GalleryRow>& rows, int page,
                               Renderer& renderer, Swapchain& target,
                               std::string* error);
+
+// T11 page-slicing lane (FR-TEXT-016 / AC-TEXT-045, F1 fix): same contract
+// as the 5-arg entry, but page range and emission slice use `viewportH`
+// (the real window height, shared with the caller's pager) instead of the
+// fixed reference viewport, and the slice paints at the viewport origin.
+// `viewportH <= 0` fails closed like bad input. RULE-RUNTIME-001
+// fail-closed, same error shape as PresentGallery.
+bool PresentDeviceGalleryPage(const std::vector<GalleryRow>& rows, int page,
+                              Renderer& renderer, Swapchain& target,
+                              int viewportH, std::string* error);
+
+// T11 coverage seam (FR-TEXT-016 / AC-TEXT-045): resolve a ShapeGalleryLabel
+// handle to its shaped glyph data (glyph ids + advances) from the T5
+// gallery shaping cache. Returns true with both outputs populated on a
+// known handle; false on 0/unknown handles or null outputs (fail-closed,
+// never synthesized). Never throws.
+bool ResolveGalleryShapedRun(std::uint32_t handle,
+                             std::vector<std::uint32_t>* glyphs,
+                             std::vector<float>* advances);
 
 }  // namespace runtime

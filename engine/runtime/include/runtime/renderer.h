@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 
+#include "muse/text/text_types.h"
 #include "runtime/vulkan_baseline.h"
 
 namespace runtime {
@@ -83,13 +84,26 @@ class Renderer {
   std::string lastError_;
 };
 
-// FR-TEXT-016 / AC-TEXT-045 (BUG-M3-FIDELITY-005 T6): rasterize a cached
-// ShapedText run into the Swapchain path via slug_msdf texel records +
+// FR-TEXT-016 / AC-TEXT-045 (BUG-M3-FIDELITY-005 T11): per-pixel glyph
+// coverage for one rasterized run, in bounds-local pixels. Row-major
+// `alpha` (`width * height` floats, 0 = background, 1 = full ink) threads
+// the `tile_raster` coverage / MSDF alpha out of `RasterizeShapedText` so
+// window painters src-over blend per pixel instead of filling text bounds
+// solid. Never throws.
+struct CoverageMask {
+  int width = 0;
+  int height = 0;
+  std::vector<float> alpha;
+};
+
+// FR-TEXT-016 / AC-TEXT-045 (BUG-M3-FIDELITY-005 T11): rasterize a cached
+// ShapedText run into a CoverageMask via slug_msdf texel records +
 // tile_raster coverage (CPU mirror; pure C++, zero JNI on the frame path
-// per NFR-TEXT-001). run == 0 or an unknown/dangling run id fails closed
-// with UnknownPrimitive (extends the glyphRunId == 0 sentinel rule) and
-// records nothing. Never throws.
-DrawError RasterizeShapedText(std::uint32_t run, const Rect& bounds,
-                              std::uint32_t color);
+// per NFR-TEXT-001). The run resolves through the T5 gallery shaping cache
+// (no synthesis: unknown/dangling ids fail closed with kMissingGlyph and
+// paint nothing, extending the glyphRunId == 0 sentinel rule). The caller
+// maps a failed Status onto DrawError::UnknownPrimitive. Never throws.
+muse::text::StatusOr<CoverageMask> RasterizeShapedText(
+    std::uint32_t run, const Rect& bounds, std::uint32_t color);
 
 }  // namespace runtime

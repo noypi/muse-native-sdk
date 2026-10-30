@@ -311,6 +311,9 @@ struct GalleryRunKey {
 struct GalleryShaper {
   muse::text::GlyphAtlas atlas;
   std::map<GalleryRunKey, std::uint32_t> runs;
+  // T11 coverage seam: shaped glyph data per assigned handle, so
+  // RasterizeShapedText resolves real runs (no synthesis, no second shape).
+  std::map<std::uint32_t, muse::text::ShapedRun> runData;
   std::uint32_t next = 0x1000u;
 };
 
@@ -440,6 +443,7 @@ std::uint32_t ShapeGalleryLabel(const std::string& label) {
   ++shaper.next;
   if (shaper.next == 0u) shaper.next = 0x1000u;  // Never hand out 0.
   shaper.runs.emplace(std::move(key), id);
+  shaper.runData.emplace(id, run);
   return id;
 }
 
@@ -1865,6 +1869,9 @@ void EmitComponentRowCmds(const GalleryRow& row, int bx, int by, int bw,
   card.bounds = shadow.bounds;
   card.radius = 20.0f;
   card.nodeId = node;
+  // T11: the card fill stays payload-0 (the default surface-container in
+  // the presented-window InkFor); the ElevationShadow above carries the
+  // wash and the caption below carries the vector text.
   out.push_back(card);
   EmitFamilyCmd(row, FamilyKind(row.comp), bx, by, bw, bh, node, out);
   EmitCaptionCmd(bx, by, bw, bh, node, ShortCaption(row), out);
@@ -1878,6 +1885,8 @@ void EmitTextRowCmds(const GalleryRow& row, int bx, int by, int bw, int bh,
                  static_cast<float>(bw), static_cast<float>(bh)};
   band.radius = 18.0f;
   band.nodeId = node;
+  // T11: the band fill stays payload-0 (the default tonal fill in the
+  // presented-window InkFor); the caption below carries the vector text.
   out.push_back(band);
   EmitCaptionCmd(bx, by, bw, bh, node, row.label, out);
 }
@@ -2210,17 +2219,55 @@ void SetPresentError(std::string* error, const char* msg) {
 
 }  // namespace
 
+// T11 coverage seam: resolve a ShapeGalleryLabel handle to the shaped glyph
+// data cached at assignment. Unknown/0 handles (or null outputs) fail
+// closed with false; the shaped data is never re-derived or synthesized.
+bool ResolveGalleryShapedRun(std::uint32_t handle,
+                             std::vector<std::uint32_t>* glyphs,
+                             std::vector<float>* advances) {
+  if (handle == 0u || glyphs == nullptr || advances == nullptr) return false;
+  try {
+    GalleryShaper& shaper = GalleryShaperState();
+    const auto it = shaper.runData.find(handle);
+    if (it == shaper.runData.end()) return false;
+    if (it->second.glyph_ids.empty()) return false;
+    *glyphs = it->second.glyph_ids;
+    *advances = it->second.advances;
+    return true;
+  } catch (...) {
+    return false;
+  }
+}
+
+// T10 reference-viewport lane (kPresentH): preserved so the committed T10
+// hermetic suite stays green unmodified; new callers use the viewportH lane
+// with the real window height.
+bool PresentDeviceGalleryPage(const std::vector<GalleryRow>& rows, int page,
+                               Renderer& renderer, Swapchain& target,
+                               std::string* error) {
+  return PresentDeviceGalleryPage(rows, page, renderer, target, kPresentH,
+                                  error);
+}
+
+// T11 page-slicing lane: page range and emission slice use the real
+// viewport height shared with the caller's pager.
 bool PresentDeviceGalleryPage(const std::vector<GalleryRow>& rows, int page,
                               Renderer& renderer, Swapchain& target,
-                              std::string* error) {
+                              int viewportH, std::string* error) {
   try {
+    if (viewportH <= 0) {
+      SetPresentError(error, "present window: bad viewport height");
+      return false;
+    }
     if (rows.empty()) {
       SetPresentError(error, "present window: no gallery rows");
       return false;
     }
-    // Page range mirrors the RasterGalleryPage pager (kPresentH viewport);
-    // out-of-range pages fail closed before any cmd is emitted.
-    const int pages = GalleryPageCount(rows, kPresentH);
+    // T11 fix 2: ONE viewport height — the range check uses the same pager
+    // the caller wraps with, so pages valid under the real window height
+    // present here too. Out-of-range pages fail closed before any cmd is
+    // emitted (nothing submitted, buffer untouched by this entry).
+    const int pages = GalleryPageCount(rows, viewportH);
     if (page < 0 || page >= pages) {
       SetPresentError(error, "present window: page out of range");
       return false;
@@ -2240,20 +2287,35 @@ bool PresentDeviceGalleryPage(const std::vector<GalleryRow>& rows, int page,
         return false;
       }
     }
-    // Realized-window emission over the full present page (an oversize
-    // viewport claims every row; the window boundary still binds windowed
-    // rows only, never a second full-list layout).
+    // T11 fix 2: emit exactly the requested page's slice [starts[page],
+    // starts[page+1]) — never the full list — so consecutive pages present
+    // pixel-different frames instead of one frozen frame.
+    const std::vector<int> starts = PageStarts(rows, viewportH);
     RealizedWindow window;
-    window.firstVisible = 0;
-    window.lastVisible = static_cast<int>(rows.size()) - 1;
+    window.firstVisible = starts[static_cast<std::size_t>(page)];
+    window.lastVisible =
+        starts[static_cast<std::size_t>(page) + 1] - 1;
     window.prefetchAhead = 0;
     std::vector<DrawCmd> cmds;
     cmds.reserve(rows.size() * 2 + 2);
     EmitGalleryWindowCmds(rows, window, cmds);
+    // Rebase the slice to the viewport origin: the windowed emitter lays
+    // rows at virtual-canvas offsets, so later pages would paint outside
+    // [0, viewportH). Page 0 is unchanged (zero shift, T10-compatible).
+    float cursorFirst = static_cast<float>(kPad);
+    for (int i = 0; i < window.firstVisible; ++i) {
+      cursorFirst += static_cast<float>(
+                         RowHeight(rows[static_cast<std::size_t>(i)])) +
+                     static_cast<float>(kGap);
+    }
+    const float rebaseDy = cursorFirst - static_cast<float>(kPad);
+    if (rebaseDy != 0.0f) {
+      for (auto& cmd : cmds) cmd.bounds.y -= rebaseDy;
+    }
     // Present caption runs as vector text: Text cmds carrying a real run
-    // id ride the ShapedText leg so Renderer draw records them for
-    // RasterizeShapedText (glyphRunId == 0 stays on the Text leg, which
-    // draw forwards without the UnknownPrimitive trip).
+    // id ride the ShapedText leg so the retained vector-text path paints
+    // them from cached coverage (glyphRunId == 0 stays on the Text leg,
+    // which draw forwards without the UnknownPrimitive trip).
     for (auto& cmd : cmds) {
       if (cmd.kind == PrimitiveKind::Text && cmd.payload.glyphRunId != 0) {
         cmd.kind = PrimitiveKind::ShapedText;
@@ -2270,13 +2332,15 @@ bool PresentDeviceGalleryPage(const std::vector<GalleryRow>& rows, int page,
       }
       return false;
     }
-    // T6 per-run raster validation in bounds: every presented run must
-    // rasterize on the Swapchain path (draw already registered each run
-    // via NoteLiveRun, so only dangling handles can trip here).
+    // T11 per-run raster validation in bounds: every presented run must
+    // resolve to real coverage on the Swapchain path (unknown/dangling
+    // handles yield !ok() — never synthesized — and fail the present
+    // closed, recording nothing).
     for (const auto& cmd : staged.cmds) {
       if (cmd.kind != PrimitiveKind::ShapedText) continue;
-      if (RasterizeShapedText(cmd.payload.glyphRunId, cmd.bounds,
-                              cmd.payload.textColor) != DrawError::None) {
+      const muse::text::StatusOr<CoverageMask> coverage = RasterizeShapedText(
+          cmd.payload.glyphRunId, cmd.bounds, cmd.payload.textColor);
+      if (!coverage.ok()) {
         SetPresentError(error, "shaped run rasterization failed");
         return false;
       }
