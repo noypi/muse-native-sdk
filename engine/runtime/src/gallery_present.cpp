@@ -2245,6 +2245,37 @@ bool ResolveGalleryShapedRun(std::uint32_t handle,
   }
 }
 
+// L8a (FR-M3-010 lane): the requested page's slice is the L1 layering
+// scene rows (Showcase LayeringPage lowerer output, in order): the
+// "Layering page" title, dimmed light/dark content, the IME-probe editor,
+// then the five overlay members in submission order. Matches comp+label
+// so a flat page can never satisfy it; no pager/slice change.
+bool IsLayeringPageSlice(const std::vector<GalleryRow>& rows, int first,
+                         int last) {
+  if (last - first + 1 != 9) return false;
+  const GalleryRow& title = rows[static_cast<std::size_t>(first)];
+  if (!title.comp.empty() || title.label != "Layering page") return false;
+  static const char* kTextLabels[2] = {"Layering content dimmed light",
+                                       "Layering content dimmed dark"};
+  for (int i = 0; i < 2; ++i) {
+    const GalleryRow& row = rows[static_cast<std::size_t>(first + 1 + i)];
+    if (!row.comp.empty() || row.label != kTextLabels[i]) return false;
+  }
+  static const char* kCompTypes[6] = {"TextInput",  "Dialog",      "BottomSheet",
+                                      "Menu",       "SnackbarHost", "Tooltip"};
+  static const char* kCompLabels[6] = {"Layering IME probe", "Layering dialog",
+                                        "BottomSheet", "Menu",
+                                        "Layering snackbar",
+                                        "Layering tooltip"};
+  for (int i = 0; i < 6; ++i) {
+    const GalleryRow& row = rows[static_cast<std::size_t>(first + 3 + i)];
+    if (row.comp != kCompTypes[i] || row.label != kCompLabels[i]) {
+      return false;
+    }
+  }
+  return true;
+}
+
 // T10 reference-viewport lane (kPresentH): preserved so the committed T10
 // hermetic suite stays green unmodified; new callers use the viewportH lane
 // with the real window height.
@@ -2302,6 +2333,17 @@ bool PresentDeviceGalleryPage(const std::vector<GalleryRow>& rows, int page,
     window.lastVisible =
         starts[static_cast<std::size_t>(page) + 1] - 1;
     window.prefetchAhead = 0;
+    // L8a dispatch (FR-M3-010 lane): the layering-page slice presents via
+    // paintLayeringPage (composited scrim + five contents, submission
+    // order) instead of the flat-row emitter. All other pages fall
+    // through unchanged; no pager/slice change.
+    if (IsLayeringPageSlice(rows, window.firstVisible, window.lastVisible)) {
+      LayeringScene scene;
+      scene.valid = true;
+      paintLayeringPage(scene, renderer, target, error);
+      if (error != nullptr && !error->empty()) return false;
+      return true;
+    }
     std::vector<DrawCmd> cmds;
     cmds.reserve(rows.size() * 2 + 2);
     EmitGalleryWindowCmds(rows, window, cmds);
