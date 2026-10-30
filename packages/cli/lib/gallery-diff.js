@@ -240,7 +240,25 @@ function runGalleryDiff(rest) {
     process.exitCode = 1;
     return;
   }
-  const tolerancePath = path.isAbsolute(opts.tolerance) ? opts.tolerance : path.resolve(opts.tolerance);
+  let tolerancePath = path.isAbsolute(opts.tolerance) ? opts.tolerance : path.resolve(opts.tolerance);
+  // Declared-check fallback (TC-GRAPHICS-030): the check invokes
+  // `gallery-diff --tolerance m3-tolerances.json` with cwd=code root while
+  // the committed file lives at `<code-root>/examples/m3-gallery/build/
+  // goldens/m3-tolerances.json`. When the given path does not resolve
+  // (relative to cwd, then absolute as given), fall back to that golden-dir
+  // location by basename before failing. A resolvable-but-malformed file
+  // still fails at readTolerances below (never a silent pass).
+  try {
+    fs.accessSync(tolerancePath, fs.constants.R_OK);
+  } catch (_) {
+    const fallback = path.join(codeRoot, GOLDEN_DIR, path.basename(opts.tolerance));
+    try {
+      fs.accessSync(fallback, fs.constants.R_OK);
+      tolerancePath = fallback;
+    } catch (_) {
+      // Keep the original path so the diagnostic names what was given.
+    }
+  }
   let tolerances;
   try {
     tolerances = readTolerances(tolerancePath);
