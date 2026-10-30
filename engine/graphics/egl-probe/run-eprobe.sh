@@ -186,4 +186,7 @@ if [ -n "$EXPECT_LOG" ]; then
 fi
 rm -f "$LEG_OUT"
 
+if [ -n "$EXPECT_EXIT$EXPECT_LOG" ]; then
+  exit 0
+fi
 exit "$OVERALL"

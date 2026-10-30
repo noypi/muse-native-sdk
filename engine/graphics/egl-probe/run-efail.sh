@@ -356,11 +356,44 @@ for s in $STAGES; do
     blocked "leg $s timed out after ${TIMEOUT_SECS}s (hang)"
   fi
   [ "$code" -ge 128 ] && fail "device $DEVICE stage $s crashed (signal exit $code)"
-  [ "$code" -eq 0 ] && fail "device $DEVICE stage $s exited 0, want nonzero (see $LOG)"
+  # T1.10 ripple: wrapper contract — matched --expect-* assertions exit 0.
+  [ "$code" -ne 0 ] && fail "device $DEVICE stage $s wrapper-match exited $code, want 0 (see $LOG)"
   grep -q "EGL-PROBE-DIAGNOSTIC" "$LOG" || fail "device $DEVICE stage $s log missing 'EGL-PROBE-DIAGNOSTIC' (see $LOG)"
   grep -q "$s" "$LOG" || fail "device $DEVICE stage $s log missing diagnostic substring '$s' (see $LOG)"
-  echo "PASS device $DEVICE stage $s (exit $code, diagnostic names '$s')"
+  echo "PASS device $DEVICE stage $s wrapper-match (exit 0, diagnostic names '$s')"
+  # Probe-nonzero proof, relocated off the wrapper's exit: same leg in
+  # passthrough mode (no --expect-* flags) forwards the probe's own exit.
+  LOG_PT=/tmp/nfr_efail.device.$s.passthrough.log
+  # shellcheck disable=SC2086
+  code_pt=$(run_guarded "$LOG_PT" $EPROBE --device "$DEVICE" --force-fail "$s")
+  if [ "$code_pt" -eq 124 ]; then
+    blocked "leg $s passthrough timed out after ${TIMEOUT_SECS}s (hang)"
+  fi
+  [ "$code_pt" -ge 128 ] && fail "device $DEVICE stage $s passthrough crashed (signal exit $code_pt)"
+  [ "$code_pt" -eq 0 ] && fail "device $DEVICE stage $s passthrough exited 0, want nonzero (probe must fail; see $LOG_PT)"
+  grep -q "EGL-PROBE-DIAGNOSTIC" "$LOG_PT" || fail "device $DEVICE stage $s passthrough log missing 'EGL-PROBE-DIAGNOSTIC' (see $LOG_PT)"
+  grep -q "$s" "$LOG_PT" || fail "device $DEVICE stage $s passthrough log missing diagnostic substring '$s' (see $LOG_PT)"
+  echo "PASS device $DEVICE stage $s passthrough (exit $code_pt, diagnostic names '$s')"
 done
+# Mismatch-inversion legs (wrapper exits 2): prove the assertions actually
+# discriminate — a force-failed probe must NOT satisfy --expect-exit zero,
+# and a bogus --expect-log substring must NOT match.
+for s in $STAGES; do
+  LOG_MM=/tmp/nfr_efail.device.$s.mismatch-exit.log
+  # shellcheck disable=SC2086
+  code_mm=$(run_guarded "$LOG_MM" $EPROBE --device "$DEVICE" --force-fail "$s" --expect-exit zero --expect-log EGL-PROBE-DIAGNOSTIC)
+  [ "$code_mm" -eq 124 ] && blocked "leg $s mismatch-exit timed out after ${TIMEOUT_SECS}s (hang)"
+  [ "$code_mm" -ge 128 ] && fail "device $DEVICE stage $s mismatch-exit crashed (signal exit $code_mm)"
+  [ "$code_mm" -ne 2 ] && fail "device $DEVICE stage $s mismatch-exit exited $code_mm, want 2 (see $LOG_MM)"
+  echo "PASS device $DEVICE stage $s mismatch-exit (exit 2, --expect-exit zero correctly rejected)"
+done
+LOG_MM_LOG=/tmp/nfr_efail.device.mismatch-log.log
+# shellcheck disable=SC2086
+code_mm_log=$(run_guarded "$LOG_MM_LOG" $EPROBE --device "$DEVICE" --force-fail init --expect-exit nonzero --expect-log EFAIL-IMPOSSIBLE-SUBSTRING-9f3a7c2e)
+[ "$code_mm_log" -eq 124 ] && blocked "mismatch-log leg timed out after ${TIMEOUT_SECS}s (hang)"
+[ "$code_mm_log" -ge 128 ] && fail "device $DEVICE mismatch-log crashed (signal exit $code_mm_log)"
+[ "$code_mm_log" -ne 2 ] && fail "device $DEVICE mismatch-log exited $code_mm_log, want 2 (see $LOG_MM_LOG)"
+echo "PASS device $DEVICE mismatch-log (exit 2, bogus --expect-log correctly rejected)"
 
 echo "EFAIL-VERDICT: PASS"
 exit 0
