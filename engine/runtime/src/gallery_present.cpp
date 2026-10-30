@@ -2249,31 +2249,42 @@ bool ResolveGalleryShapedRun(std::uint32_t handle,
 // scene rows (Showcase LayeringPage lowerer output, in order): the
 // "Layering page" title, dimmed light/dark content, the IME-probe editor,
 // then the five overlay members in submission order. Matches comp+label
-// so a flat page can never satisfy it; no pager/slice change.
+// so a flat page can never satisfy it; no pager/slice change. Viewport
+// windowing may trim the title/dimmed head, so any contiguous subsequence
+// of the 9-row scene containing at least one comp row still matches.
 bool IsLayeringPageSlice(const std::vector<GalleryRow>& rows, int first,
                          int last) {
-  if (last - first + 1 != 9) return false;
-  const GalleryRow& title = rows[static_cast<std::size_t>(first)];
-  if (!title.comp.empty() || title.label != "Layering page") return false;
-  static const char* kTextLabels[2] = {"Layering content dimmed light",
-                                       "Layering content dimmed dark"};
-  for (int i = 0; i < 2; ++i) {
-    const GalleryRow& row = rows[static_cast<std::size_t>(first + 1 + i)];
-    if (!row.comp.empty() || row.label != kTextLabels[i]) return false;
-  }
-  static const char* kCompTypes[6] = {"TextInput",  "Dialog",      "BottomSheet",
-                                      "Menu",       "SnackbarHost", "Tooltip"};
-  static const char* kCompLabels[6] = {"Layering IME probe", "Layering dialog",
-                                        "BottomSheet", "Menu",
-                                        "Layering snackbar",
-                                        "Layering tooltip"};
-  for (int i = 0; i < 6; ++i) {
-    const GalleryRow& row = rows[static_cast<std::size_t>(first + 3 + i)];
-    if (row.comp != kCompTypes[i] || row.label != kCompLabels[i]) {
-      return false;
+  if (first < 0 || last < first) return false;
+  if (rows.empty()) return false;
+  const int n = static_cast<int>(rows.size());
+  if (first >= n || last >= n) return false;
+  const int len = last - first + 1;
+  if (len < 1 || len > 9) return false;
+  static const char* kExpComp[9] = {"", "", "", "TextInput", "Dialog",
+                                    "BottomSheet", "Menu", "SnackbarHost",
+                                    "Tooltip"};
+  static const char* kExpLabel[9] = {"Layering page",
+                                     "Layering content dimmed light",
+                                     "Layering content dimmed dark",
+                                     "Layering IME probe", "Layering dialog",
+                                     "BottomSheet", "Menu",
+                                     "Layering snackbar",
+                                     "Layering tooltip"};
+  for (int offset = 0; offset + len <= 9; ++offset) {
+    bool ok = true;
+    bool hasComp = false;
+    for (int i = 0; i < len; ++i) {
+      const GalleryRow& row = rows[static_cast<std::size_t>(first + i)];
+      if (row.comp != kExpComp[offset + i] ||
+          row.label != kExpLabel[offset + i]) {
+        ok = false;
+        break;
+      }
+      if (!row.comp.empty()) hasComp = true;
     }
+    if (ok && hasComp) return true;
   }
-  return true;
+  return false;
 }
 
 // T10 reference-viewport lane (kPresentH): preserved so the committed T10

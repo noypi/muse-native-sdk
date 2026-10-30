@@ -332,6 +332,76 @@ bool check_layering_dispatch_null_error_ptr_never_throws() {
   return target.captured.size() == 6;
 }
 
+// L8a predicate-fix (round-3, tester-owned RED): the on-device 18/19 viewport
+// shows ~6 rows with no title, but IsLayeringPageSlice requires the windowed
+// slice to be exactly 9 rows (title + 2 dimmed + 6 comps), so the branch
+// never fires on-device. This case feeds the REAL PageStarts-windowed subset
+// the device path supplies: 7 filler text rows + 1 flat Button row, then the
+// 9 L1 layering rows, at viewportH 1070. PageStarts packs page 0 as
+// [0,11) (fillers + button + title + 2 dimmed) and page 1 as [11,17) —
+// exactly the 6 comp rows (IME probe, Dialog, BottomSheet, Menu,
+// SnackbarHost, Tooltip) with NO title. That windowed subset must still
+// route to paintLayeringPage (composited 6-shape). Pre-fix RED: the
+// predicate's `last - first + 1 != 9` rejects the 6-row window and the flat
+// emitter runs instead.
+std::vector<runtime::GalleryRow> WindowedSubsetRows() {
+  std::vector<runtime::GalleryRow> rows;
+  for (int i = 0; i < 7; ++i) {
+    runtime::GalleryRow row;
+    row.label = "Subset filler " + std::to_string(i);
+    rows.push_back(row);
+  }
+  runtime::GalleryRow button;
+  button.comp = "Button";
+  button.label = "Subset button";
+  button.desc = "Button label=Subset button";
+  rows.push_back(button);
+  const std::vector<runtime::GalleryRow> scene = LayeringSceneRows();
+  rows.insert(rows.end(), scene.begin(), scene.end());
+  return rows;
+}
+
+constexpr int kSubsetViewportH = 1070;
+
+bool check_viewport_windowed_layering_subset_routes_to_paint_shape() {
+  const std::vector<runtime::GalleryRow> rows = WindowedSubsetRows();
+  if (runtime::GalleryPageCount(rows, kSubsetViewportH) != 2) {
+    return false;  // packing guard: the 6-comp subset must be page 1
+  }
+  runtime::Renderer renderer(baseline_device());
+  FakeSwapchain target;
+  std::string error;
+  if (!runtime::PresentDeviceGalleryPage(rows, 1, renderer, target,
+                                         kSubsetViewportH, &error)) {
+    return false;
+  }
+  if (!error.empty()) return false;
+  if (target.captured.size() != 6) return false;
+  const runtime::DrawCmd& scrim = target.captured.front();
+  if (scrim.kind != runtime::PrimitiveKind::OverlayScrim) return false;
+  if (std::fabs(scrim.payload.scrimAlpha - 0.25f) > 1e-6f) return false;
+  if (scrim.bounds.w != 720.0f || scrim.bounds.h != 1600.0f) return false;
+  for (std::size_t i = 0; i < target.captured.size(); ++i) {
+    if (target.captured[i].nodeId != static_cast<std::uint32_t>(i + 1)) {
+      return false;
+    }
+    const runtime::PrimitiveKind kind = target.captured[i].kind;
+    if (kind == runtime::PrimitiveKind::Text ||
+        kind == runtime::PrimitiveKind::ShapedText ||
+        kind == runtime::PrimitiveKind::ElevationShadow) {
+      return false;  // flat-row marker leaked into the composited present
+    }
+  }
+  for (std::size_t i = 1; i < target.captured.size(); ++i) {
+    if (target.captured[i].kind ==
+        runtime::PrimitiveKind::OverlayScrim) {
+      return false;
+    }
+    if (target.captured[i].payload.stateOpacity != 1.0f) return false;
+  }
+  return true;
+}
+
 }  // namespace
 
 #define RUN_CASE(name)                      \
@@ -356,6 +426,7 @@ int main() {
   RUN_CASE(check_layering_slice_routes_to_paint_layering_page_shape);
   RUN_CASE(check_non_layering_page_keeps_flat_row_emission);
   RUN_CASE(check_layering_dispatch_null_error_ptr_never_throws);
+  RUN_CASE(check_viewport_windowed_layering_subset_routes_to_paint_shape);
   if (failures > 0) {
     std::printf("gallery_layering_test: %d failing\n", failures);
     return 1;
