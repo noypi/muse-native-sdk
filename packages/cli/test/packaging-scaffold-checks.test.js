@@ -21,8 +21,9 @@
 // from the project's muse-native.yaml `sdk:` key via a shell one-liner
 // (plan Risks); tests accept any grep/sed extraction naming `sdk:`.
 // ASSUMPTION A-C2: the single exempt `../$(notdir …)` inside the BUILD_DIR
-// staging `cd … && zip` line (comment-marked) is not SDK traversal; the
-// no-traversal gate bans `../../`, `../build`, and `../../build` tokens.
+// staging `cd … && zip` line (comment-marked) is not SDK traversal; repo-
+// relative `../../engine/` tool refs (JNI gate) share that exemption class;
+// the no-traversal gate otherwise bans `../../`, `../build`, `../../build`.
 // ASSUMPTION A-C3: `make -n` prints recipes without executing them, so live
 // gate refusal is proven for the parse-time HOME gate only; recipe-gate
 // refusal is proven textually (non-zero `exit 1` after each gate).
@@ -225,7 +226,11 @@ describe('T3 per-ABI test -s gates last (SDK-ABI-MISSING)', () => {
 describe('T3 no ../ SDK traversal (AC-023 slice)', () => {
   it('no ../../build or ../build traversal remains', () => {
     const text = readScaffold();
-    assert.ok(!text.includes('../../'), 'scaffold Makefile must not contain ../../ traversal');
+    // Exempt repo-relative ../../engine/ tool references (e.g. JNI gate
+    // GATE=../../engine/... BRIDGE=../../engine/...): same exemption class
+    // as the line-56 staging NOTE — a build-tool reference, not SDK resolution.
+    const nonExempt = text.split('\n').filter((l) => !l.includes('../../engine/')).join('\n');
+    assert.ok(!nonExempt.includes('../../'), 'scaffold Makefile must not contain ../../ traversal outside ../../engine/ tool refs');
     assert.ok(!text.includes('../build'), 'scaffold Makefile must not traverse to ../build');
   });
 
