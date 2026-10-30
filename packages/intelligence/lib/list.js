@@ -141,4 +141,59 @@ async function remode(args) {
   };
 }
 
-module.exports = { structureData, remode };
+// selectRow({ hierarchy, rowId }) — row-tap select + navigate descriptor
+// (AC-MUSE-044). Purely in-memory lookup scanning hierarchy.groups[].items[]
+// by string id; fires zero structure dispatch calls. Success returns the row
+// id plus the navigation descriptor and any carried photoId/maskId. Unknown
+// id throws a named error (never a partial selection, never a silent no-op).
+function selectRow(args) {
+  const hierarchy = args && args.hierarchy;
+  const rowId = args && args.rowId;
+  const groups = hierarchy && Array.isArray(hierarchy.groups) ? hierarchy.groups : [];
+  let found = null;
+  for (const g of groups) {
+    const items = g && Array.isArray(g.items) ? g.items : [];
+    for (const item of items) {
+      // String-id shape per validateHierarchy; strict === keeps this
+      // __proto__-safe (no keyed lookup, no prototype access).
+      if (item && typeof item.id === 'string' && typeof rowId === 'string' && item.id === rowId) {
+        found = item;
+        break;
+      }
+    }
+    if (found) break;
+  }
+  if (!found) {
+    const err = new MuseError('unknown-row', `unknown row id: ${String(rowId)}`);
+    // MuseError prefixes code in message; contract requires the bare detail.
+    err.message = `unknown row id: ${String(rowId)}`;
+    throw err;
+  }
+  const res = { rowId: found.id, route: 'structure', structureCalls: 0 };
+  if (found.photoId !== undefined) res.photoId = found.photoId;
+  if (found.maskId !== undefined) res.maskId = found.maskId;
+  return res;
+}
+
+// retainSelection({ selectedId, freshHierarchy }) — preserve selection across
+// a renderMode re-request (AC-MUSE-045). Mirrors the remode retained-membership
+// pattern: build a Set of fresh item string ids, membership test only. Pure
+// function — fires no dispatch itself. Null/absent selection stays null;
+// absent node or null hierarchy clears to null with no throw.
+function retainSelection(args) {
+  const selectedId = args && args.selectedId;
+  const freshHierarchy = args && args.freshHierarchy;
+  if (typeof selectedId !== 'string' || !freshHierarchy) return { selectedId: null };
+  const groups = freshHierarchy && Array.isArray(freshHierarchy.groups) ? freshHierarchy.groups : [];
+  const retained = new Set();
+  for (const g of groups) {
+    const items = g && Array.isArray(g.items) ? g.items : [];
+    for (const item of items) {
+      if (item && typeof item.id === 'string') retained.add(item.id);
+    }
+  }
+  if (!retained.has(selectedId)) return { selectedId: null };
+  return { selectedId };
+}
+
+module.exports = { structureData, remode, selectRow, retainSelection };

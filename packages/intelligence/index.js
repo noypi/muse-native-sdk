@@ -15,6 +15,7 @@ const {
 } = require('./lib/voice.js');
 const { MuseImage } = require('./lib/image.js');
 const { createPlatformSpeech } = require('./lib/platform-speech.js');
+const { selectRow, retainSelection } = require('./lib/list.js');
 
 module.exports = {
   createTurn,
@@ -28,4 +29,6 @@ module.exports = {
   MuseVoiceSpeaker,
   MuseImage,
   createPlatformSpeech,
+  selectRow,
+  retainSelection,
 };
