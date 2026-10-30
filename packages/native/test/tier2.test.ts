@@ -216,3 +216,194 @@ test('accessing an unknown tier-2 component cannot construct a descriptor', () =
     components.NotAComponent({});
   }, TypeError);
 });
+
+// ---------------------------------------------------------------------------
+// TC-M3-024 / AC-M3-023: selection-control tap-to-activate (FR-M3-002)
+// Hermetic: node:test + node:assert/strict only. Selection handles are loaded
+// lazily inside each test via createRequire so the TC-M3-003 gate above stays
+// green when selection.js is absent (each new test then fails in isolation).
+// ---------------------------------------------------------------------------
+
+function loadSelection() {
+  return require('../selection.js');
+}
+
+// --- T1: enabled Checkbox tap flips `checked` through the selection binding ---
+
+test('AC-M3-023 T1: checkbox tap flips unchecked to checked with one-frame repaint', () => {
+  const { createCheckbox } = loadSelection();
+  const handle = createCheckbox({ checked: false });
+  const record = handle.tap();
+  assert.equal(record.checked, true);
+  assert.equal(record.repainted, 1);
+  assert.equal(record.reinstantiated, 0);
+  assert.equal(record.frames, 1);
+  assert.equal(handle.checked, true);
+});
+
+test('AC-M3-023 T1: checkbox second tap flips back to unchecked', () => {
+  const { createCheckbox } = loadSelection();
+  const handle = createCheckbox({ checked: false });
+  handle.tap();
+  const record = handle.tap();
+  assert.equal(record.checked, false);
+  assert.equal(record.repainted, 1);
+  assert.equal(record.reinstantiated, 0);
+  assert.equal(record.frames, 1);
+  assert.equal(handle.checked, false);
+});
+
+test('AC-M3-023 T1: checkbox tap writes through binding.set', () => {
+  const { createCheckbox } = loadSelection();
+  const seen = [];
+  const handle = createCheckbox({ checked: false, binding: { set: (v) => seen.push(v) } });
+  handle.tap();
+  assert.deepEqual(seen, [true]);
+});
+
+test('AC-M3-023 T1: checkbox tap assigns binding.value when no set function', () => {
+  const { createCheckbox } = loadSelection();
+  const binding = { value: false };
+  const handle = createCheckbox({ checked: false, binding });
+  handle.tap();
+  assert.equal(binding.value, true);
+});
+
+test('AC-M3-023 T1: checkbox tap notifies onCheckedChange', () => {
+  const { createCheckbox } = loadSelection();
+  const seen = [];
+  const handle = createCheckbox({ checked: false, onCheckedChange: (v) => seen.push(v) });
+  handle.tap();
+  assert.deepEqual(seen, [true]);
+});
+
+test('AC-M3-023 T1 ASSUMPTION: checkbox read-only binding never breaks the tap path', () => {
+  const { createCheckbox } = loadSelection();
+  const binding = {};
+  Object.defineProperty(binding, 'value', { enumerable: true, get: () => false, set: () => { throw new Error('read-only'); } });
+  const handle = createCheckbox({ checked: false, binding });
+  const record = handle.tap();
+  assert.equal(record.checked, true);
+  assert.equal(handle.checked, true);
+});
+
+test('AC-M3-023 T1 ASSUMPTION: checkbox throwing listener never breaks the tap path', () => {
+  const { createCheckbox } = loadSelection();
+  const handle = createCheckbox({ checked: false, onCheckedChange: () => { throw new Error('listener boom'); } });
+  const record = handle.tap();
+  assert.equal(record.checked, true);
+  assert.equal(handle.checked, true);
+});
+
+// --- T2: enabled Radio tap sets `selected` (idempotent) through the binding ---
+
+test('AC-M3-023 T2: radio tap sets unselected to selected with one-frame repaint', () => {
+  const { createRadio } = loadSelection();
+  const handle = createRadio({ selected: false });
+  const record = handle.tap();
+  assert.equal(record.selected, true);
+  assert.equal(record.repainted, 1);
+  assert.equal(record.reinstantiated, 0);
+  assert.equal(record.frames, 1);
+  assert.equal(handle.selected, true);
+});
+
+test('AC-M3-023 T2: radio tap on already-selected stays selected', () => {
+  const { createRadio } = loadSelection();
+  const handle = createRadio({ selected: true });
+  const record = handle.tap();
+  assert.equal(record.selected, true);
+  assert.equal(record.repainted, 1);
+  assert.equal(record.reinstantiated, 0);
+  assert.equal(record.frames, 1);
+  assert.equal(handle.selected, true);
+});
+
+test('AC-M3-023 T2: radio tap writes through binding.set', () => {
+  const { createRadio } = loadSelection();
+  const seen = [];
+  const handle = createRadio({ selected: false, binding: { set: (v) => seen.push(v) } });
+  handle.tap();
+  assert.deepEqual(seen, [true]);
+});
+
+test('AC-M3-023 T2: radio tap notifies onSelectedChange', () => {
+  const { createRadio } = loadSelection();
+  const seen = [];
+  const handle = createRadio({ selected: false, onSelectedChange: (v) => seen.push(v) });
+  handle.tap();
+  assert.deepEqual(seen, [true]);
+});
+
+test('AC-M3-023 T2 ASSUMPTION: radio throwing listener never breaks the tap path', () => {
+  const { createRadio } = loadSelection();
+  const handle = createRadio({ selected: false, onSelectedChange: () => { throw new Error('listener boom'); } });
+  const record = handle.tap();
+  assert.equal(record.selected, true);
+  assert.equal(handle.selected, true);
+});
+
+// --- T3: disabled Checkbox/Radio taps change nothing ---
+
+test('AC-M3-023 T3: disabled checkbox tap keeps unchecked with no repaint', () => {
+  const { createCheckbox } = loadSelection();
+  const handle = createCheckbox({ checked: false, enabled: false });
+  const record = handle.tap();
+  assert.equal(record.checked, false);
+  assert.equal(record.repainted, 0);
+  assert.equal(record.reinstantiated, 0);
+  assert.equal(record.frames, 1);
+  assert.equal(handle.checked, false);
+});
+
+test('AC-M3-023 T3: disabled checkbox tap keeps checked with no repaint', () => {
+  const { createCheckbox } = loadSelection();
+  const handle = createCheckbox({ checked: true, enabled: false });
+  const record = handle.tap();
+  assert.equal(record.checked, true);
+  assert.equal(record.repainted, 0);
+  assert.equal(handle.checked, true);
+});
+
+test('AC-M3-023 T3: disabled checkbox tap touches neither binding nor listener', () => {
+  const { createCheckbox } = loadSelection();
+  let writes = 0;
+  let calls = 0;
+  const handle = createCheckbox({
+    checked: false,
+    enabled: false,
+    binding: { set: () => { writes += 1; } },
+    onCheckedChange: () => { calls += 1; },
+  });
+  handle.tap();
+  assert.equal(writes, 0);
+  assert.equal(calls, 0);
+  assert.equal(handle.checked, false);
+});
+
+test('AC-M3-023 T3: disabled radio tap keeps unselected with no repaint', () => {
+  const { createRadio } = loadSelection();
+  const handle = createRadio({ selected: false, enabled: false });
+  const record = handle.tap();
+  assert.equal(record.selected, false);
+  assert.equal(record.repainted, 0);
+  assert.equal(record.reinstantiated, 0);
+  assert.equal(record.frames, 1);
+  assert.equal(handle.selected, false);
+});
+
+test('AC-M3-023 T3: disabled radio tap touches neither binding nor listener', () => {
+  const { createRadio } = loadSelection();
+  let writes = 0;
+  let calls = 0;
+  const handle = createRadio({
+    selected: false,
+    enabled: false,
+    binding: { set: () => { writes += 1; } },
+    onSelectedChange: () => { calls += 1; },
+  });
+  handle.tap();
+  assert.equal(writes, 0);
+  assert.equal(calls, 0);
+  assert.equal(handle.selected, false);
+});
