@@ -3,7 +3,7 @@
 // FR-WORKFLOW owns command options later; this file only routes argv.
 const path = require('node:path');
 
-const COMMANDS = ['init', 'build', 'dev', 'run', 'gallery-proof', 'renderer-prims', 'gallery-diff', 'gallery-scroll', 'scroll-deadlines'];
+const COMMANDS = ['init', 'build', 'dev', 'run', 'gallery-proof', 'renderer-prims', 'gallery-diff', 'gallery-scroll', 'scroll-deadlines', 'gallery-tap', 'gallery-tap-repaint'];
 const INVOKED = path.basename(process.argv[1] || '', '.js');
 
 if (INVOKED === 'muse') {
@@ -269,6 +269,14 @@ function main() {
   }
   if (command === 'scroll-deadlines') {
     require('./scroll-deadlines.js')(argv.slice(1));
+    return;
+  }
+  if (command === 'gallery-tap') {
+    require('./gallery-tap.js')(argv.slice(1));
+    return;
+  }
+  if (command === 'gallery-tap-repaint') {
+    require('./gallery-tap-repaint.js')(argv.slice(1));
     return;
   }
 }
