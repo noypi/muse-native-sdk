@@ -48,7 +48,7 @@ android:
 	    x86) TARGET="i686-linux-android$(ANDROID_PLATFORM_NUM)";; \
 	  esac; \
 	  if [ ! -x "$$CLANG" ]; then echo "error: NDK clang++ missing at '$$CLANG' (ANDROID_NDK_HOME); expected NDK rev $(EXPECTED_NDK_REV)" >&2; exit 1; fi; \
-	  "$$CLANG" --target="$$TARGET" $(CXX_STD) $(WARN) -O2 $(INCLUDES) $(SRC) -o "$(ANDROID_OUT_PREFIX)$$ABI" -ldl -llog; \
+	  "$$CLANG" --target="$$TARGET" $(CXX_STD) $(WARN) -O2 $(INCLUDES) $(SRC) -o "$(ANDROID_OUT_PREFIX)$$ABI" -static-libstdc++ -ldl -llog; \
 	  if [ ! -f "$(ANDROID_OUT_PREFIX)$$ABI" ]; then echo "error: missing output egl-probe binary for ABI slot $$ABI at '$(ANDROID_OUT_PREFIX)$$ABI'" >&2; exit 1; fi; \
 	done
 
