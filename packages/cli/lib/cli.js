@@ -3,7 +3,7 @@
 // FR-WORKFLOW owns command options later; this file only routes argv.
 const path = require('node:path');
 
-const COMMANDS = ['init', 'build', 'dev', 'run', 'gallery-proof', 'renderer-prims', 'gallery-diff', 'gallery-scroll', 'scroll-deadlines', 'gallery-tap', 'gallery-tap-repaint', 'gallery-text', 'gallery-text-goldens'];
+const COMMANDS = ['init', 'build', 'dev', 'run', 'gallery-proof', 'renderer-prims', 'gallery-diff', 'gallery-scroll', 'scroll-deadlines', 'gallery-tap', 'gallery-tap-repaint', 'gallery-text', 'gallery-text-goldens', 'egl-probe'];
 const INVOKED = path.basename(process.argv[1] || '', '.js');
 
 if (INVOKED === 'muse') {
@@ -105,13 +105,14 @@ function validateOptions(argv) {
 function printHelp() {
   process.stdout.write(
     [
-      'Usage: muse-native <init|build|dev|run|gallery-proof|renderer-prims|gallery-diff|gallery-scroll|scroll-deadlines|gallery-text|gallery-text-goldens> [args]',
+      'Usage: muse-native <init|build|dev|run|gallery-proof|renderer-prims|gallery-diff|gallery-scroll|scroll-deadlines|gallery-text|gallery-text-goldens|egl-probe> [args]',
       '',
       'Commands:',
       '  init    scaffold a new project',
       '  build   build the project',
       '  dev     start the dev server',
       '  run     run the project',
+      '  egl-probe    run the EGL capability probe',
       '  gallery-proof    run the gallery device proof',
       '  renderer-prims    assert the retained 11-kind M3 primitive set',
       '  gallery-diff    diff the committed per-page goldens within tolerance',
@@ -146,7 +147,7 @@ function printGalleryProofHelp() {
 }
 
 function printUsageError(message) {
-  process.stderr.write(`${message}\nUsage: muse-native <init|build|dev|run|gallery-proof|renderer-prims|gallery-diff|gallery-scroll|scroll-deadlines|gallery-text|gallery-text-goldens> [args]\n`);
+  process.stderr.write(`${message}\nUsage: muse-native <init|build|dev|run|gallery-proof|renderer-prims|gallery-diff|gallery-scroll|scroll-deadlines|gallery-text|gallery-text-goldens|egl-probe> [args]\n`);
 }
 
 function printBuildHelp() {
@@ -202,9 +203,13 @@ function main() {
     process.exitCode = 0;
     return;
   }
+  if (argv[0] === 'egl-probe') {
+    require('./egl-probe.js')(argv.slice(1));
+    return;
+  }
   if (argv.includes('-h') || argv.includes('--help') || argv.length === 0) {
     if (argv.length === 0) {
-      printUsageError('Usage: muse-native <init|build|dev|run|gallery-proof|renderer-prims|gallery-diff|gallery-scroll|scroll-deadlines|gallery-text|gallery-text-goldens> [args]');
+      printUsageError('Usage: muse-native <init|build|dev|run|gallery-proof|renderer-prims|gallery-diff|gallery-scroll|scroll-deadlines|gallery-text|gallery-text-goldens|egl-probe> [args]');
       process.exitCode = 2;
       return;
     }
