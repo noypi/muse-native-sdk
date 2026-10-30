@@ -182,3 +182,18 @@ describe('retainSelection — preserve selection across renderMode re-request (A
     assert.equal(calls, 0);
   });
 });
+
+describe('entry re-export — @muse/intelligence surface (T3, FR-MUSE-014 export dependency)', () => {
+  it('re-exports selectRow and retainSelection as functions', () => {
+    const entry = require('../index.js');
+    assert.equal(typeof entry.selectRow, 'function');
+    assert.equal(typeof entry.retainSelection, 'function');
+  });
+
+  it('keeps existing exports unchanged', () => {
+    const entry = require('../index.js');
+    for (const name of ['createTurn', 'createMuseVoice', 'MuseVoice', 'MuseImage', 'createPlatformSpeech']) {
+      assert.equal(typeof entry[name], 'function', name);
+    }
+  });
+});

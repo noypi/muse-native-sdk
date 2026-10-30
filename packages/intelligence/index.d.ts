@@ -171,3 +171,37 @@ export declare function createPlatformSpeech(
     lifecycle?: { onPause(fn: () => void): void; onResume(fn: () => void): void };
   }
 ): SpeechHandle;
+
+// T3 (FR-MUSE-014) — MuseList row selection surface (pure re-export of lib/list.js).
+export interface HierarchyItem {
+  id: string;
+  text: string;
+  photoId?: string;
+  maskId?: string;
+}
+
+export interface HierarchyGroup {
+  label: string;
+  sentiment: string;
+  items: HierarchyItem[];
+}
+
+export interface Hierarchy {
+  summary: string;
+  groups: HierarchyGroup[];
+}
+
+export interface SelectionResult {
+  rowId: string;
+  photoId?: string;
+  maskId?: string;
+  route: 'structure';
+  structureCalls: 0;
+}
+
+export declare function selectRow(args: { hierarchy: Hierarchy; rowId: string }): SelectionResult;
+
+export declare function retainSelection(args: {
+  selectedId: string | null;
+  freshHierarchy: Hierarchy | null;
+}): { selectedId: string | null };
