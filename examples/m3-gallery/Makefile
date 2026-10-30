@@ -13,10 +13,10 @@ LINKED_ZIP = $(BUILD_DIR)/base-linked.zip
 UNSIGNED_APK = $(BUILD_DIR)/$(APP_NAME)-unsigned.apk
 ALIGNED_APK = $(BUILD_DIR)/$(APP_NAME)-aligned.apk
 SIGNED_APK = $(BUILD_DIR)/$(APP_NAME)-debug.apk
-DEBUG_KEYSTORE = debug.keystore
+DEBUG_KEYSTORE = ~/.android/debug.keystore
 ASSET_SRC = dist/tree.mui.bin
 ASSET_DST = assets/tree.mui.bin
-ANDROID_JAR = $(ANDROID_HOME)/platforms/android-34/android.jar
+ANDROID_JAR = $(ANDROID_PLATFORM)/android.jar
 ENGINE_LIBS = $(MUSE_NATIVE_HOME)/android-arm64-v8a/libRuntime.so $(MUSE_NATIVE_HOME)/android-armeabi-v7a/libRuntime.so $(MUSE_NATIVE_HOME)/android-x86_64/libRuntime.so $(MUSE_NATIVE_HOME)/android-x86/libRuntime.so
 
 .PHONY: apk sign verify install clean
@@ -37,6 +37,8 @@ apk:
 	test -s "$(MUSE_NATIVE_HOME)/android-x86_64/libRuntime.so" || { echo "error: missing engine lib for ABI slot x86_64 at '$(MUSE_NATIVE_HOME)/android-x86_64/libRuntime.so'" >&2; exit 1; }
 	test -s "$(MUSE_NATIVE_HOME)/android-x86/libRuntime.so" || { echo "error: missing engine lib for ABI slot x86 at '$(MUSE_NATIVE_HOME)/android-x86/libRuntime.so'" >&2; exit 1; }
 	rm -f $(UNSIGNED_APK)
+	muse-native build .
+	mkdir -p assets && cp dist/tree.mui.bin assets/tree.mui.bin
 	mkdir -p $(STAGING_DIR) $(BUILD_DIR)/gen $(BUILD_DIR)/classes $(BUILD_DIR)/dex
 	aapt2 compile --dir res -o $(BUILD_DIR)/compiled.zip
 	aapt2 link -o $(LINKED_ZIP) -I $(ANDROID_JAR) --manifest AndroidManifest.xml --java $(BUILD_DIR)/gen -A assets $(BUILD_DIR)/compiled.zip
