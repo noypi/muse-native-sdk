@@ -9,12 +9,13 @@
 #   jni_contract_test.sh [libRuntime.so] [MainActivity.java] [jni_bridge.cpp]
 # Defaults resolve relative to this script's directory inside the checkout, so
 # `ctest -R jni_contract` runs hermetically on the host lane (no .so needed).
-# Binary-first gate (BUG-TEXT-004): when libRuntime.so exists and `nm` is
-# available, every declared symbol must be a ` T ` dynamic export in the .so —
-# a source match in jni_bridge.cpp never excuses a missing binary export
-# (source-present/binary-absent = stale .so = UnsatisfiedLinkError). Only when
-# no .so can be inspected (host lane) does the jni_bridge.cpp source fallback
-# apply (same mangled names the .so must carry).
+# Binary-first gate (BUG-TEXT-004): when libRuntime.so exists, every declared
+# symbol must be a ` T ` dynamic export in the .so — a source match in
+# jni_bridge.cpp never excuses a missing binary export (source-present/
+# binary-absent = stale .so = UnsatisfiedLinkError). If the .so exists but
+# `nm` is unavailable, FAIL hard naming the symbol (never fall back to
+# source-only PASS). Only when no .so path exists (host lane) does the
+# jni_bridge.cpp source fallback apply (same mangled names the .so must carry).
 set -u
 
 SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" >/dev/null 2>&1 && pwd)"
@@ -42,10 +43,15 @@ echo "jni_contract_test: native declarations: $(echo "$NAMES" | tr '\n' ' ')"
 missing=""
 for name in $NAMES; do
   sym="Java_com_muse_host_MainActivity_${name}"
-  # Binary-first (BUG-TEXT-004): a usable .so decides. Source presence in
+  # Binary-first (BUG-TEXT-004): an existing .so decides. Source presence in
   # jni_bridge.cpp never overrides a missing `T` export while the .so exists.
-  if [ -f "$SO" ] && command -v nm >/dev/null 2>&1; then
-    if nm -D "$SO" 2>/dev/null | grep -q " T .*${sym}\$"; then
+  # The source fallback applies strictly when no .so path exists (host lane).
+  if [ -f "$SO" ]; then
+    if ! command -v nm >/dev/null 2>&1; then
+      echo "jni_contract_test: FAIL — cannot inspect $SO: nm unavailable for $sym (AC-RUNTIME-027)"
+      missing="$missing $sym"
+      fail=1
+    elif nm -D "$SO" 2>/dev/null | grep -q " T .*${sym}\$"; then
       echo "jni_contract_test: PASS — $name -> $sym (libRuntime.so dynamic symbols)"
     else
       echo "jni_contract_test: FAIL — missing JNI export $sym for native $name in $SO (AC-RUNTIME-027)"
