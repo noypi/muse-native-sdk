@@ -1,5 +1,5 @@
 {
-  "name": "@muse/game-engine-sample",
+  "name": "@thirdparty/box2d-sample",
   "version": "1.0.0",
   "museApi": "1",
   "entry": {

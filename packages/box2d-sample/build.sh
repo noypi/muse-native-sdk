@@ -25,7 +25,7 @@ ENTRY_JS="$SAMPLE_DIR/src/index.js"
 ENTRY_DTS="$SAMPLE_DIR/src/index.d.ts"
 OUT_DIR="$SAMPLE_DIR/build/out"
 STAGE_DIR="$SAMPLE_DIR/build/stage"
-MNPKG="$OUT_DIR/game-engine-sample.mnpkg"
+MNPKG="$OUT_DIR/box2d-sample.mnpkg"
 
 fail() {
   echo "build.sh: FAIL: $1" >&2

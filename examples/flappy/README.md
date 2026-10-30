@@ -22,12 +22,12 @@ muse-native run examples/flappy
 
 ## Engine import
 
-The demo imports `@muse/game-engine-sample` (declared in
+The demo imports `@thirdparty/box2d-sample` (declared in
 `examples/flappy/package.json`, so a clean checkout resolves with no manual
 install step):
 
 ```ts
-import { createWorld, step, readBodies, destroy } from '@muse/game-engine-sample';
+import { createWorld, step, readBodies, destroy } from '@thirdparty/box2d-sample';
 ```
 
 Exports used:

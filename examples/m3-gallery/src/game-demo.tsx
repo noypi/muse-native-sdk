@@ -1,7 +1,7 @@
 // Throwaway fixture owned by run fr-pkg-001..007; real gallery is FR-SAMPLE-001/FR-M3-007; do not extend.
 import { View } from '@muse/native';
-import { createWorld, step, readBodies, destroy } from '../../packages/game-engine-sample/src/index.js';
-import type { Body, WorldId } from '../../packages/game-engine-sample/src/index.js';
+import { createWorld, step, readBodies, destroy } from '../../packages/box2d-sample/src/index.js';
+import type { Body, WorldId } from '../../packages/box2d-sample/src/index.js';
 
 const FIXED_DT = 1 / 60;
 

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { View, Text, TopAppBar } from '@muse/native';
 import { spring } from '@muse/core';
-import { createWorld, step, readBodies, destroy } from '@muse/game-engine-sample';
+import { createWorld, step, readBodies, destroy } from '@thirdparty/box2d-sample';
 import { stepGame, resetGame } from './loop';
 import type { GameState } from './loop';
 import { dailySeed, getBest, setBest, setScore, restart, sharePayload } from './dailySeed';

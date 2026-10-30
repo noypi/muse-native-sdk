@@ -1,4 +1,4 @@
-// Generated type surface for @muse/game-engine-sample (FR-PKG-006, T8).
+// Generated type surface for @thirdparty/box2d-sample (FR-PKG-006, T8).
 // Must match the manifest arity/arg kinds: createWorld/0, step/2,
 // readBodies/1, destroy/1.
 
