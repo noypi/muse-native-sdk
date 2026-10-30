@@ -1,9 +1,9 @@
 'use strict';
 // FR-LAYOUT-010 / AC-LAYOUT-024 — M3 matrix component registry.
-// Every entry is driven only by token references + the shared signal roles
-// below: entries carry no literal style values (no colors, sizes, durations),
-// only dotted token paths resolved through the T4 cascade
-// (`engine/layout/tokens/store.js`) and TSX/native refs. Honors
+// Every entry is driven only by its own tabled token roles in
+// `engine/layout/m3_matrix.json`: entries carry no literal style values
+// (no colors, sizes, durations), only dotted token paths resolved through
+// the T4 cascade (`engine/layout/tokens/store.js`) and TSX/native refs. Honors
 // CONFLICT-M3-001: the 14 tier-3 composites are `kind: 'composite'` linking
 // the TSX composite; tier-1/2 entries are `kind: 'native'`.
 
@@ -15,57 +15,67 @@ class UnknownComponentError extends Error {
   }
 }
 
-// Shared token roles (single source of truth). Per-component token sets are
-// composed from these roles — no per-component literal values.
-const SURFACE_ROLE_TOKENS = [
-  'md.sys.color.surface',
-  'md.sys.color.on-surface',
-  'md.sys.shape.corner.medium',
-  'md.sys.state.elevation.level-1',
-];
+// FR-LAYOUT-016 T1 / AC-LAYOUT-052 — read helper for the per-component M3
+// token tables stored in `engine/layout/m3_matrix.json` (the store).
+const fs = require('node:fs');
+const path = require('node:path');
 
-const ACTION_ROLE_TOKENS = [
-  'md.sys.color.primary',
-  'md.sys.color.on-primary',
-  'md.sys.shape.corner.full',
-  'md.sys.motion.duration.short-2',
-];
-
-const TEXT_ROLE_TOKENS = [
-  'md.sys.color.on-surface',
-  'md.sys.typescale.body-large',
-  'md.sys.motion.easing.standard',
-];
-
-// Component token namespace, derived from the registry name (a reference,
-// never a literal value): `md.comp.<slug>.<facet>`.
-function componentTokens(name, roles) {
-  const slug = name
-    .replace(/([a-z0-9])([A-Z])/g, '$1-$2')
-    .toLowerCase();
-  return [
-    `md.comp.${slug}.container`,
-    `md.comp.${slug}.label`,
-    ...roles,
-  ];
+function matrixFile() {
+  return path.join(__dirname, 'm3_matrix.json');
 }
 
-function nativeEntry(name, roles) {
+function tableOf(entry) {
+  if (entry && typeof entry.tokenTable === 'object' && entry.tokenTable !== null && !Array.isArray(entry.tokenTable)) {
+    return entry.tokenTable;
+  }
+  if (entry && typeof entry.tokens === 'object' && entry.tokens !== null && !Array.isArray(entry.tokens)) {
+    return entry.tokens;
+  }
+  return null;
+}
+
+function getComponentTokenTable(component) {
+  if (typeof component !== 'string' || component === '') {
+    throw new UnknownComponentError(component);
+  }
+  let matrix;
+  try {
+    matrix = JSON.parse(fs.readFileSync(matrixFile(), 'utf8'));
+  } catch (err) {
+    throw new UnknownComponentError(component);
+  }
+  const entry = Array.isArray(matrix.components)
+    ? matrix.components.find((c) => c && c.name === component)
+    : undefined;
+  const table = tableOf(entry);
+  if (!table) {
+    throw new UnknownComponentError(component);
+  }
   return {
-    primitive: `M3Native${name}`,
-    tokens: componentTokens(name, roles),
-    kind: 'native',
-    ref: `engine/layout/primitives/${name}.js`,
+    container: table.container,
+    label: table.label,
+    state: Array.isArray(table.state) ? [...table.state] : table.state,
+    shape: table.shape,
+    elevation: table.elevation,
+    typescale: table.typescale,
+    sources: table.sources ? { ...table.sources } : table.sources,
   };
 }
 
-function compositeEntry(name, roles) {
-  return {
-    primitive: `M3Composite${name}`,
-    tokens: componentTokens(name, roles),
-    kind: 'composite',
-    ref: `engine/components/${name}.tsx`,
-  };
+// FR-LAYOUT-016 T2 / AC-LAYOUT-053 — per-component table lookup only.
+// Every entry's tokens are flattened from that component's own tabled roles
+// (container/label/state/shape/elevation/typescale) in
+// `engine/layout/m3_matrix.json` via getComponentTokenTable above: no shared
+// role-token sets, two components never resolve through one shared list.
+function flattenTable(table) {
+  const tokens = [table.container, table.label];
+  if (Array.isArray(table.state)) {
+    tokens.push(...table.state);
+  } else {
+    tokens.push(table.state);
+  }
+  tokens.push(table.shape, table.elevation, table.typescale);
+  return tokens;
 }
 
 const NATIVE_COMPONENTS = [
@@ -95,39 +105,28 @@ const COMPOSITE_COMPONENTS = [
   'SplitButton',
 ];
 
-const TEXT_COMPONENTS = new Set(['Text', 'SearchBar']);
-
-const REGISTRY = Object.create(null);
-for (const name of NATIVE_COMPONENTS) {
-  REGISTRY[name] = nativeEntry(
-    name,
-    TEXT_COMPONENTS.has(name) ? TEXT_ROLE_TOKENS : SURFACE_ROLE_TOKENS
-  );
-}
-// FAB/Slider/Button-family entries share the action role tokens.
-for (const name of ['Button', 'FAB', 'Slider', 'Chip', 'Badge']) {
-  REGISTRY[name] = nativeEntry(
-    name,
-    name === 'Chip' || name === 'Badge' ? SURFACE_ROLE_TOKENS : ACTION_ROLE_TOKENS
-  );
-}
-for (const name of COMPOSITE_COMPONENTS) {
-  REGISTRY[name] = compositeEntry(
-    name,
-    TEXT_COMPONENTS.has(name) ? TEXT_ROLE_TOKENS : SURFACE_ROLE_TOKENS
-  );
-}
+const NATIVE_SET = new Set(NATIVE_COMPONENTS);
+const COMPOSITE_SET = new Set(COMPOSITE_COMPONENTS);
 
 function getPrimitive(component) {
   if (
     typeof component !== 'string' ||
     component === '' ||
-    !Object.hasOwn(REGISTRY, component)
+    (!NATIVE_SET.has(component) && !COMPOSITE_SET.has(component))
   ) {
     throw new UnknownComponentError(component);
   }
-  const entry = REGISTRY[component];
-  return { primitive: entry.primitive, tokens: [...entry.tokens], kind: entry.kind, ref: entry.ref };
+  // Per-component table lookup: unknown table throws UnknownComponentError.
+  const table = getComponentTokenTable(component);
+  const composite = COMPOSITE_SET.has(component);
+  return {
+    primitive: composite ? `M3Composite${component}` : `M3Native${component}`,
+    tokens: flattenTable(table),
+    kind: composite ? 'composite' : 'native',
+    ref: composite
+      ? `engine/components/${component}.tsx`
+      : `engine/layout/primitives/${component}.js`,
+  };
 }
 
-module.exports = { getPrimitive, UnknownComponentError };
+module.exports = { getPrimitive, UnknownComponentError, getComponentTokenTable };

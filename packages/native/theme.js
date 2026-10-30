@@ -1,8 +1,12 @@
 'use strict';
 // FR-M3-005 / AC-M3-010 — light/dark plus Dynamic Color repaint (T8).
+// FR-LAYOUT-016 T2 / AC-LAYOUT-053 — device resolution equals the tabled
+// roles: resolveTokens reads the component's own per-component token table
+// in `engine/layout/m3_matrix.json` via the registry helper — no generic
+// seed fallback, no shared-surface keys.
 // Theme change is a token property update to mounted descriptors: bodies are
 // never re-run per RULE-MCORE-001, cascade internals stay layout-owned, and
-// this file only consumes role tokens plus mode and palette input.
+// this file only consumes the tabled roles plus mode.
 // Unmount path: mounted tracks live components previously passed to
 // resolveTokens. Call unmount(component) when a descriptor unmounts, or
 // clearMounted() (e.g. in test teardown) to reset. setTheme then reports
@@ -14,70 +18,28 @@
 
 const mounted = new Set();
 
+const { getComponentTokenTable } = require('../../engine/layout/m3_registry.js');
+
 const current = {
   mode: 'light',
   seed: '',
   dynamic: null,
 };
 
-function hashStringToUint32(value) {
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < value.length; i += 1) {
-    hash ^= value.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193) >>> 0;
-  }
-  return hash >>> 0;
-}
-
-function byteToHex(value) {
-  const digits = '0123456789abcdef';
-  return digits[(value >> 4) & 15] + digits[value & 15];
-}
-
-// Seed palette (ASSUMPTION T8-3): pure function of component, mode, seed.
-// The color prefix is built from its character code so no literal token
-// value appears in library source.
-function seedColor(seed, component, mode, role) {
-  const base = hashStringToUint32(seed + '' + component + '' + mode + '' + role);
-  const hashMark = String.fromCharCode(35);
-  let out = hashMark;
-  let h = base;
-  for (let i = 0; i < 3; i += 1) {
-    h = (Math.imul(h ^ 0x9e3779b9, 0x85ebca6b) >>> 0);
-    h ^= h >> 13;
-    out += byteToHex((h >> (i * 2)) & 255);
-  }
-  return out;
-}
-
-function seedTokens(component, mode, seed) {
+function resolveTokens(component, mode) {
+  // Per-component table lookup only — throws UnknownComponentError for
+  // unknown, empty, or non-string input. Mounted tracks live components.
+  const table = getComponentTokenTable(component);
+  mounted.add(component);
   return {
-    primary: seedColor(seed, component, mode, 'primary'),
-    onPrimary: seedColor(seed, component, mode, 'onPrimary'),
-    surface: seedColor(seed, component, mode, 'surface'),
-    onSurface: seedColor(seed, component, mode, 'onSurface'),
+    container: table.container,
+    label: table.label,
+    state: Array.isArray(table.state) ? [...table.state] : table.state,
+    shape: table.shape,
+    elevation: table.elevation,
+    typescale: table.typescale,
     mode,
   };
-}
-
-function resolveTokens(component, mode) {
-  mounted.add(component);
-  const seed = current.seed;
-  const fallback = seedTokens(component, mode, seed);
-  const dynamic = current.dynamic;
-  if (dynamic === null || dynamic === undefined) {
-    return fallback;
-  }
-  if (typeof dynamic !== 'object') {
-    return fallback;
-  }
-  const next = { ...fallback, mode };
-  for (const key of Object.keys(dynamic)) {
-    if (dynamic[key] !== undefined) {
-      next[key] = dynamic[key];
-    }
-  }
-  return next;
 }
 
 function setTheme(input) {
