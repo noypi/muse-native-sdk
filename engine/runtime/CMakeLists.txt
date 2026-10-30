@@ -25,6 +25,20 @@ add_library(runtime
 target_include_directories(runtime PUBLIC include)
 target_compile_options(runtime PRIVATE -Wall -Wextra -Wpedantic)
 
+# T4 pacing link fix (Android-configured static lane): under the Android
+# toolchain __ANDROID__ is defined, so presenter.cpp's device lane calls
+# pacing::selectIntendedFrameRate/tryQueueFrame and every hermetic test
+# executable linking the static runtime needs the objects. Host lane
+# (no ANDROID toolchain) is untouched — its presenter.o never references
+# these symbols.
+if(ANDROID)
+  target_sources(runtime PRIVATE
+    ../graphics/pacing/frame_rate.cc
+    ../graphics/pacing/render_ahead.cc
+  )
+  target_include_directories(runtime PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../..)
+endif()
+
 find_package(JNI)
 if(JNI_FOUND)
   target_include_directories(runtime PUBLIC ${JNI_INCLUDE_DIRS})
@@ -61,6 +75,8 @@ if(DEFINED ANDROID_ABI AND NOT TARGET Runtime)
     src/jni_bridge.cpp
     src/gallery_present.cpp
     src/presenter.cpp
+    ../graphics/pacing/frame_rate.cc
+    ../graphics/pacing/render_ahead.cc
   )
   set_target_properties(Runtime PROPERTIES
     OUTPUT_NAME Runtime
@@ -69,6 +85,10 @@ if(DEFINED ANDROID_ABI AND NOT TARGET Runtime)
     VISIBILITY_INLINES_HIDDEN ON
   )
   target_include_directories(Runtime PUBLIC include)
+  # T4 pacing link fix: frame_rate.cc/render_ahead.cc self-include as
+  # "engine/graphics/pacing/...", so the repo root must be on the include
+  # path (mirrors the T4 pinning test's `-I .`).
+  target_include_directories(Runtime PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../..)
   if(JNI_FOUND)
     target_include_directories(Runtime PUBLIC ${JNI_INCLUDE_DIRS})
   endif()
