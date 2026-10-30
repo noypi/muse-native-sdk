@@ -270,3 +270,93 @@ describe('T14 — gallery-text-goldens CLI exit contract (AC-TEXT-046, TC-TEXT-0
     assert.ok(/Usage/i.test(`${res.stdout}\n${res.stderr}`), 'missing-flag failure must print usage');
   });
 });
+
+describe('T1 — gallery-text strict acceptance (FR-TEXT-016, AC-TEXT-045, TC-TEXT-045)', () => {
+  it('exit 0 stdout contains "gallery-text ok"', () => {
+    const res = runCli(['gallery-text', '--assert-vector', '--assert-atlas-reuse', '--code-root', CODE_ROOT]);
+    assert.equal(res.status, 0, `expected exit 0, got ${res.status}; stderr: ${(res.stderr || '').slice(0, 500)}`);
+    assert.ok(
+      (res.stdout || '').includes('gallery-text ok'),
+      `stdout must contain "gallery-text ok", got: ${(res.stdout || '').slice(0, 300)}`,
+    );
+  });
+
+  it('success stderr is empty of FAIL', () => {
+    const res = runCli(['gallery-text', '--assert-vector', '--assert-atlas-reuse', '--code-root', CODE_ROOT]);
+    assert.equal(res.status, 0);
+    assert.ok(!/FAIL/.test(res.stderr || ''), `success stderr must be empty of FAIL, got: ${(res.stderr || '').slice(0, 300)}`);
+  });
+
+  it('bitmap-path tree exits nonzero with per-sample FAIL delta on stderr', () => {
+    const root = mkTmp('muse-gtext-t1-red-');
+    const srcDir = path.join(root, 'engine', 'runtime', 'src');
+    fs.mkdirSync(srcDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(srcDir, 'gallery_present.cpp'),
+      ['// pre-fix bitmap path: gallery pages paint via the 5x7 bitmap fallback', 'void PaintCaption() { DrawText("hi"); }', ''].join('\n'),
+    );
+    const res = runCli(['gallery-text', '--assert-vector', '--assert-atlas-reuse', '--code-root', root]);
+    assert.notEqual(res.status, 0, 'a bitmap-path tree must exit nonzero');
+    assert.ok(/FAIL/.test(`${res.stdout}\n${res.stderr}`), 'failure output must carry a per-sample FAIL delta, never a silent pass');
+  });
+});
+
+describe('T2 — gallery-text-goldens strict acceptance (FR-TEXT-016, AC-TEXT-046, TC-TEXT-046)', () => {
+  it('exit 0 stdout contains "gallery-text-goldens ok: <n> sample(s) within recorded tolerance"', () => {
+    const res = runCli(['gallery-text-goldens', '--scripts', 'latin,cjk,emoji', '--scales', '1.0,1.3,2.0', '--code-root', CODE_ROOT]);
+    assert.equal(res.status, 0, `expected exit 0, got ${res.status}; stderr: ${(res.stderr || '').slice(0, 500)}`);
+    assert.ok(
+      /gallery-text-goldens ok: \d+ sample\(s\) within recorded tolerance/.test(res.stdout || ''),
+      `stdout must contain the sample-count message, got: ${(res.stdout || '').slice(0, 300)}`,
+    );
+  });
+
+  it('full matrix covers 9 samples (3 scripts x 3 scales)', () => {
+    const res = runCli(['gallery-text-goldens', '--scripts', 'latin,cjk,emoji', '--scales', '1.0,1.3,2.0', '--code-root', CODE_ROOT]);
+    assert.equal(res.status, 0);
+    const m = /gallery-text-goldens ok: (\d+) sample\(s\) within recorded tolerance/.exec(res.stdout || '');
+    assert.ok(m, 'stdout must carry the sample count');
+    assert.equal(Number(m[1]), 9, `full latin,cjk,emoji x 1.0,1.3,2.0 matrix must report 9 samples, got ${m[1]}`);
+  });
+
+  it('success stderr is empty of FAIL', () => {
+    const res = runCli(['gallery-text-goldens', '--scripts', 'latin,cjk,emoji', '--scales', '1.0,1.3,2.0', '--code-root', CODE_ROOT]);
+    assert.equal(res.status, 0);
+    assert.ok(!/FAIL/.test(res.stderr || ''), `success stderr must be empty of FAIL, got: ${(res.stderr || '').slice(0, 300)}`);
+  });
+
+  it('subset request reports its own sample count (latin x 1.0 -> 1)', () => {
+    const res = runCli(['gallery-text-goldens', '--scripts', 'latin', '--scales', '1.0', '--code-root', CODE_ROOT]);
+    assert.equal(res.status, 0, `expected exit 0, got ${res.status}; stderr: ${(res.stderr || '').slice(0, 500)}`);
+    const m = /gallery-text-goldens ok: (\d+) sample\(s\) within recorded tolerance/.exec(res.stdout || '');
+    assert.ok(m, 'stdout must carry the sample count');
+    assert.equal(Number(m[1]), 1, `latin x 1.0 must report 1 sample, got ${m[1]}`);
+  });
+
+  it('golden/sample mismatch exits nonzero with per-sample FAIL delta naming the sample', () => {
+    const root = mkTmp('muse-gtext-t2-red-');
+    const dir = path.join(root, 'examples', 'm3-gallery', 'build', 'goldens');
+    fs.mkdirSync(dir, { recursive: true });
+    const png = Buffer.from([
+      0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+      0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
+      0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+      0x08, 0x02, 0x00, 0x00, 0x00, 0x90, 0x77, 0x53,
+      0xde, 0x00, 0x00, 0x00, 0x0c, 0x49, 0x44, 0x41,
+      0x54, 0x08, 0xd7, 0x63, 0xf8, 0x00, 0x00, 0x00,
+      0x02, 0x00, 0x01, 0xe2, 0x21, 0xbc, 0x33,
+      0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4e, 0x44,
+      0xae, 0x42, 0x60, 0x82,
+    ]);
+    png[41] ^= 0xff;
+    png[42] ^= 0xff;
+    fs.writeFileSync(path.join(dir, 'text-latin-1.png'), png);
+    fs.writeFileSync(path.join(dir, 'text-tolerances.json'), '{"exact":true}\n');
+    const res = runCli(['gallery-text-goldens', '--scripts', 'latin', '--scales', '1.0', '--code-root', root]);
+    assert.notEqual(res.status, 0, 'a golden/sample mismatch must exit nonzero');
+    assert.ok(
+      /FAIL.*text-latin|text-latin.*FAIL|FAIL/i.test(`${res.stdout}\n${res.stderr}`),
+      'mismatch output must carry a per-sample FAIL delta naming the failing sample, never a silent pass',
+    );
+  });
+});
