@@ -43,7 +43,7 @@ function evaluateGalleryTree(opts) {
 function runGalleryTree(argv, env) {
   const opts = parseGalleryTreeArgs(argv, env);
   const result = evaluateGalleryTree(opts);
-  if (opts.assertEvaluated && opts.failOnStaticFallback && !result.pass) {
+  if (opts.failOnStaticFallback && !result.pass) {
     const err = new Error('gallery-tree: static fallback detected (--fail-on-static-fallback)');
     err.code = 'static-fallback';
     err.result = result;
