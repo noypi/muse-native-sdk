@@ -302,6 +302,275 @@ void EmitGalleryMarkersLocked(GalleryHandle* g, int pages, int w, int h) {
   GalleryLogInfo(page);
 }
 
+// Window-attached Swapchain for the T10 presented-window sink (F1 fix).
+// Wraps the locked ANativeWindow RGBA_8888 buffer: every DrawCmd submitted
+// through Renderer draw paints its bounds into the window, so the presented
+// pixels come from the retained Swapchain output (EmitGalleryWindowCmds
+// over the T5 ShapedText emission), never from the CPU RasterGalleryPage
+// oracle. Solid-color kinds fill their payload color; ShapedText and Text
+// runs paint their text-color footprint once T6 RasterizeShapedText accepts
+// the run in bounds (dangling runs paint nothing: the renderer already
+// rejects run 0 upstream, so the mirror never invents pixels for a rejected
+// run). This CPU mirror owns the window footprint only; exact glyph
+// compositing is the compositor Swapchain lane. Pure C++; zero JNI on the
+// frame path.
+constexpr std::uint32_t WindowRGBA(std::uint8_t r, std::uint8_t g,
+                                    std::uint8_t b, std::uint8_t a) {
+  return static_cast<std::uint32_t>(r) |
+         (static_cast<std::uint32_t>(g) << 8) |
+         (static_cast<std::uint32_t>(b) << 16) |
+         (static_cast<std::uint32_t>(a) << 24);
+}
+
+class WindowSwapchain : public ::runtime::Swapchain {
+ public:
+  WindowSwapchain(std::uint32_t* bits, int stridePx, int width, int height)
+      : bits_(bits), stride_(stridePx), w_(width), h_(height) {
+    // The retained canvas is fixed at the present geometry (720x1600, the
+    // same reference PresentGallery uses); map it onto the locked window.
+    sx_ = (w_ > 0) ? static_cast<float>(w_) / 720.0f : 1.0f;
+    sy_ = (h_ > 0) ? static_cast<float>(h_) / 1600.0f : 1.0f;
+  }
+
+  void submit(const ::runtime::DrawCmd& cmd) override {
+    if (bits_ == nullptr) return;
+    // T11 fix 1: ShapedText/Text runs blend their real glyph coverage
+    // per pixel inside cmd.bounds (threaded out of RasterizeShapedText) —
+    // never a solid text-color footprint. Dangling runs (id 0 or
+    // unresolvable) yield no coverage and paint nothing (fail-closed,
+    // mirroring the renderer).
+    if ((cmd.kind == ::runtime::PrimitiveKind::ShapedText ||
+         cmd.kind == ::runtime::PrimitiveKind::Text)) {
+      if (cmd.payload.glyphRunId == 0) return;
+      const ::muse::text::StatusOr<::runtime::CoverageMask> coverage =
+          ::runtime::RasterizeShapedText(cmd.payload.glyphRunId, cmd.bounds,
+                                         cmd.payload.textColor);
+      if (!coverage.ok()) return;
+      const std::uint32_t ink = cmd.payload.textColor != 0
+                                    ? cmd.payload.textColor
+                                    : WindowRGBA(0x1D, 0x1B, 0x20, 0xFF);
+      BlendMask(*coverage, cmd.bounds, ink);
+      return;
+    }
+    // T11 fix 3: the ElevationShadow wash paints as two offset soft passes
+    // (mirroring the retained-path ShadowRounded reference: +2/+3 at a=28,
+    // +4/+6 at a=18), clipped to the rounded silhouette — never skipped.
+    if (cmd.kind == ::runtime::PrimitiveKind::ElevationShadow) {
+      if (cmd.payload.elevationDp <= 0.0f) return;
+      const unsigned sa = (cmd.payload.shadowColor >> 24) & 0xFFu;
+      if (sa == 0) return;
+      WashShadow(cmd, 2.0f, 3.0f, 28);
+      WashShadow(cmd, 4.0f, 6.0f, 18);
+      return;
+    }
+    const std::uint32_t ink = InkFor(cmd);
+    if ((ink >> 24) == 0) return;
+    FillBounds(cmd.bounds, ink);
+  }
+
+  void clear(std::uint32_t color) {
+    if (bits_ == nullptr) return;
+    for (int y = 0; y < h_; ++y) {
+      for (int x = 0; x < w_; ++x) {
+        bits_[y * stride_ + x] = color;
+      }
+    }
+  }
+
+ private:
+  static std::uint32_t InkFor(const ::runtime::DrawCmd& cmd) {
+    using ::runtime::PrimitiveKind;
+    switch (cmd.kind) {
+      case PrimitiveKind::Text:
+      case PrimitiveKind::ShapedText:
+        return cmd.payload.textColor != 0
+                   ? cmd.payload.textColor
+                   : WindowRGBA(0x1D, 0x1B, 0x20, 0xFF);
+      case PrimitiveKind::StateLayer:
+        return cmd.payload.stateColor != 0
+                   ? cmd.payload.stateColor
+                   : WindowRGBA(0x67, 0x50, 0xA4, 0xFF);
+      case PrimitiveKind::Ripple:
+        return cmd.payload.rippleColor != 0
+                   ? cmd.payload.rippleColor
+                   : WindowRGBA(0x67, 0x50, 0xA4, 0xFF);
+      case PrimitiveKind::VectorIcon:
+        return cmd.payload.tintColor != 0
+                   ? cmd.payload.tintColor
+                   : WindowRGBA(0x67, 0x50, 0xA4, 0xFF);
+      case PrimitiveKind::CircleArc:
+        return cmd.payload.arcColor != 0
+                   ? cmd.payload.arcColor
+                   : WindowRGBA(0x67, 0x50, 0xA4, 0xFF);
+      case PrimitiveKind::OverlayScrim: {
+        const float alpha = cmd.payload.scrimAlpha;
+        const unsigned a = (alpha <= 0.0f)
+                               ? 0u
+                               : (alpha >= 1.0f)
+                                     ? 255u
+                                     : static_cast<unsigned>(255.0f * alpha +
+                                                             0.5f);
+        const std::uint32_t c = cmd.payload.scrimColor;
+        return (c & 0x00FFFFFFu) |
+               (static_cast<std::uint32_t>(a & 0xFFu) << 24);
+      }
+      case PrimitiveKind::Rect:
+      case PrimitiveKind::RoundedRect:
+      case PrimitiveKind::Image:
+        // T11 fix 3: card/band fills. A nonzero payload selects the
+        // emitted fill; payload-0 selects the real default tonal card
+        // fill (M3 surface-variant), never background-on-background.
+        if (cmd.payload.stateColor != 0) return cmd.payload.stateColor;
+        return WindowRGBA(0xE7, 0xE0, 0xEC, 0xFF);
+      default:
+        return WindowRGBA(0xF7, 0xF2, 0xFA, 0xFF);
+    }
+  }
+
+  // T11 fix 1: src-over blend one coverage mask inside bounds. Mask texels
+  // map proportionally onto the scaled destination rect; pixels outside
+  // the mask stay untouched (no whole-bounds fill).
+  void BlendMask(const ::runtime::CoverageMask& mask,
+                 ::runtime::Rect bounds, std::uint32_t src) {
+    if (mask.width <= 0 || mask.height <= 0 || mask.alpha.empty()) return;
+    int x0 = static_cast<int>(bounds.x * sx_);
+    int y0 = static_cast<int>(bounds.y * sy_);
+    int x1 = static_cast<int>((bounds.x + bounds.w) * sx_ + 0.5f);
+    int y1 = static_cast<int>((bounds.y + bounds.h) * sy_ + 0.5f);
+    if (x0 < 0) x0 = 0;
+    if (y0 < 0) y0 = 0;
+    if (x1 > w_) x1 = w_;
+    if (y1 > h_) y1 = h_;
+    if (x1 <= x0 || y1 <= y0) return;
+    const unsigned sr = src & 0xFFu;
+    const unsigned sg = (src >> 8) & 0xFFu;
+    const unsigned sb = (src >> 16) & 0xFFu;
+    for (int y = y0; y < y1; ++y) {
+      const int my = static_cast<int>(
+          (static_cast<double>(y - y0) * mask.height) / (y1 - y0));
+      for (int x = x0; x < x1; ++x) {
+        const int mx = static_cast<int>(
+            (static_cast<double>(x - x0) * mask.width) / (x1 - x0));
+        const std::size_t t = static_cast<std::size_t>(my) *
+                                  static_cast<std::size_t>(mask.width) +
+                              static_cast<std::size_t>(mx);
+        if (t >= mask.alpha.size()) continue;
+        const float a = mask.alpha[t];
+        if (a <= 0.0f) continue;
+        const std::uint32_t dst = bits_[y * stride_ + x];
+        const unsigned dr = dst & 0xFFu;
+        const unsigned dg = (dst >> 8) & 0xFFu;
+        const unsigned db = (dst >> 16) & 0xFFu;
+        const unsigned r =
+            static_cast<unsigned>(sr * a + dr * (1.0f - a) + 0.5f);
+        const unsigned g =
+            static_cast<unsigned>(sg * a + dg * (1.0f - a) + 0.5f);
+        const unsigned b =
+            static_cast<unsigned>(sb * a + db * (1.0f - a) + 0.5f);
+        bits_[y * stride_ + x] =
+            static_cast<std::uint32_t>(r > 255u ? 255u : r) |
+            (static_cast<std::uint32_t>(g > 255u ? 255u : g) << 8) |
+            (static_cast<std::uint32_t>(b > 255u ? 255u : b) << 16) |
+            (static_cast<std::uint32_t>(0xFF) << 24);
+      }
+    }
+  }
+
+  // T11 fix 3: one soft shadow pass at (dx, dy) with effective alpha `a`.
+  // Clipped to the rounded silhouette (same corner test as the
+  // retained-path ShadowRounded reference); src-over blended.
+  void WashShadow(const ::runtime::DrawCmd& cmd, float dx, float dy,
+                  unsigned a) {
+    const ::runtime::Rect b = cmd.bounds;
+    const float rad = cmd.radius;
+    const std::uint32_t c = cmd.payload.shadowColor;
+    const unsigned sr = c & 0xFFu;
+    const unsigned sg = (c >> 8) & 0xFFu;
+    const unsigned sb = (c >> 16) & 0xFFu;
+    int x0 = static_cast<int>((b.x + dx - 6.0f) * sx_);
+    int y0 = static_cast<int>((b.y + dy - 6.0f) * sy_);
+    int x1 = static_cast<int>((b.x + b.w + dx + 6.0f) * sx_ + 0.5f);
+    int y1 = static_cast<int>((b.y + b.h + dy + 6.0f) * sy_ + 0.5f);
+    if (x0 < 0) x0 = 0;
+    if (y0 < 0) y0 = 0;
+    if (x1 > w_) x1 = w_;
+    if (y1 > h_) y1 = h_;
+    if (x1 <= x0 || y1 <= y0) return;
+    for (int y = y0; y < y1; ++y) {
+      const float vy = sy_ > 0.0f ? static_cast<float>(y) / sy_ : 0.0f;
+      for (int x = x0; x < x1; ++x) {
+        const float vx = sx_ > 0.0f ? static_cast<float>(x) / sx_ : 0.0f;
+        // Rounded-silhouette clip in canvas px (offset wash rect).
+        const float ox = vx - dx;
+        const float oy = vy - dy;
+        float cx = ox;
+        if (ox < b.x + rad) cx = b.x + rad;
+        else if (ox > b.x + b.w - rad) cx = b.x + b.w - rad;
+        float cy = oy;
+        if (oy < b.y + rad) cy = b.y + rad;
+        else if (oy > b.y + b.h - rad) cy = b.y + b.h - rad;
+        const float ddx = ox - cx;
+        const float ddy = oy - cy;
+        if (rad > 0.0f && ddx * ddx + ddy * ddy > rad * rad) continue;
+        if (ox < b.x - 6.0f || ox > b.x + b.w + 6.0f ||
+            oy < b.y - 6.0f || oy > b.y + b.h + 6.0f) {
+          continue;
+        }
+        const std::uint32_t dst = bits_[y * stride_ + x];
+        const unsigned dr = dst & 0xFFu;
+        const unsigned dg = (dst >> 8) & 0xFFu;
+        const unsigned db = (dst >> 16) & 0xFFu;
+        const unsigned r = (sr * a + dr * (255u - a)) / 255u;
+        const unsigned g = (sg * a + dg * (255u - a)) / 255u;
+        const unsigned bl = (sb * a + db * (255u - a)) / 255u;
+        bits_[y * stride_ + x] =
+            static_cast<std::uint32_t>(r) |
+            (static_cast<std::uint32_t>(g) << 8) |
+            (static_cast<std::uint32_t>(bl) << 16) |
+            (static_cast<std::uint32_t>(0xFF) << 24);
+      }
+    }
+  }
+
+  void FillBounds(::runtime::Rect bounds, std::uint32_t src) {    int x0 = static_cast<int>(bounds.x * sx_);
+    int y0 = static_cast<int>(bounds.y * sy_);
+    int x1 = static_cast<int>((bounds.x + bounds.w) * sx_ + 0.5f);
+    int y1 = static_cast<int>((bounds.y + bounds.h) * sy_ + 0.5f);
+    if (x0 < 0) x0 = 0;
+    if (y0 < 0) y0 = 0;
+    if (x1 > w_) x1 = w_;
+    if (y1 > h_) y1 = h_;
+    if (x1 <= x0 || y1 <= y0) return;
+    const unsigned sa = (src >> 24) & 0xFFu;
+    const unsigned sr = src & 0xFFu;
+    const unsigned sg = (src >> 8) & 0xFFu;
+    const unsigned sb = (src >> 16) & 0xFFu;
+    for (int y = y0; y < y1; ++y) {
+      for (int x = x0; x < x1; ++x) {
+        const std::uint32_t dst = bits_[y * stride_ + x];
+        const unsigned dr = dst & 0xFFu;
+        const unsigned dg = (dst >> 8) & 0xFFu;
+        const unsigned db = (dst >> 16) & 0xFFu;
+        const unsigned r = (sr * sa + dr * (255u - sa)) / 255u;
+        const unsigned g = (sg * sa + dg * (255u - sa)) / 255u;
+        const unsigned b = (sb * sa + db * (255u - sa)) / 255u;
+        bits_[y * stride_ + x] =
+            static_cast<std::uint32_t>(r) |
+            (static_cast<std::uint32_t>(g) << 8) |
+            (static_cast<std::uint32_t>(b) << 16) |
+            (static_cast<std::uint32_t>(0xFF) << 24);
+      }
+    }
+  }
+
+  std::uint32_t* bits_;
+  int stride_;
+  int w_;
+  int h_;
+  float sx_;
+  float sy_;
+};
+
 // Renders the current page into the attached window. Callers must hold
 // g->mu: attach state, page, and rows are all mutated under that lock.
 void RenderLocked(GalleryHandle* g) {
@@ -323,10 +592,39 @@ void RenderLocked(GalleryHandle* g) {
     g->page %= pages;
     if (g->page < 0) g->page += pages;
   }
+  // F1 sink fix: the presented window is driven by the retained Swapchain
+  // text output, not the CPU oracle. Present the device gallery page
+  // through Renderer draw into the window-attached Swapchain; the CPU
+  // RasterGalleryPage oracle is no longer the presented-window sink.
+  // Baseline caps match the Vulkan 1.1 probe every hermetic consumer uses;
+  // real device caps arrive via the Vulkan probe lane, which this CPU
+  // window mirror predates.
+  ::runtime::DeviceCaps baselineCaps;
+  baselineCaps.apiMajor = 1;
+  baselineCaps.apiMinor = 1;
+  ::runtime::Renderer renderer(baselineCaps);
+  // T11 fix 2 (clear-then-post ordering): present into a staged buffer
+  // first and copy into the locked window only on success, so a failed
+  // present never posts the pre-cleared white buffer — the locked bits
+  // stay untouched (previous frame reposted) instead.
+  std::vector<std::uint32_t> staged(
+      static_cast<std::size_t>(stride) * static_cast<std::size_t>(h), 0u);
+  WindowSwapchain window(staged.data(), stride, w, h);
+  window.clear(WindowRGBA(0xFE, 0xF7, 0xFF, 0xFF));
   std::string error = g->parseError;
-  int drawn = ::runtime::RasterGalleryPage(g->rows, g->page,
-                                           static_cast<std::uint32_t*>(buf.bits),
-                                           stride, w, h, &error);
+  const bool presented = ::runtime::PresentDeviceGalleryPage(
+      g->rows, g->page, renderer, window, h, &error);
+  if (presented) {
+    std::uint32_t* bits = static_cast<std::uint32_t*>(buf.bits);
+    for (int y = 0; y < h; ++y) {
+      for (int x = 0; x < w; ++x) {
+        bits[y * stride + x] = staged[static_cast<std::size_t>(y) *
+                                          static_cast<std::size_t>(stride) +
+                                      static_cast<std::size_t>(x)];
+      }
+    }
+  }
+  const int drawn = presented ? static_cast<int>(g->rows.size()) : 0;
   ANativeWindow_unlockAndPost(win);
   // Proof markers for the presented page (device's own row model + pager).
   EmitGalleryMarkersLocked(g, pages, w, h);

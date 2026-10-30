@@ -14,6 +14,13 @@
 // The SystemFontEnumerator boundary below is the seam where the real NDK
 // SystemFonts C API plugs in later; it is currently backed by stubbed data
 // so the ordering logic is real and fully unit-proven on the host.
+// T2 (FR-TEXT-016): the production Android TU is
+// engine/text/src/font_discovery_android.cpp (NDK ASystemFont/font-matcher
+// behind this same interface; Roboto per script/locale + bundled
+// last-resort face). The Android device build defines MUSE_TEXT_ANDROID_NDK
+// to select it; host builds keep the stub (with compiled-in Roboto
+// stand-ins) where no NDK headers exist. No header shape change: the seam
+// above is the contract both sides implement.
 
 #include <cstdint>
 #include <string>

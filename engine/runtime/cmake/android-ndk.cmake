@@ -110,6 +110,7 @@ else()
       )
       target_include_directories(${_muse_tgt} PUBLIC include)
       target_include_directories(${_muse_tgt} PRIVATE ../input/include)
+      target_include_directories(${_muse_tgt} PRIVATE ../text/include)
       # Pacing TUs self-include as "engine/graphics/pacing/..." (mirrors the
       # real-Android Runtime lane in CMakeLists.txt). This file lives in
       # engine/runtime/cmake, so the repo root is three levels up.

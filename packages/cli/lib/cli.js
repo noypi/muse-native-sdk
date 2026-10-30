@@ -3,7 +3,7 @@
 // FR-WORKFLOW owns command options later; this file only routes argv.
 const path = require('node:path');
 
-const COMMANDS = ['init', 'build', 'dev', 'run', 'gallery-proof', 'renderer-prims', 'gallery-diff', 'gallery-scroll', 'scroll-deadlines', 'gallery-tap', 'gallery-tap-repaint'];
+const COMMANDS = ['init', 'build', 'dev', 'run', 'gallery-proof', 'renderer-prims', 'gallery-diff', 'gallery-scroll', 'scroll-deadlines', 'gallery-tap', 'gallery-tap-repaint', 'gallery-text', 'gallery-text-goldens'];
 const INVOKED = path.basename(process.argv[1] || '', '.js');
 
 if (INVOKED === 'muse') {
@@ -105,7 +105,7 @@ function validateOptions(argv) {
 function printHelp() {
   process.stdout.write(
     [
-      'Usage: muse-native <init|build|dev|run|gallery-proof|renderer-prims|gallery-diff|gallery-scroll|scroll-deadlines> [args]',
+      'Usage: muse-native <init|build|dev|run|gallery-proof|renderer-prims|gallery-diff|gallery-scroll|scroll-deadlines|gallery-text|gallery-text-goldens> [args]',
       '',
       'Commands:',
       '  init    scaffold a new project',
@@ -117,6 +117,8 @@ function printHelp() {
       '  gallery-diff    diff the committed per-page goldens within tolerance',
   '  gallery-scroll    assert windowed-only gallery scroll paint',
   '  scroll-deadlines    audit vsync deadline misses per refresh rate',
+  '  gallery-text    assert the retained vector ShapedText path with atlas reuse',
+  '  gallery-text-goldens    diff the committed script/scale text goldens within tolerance',
       '',
       'Options:',
       '  -h, --help    show this help',
@@ -144,7 +146,7 @@ function printGalleryProofHelp() {
 }
 
 function printUsageError(message) {
-  process.stderr.write(`${message}\nUsage: muse-native <init|build|dev|run|gallery-proof|renderer-prims|gallery-diff|gallery-scroll|scroll-deadlines> [args]\n`);
+  process.stderr.write(`${message}\nUsage: muse-native <init|build|dev|run|gallery-proof|renderer-prims|gallery-diff|gallery-scroll|scroll-deadlines|gallery-text|gallery-text-goldens> [args]\n`);
 }
 
 function printBuildHelp() {
@@ -202,7 +204,7 @@ function main() {
   }
   if (argv.includes('-h') || argv.includes('--help') || argv.length === 0) {
     if (argv.length === 0) {
-      printUsageError('Usage: muse-native <init|build|dev|run|gallery-proof|renderer-prims|gallery-diff|gallery-scroll|scroll-deadlines> [args]');
+      printUsageError('Usage: muse-native <init|build|dev|run|gallery-proof|renderer-prims|gallery-diff|gallery-scroll|scroll-deadlines|gallery-text|gallery-text-goldens> [args]');
       process.exitCode = 2;
       return;
     }
@@ -265,6 +267,14 @@ function main() {
   }
   if (command === 'gallery-scroll') {
     require('./gallery-scroll.js')(argv.slice(1));
+    return;
+  }
+  if (command === 'gallery-text') {
+    require('./gallery-text.js')(argv.slice(1));
+    return;
+  }
+  if (command === 'gallery-text-goldens') {
+    require('./gallery-text-goldens.js')(argv.slice(1));
     return;
   }
   if (command === 'scroll-deadlines') {

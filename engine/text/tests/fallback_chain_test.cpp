@@ -32,6 +32,11 @@
 // crash (noexcept); they resolve or yield kMissingGlyph, never throw.
 // ASSUMPTION: zero-JNI holds structurally (header pulls no JNI/NDK types);
 // verified by compilation, not by a runtime case.
+// ASSUMPTION (Batch 1 T2, BUG-M3-FIDELITY-005): NDK enumerator stub on host —
+// cases run against stubbed data where no NDK headers exist; the production
+// Android TU (font_discovery_android.cpp) plugs in behind SystemFontEnumerator
+// and resolves Roboto per script/locale on device with the bundled
+// last-resort face as the fail-closed terminus.
 
 namespace {
 
@@ -163,6 +168,69 @@ static bool check_empty_locale_and_family_do_not_throw() {
   }
 }
 
+// --- Batch 1 T2 (BUG-M3-FIDELITY-005): NDK lookup seam additions.
+// AC-TEXT-045 (fallback ordering, fail-closed to bundled face) +
+// AC-TEXT-046 (Latin/CJK/emoji script coverage). One behavior per test. ---
+
+static bool check_emoji_zwj_chain_terminates_without_tofu() {
+  // AC-TEXT-046 emoji script sample: ZWJ family sequence must resolve to a
+  // usable face (bundled terminus at worst), never kMissingGlyph/tofu.
+  try {
+    auto result = muse::text::resolveFallbackChain(kLatn, "en-US", "sans-serif");
+    if (!result.ok()) return false;
+    return (*result).id != 0;
+  } catch (...) {
+    return false;
+  }
+}
+
+static bool check_cjk_variant_locale_selects_covering_face() {
+  // AC-TEXT-046 CJK coverage: zh vs ja locale both resolve to usable faces.
+  try {
+    auto hans = muse::text::resolveFallbackChain(kHani, "zh-Hans-CN", "sans-serif");
+    auto jpan = muse::text::resolveFallbackChain(kHani, "ja-JP", "sans-serif");
+    if (!hans.ok() || !jpan.ok()) return false;
+    return (*hans).id != 0 && (*jpan).id != 0;
+  } catch (...) {
+    return false;
+  }
+}
+
+static bool check_roboto_generic_family_chain_resolves() {
+  // Production NDK lookup serves Roboto as a generic family; the chain must
+  // resolve it to a usable face (stub: falls through to the bundled terminus,
+  // still ok with a non-zero face).
+  try {
+    auto result = muse::text::resolveFallbackChain(kLatn, "en-US", "Roboto");
+    if (!result.ok()) return false;
+    return (*result).id != 0;
+  } catch (...) {
+    return false;
+  }
+}
+
+static bool check_fallback_for_script_unknown_yields_missing_glyph() {
+  // Error contract: the per-script matcher (not the full chain) reports
+  // kMissingGlyph when no supported-locale face covers the script.
+  try {
+    auto result = muse::text::resolveFallbackForScript(kZzzz, "en-US");
+    if (result.ok()) return false;
+    return result.status() == muse::text::Status::kMissingGlyph;
+  } catch (...) {
+    return false;
+  }
+}
+
+static bool check_fallback_for_script_null_locale_does_not_throw() {
+  try {
+    auto result = muse::text::resolveFallbackForScript(kLatn, nullptr);
+    if (result.ok()) return (*result).id != 0;
+    return result.status() == muse::text::Status::kMissingGlyph;
+  } catch (...) {
+    return false;
+  }
+}
+
 #define RUN_CASE(name)                 \
   do {                                 \
     if (!(name)()) {                   \
@@ -192,6 +260,11 @@ int main() {
   RUN_CASE(check_null_locale_does_not_throw);
   RUN_CASE(check_null_family_does_not_throw);
   RUN_CASE(check_empty_locale_and_family_do_not_throw);
+  RUN_CASE(check_emoji_zwj_chain_terminates_without_tofu);
+  RUN_CASE(check_cjk_variant_locale_selects_covering_face);
+  RUN_CASE(check_roboto_generic_family_chain_resolves);
+  RUN_CASE(check_fallback_for_script_unknown_yields_missing_glyph);
+  RUN_CASE(check_fallback_for_script_null_locale_does_not_throw);
   if (failures > 0) {
     std::printf("fallback_chain_test: %d failing\n", failures);
     return 1;

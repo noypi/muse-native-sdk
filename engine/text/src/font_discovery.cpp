@@ -38,6 +38,22 @@ constexpr std::uint64_t kSansKhmrId = 0x00070001u;
 constexpr std::uint64_t kSansMymrId = 0x00080001u;
 constexpr std::uint64_t kSansHaniHansId = 0x00090001u;
 constexpr std::uint64_t kSansHaniJpanId = 0x00090002u;
+// T2 (FR-TEXT-016 / AC-TEXT-045): compiled-in Roboto coverage stand-ins.
+// Fixed constants (not hashes), disjoint from every stub/generic/bundled id
+// above so Roboto chains stay distinguishable and deterministic per
+// (family, script). On host these back the NDK-seam cases where no NDK
+// headers exist; on device font_discovery_android.cpp resolves the same
+// (family, script) pairs through ASystemFont/the font matcher.
+constexpr std::uint64_t kRobotoLatnId = 0x000B0001u;
+constexpr std::uint64_t kRobotoArabId = 0x000B0002u;
+constexpr std::uint64_t kRobotoCyrlId = 0x000B0003u;
+constexpr std::uint64_t kRobotoDevaId = 0x000B0004u;
+constexpr std::uint64_t kRobotoHebrId = 0x000B0005u;
+constexpr std::uint64_t kRobotoThaiId = 0x000B0006u;
+constexpr std::uint64_t kRobotoKhmrId = 0x000B0007u;
+constexpr std::uint64_t kRobotoMymrId = 0x000B0008u;
+constexpr std::uint64_t kRobotoHaniHansId = 0x000B0009u;
+constexpr std::uint64_t kRobotoHaniJpanId = 0x000B000Au;
 constexpr std::uint64_t kGenericLatnId = 0x00F00001u;
 constexpr std::uint64_t kGenericArabId = 0x00F00002u;
 constexpr std::uint64_t kGenericCyrlId = 0x00F00003u;
@@ -45,13 +61,44 @@ constexpr std::uint64_t kGenericDevaId = 0x00F00004u;
 constexpr std::uint64_t kLastResortId = 0x00FFFFFFu;
 
 bool IsKnownFamily(const std::string& family) {
-  return family == "sans-serif" || family == "serif" ||
-         family == "monospace" || family == "cursive" ||
-         family == "fantasy" || family == "Noto Sans Arabic";
+  // T2: Roboto is the production device family (NDK lookup on Android,
+  // compiled-in stand-ins on host); the generic families below keep their
+  // existing stub coverage unchanged.
+  return family == "Roboto" || family == "sans-serif" ||
+         family == "serif" || family == "monospace" ||
+         family == "cursive" || family == "fantasy" ||
+         family == "Noto Sans Arabic";
+}
+
+std::uint64_t RobotoFaceId(std::uint32_t scriptTag) {
+  switch (scriptTag) {
+    case kArab:
+      return kRobotoArabId;
+    case kCyrl:
+      return kRobotoCyrlId;
+    case kDeva:
+      return kRobotoDevaId;
+    case kHebr:
+      return kRobotoHebrId;
+    case kThai:
+      return kRobotoThaiId;
+    case kKhmr:
+      return kRobotoKhmrId;
+    case kMymr:
+      return kRobotoMymrId;
+    case kHani:
+      return kRobotoHaniHansId;
+    default:
+      return kRobotoLatnId;
+  }
 }
 
 std::uint64_t FamilyFaceId(const std::string& family,
                            std::uint32_t scriptTag) {
+  // T2: Roboto resolves through its own per-script coverage (device: NDK
+  // ASystemFont/matcher in font_discovery_android.cpp; host: compiled-in
+  // stand-ins above). All other families keep their existing stub mapping.
+  if (family == "Roboto") return RobotoFaceId(scriptTag);
   if (scriptTag == kArab) {
     if (family == "serif") return kSerifArabId;
     return kSansArabId;
@@ -78,6 +125,13 @@ void PushUnique(std::vector<FontHandle>& out, FontHandle face) {
 
 }  // namespace
 
+// T2: the stub enumerator below backs host unit tests where no NDK headers
+// exist (with compiled-in Roboto stand-ins). The Android device build sets
+// MUSE_TEXT_ANDROID_NDK and takes the NDK-backed definitions from
+// font_discovery_android.cpp instead; the shared ordering logic
+// (discoverFonts/resolveFallbackForScript/resolveFallbackChain) is identical
+// on both because it only drives the seam above.
+#ifndef MUSE_TEXT_ANDROID_NDK
 bool SystemFontEnumerator::SupportsScript(std::uint32_t scriptTag) const {
   switch (scriptTag) {
     case kLatn:
@@ -135,6 +189,7 @@ FontHandle SystemFontEnumerator::LastResortFace(
   // bundled face, so it is stable across locales for a given script.
   return FontHandle(kLastResortId);
 }
+#endif  // MUSE_TEXT_ANDROID_NDK
 
 StatusOr<std::vector<FontHandle>> discoverFonts(const FontQuery& q) {
   const SystemFontEnumerator enumerator;
