@@ -241,6 +241,8 @@ module.exports = {
   createNavigator,
   navigateStory,
   openStoryLink,
+  parseStoryLink,
+  storyIdOf,
   isPagingGesture,
   PrevButton,
   NextButton,

@@ -3,7 +3,7 @@
 // FR-WORKFLOW owns command options later; this file only routes argv.
 const path = require('node:path');
 
-const COMMANDS = ['init', 'build', 'dev', 'run', 'gallery-proof', 'renderer-prims', 'gallery-diff', 'gallery-layering', 'gallery-scroll', 'scroll-deadlines', 'gallery-tap', 'gallery-tap-repaint', 'gallery-text', 'gallery-text-goldens', 'egl-probe'];
+const COMMANDS = ['init', 'build', 'dev', 'run', 'gallery-proof', 'gallery-tree', 'renderer-prims', 'gallery-diff', 'gallery-layering', 'gallery-scroll', 'scroll-deadlines', 'gallery-tap', 'gallery-tap-repaint', 'gallery-text', 'gallery-text-goldens', 'egl-probe'];
 const INVOKED = path.basename(process.argv[1] || '', '.js');
 
 if (INVOKED === 'muse') {
@@ -105,7 +105,7 @@ function validateOptions(argv) {
 function printHelp() {
   process.stdout.write(
     [
-      'Usage: muse-native <init|build|dev|run|gallery-proof|renderer-prims|gallery-diff|gallery-layering|gallery-scroll|scroll-deadlines|gallery-text|gallery-text-goldens|egl-probe> [args]',
+      'Usage: muse-native <init|build|dev|run|gallery-proof|gallery-tree|renderer-prims|gallery-diff|gallery-layering|gallery-scroll|scroll-deadlines|gallery-tap|gallery-tap-repaint|gallery-text|gallery-text-goldens|egl-probe> [args]',
       '',
       'Commands:',
       '  init    scaffold a new project',
@@ -114,6 +114,7 @@ function printHelp() {
       '  run     run the project',
       '  egl-probe    run the EGL capability probe',
       '  gallery-proof    run the gallery device proof',
+      '  gallery-tree    run the gallery tree proof gate',
       '  renderer-prims    assert the retained 11-kind M3 primitive set',
       '  gallery-diff    diff the committed per-page goldens within tolerance',
       '  gallery-layering    assert the layering page z-order, scrim dismiss, and IME safety',
@@ -148,7 +149,7 @@ function printGalleryProofHelp() {
 }
 
 function printUsageError(message) {
-  process.stderr.write(`${message}\nUsage: muse-native <init|build|dev|run|gallery-proof|renderer-prims|gallery-diff|gallery-layering|gallery-scroll|scroll-deadlines|gallery-text|gallery-text-goldens|egl-probe> [args]\n`);
+  process.stderr.write(`${message}\nUsage: muse-native <init|build|dev|run|gallery-proof|gallery-tree|renderer-prims|gallery-diff|gallery-layering|gallery-scroll|scroll-deadlines|gallery-tap|gallery-tap-repaint|gallery-text|gallery-text-goldens|egl-probe> [args]\n`);
 }
 
 function printBuildHelp() {
@@ -166,24 +167,31 @@ function printBuildHelp() {
   process.stdout.write(lines.join('\n'));
 }
 
+// Single-source gallery-tree dispatch (FR-SAMPLE-014 T3): the bin wrapper
+// delegates here so the flag handling lives in exactly one place.
+function runGalleryTreeCommand(argv) {
+  const args = Array.isArray(argv) ? argv : [];
+  if (args.includes('--help') || args.includes('-h')) {
+    process.stdout.write('Usage: muse-native gallery-tree --assert-evaluated --fail-on-static-fallback [--static-fallback]\n');
+    process.exitCode = 0;
+    return;
+  }
+  const tree = require('./gallery-tree.js');
+  let result;
+  try {
+    result = tree.runGalleryTree(args);
+  } catch (err) {
+    process.stderr.write(`${(err && err.message) || String(err)}\nUsage: muse-native gallery-tree --assert-evaluated --fail-on-static-fallback\n`);
+    process.exitCode = 1;
+    return;
+  }
+  process.stdout.write(`gallery-tree ok: proofGate=${result.proofGate}\n`);
+}
+
 function main() {
   const argv = process.argv.slice(2);
   if (argv[0] === 'gallery-tree') {
-    if (argv.includes('--help') || argv.includes('-h')) {
-      process.stdout.write('Usage: muse-native gallery-tree --assert-evaluated --fail-on-static-fallback [--static-fallback]\n');
-      process.exitCode = 0;
-      return;
-    }
-    const tree = require('./gallery-tree.js');
-    let result;
-    try {
-      result = tree.runGalleryTree(argv.slice(1));
-    } catch (err) {
-      process.stderr.write(`${(err && err.message) || String(err)}\nUsage: muse-native gallery-tree --assert-evaluated --fail-on-static-fallback\n`);
-      process.exitCode = 1;
-      return;
-    }
-    process.stdout.write(`gallery-tree ok: proofGate=${result.proofGate}\n`);
+    runGalleryTreeCommand(argv.slice(1));
     return;
   }
   if (argv[0] === 'gallery-proof') {
@@ -232,7 +240,7 @@ function main() {
   }
   if (argv.includes('-h') || argv.includes('--help') || argv.length === 0) {
     if (argv.length === 0) {
-      printUsageError('Usage: muse-native <init|build|dev|run|gallery-proof|renderer-prims|gallery-diff|gallery-layering|gallery-scroll|scroll-deadlines|gallery-text|gallery-text-goldens|egl-probe> [args]');
+      printUsageError('Usage: muse-native <init|build|dev|run|gallery-proof|gallery-tree|renderer-prims|gallery-diff|gallery-layering|gallery-scroll|scroll-deadlines|gallery-tap|gallery-tap-repaint|gallery-text|gallery-text-goldens|egl-probe> [args]');
       process.exitCode = 2;
       return;
     }
@@ -323,7 +331,7 @@ function main() {
   }
 }
 
-module.exports = { validateOptions, OptionError, main };
+module.exports = { validateOptions, OptionError, main, runGalleryTreeCommand };
 
 // Run on direct invocation and when loaded through the `muse-native` (or
 // `muse` alias) bin wrapper. Do not auto-run when required in-process (unit

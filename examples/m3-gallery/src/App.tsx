@@ -5,6 +5,7 @@ import ButtonScreen from "./screens/ButtonScreen";
 import { LayeringPage } from "./Showcase";
 import { buildStories } from "./stories";
 import { shuffleRemix, encodeRemix, decodeRemix } from "./remix";
+import { parseStoryLink, storyIdOf, isPagingGesture } from "./galleryNav";
 
 // M3 motion tokens only (AC-SAMPLE-030; AC-TSX-029/030/031 consume-only):
 // route/state transitions reference motion tokens, never literal curves.
@@ -144,18 +145,16 @@ export function applyTheme(mode: 'light' | 'dark', seedFallback: boolean): void 
   activePalette = { ...palette, primary: seed };
 }
 
-// Paging guard (FR-SAMPLE-014, AC-SAMPLE-040): only shell-chrome origins
-// reach navigateStory; every inside-surface gesture returns false (denial by
-// default) so the AC-M3-012 text path (tap focuses + caret, double-tap/drag
-// selects, scroll pans, control activates) never fires a paging callback.
 export type PagingOrigin = 'inside-surface' | 'shell-chrome';
 export type PagingGesture = 'tap' | 'double-tap' | 'drag' | 'long-press' | 'scroll' | 'key' | 'deep-link';
-export function isPagingGesture(origin: PagingOrigin, gesture: PagingGesture): boolean {
-  if (origin !== 'shell-chrome') {
-    return false;
-  }
-  return gesture === 'tap' || gesture === 'key' || gesture === 'deep-link';
-}
+// Single-sourced paging predicate (FR-SAMPLE-014, AC-SAMPLE-040): this module
+// reuses galleryNav.isPagingGesture so the tested denial-by-default rule and
+// the shipped shell path cannot diverge. Re-exported for existing imports.
+export { isPagingGesture };
+// Shell-chrome origin constant: touch/key/deep-link handlers thread this
+// real origin through instead of repeating the 'shell-chrome' literal at
+// every guard site.
+const SHELL_ORIGIN: PagingOrigin = 'shell-chrome';
 
 export default function App() {
   const [demoState, setDemoState] = useState<DemoState>('loading');
@@ -190,14 +189,14 @@ export default function App() {
   const selectedStory = stories.length === 0 ? null : stories[clampedIndex];
   const prevDisabled = clampedIndex <= 0;
   const nextDisabled = stories.length === 0 || clampedIndex >= stories.length - 1;
-  const onPrev = (): void => {
-    if (!isPagingGesture('shell-chrome', 'tap')) {
+  const onPrev = (origin: PagingOrigin = SHELL_ORIGIN): void => {
+    if (!isPagingGesture(origin, 'tap')) {
       return;
     }
     setSelectedIndex((i) => Math.max(0, i - 1));
   };
-  const onNext = (): void => {
-    if (!isPagingGesture('shell-chrome', 'tap')) {
+  const onNext = (origin: PagingOrigin = SHELL_ORIGIN): void => {
+    if (!isPagingGesture(origin, 'tap')) {
       return;
     }
     setSelectedIndex((i) => Math.min(Math.max(stories.length - 1, 0), i + 1));
@@ -207,13 +206,13 @@ export default function App() {
     if (typeof window === 'undefined' || typeof window.addEventListener !== 'function') {
       return;
     }
-    const onKeyDown = (event: KeyboardEvent): void => {
-      if (!isPagingGesture('shell-chrome', 'key')) {
+    const onKeyDown = (event: KeyboardEvent, origin: PagingOrigin = SHELL_ORIGIN): void => {
+      if (!isPagingGesture(origin, 'key')) {
         return;
       }      if (event.key === 'ArrowRight') {
-        onNext();
+        onNext(origin);
       } else if (event.key === 'ArrowLeft') {
-        onPrev();
+        onPrev(origin);
       }
     };
     window.addEventListener('keydown', onKeyDown);
@@ -221,34 +220,25 @@ export default function App() {
       window.removeEventListener('keydown', onKeyDown);
     };
   }, [stories.length]);
-  // Deep-link movement reuses the remix link shape (AC-SAMPLE-031):
-  // decodeRemix for seeded links, bare gallery://story/<id> otherwise.
-  const onOpenStoryLink = (link: string): void => {
-    if (!isPagingGesture('shell-chrome', 'deep-link')) {
-      return;
+  // Deep-link movement delegates to galleryNav (single storyIdOf rule:
+  // story.id || story.component): bare gallery://story/<id> and seeded
+  // ?seed=<n> links agree with galleryNav.openStoryLink, and unknown ids
+  // surface { code: 'unknown-story' } instead of a silent no-op.
+  const onOpenStoryLink = (link: string, origin: PagingOrigin = SHELL_ORIGIN): { index: number; storyId: string } | { code: 'unknown-story'; storyId?: string } => {
+    if (!isPagingGesture(origin, 'deep-link')) {
+      return { code: 'unknown-story', storyId: link };
     }
-    let id: string | null = null;
-    try {
-      id = decodeRemix(link).id;
-    } catch {
-      const prefix = 'gallery://story/';
-      if (typeof link === 'string' && link.startsWith(prefix)) {
-        const rest = link.slice(prefix.length);
-        const qIndex = rest.indexOf('?');
-        try {
-          id = decodeURIComponent(qIndex < 0 ? rest : rest.slice(0, qIndex));
-        } catch {
-          id = null;
-        }
-      }
+    const parsed = parseStoryLink(link);
+    if ((parsed as { code?: string }).code) {
+      return parsed as { code: 'unknown-story'; storyId?: string };
     }
-    if (id === null || id.length === 0) {
-      return;
+    const id = (parsed as { id: string }).id;
+    const found = stories.findIndex((story) => storyIdOf(story) === id);
+    if (found < 0) {
+      return { code: 'unknown-story', storyId: id };
     }
-    const found = stories.findIndex((story) => story.component === id);
-    if (found >= 0) {
-      setSelectedIndex(found);
-    }
+    setSelectedIndex(found);
+    return { index: found, storyId: storyIdOf(stories[found]) as string };
   };
   // Gallery remix viral loop (AC-SAMPLE-031): one-tap shuffle renders the
   // current story with a fresh (seed, palette, shapeScale); the deep link
@@ -271,8 +261,8 @@ export default function App() {
     applyTheme(next, true);
     setTheme(currentPalette());
   };
-  const firstStoryId = stories.length > 0 ? stories[0].component : 'story';
-  const selectedStoryId = selectedStory !== null ? selectedStory.component : firstStoryId;
+  const firstStoryId = stories.length > 0 ? (storyIdOf(stories[0]) as string) : 'story';
+  const selectedStoryId = selectedStory !== null ? (storyIdOf(selectedStory) as string) : firstStoryId;
   const selectedRendered = selectedStory !== null ? selectedStory.render() : null;
   // Map the descriptor type string through the real @muse/native
   // component table (RULE-M3-006): a bare <rendered.type /> would
@@ -283,17 +273,17 @@ export default function App() {
     <View>
       <TopAppBar title="m3-gallery" />
       <View>
-        <View onTouchStart={onPrev}>
+        <View onTouchStart={prevDisabled ? undefined : () => onPrev(SHELL_ORIGIN)}>
           <Text color={theme.onSurface}>{prevDisabled ? 'Prev (disabled)' : 'Prev'}</Text>
         </View>
         <Text color={theme.onSurface}>{`${clampedIndex + 1} of ${stories.length}`}</Text>
-        <View onTouchStart={onNext}>
+        <View onTouchStart={nextDisabled ? undefined : () => onNext(SHELL_ORIGIN)}>
           <Text color={theme.onSurface}>{nextDisabled ? 'Next (disabled)' : 'Next'}</Text>
         </View>
       </View>
       <NavigationRail selected="home" />
       <View sharedId="gallery-hero" />
-      <View onTouchStart={() => onOpenStoryLink(`gallery://story/${selectedStoryId}`)}>
+      <View onTouchStart={() => onOpenStoryLink(`gallery://story/${selectedStoryId}`, SHELL_ORIGIN)}>
         <Text color={theme.secondary}>Open story gallery://story/{selectedStoryId}</Text>
       </View>
       <View onTouchStart={onToggleTheme}>

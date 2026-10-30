@@ -162,7 +162,6 @@ describe('T3 — default path renders manifest-generated real-tag themed section
     requireSurface();
     const out = surface.renderGallerySection('light', demoStories());
     assert.ok(out.tags.includes('Dialog'), 'overlay member Dialog must survive in the default tree (RULE-M3-006)');
-    assert.ok(existsSync(SHOWCASE_PATH) || typeof surface.OverlayHost !== 'undefined' || true, 'placeholder');
     const stories = demoStories();
     const dialogStory = stories.find((s) => s.component === 'Dialog');
     assert.ok(dialogStory, 'synthetic manifest must yield a Dialog story');
@@ -255,5 +254,17 @@ describe('T3 — static fallback is reachable only via the explicit flag and rep
     assert.ok(/gallery-tree/.test(haystack), 'CLI must expose the gallery-tree command');
     assert.ok(haystack.includes('--assert-evaluated'), 'CLI gallery-tree must support --assert-evaluated');
     assert.ok(haystack.includes('--fail-on-static-fallback'), 'CLI gallery-tree must support --fail-on-static-fallback');
+  });
+
+  it('gallery-tree --fail-on-static-fallback --static-fallback throws (single-flag gate, no --assert-evaluated needed)', () => {
+    const treePath = join(REPO_ROOT, 'packages', 'cli', 'lib', 'gallery-tree.js');
+    assert.ok(existsSync(treePath), 'packages/cli/lib/gallery-tree.js must exist');
+    const tree = require(treePath);
+    assert.equal(typeof tree.runGalleryTree, 'function', 'gallery-tree must export runGalleryTree(argv, env)');
+    assert.throws(
+      () => tree.runGalleryTree(['--fail-on-static-fallback', '--static-fallback'], {}),
+      /static fallback/i,
+      'single-flag --fail-on-static-fallback with a static fallback must throw (exit non-zero), not return proofGate:fail with exit 0',
+    );
   });
 });

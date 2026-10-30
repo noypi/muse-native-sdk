@@ -51,18 +51,10 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     private float lastImeBottomPx = -1f;
 
     /**
-     * Touch-slop mirror (sole source of truth is
-     * {@code runtime::touch_detail::kTouchSlopPx}, 8px). FR-SAMPLE-014
-     * removed the Java page-flip gate that consumed it; the DOWN anchor
-     * below is kept so the raw gesture stream still reaches the native tap
-     * chain untouched. No Java gate pages anymore.
+     * FR-SAMPLE-014 removed the Java page-flip gate that consumed the DOWN
+     * anchor: every touch goes to the native tap chain untouched, and no
+     * Java gate pages anymore.
      */
-    private static final float TOUCH_SLOP_PX = 8.0f;
-
-    /** DOWN anchor of the active gesture, for the drag-vs-outside gate. */
-    private float downX = 0f;
-    private float downY = 0f;
-    private int downPointerId = -1;
 
     /**
      * Focusable input view backing the TextInput widget (tier-2 native
@@ -217,11 +209,6 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             }
             int action = event.getActionMasked();
             int index = event.getActionIndex();
-            if (action == MotionEvent.ACTION_DOWN) {
-                downX = event.getX(index);
-                downY = event.getY(index);
-                downPointerId = event.getPointerId(index);
-            }
             if (action == MotionEvent.ACTION_MOVE) {
                 // MOVE batching (run decision UNSETTLED per support.md: the
                 // evidence does not settle a batching/coalescing policy, so
@@ -250,7 +237,6 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                     event.getPointerId(index),
                     event.getEventTime());
             if (action == MotionEvent.ACTION_UP) {
-                downPointerId = -1;
                 // FR-SAMPLE-014: no outside-tap fallback — an unclaimed
                 // tap renders the frame but never advances the page.
                 if (claimed >= 0) {
@@ -261,8 +247,6 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                     requestImeForProbeTap();
                 }
                 nativeRenderFrame(engineHandle);
-            } else if (action == MotionEvent.ACTION_CANCEL) {
-                downPointerId = -1;
             }
             return true;
         });

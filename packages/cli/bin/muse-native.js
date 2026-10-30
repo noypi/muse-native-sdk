@@ -122,28 +122,14 @@
 })();
 
 // muse-native gallery-tree --assert-evaluated --fail-on-static-fallback [--static-fallback]
-// FR-SAMPLE-014 T3 proof-gate entry (AC-RUNTIME-032). Intercepted here so the
-// generic option validation in lib/cli.js (which only knows the build flags)
-// never sees the gate flags.
+// FR-SAMPLE-014 T3 proof-gate entry (AC-RUNTIME-032). Delegates to the
+// single-source dispatch in lib/cli.js so the flag handling lives in exactly
+// one place (the generic option validation there only knows build flags,
+// hence this intercept).
 (function galleryTreeEntry() {
   const argv = process.argv.slice(2);
   if (argv[0] !== 'gallery-tree') return;
-  const tree = require('../lib/gallery-tree.js');
-  if (argv.includes('--help') || argv.includes('-h')) {
-    process.stdout.write(
-      'Usage: muse-native gallery-tree --assert-evaluated --fail-on-static-fallback [--static-fallback]\n',
-    );
-    return;
-  }
-  let result;
-  try {
-    result = tree.runGalleryTree(argv.slice(1));
-  } catch (err) {
-    process.stderr.write(`${(err && err.message) || String(err)}\nUsage: muse-native gallery-tree --assert-evaluated --fail-on-static-fallback\n`);
-    process.exitCode = 1;
-    return;
-  }
-  process.stdout.write(`gallery-tree ok: proofGate=${result.proofGate}\n`);
+  require('../lib/cli.js').runGalleryTreeCommand(argv.slice(1));
 })();
 
 if (process.argv.slice(2)[0] !== 'gallery-proof' && process.argv.slice(2)[0] !== 'gallery-present' && process.argv.slice(2)[0] !== 'gallery-parity' && process.argv.slice(2)[0] !== 'gallery-tree') {

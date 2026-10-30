@@ -7,8 +7,10 @@
 // `MUSE_STATIC_FALLBACK=1`, see examples/m3-gallery/src/gallerySurface.js)
 // reports the fallback and fails when `--fail-on-static-fallback` is set.
 
-function parseGalleryTreeArgs(argv) {
+function parseGalleryTreeArgs(argv, env) {
   const args = Array.isArray(argv) ? argv : [];
+  const injected = env !== undefined ? env : process.env;
+  const envObj = injected && typeof injected === 'object' ? injected : {};
   const opts = {
     assertEvaluated: false,
     failOnStaticFallback: false,
@@ -19,7 +21,7 @@ function parseGalleryTreeArgs(argv) {
     else if (arg === '--fail-on-static-fallback') opts.failOnStaticFallback = true;
     else if (arg === '--static-fallback') opts.staticFallback = true;
   }
-  if (process.env && process.env.MUSE_STATIC_FALLBACK === '1') {
+  if (envObj.MUSE_STATIC_FALLBACK === '1') {
     opts.staticFallback = true;
   }
   return opts;
@@ -38,10 +40,10 @@ function evaluateGalleryTree(opts) {
   return { pass: true, staticFallback: false, reported: false, proofGate: 'pass' };
 }
 
-function runGalleryTree(argv) {
-  const opts = parseGalleryTreeArgs(argv);
+function runGalleryTree(argv, env) {
+  const opts = parseGalleryTreeArgs(argv, env);
   const result = evaluateGalleryTree(opts);
-  if (opts.assertEvaluated && opts.failOnStaticFallback && !result.pass) {
+  if (opts.failOnStaticFallback && !result.pass) {
     const err = new Error('gallery-tree: static fallback detected (--fail-on-static-fallback)');
     err.code = 'static-fallback';
     err.result = result;

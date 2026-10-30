@@ -173,6 +173,36 @@ describe('T1 — shell Prev/Next navigation over the manifest story list', () =>
     assert.equal(n.current().index, 0);
   });
 
+  it('App onOpenStoryLink agrees with galleryNav.openStoryLink (single storyIdOf rule, id !== component)', () => {
+    requireNav();
+    const { readFileSync } = require('node:fs');
+    const { join } = require('node:path');
+    const appSrc = readFileSync(join(__dirname, '..', 'src', 'App.tsx'), 'utf8');
+    assert.ok(
+      /from\s+['"]\.\/galleryNav['"]/.test(appSrc) && /storyIdOf/.test(appSrc) && /parseStoryLink/.test(appSrc),
+      'App.tsx must delegate deep-link movement to galleryNav (import parseStoryLink + storyIdOf)',
+    );
+    assert.ok(
+      /storyIdOf\(stor\w*\)\s*===\s*id/.test(appSrc),
+      'App onOpenStoryLink must look up stories with the single storyIdOf rule (storyIdOf(story) === id), not component-only',
+    );
+    assert.ok(
+      /code:\s*['"]unknown-story['"]/.test(appSrc),
+      'App onOpenStoryLink must surface { code: \'unknown-story\' } for unknown ids',
+    );
+    // Behavioral parity through the shared rule: a story whose id differs
+    // from its component is reachable by id, and unknown ids reject.
+    const stories = [
+      { id: 'story-alpha-1', component: 'Button', state: {} },
+      { id: 'story-beta-2', component: 'Card', state: {} },
+    ];
+    const n = navigatorFor(stories);
+    assert.deepEqual(n.openStoryLink('gallery://story/story-beta-2'), { index: 1, storyId: 'story-beta-2' });
+    const unknown = n.openStoryLink('gallery://story/no-such-story');
+    assert.equal(unknown && unknown.code, 'unknown-story');
+    assert.equal(n.current().index, 1, 'unknown-id rejection must keep the current story');
+  });
+
   it('paging changes only the story, never mutates story state', () => {
     const n = navigatorFor(demoStories());
     const before = JSON.stringify(demoStories().map((s) => s.state));
