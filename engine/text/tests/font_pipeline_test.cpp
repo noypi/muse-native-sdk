@@ -159,7 +159,9 @@ static bool check_failed_download_degrades_single_pass() {
 static bool check_successful_download_shapes() {
   try {
     // Downloadable font present and fetch succeeds: shaping succeeds with
-    // the requested variations applied.
+    // the requested variations applied, AND the downloaded face (999)
+    // influences shaping — the T1 affordance proves it via
+    // advances_differ(with_download, bundled) (option (a) ONLY per D1).
     const muse::text::FontVariation kVars[] = {{kWght, 600.0f}};
     muse::text::FontRequest req = make_request(kVars, 1);
     req.has_downloadable_font = true;
@@ -168,9 +170,22 @@ static bool check_successful_download_shapes() {
     std::vector<float> with_download = advances_for_request(kText, req);
     std::vector<float> bundled =
         advances_for_request(kText, make_request(kVars, 1));
-    // Both succeed; the downloaded face need not match bundled advances,
-    // but shaping must be non-empty either way.
-    return !with_download.empty() && !bundled.empty();
+    // Both succeed (existing preconditions kept)...
+    if (with_download.empty() || bundled.empty()) return false;
+    // ...AND the downloaded face influenced shaping (option (a) gate).
+    // No exact-advance goldens for face 999 — only the differ assertion.
+    if (!advances_differ(with_download, bundled)) return false;
+    // Negative control (same case): download_failed=true must NOT reflect
+    // face 999 — advances must EQUAL the bundled vector.
+    muse::text::FontRequest failed_req = req;
+    failed_req.download_failed = true;
+    std::vector<float> failed = advances_for_request(kText, failed_req);
+    if (failed.empty()) return false;
+    if (failed.size() != bundled.size()) return false;
+    for (std::size_t i = 0; i < failed.size(); ++i) {
+      if (failed[i] != bundled[i]) return false;
+    }
+    return true;
   } catch (...) {
     return false;
   }
