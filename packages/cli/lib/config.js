@@ -115,11 +115,21 @@ function validateConfig(raw, file) {
     throw new ConfigError('config', where, 'object');
   }
   for (const key of Object.keys(raw)) {
+    // FR-PACKAGING-009 T5 file-only pin: `sdk:` is accepted in
+    // muse-native.yaml but never enters the scalar map (muse: precedent).
+    if (key === 'sdk') continue;
     if (!Object.prototype.hasOwnProperty.call(SCHEMA, key)) {
       throw new ConfigError(key, where, 'unknown key, expected one of: ' + Object.keys(SCHEMA).join(', '));
     }
   }
   for (const key of Object.keys(raw)) {
+    // File-only `sdk:` pin: must be a string when present; never merged.
+    if (key === 'sdk') {
+      if (typeof raw[key] !== 'string') {
+        throw new ConfigError(key, where, 'string');
+      }
+      continue;
+    }
     const expected = SCHEMA[key];
     if (key === 'archs') {
       if (typeof raw[key] === 'string') raw[key] = parseArchsValue(raw[key]);
@@ -314,6 +324,16 @@ function readFileLayer(cwd) {
     if (parsed) {
       if (parsed.key === '__proto__' || parsed.key === 'constructor' || parsed.key === 'prototype') {
         throw new ConfigError(parsed.key, full, 'rejected dangerous key');
+      }
+      // FR-PACKAGING-009 T5 file-only pin: `sdk: <version>` validates
+      // (string) but is routed out of the scalar `values` map before
+      // `validateConfig`, exactly like the `muse:` subtree — it never
+      // leaks into resolveConfig's SCHEMA-iterated merge.
+      if (parsed.key === 'sdk') {
+        if (typeof parsed.value !== 'string') {
+          throw new ConfigError('sdk', full, 'string');
+        }
+        continue;
       }
       // Flat `diagnostics.CODE: <severity>` file form folds into the map.
       if (parsed.key === 'diagnostics' || parsed.key.startsWith('diagnostics.')) {

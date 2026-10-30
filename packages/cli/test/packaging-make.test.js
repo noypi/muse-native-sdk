@@ -548,9 +548,9 @@ describe('T3 review tightening: link/zip paths + per-ABI lib gates (AC-PACKAGING
     for (const abi of ['arm64-v8a', 'armeabi-v7a', 'x86_64', 'x86']) {
       assert.ok(body.includes(`lib/${abi}/`),
         `apk must copy the engine lib into lib/${abi}/ for slot ${abi}`);
-      const gateRe = new RegExp(`test\\s+-f\\s+[^\\n]*${abi.replace('+', '\\+')}[^\\n]*libRuntime\\.so`);
+      const gateRe = new RegExp(`test\\s+-s\\s+[^\\n]*${abi.replace('+', '\\+')}[^\\n]*libRuntime\\.so`);
       assert.match(body, gateRe,
-        `apk must gate slot ${abi} with an explicit test -f existence check before copying`);
+        `apk must gate slot ${abi} with an explicit test -s existence check before copying`);
     }
   });
 
