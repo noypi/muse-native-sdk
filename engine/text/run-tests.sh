@@ -6,7 +6,7 @@ set -eu
 set -o pipefail 2>/dev/null || true
 
 usage() {
-  echo "usage: $0 jni_free_path_test|system_fonts_test|layout_cache_test|harfbuzz_parity_test|script_coverage_test|emoji_test|font_fallback_test|uax_conformance_test|fallback_chain_test|downloadable_font_test|emoji_cluster_test|script_shaping_test|variable_font_test|font_subset_guard_test|golden_harness_test|pipeline_acceptance|font_pipeline_test|stylus_samples_test|stylus_axes_test|palm_rejection_test|handwriting_test|selection_parity_test|undo_test|plain_degrade_test|gesture_script_test|rich_buffer_test|nonlinear_scale_test|scale_remeasure_test|scale_config_test|scale_churn_test" >&2
+  echo "usage: $0 jni_free_path_test|shaping_jni_test|system_fonts_test|layout_cache_test|harfbuzz_parity_test|script_coverage_test|emoji_test|font_fallback_test|uax_conformance_test|fallback_chain_test|downloadable_font_test|emoji_cluster_test|script_shaping_test|variable_font_test|font_subset_guard_test|golden_harness_test|pipeline_acceptance|font_pipeline_test|stylus_samples_test|stylus_axes_test|palm_rejection_test|handwriting_test|selection_parity_test|undo_test|plain_degrade_test|gesture_script_test|rich_buffer_test|nonlinear_scale_test|scale_remeasure_test|scale_config_test|scale_churn_test" >&2
 }
 
 if [ "$#" -ne 1 ]; then
@@ -15,7 +15,7 @@ if [ "$#" -ne 1 ]; then
 fi
 
 case "$1" in
-  jni_free_path_test|system_fonts_test|layout_cache_test|harfbuzz_parity_test|script_coverage_test|emoji_test|font_fallback_test|uax_conformance_test|fallback_chain_test|downloadable_font_test|emoji_cluster_test|script_shaping_test|variable_font_test|font_subset_guard_test|golden_harness_test|pipeline_acceptance|font_pipeline_test|stylus_samples_test|stylus_axes_test|palm_rejection_test|handwriting_test|selection_parity_test|undo_test|plain_degrade_test|gesture_script_test|rich_buffer_test|nonlinear_scale_test|scale_remeasure_test|scale_config_test|scale_churn_test)
+  jni_free_path_test|shaping_jni_test|system_fonts_test|layout_cache_test|harfbuzz_parity_test|script_coverage_test|emoji_test|font_fallback_test|uax_conformance_test|fallback_chain_test|downloadable_font_test|emoji_cluster_test|script_shaping_test|variable_font_test|font_subset_guard_test|golden_harness_test|pipeline_acceptance|font_pipeline_test|stylus_samples_test|stylus_axes_test|palm_rejection_test|handwriting_test|selection_parity_test|undo_test|plain_degrade_test|gesture_script_test|rich_buffer_test|nonlinear_scale_test|scale_remeasure_test|scale_config_test|scale_churn_test)
     ;;
   *)
     usage
