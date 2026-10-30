@@ -72,7 +72,16 @@ static bool check_all_eleven_kinds_draw() {
   std::vector<runtime::DrawCmd> cmds;
   std::uint32_t node = 100;
   for (const auto kind : kinds) {
-    cmds.push_back(make_cmd(kind, 1.0f, node++));
+    runtime::DrawCmd cmd = make_cmd(kind, 1.0f, node++);
+    // Known-id submit cases: assetId == 0 / glyphRunId == 0 are the
+    // T6/T7 unresolvable sentinels (fail-closed → UnknownPrimitive), so the
+    // all-kinds pass-through leg must use nonzero ids.
+    if (kind == runtime::PrimitiveKind::VectorIcon) {
+      cmd.payload.assetId = 7;
+    } else if (kind == runtime::PrimitiveKind::ShapedText) {
+      cmd.payload.glyphRunId = 9;
+    }
+    cmds.push_back(cmd);
   }
   if (renderer.draw(cmds, target) != runtime::DrawError::None) return false;
   if (target.captured.size() != kinds.size()) return false;
@@ -418,6 +427,121 @@ static bool check_circlearc_full_360_sweep_closed_ring() {
   return target.captured[0].payload.arcSweepDeg == 360.0f;
 }
 
+// T6: VectorIcon resolves asset and renders tinted glyph in bounds —
+// recorded cmd keeps assetId/tintColor; draw None. ASSUMPTION: assetId 0
+// is the unresolvable sentinel (registry-supplied ids are nonzero; 0 is
+// the field default and never a valid registration), so a nonzero id is
+// the known-asset case here.
+static bool check_vectoricon_known_id_submits_tinted() {
+  runtime::Renderer renderer(baseline_device());
+  FakeSwapchain target;
+  runtime::DrawCmd cmd =
+      make_cmd(runtime::PrimitiveKind::VectorIcon, 1.0f, 131);
+  cmd.bounds = {2.0f, 2.0f, 24.0f, 24.0f};
+  cmd.payload.assetId = 7;
+  cmd.payload.tintColor = 0xFFAABBCCu;
+  if (renderer.draw({cmd}, target) != runtime::DrawError::None) return false;
+  if (target.captured.size() != 1) return false;
+  const runtime::DrawCmd& recorded = target.captured[0];
+  if (recorded.kind != runtime::PrimitiveKind::VectorIcon) return false;
+  if (recorded.nodeId != 131) return false;
+  if (recorded.bounds.w != 24.0f || recorded.bounds.h != 24.0f) return false;
+  return recorded.payload.assetId == 7 &&
+         recorded.payload.tintColor == 0xFFAABBCCu;
+}
+
+// T6 fail-closed: unresolvable assetId (sentinel 0) → UnknownPrimitive,
+// records nothing (no substitute box).
+static bool check_vectoricon_unknown_id_fail_closed_no_box() {
+  runtime::Renderer renderer(baseline_device());
+  FakeSwapchain target;
+  runtime::DrawCmd cmd =
+      make_cmd(runtime::PrimitiveKind::VectorIcon, 1.0f, 132);
+  cmd.payload.assetId = 0;
+  cmd.payload.tintColor = 0xFFAABBCCu;
+  if (renderer.draw({cmd}, target) !=
+      runtime::DrawError::UnknownPrimitive) {
+    return false;
+  }
+  for (const auto& recorded : target.captured) {
+    if (recorded.nodeId == 132) return false;
+  }
+  return true;
+}
+
+// T7: ShapedText renders referenced glyph run in bounds — recorded cmd
+// keeps glyphRunId/textColor; draw None. ASSUMPTION: glyphRunId 0 is the
+// dangling sentinel (shaping/atlas supply is BUG-M3-FIDELITY-005's
+// ownership; nonzero ids are live handles supplied from outside the draw
+// path), so a nonzero id is the known-run case here.
+static bool check_shapedtext_known_run_submits() {
+  runtime::Renderer renderer(baseline_device());
+  FakeSwapchain target;
+  runtime::DrawCmd cmd =
+      make_cmd(runtime::PrimitiveKind::ShapedText, 1.0f, 141);
+  cmd.bounds = {0.0f, 0.0f, 200.0f, 20.0f};
+  cmd.payload.glyphRunId = 9;
+  cmd.payload.textColor = 0xFF123456u;
+  if (renderer.draw({cmd}, target) != runtime::DrawError::None) return false;
+  if (target.captured.size() != 1) return false;
+  const runtime::DrawCmd& recorded = target.captured[0];
+  if (recorded.kind != runtime::PrimitiveKind::ShapedText) return false;
+  if (recorded.nodeId != 141) return false;
+  return recorded.payload.glyphRunId == 9 &&
+         recorded.payload.textColor == 0xFF123456u;
+}
+
+// T7 fail-closed: dangling glyphRunId (sentinel 0) → UnknownPrimitive,
+// records nothing.
+static bool check_shapedtext_dangling_run_fail_closed_no_box() {
+  runtime::Renderer renderer(baseline_device());
+  FakeSwapchain target;
+  runtime::DrawCmd cmd =
+      make_cmd(runtime::PrimitiveKind::ShapedText, 1.0f, 142);
+  cmd.payload.glyphRunId = 0;
+  cmd.payload.textColor = 0xFF123456u;
+  if (renderer.draw({cmd}, target) !=
+      runtime::DrawError::UnknownPrimitive) {
+    return false;
+  }
+  for (const auto& recorded : target.captured) {
+    if (recorded.nodeId == 142) return false;
+  }
+  return true;
+}
+
+// T8: OverlayScrim renders dim layer over bounds — recorded cmd keeps
+// scrimColor/scrimAlpha; draw None.
+static bool check_overlayscrim_records_dim_layer() {
+  runtime::Renderer renderer(baseline_device());
+  FakeSwapchain target;
+  runtime::DrawCmd cmd =
+      make_cmd(runtime::PrimitiveKind::OverlayScrim, 1.0f, 151);
+  cmd.bounds = {0.0f, 0.0f, 320.0f, 480.0f};
+  cmd.payload.scrimColor = 0xFF000000u;
+  cmd.payload.scrimAlpha = 0.5f;
+  if (renderer.draw({cmd}, target) != runtime::DrawError::None) return false;
+  if (target.captured.size() != 1) return false;
+  const runtime::DrawCmd& recorded = target.captured[0];
+  if (recorded.kind != runtime::PrimitiveKind::OverlayScrim) return false;
+  if (recorded.nodeId != 151) return false;
+  return recorded.payload.scrimColor == 0xFF000000u &&
+         recorded.payload.scrimAlpha == 0.5f;
+}
+
+// T8 boundary: alpha 0.0 renders no visible dim but still submits (None).
+static bool check_overlayscrim_zero_alpha_still_submits() {
+  runtime::Renderer renderer(baseline_device());
+  FakeSwapchain target;
+  runtime::DrawCmd cmd =
+      make_cmd(runtime::PrimitiveKind::OverlayScrim, 1.0f, 152);
+  cmd.payload.scrimColor = 0xFF000000u;
+  cmd.payload.scrimAlpha = 0.0f;
+  if (renderer.draw({cmd}, target) != runtime::DrawError::None) return false;
+  if (target.captured.size() != 1) return false;
+  return target.captured[0].payload.scrimAlpha == 0.0f;
+}
+
 #define RUN_CASE(name)                           \
   do {                                           \
     if (!(name)()) {                             \
@@ -440,6 +564,12 @@ int main() {
   RUN_CASE(check_elevationshadow_zero_elevation_still_none);
   RUN_CASE(check_circlearc_records_arc_in_bounds);
   RUN_CASE(check_circlearc_full_360_sweep_closed_ring);
+  RUN_CASE(check_vectoricon_known_id_submits_tinted);
+  RUN_CASE(check_vectoricon_unknown_id_fail_closed_no_box);
+  RUN_CASE(check_shapedtext_known_run_submits);
+  RUN_CASE(check_shapedtext_dangling_run_fail_closed_no_box);
+  RUN_CASE(check_overlayscrim_records_dim_layer);
+  RUN_CASE(check_overlayscrim_zero_alpha_still_submits);
   RUN_CASE(check_each_primitive_kind_draws);
   RUN_CASE(check_per_node_opacity_recorded);
   RUN_CASE(check_opacity_edges_zero_and_one);

@@ -81,8 +81,50 @@ DrawError Renderer::draw(const std::vector<DrawCmd>& cmds, Swapchain& target) {
         target.submit(cmd);
         break;
       case PrimitiveKind::VectorIcon:
+        // T6 (FR-GRAPHICS-010 / AC-GRAPHICS-029): VectorIcon resolves the
+        // registry-supplied assetId and renders the tinted glyph in
+        // cmd.bounds with payload.tintColor. assetId == 0 is the
+        // unresolvable sentinel (the field default, never a valid
+        // registry-supplied id; no filesystem/network on the draw path) and
+        // fails closed per RULE-RUNTIME-001: report UnknownPrimitive and
+        // record nothing (no substitute box). Forwarding a nonzero-id cmd
+        // preserves bounds/assetId/tintColor exactly; the Swapchain
+        // rasterizes the tinted glyph in bounds.
+        if (cmd.payload.assetId == 0) {
+          result = DrawError::UnknownPrimitive;
+          break;
+        }
+        target.submit(cmd);
+        break;
       case PrimitiveKind::ShapedText:
+        // T7 (FR-GRAPHICS-010 / AC-GRAPHICS-029): ShapedText renders the
+        // referenced glyph run in cmd.bounds with payload.textColor.
+        // glyphRunId == 0 is the dangling sentinel (the field default,
+        // never a valid supplied handle; shaping/atlas supply is
+        // BUG-M3-FIDELITY-005's ownership) and fails closed per
+        // RULE-RUNTIME-001: report UnknownPrimitive and record nothing
+        // (no substitute box). Forwarding a nonzero-id cmd preserves
+        // bounds/glyphRunId/textColor exactly; the Swapchain rasterizes
+        // the referenced run in bounds.
+        if (cmd.payload.glyphRunId == 0) {
+          result = DrawError::UnknownPrimitive;
+          break;
+        }
+        target.submit(cmd);
+        break;
       case PrimitiveKind::OverlayScrim:
+        // T8 (FR-GRAPHICS-010 / AC-GRAPHICS-029): OverlayScrim renders a
+        // dim layer over cmd.bounds from payload.scrimColor/
+        // payload.scrimAlpha, under subsequent overlay content. The
+        // retained-path rasterizer (Swapchain) src-over blends
+        // (gallery_present.cpp BlendPixel: per-channel
+        // (src*a + dst*(255-a))/255) the scrimColor RGB at
+        // a = round(255*scrimAlpha) across the full bounds rect;
+        // scrimAlpha == 0.0 submits (DrawError::None) and leaves the
+        // buffer unchanged (no visible dim). Forwarding the cmd preserves
+        // bounds/scrimColor/scrimAlpha exactly; the Swapchain rasterizes
+        // the dim in submission order, so later overlay content draws
+        // over it.
         target.submit(cmd);
         break;
       default:
