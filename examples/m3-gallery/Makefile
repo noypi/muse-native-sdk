@@ -28,7 +28,7 @@ apk:
 	@if ! sed -n '1p' "$(MUSE_NATIVE_HOME)/VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$$'; then echo "error: malformed SDK VERSION at '$(MUSE_NATIVE_HOME)/VERSION': line 1 must be SemVer MAJOR.MINOR.PATCH, found '$$(sed -n '1p' "$(MUSE_NATIVE_HOME)/VERSION")'" >&2; exit 1; fi
 	@if ! sed -n '2p' "$(MUSE_NATIVE_HOME)/VERSION" | grep -Eq '^sha=[0-9a-f]+ date=[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$$'; then echo "error: malformed SDK VERSION at '$(MUSE_NATIVE_HOME)/VERSION': line 2 must be 'sha=<hex> date=<ISO-8601>', found '$$(sed -n '2p' "$(MUSE_NATIVE_HOME)/VERSION")'" >&2; exit 1; fi
 	@if [ "$$(sed -n '3p' "$(MUSE_NATIVE_HOME)/VERSION")" != "abis=arm64-v8a armeabi-v7a x86_64 x86" ]; then echo "error: malformed SDK VERSION at '$(MUSE_NATIVE_HOME)/VERSION': line 3 must be 'abis=arm64-v8a armeabi-v7a x86_64 x86', found '$$(sed -n '3p' "$(MUSE_NATIVE_HOME)/VERSION")'" >&2; exit 1; fi
-	@sdk_pin="$$(grep -E '^sdk:' muse-native.yaml 2>/dev/null | head -n 1 | sed 's/^sdk:[[:space:]]*//;s/[[:space:]]*$$//')"; \
+	@sdk_pin="$$(grep -E '^[[:space:]]*sdk:' muse-native.yaml 2>/dev/null | head -n 1 | sed 's/^[[:space:]]*sdk:[[:space:]]*//;s/[[:space:]]*$$//')"; \
 	sdk_ver="$$(sed -n '1p' "$(MUSE_NATIVE_HOME)/VERSION")"; \
 	if [ -z "$$sdk_pin" ]; then echo "warning: no 'sdk:' pin in muse-native.yaml; building against SDK version $$sdk_ver" >&2; \
 	elif [ "$$sdk_pin" != "$$sdk_ver" ]; then echo "error: SDK version mismatch: expected $$sdk_ver (from '$(MUSE_NATIVE_HOME)/VERSION' line 1), found sdk: $$sdk_pin (from muse-native.yaml)" >&2; exit 1; fi
@@ -40,16 +40,17 @@ apk:
 	d8 --lib $(ANDROID_JAR) --output $(BUILD_DIR)/dex $$(find $(BUILD_DIR)/classes -name '*.class')
 	mkdir -p $(STAGING_DIR)/lib/arm64-v8a $(STAGING_DIR)/lib/armeabi-v7a $(STAGING_DIR)/lib/x86_64 $(STAGING_DIR)/lib/x86 $(STAGING_DIR)/assets/tree
 	unzip -o $(LINKED_ZIP) AndroidManifest.xml resources.arsc -d $(STAGING_DIR)
-	test -s $(MUSE_NATIVE_HOME)/android-arm64-v8a/libRuntime.so || { echo "error: missing engine lib for ABI slot arm64-v8a at '$(MUSE_NATIVE_HOME)/android-arm64-v8a/libRuntime.so'" >&2; exit 1; }
-	cp $(MUSE_NATIVE_HOME)/android-arm64-v8a/libRuntime.so $(STAGING_DIR)/lib/arm64-v8a/libRuntime.so
-	test -s $(MUSE_NATIVE_HOME)/android-armeabi-v7a/libRuntime.so || { echo "error: missing engine lib for ABI slot armeabi-v7a at '$(MUSE_NATIVE_HOME)/android-armeabi-v7a/libRuntime.so'" >&2; exit 1; }
-	cp $(MUSE_NATIVE_HOME)/android-armeabi-v7a/libRuntime.so $(STAGING_DIR)/lib/armeabi-v7a/libRuntime.so
-	test -s $(MUSE_NATIVE_HOME)/android-x86_64/libRuntime.so || { echo "error: missing engine lib for ABI slot x86_64 at '$(MUSE_NATIVE_HOME)/android-x86_64/libRuntime.so'" >&2; exit 1; }
-	cp $(MUSE_NATIVE_HOME)/android-x86_64/libRuntime.so $(STAGING_DIR)/lib/x86_64/libRuntime.so
-	test -s $(MUSE_NATIVE_HOME)/android-x86/libRuntime.so || { echo "error: missing engine lib for ABI slot x86 at '$(MUSE_NATIVE_HOME)/android-x86/libRuntime.so'" >&2; exit 1; }
-	cp $(MUSE_NATIVE_HOME)/android-x86/libRuntime.so $(STAGING_DIR)/lib/x86/libRuntime.so
+	test -s "$(MUSE_NATIVE_HOME)/android-arm64-v8a/libRuntime.so" || { echo "error: missing engine lib for ABI slot arm64-v8a at '$(MUSE_NATIVE_HOME)/android-arm64-v8a/libRuntime.so'" >&2; exit 1; }
+	cp "$(MUSE_NATIVE_HOME)/android-arm64-v8a/libRuntime.so" $(STAGING_DIR)/lib/arm64-v8a/libRuntime.so
+	test -s "$(MUSE_NATIVE_HOME)/android-armeabi-v7a/libRuntime.so" || { echo "error: missing engine lib for ABI slot armeabi-v7a at '$(MUSE_NATIVE_HOME)/android-armeabi-v7a/libRuntime.so'" >&2; exit 1; }
+	cp "$(MUSE_NATIVE_HOME)/android-armeabi-v7a/libRuntime.so" $(STAGING_DIR)/lib/armeabi-v7a/libRuntime.so
+	test -s "$(MUSE_NATIVE_HOME)/android-x86_64/libRuntime.so" || { echo "error: missing engine lib for ABI slot x86_64 at '$(MUSE_NATIVE_HOME)/android-x86_64/libRuntime.so'" >&2; exit 1; }
+	cp "$(MUSE_NATIVE_HOME)/android-x86_64/libRuntime.so" $(STAGING_DIR)/lib/x86_64/libRuntime.so
+	test -s "$(MUSE_NATIVE_HOME)/android-x86/libRuntime.so" || { echo "error: missing engine lib for ABI slot x86 at '$(MUSE_NATIVE_HOME)/android-x86/libRuntime.so'" >&2; exit 1; }
+	cp "$(MUSE_NATIVE_HOME)/android-x86/libRuntime.so" $(STAGING_DIR)/lib/x86/libRuntime.so
 	cp $(BUILD_DIR)/dex/classes.dex $(STAGING_DIR)/classes.dex
 	cp -r tree/* $(STAGING_DIR)/assets/tree/ 2>/dev/null || cp -r assets/* $(STAGING_DIR)/assets/ 2>/dev/null || true
+	# NOTE (T2, AC-023): next line's parent-dir ref stays inside BUILD_DIR staging; exempt from no-traversal rule.
 	cd $(STAGING_DIR) && zip -r ../$(notdir $(UNSIGNED_APK)) AndroidManifest.xml classes.dex lib assets && zip -g -0 ../$(notdir $(UNSIGNED_APK)) resources.arsc
 
 sign: apk
