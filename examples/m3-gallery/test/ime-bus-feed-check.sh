@@ -139,6 +139,29 @@ else
   fail "pre-30 sampler forwards visible-display-frame height via onInsetsFrame"
 fi
 
+# T3-RESIZE-1 (regression, bug-runtime-004 t5r4 device 127.0.0.1:6569,
+# evidence t5r4_logcat_full.txt): under ADJUST_PAN no layout pass runs
+# mid-transition — only 2 discrete inset states (66.0/474.0), single 408px
+# jump, violating L9's max-1px-steps clause. The gallery window must opt
+# into SOFT_INPUT_ADJUST_RESIZE (getWindow().setSoftInputMode(...)) so the
+# IME transition runs real layout passes and the sampler emits true
+# per-frame intermediate values. FAILS until the fix lands.
+if grep -q 'setSoftInputMode' "$JAVA_FILE" \
+  && grep -q 'SOFT_INPUT_ADJUST_RESIZE' "$JAVA_FILE"; then
+  pass "gallery window opts into SOFT_INPUT_ADJUST_RESIZE"
+else
+  fail "gallery window opts into SOFT_INPUT_ADJUST_RESIZE"
+fi
+
+# T3-RESIZE-2 (denial, bug-runtime-004 t5r4): the window must NOT opt into
+# ADJUST_PAN / ADJUST_NOTHING (either reintroduces the no-layout-pass jump).
+# Passes on current code (no soft-input mode set yet); guards the fix.
+if grep -qE 'SOFT_INPUT_ADJUST_PAN|SOFT_INPUT_ADJUST_NOTHING' "$JAVA_FILE"; then
+  fail "gallery window avoids ADJUST_PAN / ADJUST_NOTHING"
+else
+  pass "gallery window avoids ADJUST_PAN / ADJUST_NOTHING"
+fi
+
 if [ "$FAILURES" -gt 0 ]; then
   printf 'ime-bus-feed-check: %d failing\n' "$FAILURES"
   printf 'device half (tester, 127.0.0.1:6569):\n'

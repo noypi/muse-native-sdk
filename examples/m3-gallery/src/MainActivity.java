@@ -13,6 +13,7 @@ import android.view.SurfaceHolder;
 import android.view.SurfaceView;
 import android.view.View;
 import android.view.ViewTreeObserver;
+import android.view.WindowManager;
 import android.view.WindowInsets;
 import android.view.WindowInsetsAnimation;
 import android.view.inputmethod.InputMethodManager;
@@ -122,6 +123,10 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        // T3 resize (bug-runtime-004 t5r4): opt into ADJUST_RESIZE so the IME
+        // transition runs real layout passes and the sampler emits per-frame
+        // intermediate values (ADJUST_PAN runs no mid-transition layout pass).
+        getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
         SurfaceView surfaceView = new SurfaceView(this);
         surfaceView.getHolder().addCallback(this);
         // Tap routing (BUG-M3-FIDELITY-007 disposition): every touch goes to
