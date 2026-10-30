@@ -10,7 +10,7 @@ const { spawnSync } = require('node:child_process');
 function runEglProbe(rest) {
   const args = Array.isArray(rest) ? rest.slice() : [];
   const script = path.resolve(__dirname, '..', '..', '..', 'engine', 'graphics', 'egl-probe', 'run-eprobe.sh');
-  const res = spawnSync('sh', [script, ...args], { stdio: 'inherit' });
+  const res = spawnSync('sh', [script, ...args], { stdio: ['ignore', 'inherit', 'inherit'] });
   if (res.error) {
     process.stderr.write(`Error: egl-probe failed to run: ${res.error.message || res.error}\n`);
     process.exitCode = 1;

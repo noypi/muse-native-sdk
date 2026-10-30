@@ -279,6 +279,54 @@ grep -q "s3cr3t-planted" "$SEC_LOG" && fail "sec diagnostic env-secret reflected
 echo "PASS sec diagnostic secrecy env-secret never reflected"
 rm -rf "$SEC_TMP"
 
+# 6c. Close-blocking stdin regression leg (hermetic, host-only, no device):
+# FR-GRAPHICS-011 AC-032 — `packages/cli/lib/egl-probe.js` must spawn the
+# probe with stdio ['ignore','inherit','inherit'] so a piped stdin is never
+# drained by the child (regression starved nfr-audit TC-031..038 after
+# TC-031). Pipe a large distinctive payload (1MiB of 'S' + marker) into the
+# worktree CLI for both `--force-fail init` and `--report drivers`: stdout
+# must be byte-identical to the direct (no-pipe) invocation (cmp), exit
+# codes identical, and a downstream consumer must still receive the full
+# payload. Every invocation is timeout-guarded.
+CHECKOUT_ROOT=$(cd "$PROBE_DIR/../../.." && pwd)
+WORKTREE_CLI_BIN="$CHECKOUT_ROOT/packages/cli/bin/muse-native.js"
+[ -f "$WORKTREE_CLI_BIN" ] || fail "6c worktree CLI missing: $WORKTREE_CLI_BIN"
+STDIN6C_TMP=$(mktemp -d /tmp/nfr_efail.stdin6c.XXXXXX) || fail "mktemp for 6c legs failed"
+STDIN6C_PAYLOAD="$STDIN6C_TMP/payload.bin"
+STDIN6C_MARKER="STDIN-6C-MARKER-9f3a7c2e-payload-intact"
+if ! head -c 1048576 /dev/zero 2>/dev/null | tr '\0' 'S' >"$STDIN6C_PAYLOAD"; then
+  fail "6c payload generation failed"
+fi
+printf '%s\n' "$STDIN6C_MARKER" >>"$STDIN6C_PAYLOAD"
+for S6C_ARGS in "--force-fail init" "--report drivers"; do
+  # shellcheck disable=SC2086
+  S6C_SAFE=$(printf '%s' "$S6C_ARGS" | tr ' ' '_')
+  S6C_DIRECT="$STDIN6C_TMP/direct.$S6C_SAFE.log"
+  S6C_PIPED="$STDIN6C_TMP/piped.$S6C_SAFE.log"
+  timeout "$TIMEOUT_SECS" node "$WORKTREE_CLI_BIN" egl-probe $S6C_ARGS >"$S6C_DIRECT" 2>&1
+  S6C_DIRECT_CODE=$?
+  [ "$S6C_DIRECT_CODE" -eq 124 ] && fail "6c direct 'egl-probe $S6C_ARGS' timed out after ${TIMEOUT_SECS}s (hang)"
+  [ "$S6C_DIRECT_CODE" -ge 128 ] && fail "6c direct 'egl-probe $S6C_ARGS' crashed (signal exit $S6C_DIRECT_CODE)"
+  timeout "$TIMEOUT_SECS" sh -c 'cat "$1" 2>/dev/null | node "$2" egl-probe $3 >"$4" 2>&1; echo $? >"$5"' sh "$STDIN6C_PAYLOAD" "$WORKTREE_CLI_BIN" "$S6C_ARGS" "$S6C_PIPED" "$STDIN6C_TMP/piped.$S6C_SAFE.code"
+  S6C_OUTER=$?
+  [ "$S6C_OUTER" -eq 124 ] && fail "6c piped-capture 'egl-probe $S6C_ARGS' timed out after ${TIMEOUT_SECS}s (hang)"
+  S6C_PIPED_CODE=$(cat "$STDIN6C_TMP/piped.$S6C_SAFE.code")
+  [ "$S6C_PIPED_CODE" = "$S6C_DIRECT_CODE" ] || fail "6c 'egl-probe $S6C_ARGS' exit mismatch: direct=$S6C_DIRECT_CODE piped=$S6C_PIPED_CODE (see $S6C_DIRECT $S6C_PIPED)"
+  cmp -s "$S6C_DIRECT" "$S6C_PIPED" || fail "6c 'egl-probe $S6C_ARGS' stdout differs with piped stdin vs direct (probe drained stdin; see $S6C_DIRECT $S6C_PIPED)"
+  echo "PASS 6c stdin-ignored 'egl-probe $S6C_ARGS' (exit $S6C_DIRECT_CODE, byte-identical stdout with 1MiB piped stdin)"
+done
+# Downstream consumer: payload piped into (probe; cat) — the probe must not
+# consume it, so cat still emits the full payload with the marker intact.
+S6C_DOWN="$STDIN6C_TMP/downstream.log"
+timeout "$TIMEOUT_SECS" sh -c 'cat "$1" 2>/dev/null | sh -c "node \"$2\" egl-probe --force-fail init >/dev/null 2>&1; cat" >"$3" 2>&1' sh "$STDIN6C_PAYLOAD" "$WORKTREE_CLI_BIN" "$S6C_DOWN"
+S6C_DOWN_CODE=$?
+[ "$S6C_DOWN_CODE" -eq 124 ] && fail "6c downstream-consumer leg timed out after ${TIMEOUT_SECS}s (hang)"
+[ "$S6C_DOWN_CODE" -ge 128 ] && fail "6c downstream-consumer leg crashed (signal exit $S6C_DOWN_CODE)"
+cmp -s "$STDIN6C_PAYLOAD" "$S6C_DOWN" || fail "6c downstream consumer did not receive full payload (probe drained stdin; see $S6C_DOWN)"
+grep -qF "$STDIN6C_MARKER" "$S6C_DOWN" || fail "6c downstream output missing intact marker '$STDIN6C_MARKER'"
+echo "PASS 6c downstream consumer receives full 1MiB payload + marker intact"
+rm -rf "$STDIN6C_TMP"
+
 if ! command -v adb >/dev/null 2>&1; then
   blocked "adb not found on PATH"
 fi
