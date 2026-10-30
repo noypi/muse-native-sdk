@@ -17,8 +17,9 @@
 // (gallery_present.h:103). This TU therefore fails to compile until the
 // coder threads real coverage out of `RasterizeShapedText`, honors the page
 // slice with one viewport height, and paints real card/shadow ink.
-// Once it compiles, each case pins one F1 defect: (a) uniform solid fill,
-// (b) frozen frames, (c) cleared-white post on failure, (d) near-white cards.
+// Once it compiles, each case pins one F1 defect: (a) uniform solid fill OR
+// uniform per-glyph cells (T12: a per-cell-constant CoverageMask fails the
+// cell-interior modulation leg), (b) frozen frames, (c) cleared-white post on failure, (d) near-white cards.
 // `glyphRunId == 0 -> UnknownPrimitive` stays untouched (render_smoke_test).
 #include <cmath>
 #include <cstdint>
@@ -206,9 +207,18 @@ bool PixelsEqual(const std::vector<std::uint32_t>& a,
   return a == b;
 }
 
-// (a) TC-TEXT-045: a Latin/CJK/emoji label presents with BOTH ink and
-// background pixels inside its text bounds (glyph shapes modulate pixels,
-// not a uniform solid fill), while background outside runs stays untouched.
+// (a) TC-TEXT-045/046 (T12-hardened): a Latin/CJK/emoji label presents with
+// BOTH ink and background pixels inside its text bounds (glyph shapes
+// modulate pixels, not a uniform solid fill), while background outside runs
+// stays untouched. Hardening (T12 round-two residual: uniform ~10x28px
+// per-glyph cells, exactly 2 gray values interior): a per-cell-constant
+// CoverageMask MUST fail this case. Ink-and-background-somewhere-in-bounds
+// is necessary but not sufficient — the case additionally requires >2
+// distinct blended values inside a SINGLE glyph-cell interior window (edge
+// modulation, not just ink-vs-background). A per-cell-constant mask yields
+// at most 2 distinct values in EVERY cell-sized window, so it fails here;
+// true per-pixel coverage yields >=3 distinct values in at least one cell
+// window (edge gradient between full ink and background).
 static bool check_text_bounds_have_ink_and_background_variance() {
   runtime::Renderer renderer(baseline_device());
   constexpr int kViewportH = 800;
@@ -240,6 +250,48 @@ static bool check_text_bounds_have_ink_and_background_variance() {
     }
   }
   if (!sawInk || !sawBackground) return false;  // Uniform fill: defect 1.
+  // T12 cell-interior modulation: slide a glyph-cell-sized window over the
+  // bounds interior and require >=3 distinct blended values in at least one
+  // window. Cell footprint comes from the round-two residual (~10x28px
+  // uniform cells); clamped so small bounds still probe a meaningful
+  // interior. A per-cell-constant mask can show at most 2 distinct values
+  // (its flat blend + clear) in any such window, so it fails here.
+  int cw = 10;
+  int ch = 28;
+  if (cw > w / 2) cw = w / 2;
+  if (ch > h / 2) ch = h / 2;
+  if (cw < 4 || ch < 4) return false;  // Degenerate cell proves nothing.
+  bool sawModulatedCell = false;
+  for (int wy = y0; wy + ch <= y0 + h && !sawModulatedCell; wy += 2) {
+    for (int wx = x0; wx + cw <= x0 + w && !sawModulatedCell; wx += 2) {
+      std::uint32_t distinct[3];
+      int nDistinct = 0;
+      for (int y = wy; y < wy + ch; ++y) {
+        for (int x = wx; x < wx + cw; ++x) {
+          if (x < 0 || y < 0 || x >= window.w() || y >= window.h()) continue;
+          const std::uint32_t px =
+              window.pixels()[static_cast<std::size_t>(y * window.w() + x)];
+          bool known = false;
+          for (int i = 0; i < nDistinct; ++i) {
+            if (distinct[i] == px) {
+              known = true;
+              break;
+            }
+          }
+          if (!known) {
+            if (nDistinct == 2) {
+              // Third distinct value inside ONE cell: edge modulation,
+              // not a per-cell constant. No need to scan further.
+              sawModulatedCell = true;
+              break;
+            }
+            distinct[nDistinct++] = px;
+          }
+        }
+      }
+    }
+  }
+  if (!sawModulatedCell) return false;  // Uniform per-glyph cells: T12 F1.
   // Background far outside any run stays the clear color.
   const std::uint32_t corner =
       window.pixels()[static_cast<std::size_t>(window.h() - 1) *

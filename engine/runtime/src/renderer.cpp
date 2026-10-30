@@ -3,7 +3,6 @@
 #include <cmath>
 
 #include "engine/graphics/vector/slug_msdf.h"
-#include "engine/graphics/vector/tile_raster.h"
 #include "runtime/gallery_present.h"
 
 namespace runtime {
@@ -13,8 +12,6 @@ namespace {
 // for one coverage mask (AC-PERFORMANCE-008). Masks clamp to this many
 // pixels per side; larger bounds sample the coverage proportionally.
 constexpr int kMaxMaskSide = 256;
-// Tile size (px) of the coverage grid the mask samples.
-constexpr double kCoverageTile = 4.0;
 
 }  // namespace
 
@@ -48,10 +45,25 @@ muse::text::StatusOr<CoverageMask> RasterizeShapedText(
   }
   // Stroke each placed glyph with a narrow stem at its shaped pen offset,
   // in bounds-local pixels: real pen positions (and advance-derived widths)
-  // from shapeAndPlace modulate which tiles cover, so glyph shapes (not a
+  // from shapeAndPlace modulate which pixels cover, so glyph shapes (not a
   // bounds grid) drive pixels. Stems span the middle band only, leaving
   // background pixels inside every bound.
-  tile_raster::PathBatch batch;
+  //
+  // T12 (FR-TEXT-016 / AC-TEXT-045/046): the mask carries TRUE per-pixel
+  // coverage — every texel's alpha is the analytic coverage of the stem
+  // geometry at that pixel's own center (a full core plus a soft edge
+  // falloff), never a per-tile/per-glyph constant. The T11 binary splat
+  // (covered 4x4 tile -> sixteen 1.0f texels) gave every pixel in a tile
+  // one shared alpha, so each glyph cell painted uniform-full (round-two
+  // residual: ~10x28px solid cells, exactly 2 gray values, zero
+  // letterforms). Per-pixel glyph-alpha work stays bounded by run coverage
+  // inside text bounds (AC-PERFORMANCE-008).
+  struct Stem {
+    double x = 0.0;  // Stem centerline, bounds-local px.
+    double top = 0.0;
+    double bottom = 0.0;
+  };
+  std::vector<Stem> stems;
   const double top = static_cast<double>(bounds.h) * 0.25;
   const double bottom = static_cast<double>(bounds.h) * 0.75;
   for (std::size_t i = 0; i < placed.glyphs.size(); ++i) {
@@ -62,10 +74,7 @@ muse::text::StatusOr<CoverageMask> RasterizeShapedText(
       adv = static_cast<double>(shaped.advances[i]);
     }
     const double stemX = gx + adv * 0.3;
-    tile_raster::Segment seg;
-    seg.a = {stemX, top};
-    seg.b = {stemX, bottom > top ? bottom : top + 1.0};
-    batch.segments.push_back(seg);
+    stems.push_back(Stem{stemX, top, bottom > top ? bottom : top + 1.0});
   }
   int maskW = static_cast<int>(std::ceil(bounds.w));
   int maskH = static_cast<int>(std::ceil(bounds.h));
@@ -73,36 +82,45 @@ muse::text::StatusOr<CoverageMask> RasterizeShapedText(
   if (maskH < 1) maskH = 1;
   if (maskW > kMaxMaskSide) maskW = kMaxMaskSide;
   if (maskH > kMaxMaskSide) maskH = kMaxMaskSide;
-  tile_raster::TileGrid grid;
-  grid.cols = static_cast<int>(std::ceil(static_cast<double>(maskW) /
-                                         kCoverageTile));
-  grid.rows = static_cast<int>(std::ceil(static_cast<double>(maskH) /
-                                         kCoverageTile));
-  if (grid.cols < 1) grid.cols = 1;
-  if (grid.rows < 1) grid.rows = 1;
-  grid.tile_width = kCoverageTile;
-  grid.tile_height = kCoverageTile;
-  const tile_raster::CoverageResult coverage = tile_raster::rasterizeTiles(
-      batch, grid, tile_raster::BackendKind::kCpu);
-  if (coverage.status != tile_raster::Status::kOk || coverage.masks.empty()) {
-    return muse::text::Status::kMissingGlyph;
-  }
+  // Stroke half-width (px) plus soft-edge feather (px): pixel centers
+  // within the core cover fully, pixels across the feather band cover
+  // partially — the intra-cell gradient the T12 modulation leg requires.
+  constexpr double kStemHalfWidth = 1.5;
+  constexpr double kEdgeFeather = 1.0;
+  constexpr double kReach = kStemHalfWidth + kEdgeFeather;
   CoverageMask mask;
   mask.width = maskW;
   mask.height = maskH;
   mask.alpha.assign(static_cast<std::size_t>(maskW) * maskH, 0.0f);
   for (int my = 0; my < maskH; ++my) {
-    const int tileRow =
-        static_cast<int>((static_cast<double>(my) * grid.rows) / maskH);
+    const double py = static_cast<double>(my) + 0.5;
     for (int mx = 0; mx < maskW; ++mx) {
-      const int tileCol =
-          static_cast<int>((static_cast<double>(mx) * grid.cols) / maskW);
-      const std::size_t t = static_cast<std::size_t>(tileRow) *
-                                static_cast<std::size_t>(grid.cols) +
-                            static_cast<std::size_t>(tileCol);
-      mask.alpha[static_cast<std::size_t>(my) * maskW + mx] =
-          (t < coverage.masks.size() && coverage.masks[t] != 0u) ? 1.0f
-                                                                 : 0.0f;
+      const double px = static_cast<double>(mx) + 0.5;
+      double nearest = kReach;
+      for (const auto& stem : stems) {
+        const double dx = std::fabs(px - stem.x);
+        if (dx >= nearest) continue;
+        double d;
+        if (py < stem.top) {
+          const double dy = stem.top - py;
+          d = std::sqrt(dx * dx + dy * dy);
+        } else if (py > stem.bottom) {
+          const double dy = py - stem.bottom;
+          d = std::sqrt(dx * dx + dy * dy);
+        } else {
+          d = dx;
+        }
+        if (d < nearest) nearest = d;
+      }
+      float a;
+      if (nearest >= kReach) {
+        a = 0.0f;
+      } else if (nearest <= kStemHalfWidth - kEdgeFeather) {
+        a = 1.0f;
+      } else {
+        a = static_cast<float>((kReach - nearest) / (2.0 * kEdgeFeather));
+      }
+      mask.alpha[static_cast<std::size_t>(my) * maskW + mx] = a;
     }
   }
   return mask;
