@@ -66,6 +66,25 @@ verify: sign
 	if ! unzip -lv $(SIGNED_APK) | grep "resources.arsc" | grep -q "Stored"; then echo "error: verify failed: resources.arsc must be Stored (method 0) + 4-byte aligned in $(SIGNED_APK)" >&2; exit 1; fi
 	if command -v zipalign >/dev/null 2>&1; then if ! zipalign -c 4 $(SIGNED_APK) >/dev/null 2>&1; then echo "error: verify failed: resources.arsc not Stored+aligned (zipalign -c 4 rejected $(SIGNED_APK))" >&2; exit 1; fi; fi
 	if ! apksigner verify $(SIGNED_APK) >/dev/null 2>&1; then echo "error: verify failed: apksigner verify rejected $(SIGNED_APK)" >&2; exit 1; fi
+	# JNI contract gate (BUG-TEXT-004 / AC-RUNTIME-027): every native* declared
+	# in MainActivity.java must be a `T` dynamic export in each staged ABI lib.
+	# APK-inner check is best-effort (skipped with a warning when unzip is absent).
+	GATE=../../engine/runtime/tests/jni_contract_test.sh; JAVA_SRC=src/MainActivity.java; BRIDGE=../../engine/runtime/src/jni_bridge.cpp; \
+	for abi in arm64-v8a armeabi-v7a x86_64 x86; do \
+	  SO="$(STAGING_DIR)/lib/$$abi/libRuntime.so"; \
+	  if [ ! -s "$$SO" ]; then echo "error: verify failed: missing staged ABI lib: $$SO" >&2; exit 1; fi; \
+	  sh "$$GATE" "$$SO" "$$JAVA_SRC" "$$BRIDGE" || exit 1; \
+	done; \
+	if command -v unzip >/dev/null 2>&1; then \
+	  TMPD="$$(mktemp -d)"; trap 'rm -rf "$$TMPD"' EXIT INT TERM; \
+	  for abi in arm64-v8a armeabi-v7a x86_64 x86; do \
+	    if unzip -l $(SIGNED_APK) | grep -q "lib/$$abi/libRuntime.so"; then \
+	      mkdir -p "$$TMPD/$$abi"; unzip -o -j $(SIGNED_APK) "lib/$$abi/libRuntime.so" -d "$$TMPD/$$abi" >/dev/null; \
+	      sh "$$GATE" "$$TMPD/$$abi/libRuntime.so" "$$JAVA_SRC" "$$BRIDGE" || exit 1; \
+	    else echo "warning: verify: APK has no lib/$$abi/libRuntime.so entry; skipping APK-inner check for $$abi" >&2; fi; \
+	  done; \
+	  rm -rf "$$TMPD"; trap - EXIT INT TERM; \
+	else echo "warning: verify: unzip not found; skipping APK-inner JNI check (staged libs already gated)" >&2; fi
 
 install: sign
 	mkdir -p $(dir $(ASSET_DST))
