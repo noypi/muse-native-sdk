@@ -154,9 +154,27 @@ function runScrollDeadlines(rest) {
     return;
   }
   let budgetRaw;
+  let budgetReadErr = null;
   try {
     budgetRaw = fs.readFileSync(opts.budgetPath, 'utf8');
   } catch (err) {
+    budgetReadErr = err;
+  }
+  if (budgetReadErr !== null && opts.budgetPath === path.basename(opts.budgetPath)) {
+    // Fallback: a bare `--budget <basename>` given from the code root (e.g.
+    // the declared `scroll-budgets.json` check) resolves against the
+    // committed fixture at <code-root>/packages/cli/test/fixtures/<basename>.
+    // The diagnostic below still names the original path on a miss.
+    const fixtureFallback = path.join(codeRoot, 'packages', 'cli', 'test', 'fixtures', path.basename(opts.budgetPath));
+    try {
+      budgetRaw = fs.readFileSync(fixtureFallback, 'utf8');
+      budgetReadErr = null;
+    } catch (_) {
+      // Fall through to the original-path diagnostic.
+    }
+  }
+  if (budgetReadErr !== null) {
+    const err = budgetReadErr;
     process.stderr.write(`Error: cannot read budget file '${opts.budgetPath}': ${(err && err.message) || String(err)}\n`);
     process.exitCode = 2;
     return;

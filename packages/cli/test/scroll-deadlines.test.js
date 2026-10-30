@@ -182,3 +182,66 @@ describe('T6 — scroll-deadlines CLI exit contract (AC-LISTS-034, TC-LISTS-034 
     assert.ok(res.stderr.includes('--bogus-flag'), 'stderr must name the unknown flag');
   });
 });
+
+describe('T6 — scroll-deadlines budget fixture fallback (uncommitted change)', () => {
+  // Checkout root doubles as the default codeRoot (process.cwd()): the
+  // committed fixture lives at <codeRoot>/packages/cli/test/fixtures/.
+  const CODE_ROOT = path.resolve(CLI_DIR, '..', '..');
+
+  it('bare --budget basename resolves via the committed fixture (exit 0, zero misses)', () => {
+    const res = runCli(['scroll-deadlines', '--rates', '60,90,120', '--budget', 'scroll-budgets.json'], {
+      cwd: CODE_ROOT,
+    });
+    assert.equal(
+      res.status,
+      0,
+      `bare basename should resolve via fixture fallback, got ${res.status}; stderr: ${(res.stderr || '').slice(0, 500)}`,
+    );
+    assert.ok(/zero above-budget misses/i.test(res.stdout), 'should report zero above-budget misses');
+  });
+
+  it('a nonexistent budget with no matching fixture still exits 2 naming the original path', () => {
+    const missing = 'muse-sdead-no-such-fixture-98765.json';
+    const res = runCli(['scroll-deadlines', '--rates', '60,90,120', '--budget', missing], {
+      cwd: CODE_ROOT,
+    });
+    assert.equal(res.status, 2, `missing budget with no fixture must exit 2, got ${res.status}`);
+    assert.ok(res.stderr.includes(missing), 'stderr must name the original budget path (fail-closed diagnostic)');
+  });
+
+  it('an explicit existing budget path still works (absolute and separator-containing relative)', () => {
+    const root = mkTmp('muse-sdead-explicit-');
+    const sub = path.join(root, 'sub');
+    fs.mkdirSync(sub, { recursive: true });
+    const p = path.join(sub, 'scroll-budgets.json');
+    fs.writeFileSync(p, `${JSON.stringify({ 60: 16666666, 90: 11111111, 120: 8333333 })}\n`);
+    const abs = runCli(['scroll-deadlines', '--rates', '60,90,120', '--budget', p]);
+    assert.equal(abs.status, 0, `explicit absolute budget path must exit 0, got ${abs.status}`);
+    const rel = runCli(['scroll-deadlines', '--rates', '60,90,120', '--budget', path.join('sub', 'scroll-budgets.json')], { cwd: root });
+    assert.equal(rel.status, 0, `explicit separator-containing relative budget path must exit 0 via direct read, got ${rel.status}; stderr: ${(rel.stderr || '').slice(0, 500)}`);
+  });
+
+  it('a missing path with directories whose basename matches a fixture still exits 2 naming the original path (no silent substitution)', () => {
+    const colliding = path.join('.', 'does', 'not', 'exist', 'scroll-budgets.json');
+    const res = runCli(['scroll-deadlines', '--rates', '60,90,120', '--budget', colliding], {
+      cwd: CODE_ROOT,
+    });
+    assert.equal(res.status, 2, `colliding-basename missing path must exit 2, got ${res.status}; stdout: ${(res.stdout || '').slice(0, 300)}`);
+    assert.ok(res.stderr.includes(colliding), 'stderr must name the original budget path (no silent fixture substitution)');
+  });
+
+  it('traversal and outside absolute budget paths exit 2 naming the original path (confined to the fixture dir)', () => {
+    const traversal = path.join('..', '..', 'etc', 'passwd');
+    const travRes = runCli(['scroll-deadlines', '--rates', '60,90,120', '--budget', traversal], {
+      cwd: CODE_ROOT,
+    });
+    assert.equal(travRes.status, 2, `traversal budget path must exit 2, got ${travRes.status}`);
+    assert.ok(travRes.stderr.includes(traversal), 'stderr must name the original traversal path');
+    const outside = path.join(path.sep, 'no-such-dir-xyz', 'scroll-budgets.json');
+    const outRes = runCli(['scroll-deadlines', '--rates', '60,90,120', '--budget', outside], {
+      cwd: CODE_ROOT,
+    });
+    assert.equal(outRes.status, 2, `outside absolute budget path must exit 2, got ${outRes.status}`);
+    assert.ok(outRes.stderr.includes(outside), 'stderr must name the original absolute path');
+  });
+});
