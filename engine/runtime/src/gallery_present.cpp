@@ -2114,4 +2114,179 @@ PresenterError PresentGalleryWindow(const std::vector<DrawCmd>& windowCmds,
   }
 }
 
+// ---- Presented-window sink (T10: FR-TEXT-016, F1 fix) ----
+//
+// PresentDeviceGalleryPage connects the retained Swapchain text output to
+// the presented window: realized-window DrawCmds (EmitGalleryWindowCmds
+// over the T5 ShapedText{glyphRunId} emission, 009 windowing foundation)
+// through 006 Renderer draw into the window-attached Swapchain, with T6
+// RasterizeShapedText run per run in bounds. Caption Text runs carrying a
+// real run id present as ShapedText so the presented pixels come from the
+// retained vector-text path, never from the CPU RasterGalleryPage oracle
+// (whose caption painter is a documented no-op post-T7). C++ only, zero
+// JNI on the per-frame path.
+
+namespace {
+
+// Unicode noncharacters (U+FDD0..U+FDEF plus U+nFFFE and U+nFFFF per
+// plane) are permanently reserved and belong to no script: no conformant
+// system face, including the T2 chain bundled last-resort terminus,
+// covers them, so a label containing one can never resolve to a live
+// shaped run. Such a label is unshapable (the dangling-run leg) instead
+// of tofu; the caller fails closed, never a gallery bitmap.
+bool IsNoncharacter(std::uint32_t cp) {
+  if (cp >= 0xFDD0u && cp <= 0xFDEFu) return true;
+  if (cp > 0x10FFFFu) return false;
+  const std::uint32_t low = cp & 0xFFFFu;
+  return low == 0xFFFEu || low == 0xFFFFu;
+}
+
+// Strict one-codepoint UTF-8 decode. False on any malformed sequence
+// (truncation, bad continuation, overlong, surrogate, out of range);
+// malformed input is left for the shaping gate, which fails it closed
+// via the zero run handle.
+bool DecodeUtf8One(const std::string& s, std::size_t& pos,
+                   std::uint32_t& cp) {
+  const std::size_t len = s.size();
+  if (pos >= len) return false;
+  const auto b0 = static_cast<unsigned char>(s[pos]);
+  std::uint32_t out = 0;
+  std::size_t want = 0;
+  std::uint32_t min = 0;
+  if (b0 < 0x80u) {
+    cp = b0;
+    pos += 1;
+    return true;
+  } else if ((b0 & 0xE0u) == 0xC0u) {
+    out = b0 & 0x1Fu;
+    want = 1;
+    min = 0x80u;
+  } else if ((b0 & 0xF0u) == 0xE0u) {
+    out = b0 & 0x0Fu;
+    want = 2;
+    min = 0x800u;
+  } else if ((b0 & 0xF8u) == 0xF0u) {
+    out = b0 & 0x07u;
+    want = 3;
+    min = 0x10000u;
+  } else {
+    return false;
+  }
+  if (pos + want >= len) return false;
+  for (std::size_t k = 1; k <= want; ++k) {
+    const auto bk = static_cast<unsigned char>(s[pos + k]);
+    if ((bk & 0xC0u) != 0x80u) return false;
+    out = (out << 6) | (bk & 0x3Fu);
+  }
+  if (out < min || out > 0x10FFFFu) return false;
+  if (out >= 0xD800u && out <= 0xDFFFu) return false;
+  cp = out;
+  pos += 1 + want;
+  return true;
+}
+
+bool LabelHasNoncharacter(const std::string& label) {
+  std::size_t pos = 0;
+  std::uint32_t cp = 0;
+  while (pos < label.size()) {
+    if (!DecodeUtf8One(label, pos, cp)) return false;
+    if (IsNoncharacter(cp)) return true;
+  }
+  return false;
+}
+
+// Staging recorder: Renderer draw lands here first so a non-None draw
+// result (or a rejected shaped run below) records nothing on the window
+// surface. Committed to the real target only after every gate passes.
+class StagingSwapchain : public Swapchain {
+ public:
+  void submit(const DrawCmd& cmd) override { cmds.push_back(cmd); }
+  std::vector<DrawCmd> cmds;
+};
+
+void SetPresentError(std::string* error, const char* msg) {
+  if (error != nullptr) *error = msg;
+}
+
+}  // namespace
+
+bool PresentDeviceGalleryPage(const std::vector<GalleryRow>& rows, int page,
+                              Renderer& renderer, Swapchain& target,
+                              std::string* error) {
+  try {
+    if (rows.empty()) {
+      SetPresentError(error, "present window: no gallery rows");
+      return false;
+    }
+    // Page range mirrors the RasterGalleryPage pager (kPresentH viewport);
+    // out-of-range pages fail closed before any cmd is emitted.
+    const int pages = GalleryPageCount(rows, kPresentH);
+    if (page < 0 || page >= pages) {
+      SetPresentError(error, "present window: page out of range");
+      return false;
+    }
+    // Fail-closed shaping gate (mirrors PresentGallery): every non-empty
+    // label must resolve to a nonzero engine-stack run handle before any
+    // cmd is emitted. Noncharacters never resolve (no covering face) and
+    // shaping failures yield run 0: both legs report a diagnostic and
+    // record nothing, never a gallery bitmap and never tofu.
+    for (const GalleryRow& row : rows) {
+      const std::string& label =
+          row.comp.empty() ? row.label : ShortCaption(row);
+      if (label.empty()) continue;
+      if (LabelHasNoncharacter(label) || ShapeGalleryLabel(label) == 0) {
+        SetPresentError(error,
+                        "gallery label shaping failed (fail-closed: no bitmap)");
+        return false;
+      }
+    }
+    // Realized-window emission over the full present page (an oversize
+    // viewport claims every row; the window boundary still binds windowed
+    // rows only, never a second full-list layout).
+    RealizedWindow window;
+    window.firstVisible = 0;
+    window.lastVisible = static_cast<int>(rows.size()) - 1;
+    window.prefetchAhead = 0;
+    std::vector<DrawCmd> cmds;
+    cmds.reserve(rows.size() * 2 + 2);
+    EmitGalleryWindowCmds(rows, window, cmds);
+    // Present caption runs as vector text: Text cmds carrying a real run
+    // id ride the ShapedText leg so Renderer draw records them for
+    // RasterizeShapedText (glyphRunId == 0 stays on the Text leg, which
+    // draw forwards without the UnknownPrimitive trip).
+    for (auto& cmd : cmds) {
+      if (cmd.kind == PrimitiveKind::Text && cmd.payload.glyphRunId != 0) {
+        cmd.kind = PrimitiveKind::ShapedText;
+      }
+    }
+    StagingSwapchain staged;
+    const DrawError derr = renderer.draw(cmds, staged);
+    if (derr != DrawError::None) {
+      if (derr == DrawError::UnsupportedBaseline &&
+          !renderer.lastError().empty()) {
+        if (error != nullptr) *error = renderer.lastError();
+      } else {
+        SetPresentError(error, "retained present rejected primitive");
+      }
+      return false;
+    }
+    // T6 per-run raster validation in bounds: every presented run must
+    // rasterize on the Swapchain path (draw already registered each run
+    // via NoteLiveRun, so only dangling handles can trip here).
+    for (const auto& cmd : staged.cmds) {
+      if (cmd.kind != PrimitiveKind::ShapedText) continue;
+      if (RasterizeShapedText(cmd.payload.glyphRunId, cmd.bounds,
+                              cmd.payload.textColor) != DrawError::None) {
+        SetPresentError(error, "shaped run rasterization failed");
+        return false;
+      }
+    }
+    for (const auto& cmd : staged.cmds) target.submit(cmd);
+    return true;
+  } catch (...) {
+    SetPresentError(error, "present failed (exception)");
+    return false;
+  }
+}
+
 }  // namespace runtime

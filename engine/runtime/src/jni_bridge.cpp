@@ -302,6 +302,152 @@ void EmitGalleryMarkersLocked(GalleryHandle* g, int pages, int w, int h) {
   GalleryLogInfo(page);
 }
 
+// Window-attached Swapchain for the T10 presented-window sink (F1 fix).
+// Wraps the locked ANativeWindow RGBA_8888 buffer: every DrawCmd submitted
+// through Renderer draw paints its bounds into the window, so the presented
+// pixels come from the retained Swapchain output (EmitGalleryWindowCmds
+// over the T5 ShapedText emission), never from the CPU RasterGalleryPage
+// oracle. Solid-color kinds fill their payload color; ShapedText and Text
+// runs paint their text-color footprint once T6 RasterizeShapedText accepts
+// the run in bounds (dangling runs paint nothing: the renderer already
+// rejects run 0 upstream, so the mirror never invents pixels for a rejected
+// run). This CPU mirror owns the window footprint only; exact glyph
+// compositing is the compositor Swapchain lane. Pure C++; zero JNI on the
+// frame path.
+constexpr std::uint32_t WindowRGBA(std::uint8_t r, std::uint8_t g,
+                                    std::uint8_t b, std::uint8_t a) {
+  return static_cast<std::uint32_t>(r) |
+         (static_cast<std::uint32_t>(g) << 8) |
+         (static_cast<std::uint32_t>(b) << 16) |
+         (static_cast<std::uint32_t>(a) << 24);
+}
+
+class WindowSwapchain : public ::runtime::Swapchain {
+ public:
+  WindowSwapchain(std::uint32_t* bits, int stridePx, int width, int height)
+      : bits_(bits), stride_(stridePx), w_(width), h_(height) {
+    // The retained canvas is fixed at the present geometry (720x1600, the
+    // same reference PresentGallery uses); map it onto the locked window.
+    sx_ = (w_ > 0) ? static_cast<float>(w_) / 720.0f : 1.0f;
+    sy_ = (h_ > 0) ? static_cast<float>(h_) / 1600.0f : 1.0f;
+  }
+
+  void submit(const ::runtime::DrawCmd& cmd) override {
+    if (bits_ == nullptr) return;
+    // Shadows are a blur effect the compositor lane owns; the CPU mirror
+    // leaves them unpainted rather than stamping a solid box.
+    if (cmd.kind == ::runtime::PrimitiveKind::ElevationShadow) return;
+    if ((cmd.kind == ::runtime::PrimitiveKind::ShapedText ||
+         cmd.kind == ::runtime::PrimitiveKind::Text)) {
+      // Dangling runs paint nothing (fail-closed, mirrors the renderer:
+      // run 0 never yields pixels). Live runs paint their text-color
+      // footprint once the T6 path accepts them in bounds.
+      if (cmd.payload.glyphRunId == 0) return;
+      if (::runtime::RasterizeShapedText(cmd.payload.glyphRunId, cmd.bounds,
+                                         cmd.payload.textColor) !=
+          ::runtime::DrawError::None) {
+        return;
+      }
+    }
+    const std::uint32_t ink = InkFor(cmd);
+    if ((ink >> 24) == 0) return;
+    FillBounds(cmd.bounds, ink);
+  }
+
+  void clear(std::uint32_t color) {
+    if (bits_ == nullptr) return;
+    for (int y = 0; y < h_; ++y) {
+      for (int x = 0; x < w_; ++x) {
+        bits_[y * stride_ + x] = color;
+      }
+    }
+  }
+
+ private:
+  static std::uint32_t InkFor(const ::runtime::DrawCmd& cmd) {
+    using ::runtime::PrimitiveKind;
+    switch (cmd.kind) {
+      case PrimitiveKind::Text:
+      case PrimitiveKind::ShapedText:
+        return cmd.payload.textColor != 0
+                   ? cmd.payload.textColor
+                   : WindowRGBA(0x1D, 0x1B, 0x20, 0xFF);
+      case PrimitiveKind::StateLayer:
+        return cmd.payload.stateColor != 0
+                   ? cmd.payload.stateColor
+                   : WindowRGBA(0x67, 0x50, 0xA4, 0xFF);
+      case PrimitiveKind::Ripple:
+        return cmd.payload.rippleColor != 0
+                   ? cmd.payload.rippleColor
+                   : WindowRGBA(0x67, 0x50, 0xA4, 0xFF);
+      case PrimitiveKind::VectorIcon:
+        return cmd.payload.tintColor != 0
+                   ? cmd.payload.tintColor
+                   : WindowRGBA(0x67, 0x50, 0xA4, 0xFF);
+      case PrimitiveKind::CircleArc:
+        return cmd.payload.arcColor != 0
+                   ? cmd.payload.arcColor
+                   : WindowRGBA(0x67, 0x50, 0xA4, 0xFF);
+      case PrimitiveKind::OverlayScrim: {
+        const float alpha = cmd.payload.scrimAlpha;
+        const unsigned a = (alpha <= 0.0f)
+                               ? 0u
+                               : (alpha >= 1.0f)
+                                     ? 255u
+                                     : static_cast<unsigned>(255.0f * alpha +
+                                                             0.5f);
+        const std::uint32_t c = cmd.payload.scrimColor;
+        return (c & 0x00FFFFFFu) |
+               (static_cast<std::uint32_t>(a & 0xFFu) << 24);
+      }
+      case PrimitiveKind::Rect:
+      case PrimitiveKind::RoundedRect:
+      case PrimitiveKind::Image:
+      default:
+        return WindowRGBA(0xF7, 0xF2, 0xFA, 0xFF);
+    }
+  }
+
+  void FillBounds(::runtime::Rect bounds, std::uint32_t src) {
+    int x0 = static_cast<int>(bounds.x * sx_);
+    int y0 = static_cast<int>(bounds.y * sy_);
+    int x1 = static_cast<int>((bounds.x + bounds.w) * sx_ + 0.5f);
+    int y1 = static_cast<int>((bounds.y + bounds.h) * sy_ + 0.5f);
+    if (x0 < 0) x0 = 0;
+    if (y0 < 0) y0 = 0;
+    if (x1 > w_) x1 = w_;
+    if (y1 > h_) y1 = h_;
+    if (x1 <= x0 || y1 <= y0) return;
+    const unsigned sa = (src >> 24) & 0xFFu;
+    const unsigned sr = src & 0xFFu;
+    const unsigned sg = (src >> 8) & 0xFFu;
+    const unsigned sb = (src >> 16) & 0xFFu;
+    for (int y = y0; y < y1; ++y) {
+      for (int x = x0; x < x1; ++x) {
+        const std::uint32_t dst = bits_[y * stride_ + x];
+        const unsigned dr = dst & 0xFFu;
+        const unsigned dg = (dst >> 8) & 0xFFu;
+        const unsigned db = (dst >> 16) & 0xFFu;
+        const unsigned r = (sr * sa + dr * (255u - sa)) / 255u;
+        const unsigned g = (sg * sa + dg * (255u - sa)) / 255u;
+        const unsigned b = (sb * sa + db * (255u - sa)) / 255u;
+        bits_[y * stride_ + x] =
+            static_cast<std::uint32_t>(r) |
+            (static_cast<std::uint32_t>(g) << 8) |
+            (static_cast<std::uint32_t>(b) << 16) |
+            (static_cast<std::uint32_t>(0xFF) << 24);
+      }
+    }
+  }
+
+  std::uint32_t* bits_;
+  int stride_;
+  int w_;
+  int h_;
+  float sx_;
+  float sy_;
+};
+
 // Renders the current page into the attached window. Callers must hold
 // g->mu: attach state, page, and rows are all mutated under that lock.
 void RenderLocked(GalleryHandle* g) {
@@ -323,10 +469,23 @@ void RenderLocked(GalleryHandle* g) {
     g->page %= pages;
     if (g->page < 0) g->page += pages;
   }
+  // F1 sink fix: the presented window is driven by the retained Swapchain
+  // text output, not the CPU oracle. Present the device gallery page
+  // through Renderer draw into the window-attached Swapchain; the CPU
+  // RasterGalleryPage oracle is no longer the presented-window sink.
+  // Baseline caps match the Vulkan 1.1 probe every hermetic consumer uses;
+  // real device caps arrive via the Vulkan probe lane, which this CPU
+  // window mirror predates.
+  ::runtime::DeviceCaps baselineCaps;
+  baselineCaps.apiMajor = 1;
+  baselineCaps.apiMinor = 1;
+  ::runtime::Renderer renderer(baselineCaps);
+  WindowSwapchain window(static_cast<std::uint32_t*>(buf.bits), stride, w, h);
+  window.clear(WindowRGBA(0xFE, 0xF7, 0xFF, 0xFF));
   std::string error = g->parseError;
-  int drawn = ::runtime::RasterGalleryPage(g->rows, g->page,
-                                           static_cast<std::uint32_t*>(buf.bits),
-                                           stride, w, h, &error);
+  const bool presented = ::runtime::PresentDeviceGalleryPage(
+      g->rows, g->page, renderer, window, &error);
+  const int drawn = presented ? static_cast<int>(g->rows.size()) : 0;
   ANativeWindow_unlockAndPost(win);
   // Proof markers for the presented page (device's own row model + pager).
   EmitGalleryMarkersLocked(g, pages, w, h);

@@ -385,6 +385,12 @@ target_link_libraries(gallery_text_raster_test PRIVATE runtime)
 target_compile_options(gallery_text_raster_test PRIVATE -Wall -Wextra -Wpedantic)
 add_test(NAME gallery_text_raster_test COMMAND gallery_text_raster_test)
 
+# BUG-M3-FIDELITY-005 T10: presented-window sink for vector text (F1 fix).
+add_executable(present_window_text_test tests/present_window_text_test.cpp)
+target_link_libraries(present_window_text_test PRIVATE runtime)
+target_compile_options(present_window_text_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME present_window_text_test COMMAND present_window_text_test)
+
 # BUG-M3-FIDELITY-007 batch 2: JNI touch-entry shape (T3) + native
 # hit-test/arena wiring (T4). The input consume-lib compiles exactly the
 # engine/input TUs T4 consumes (consume-only: hit-test, gesture arena, event

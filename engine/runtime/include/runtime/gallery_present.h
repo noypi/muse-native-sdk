@@ -90,4 +90,18 @@ void EmitGalleryWindowCmds(const std::vector<GalleryRow>& rows,
 PresenterError PresentGalleryWindow(const std::vector<DrawCmd>& windowCmds,
                                     int firstVisible, int lastVisible);
 
+// Presented-window sink for vector text (T10 F1 fix): emit the
+// realized-window DrawCmds through Renderer draw into the window-attached
+// Swapchain, with T6 RasterizeShapedText run per run in bounds. Caption
+// Text runs carrying a real run id present as ShapedText so the retained
+// Swapchain text output is the presented-window sink, not the CPU oracle.
+// Returns true with *error untouched on success; false + a non-blank
+// *error diagnostic with nothing presented on bad input, zero rows, or a
+// non-None draw result (fail-closed, same error shape as PresentGallery).
+// Keeps the glyphRunId == 0 fail-closed untouched. C++ only, zero JNI on
+// the per-frame path; error == nullptr is tolerated on every leg.
+bool PresentDeviceGalleryPage(const std::vector<GalleryRow>& rows, int page,
+                              Renderer& renderer, Swapchain& target,
+                              std::string* error);
+
 }  // namespace runtime
