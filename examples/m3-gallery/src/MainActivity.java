@@ -297,8 +297,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                     });
         } else {
             root.setOnApplyWindowInsetsListener((v, insets) -> {
-                onInsetsFrame(
-                        (float) insets.getInsets(WindowInsets.Type.ime()).bottom);
+                onInsetsFrame((float) insets.getSystemWindowInsetBottom());
                 return insets;
             });
         }

@@ -77,6 +77,34 @@ else
   fail "single inset feed (exactly one onInsetsFrame definition; found $DEFS)"
 fi
 
+# T3-API29-1 (regression, bug-runtime-004 T5 device proof on API 29):
+# the SDK_INT < 30 fallback inside attachImeInsetListener must NOT reference
+# WindowInsets.Type.ime() (API-30+ method — NoSuchMethodError at
+# MainActivity.java:301, crash on launch on the pinned API-29 image). The
+# API-30+ branch above keeps Type.ime(); only the fallback block is scanned.
+ELSE_LINE=$(awk '/attachImeInsetListener\(View root\)/{seen=1} seen && /\} else \{/{print NR; exit}' "$JAVA_FILE" || true)
+FALLBACK_BLOCK=""
+if [ -n "${ELSE_LINE:-}" ]; then
+  FALLBACK_END=$((ELSE_LINE + 12))
+  FALLBACK_BLOCK=$(sed -n "${ELSE_LINE},${FALLBACK_END}p" "$JAVA_FILE")
+fi
+if [ -z "$FALLBACK_BLOCK" ]; then
+  fail "pre-30 fallback avoids WindowInsets.Type.ime() (API-29 safe)"
+elif printf '%s\n' "$FALLBACK_BLOCK" | grep -q 'Type\.ime()'; then
+  fail "pre-30 fallback avoids WindowInsets.Type.ime() (API-29 safe)"
+else
+  pass "pre-30 fallback avoids WindowInsets.Type.ime() (API-29 safe)"
+fi
+
+# T3-API29-2 (regression, bug-runtime-004 T5): the pre-30 fallback must use
+# the API-21 compat shape WindowInsets.getSystemWindowInsetBottom()
+# (or equivalent) instead of the API-30+ typed query.
+if [ -n "$FALLBACK_BLOCK" ] && printf '%s\n' "$FALLBACK_BLOCK" | grep -q 'getSystemWindowInsetBottom()'; then
+  pass "pre-30 fallback uses getSystemWindowInsetBottom() compat shape"
+else
+  fail "pre-30 fallback uses getSystemWindowInsetBottom() compat shape"
+fi
+
 if [ "$FAILURES" -gt 0 ]; then
   printf 'ime-bus-feed-check: %d failing\n' "$FAILURES"
   printf 'device half (tester, 127.0.0.1:6569):\n'
