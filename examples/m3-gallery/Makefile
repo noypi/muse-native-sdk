@@ -2,6 +2,10 @@
 # Targets: apk | sign | verify | install | clean (run in examples/m3-gallery).
 # Debug key only (no Play release signing).
 
+ifndef MUSE_NATIVE_HOME
+$(error MUSE_NATIVE_HOME is not set. Example: export MUSE_NATIVE_HOME=<sdk-install>/build)
+endif
+
 APP_NAME = m3-gallery
 BUILD_DIR = build
 STAGING_DIR = $(BUILD_DIR)/staging
@@ -13,11 +17,21 @@ DEBUG_KEYSTORE = debug.keystore
 ASSET_SRC = dist/tree.mui.bin
 ASSET_DST = assets/tree.mui.bin
 ANDROID_JAR = $(ANDROID_HOME)/platforms/android-34/android.jar
-ENGINE_LIBS = ../../build/android-arm64-v8a/libRuntime.so ../../build/android-armeabi-v7a/libRuntime.so ../../build/android-x86_64/libRuntime.so ../../build/android-x86/libRuntime.so
+ENGINE_LIBS = $(MUSE_NATIVE_HOME)/android-arm64-v8a/libRuntime.so $(MUSE_NATIVE_HOME)/android-armeabi-v7a/libRuntime.so $(MUSE_NATIVE_HOME)/android-x86_64/libRuntime.so $(MUSE_NATIVE_HOME)/android-x86/libRuntime.so
 
 .PHONY: apk sign verify install clean
 
 apk:
+	@if [ -z "$(MUSE_NATIVE_HOME)" ]; then echo "error: MUSE_NATIVE_HOME is not set. Example: export MUSE_NATIVE_HOME=<sdk-install>/build" >&2; exit 1; fi
+	@test -f "$(MUSE_NATIVE_HOME)/VERSION" || { echo "error: missing SDK VERSION file at '$(MUSE_NATIVE_HOME)/VERSION'" >&2; exit 1; }
+	@if [ "$$(awk 'END{print NR}' "$(MUSE_NATIVE_HOME)/VERSION")" -ne 3 ]; then echo "error: malformed SDK VERSION at '$(MUSE_NATIVE_HOME)/VERSION': expected 3 lines, found $$(awk 'END{print NR}' "$(MUSE_NATIVE_HOME)/VERSION")" >&2; exit 1; fi
+	@if ! sed -n '1p' "$(MUSE_NATIVE_HOME)/VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$$'; then echo "error: malformed SDK VERSION at '$(MUSE_NATIVE_HOME)/VERSION': line 1 must be SemVer MAJOR.MINOR.PATCH, found '$$(sed -n '1p' "$(MUSE_NATIVE_HOME)/VERSION")'" >&2; exit 1; fi
+	@if ! sed -n '2p' "$(MUSE_NATIVE_HOME)/VERSION" | grep -Eq '^sha=[0-9a-f]+ date=[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$$'; then echo "error: malformed SDK VERSION at '$(MUSE_NATIVE_HOME)/VERSION': line 2 must be 'sha=<hex> date=<ISO-8601>', found '$$(sed -n '2p' "$(MUSE_NATIVE_HOME)/VERSION")'" >&2; exit 1; fi
+	@if [ "$$(sed -n '3p' "$(MUSE_NATIVE_HOME)/VERSION")" != "abis=arm64-v8a armeabi-v7a x86_64 x86" ]; then echo "error: malformed SDK VERSION at '$(MUSE_NATIVE_HOME)/VERSION': line 3 must be 'abis=arm64-v8a armeabi-v7a x86_64 x86', found '$$(sed -n '3p' "$(MUSE_NATIVE_HOME)/VERSION")'" >&2; exit 1; fi
+	@sdk_pin="$$(grep -E '^sdk:' muse-native.yaml 2>/dev/null | head -n 1 | sed 's/^sdk:[[:space:]]*//;s/[[:space:]]*$$//')"; \
+	sdk_ver="$$(sed -n '1p' "$(MUSE_NATIVE_HOME)/VERSION")"; \
+	if [ -z "$$sdk_pin" ]; then echo "warning: no 'sdk:' pin in muse-native.yaml; building against SDK version $$sdk_ver" >&2; \
+	elif [ "$$sdk_pin" != "$$sdk_ver" ]; then echo "error: SDK version mismatch: expected $$sdk_ver (from '$(MUSE_NATIVE_HOME)/VERSION' line 1), found sdk: $$sdk_pin (from muse-native.yaml)" >&2; exit 1; fi
 	rm -f $(UNSIGNED_APK)
 	mkdir -p $(STAGING_DIR) $(BUILD_DIR)/gen $(BUILD_DIR)/classes $(BUILD_DIR)/dex
 	aapt2 compile --dir res -o $(BUILD_DIR)/compiled.zip
@@ -26,14 +40,14 @@ apk:
 	d8 --lib $(ANDROID_JAR) --output $(BUILD_DIR)/dex $$(find $(BUILD_DIR)/classes -name '*.class')
 	mkdir -p $(STAGING_DIR)/lib/arm64-v8a $(STAGING_DIR)/lib/armeabi-v7a $(STAGING_DIR)/lib/x86_64 $(STAGING_DIR)/lib/x86 $(STAGING_DIR)/assets/tree
 	unzip -o $(LINKED_ZIP) AndroidManifest.xml resources.arsc -d $(STAGING_DIR)
-	test -f ../../build/android-arm64-v8a/libRuntime.so || { echo "error: missing engine lib for ABI slot arm64-v8a at '../../build/android-arm64-v8a/libRuntime.so'" >&2; exit 1; }
-	cp ../../build/android-arm64-v8a/libRuntime.so $(STAGING_DIR)/lib/arm64-v8a/libRuntime.so
-	test -f ../../build/android-armeabi-v7a/libRuntime.so || { echo "error: missing engine lib for ABI slot armeabi-v7a at '../../build/android-armeabi-v7a/libRuntime.so'" >&2; exit 1; }
-	cp ../../build/android-armeabi-v7a/libRuntime.so $(STAGING_DIR)/lib/armeabi-v7a/libRuntime.so
-	test -f ../../build/android-x86_64/libRuntime.so || { echo "error: missing engine lib for ABI slot x86_64 at '../../build/android-x86_64/libRuntime.so'" >&2; exit 1; }
-	cp ../../build/android-x86_64/libRuntime.so $(STAGING_DIR)/lib/x86_64/libRuntime.so
-	test -f ../../build/android-x86/libRuntime.so || { echo "error: missing engine lib for ABI slot x86 at '../../build/android-x86/libRuntime.so'" >&2; exit 1; }
-	cp ../../build/android-x86/libRuntime.so $(STAGING_DIR)/lib/x86/libRuntime.so
+	test -s $(MUSE_NATIVE_HOME)/android-arm64-v8a/libRuntime.so || { echo "error: missing engine lib for ABI slot arm64-v8a at '$(MUSE_NATIVE_HOME)/android-arm64-v8a/libRuntime.so'" >&2; exit 1; }
+	cp $(MUSE_NATIVE_HOME)/android-arm64-v8a/libRuntime.so $(STAGING_DIR)/lib/arm64-v8a/libRuntime.so
+	test -s $(MUSE_NATIVE_HOME)/android-armeabi-v7a/libRuntime.so || { echo "error: missing engine lib for ABI slot armeabi-v7a at '$(MUSE_NATIVE_HOME)/android-armeabi-v7a/libRuntime.so'" >&2; exit 1; }
+	cp $(MUSE_NATIVE_HOME)/android-armeabi-v7a/libRuntime.so $(STAGING_DIR)/lib/armeabi-v7a/libRuntime.so
+	test -s $(MUSE_NATIVE_HOME)/android-x86_64/libRuntime.so || { echo "error: missing engine lib for ABI slot x86_64 at '$(MUSE_NATIVE_HOME)/android-x86_64/libRuntime.so'" >&2; exit 1; }
+	cp $(MUSE_NATIVE_HOME)/android-x86_64/libRuntime.so $(STAGING_DIR)/lib/x86_64/libRuntime.so
+	test -s $(MUSE_NATIVE_HOME)/android-x86/libRuntime.so || { echo "error: missing engine lib for ABI slot x86 at '$(MUSE_NATIVE_HOME)/android-x86/libRuntime.so'" >&2; exit 1; }
+	cp $(MUSE_NATIVE_HOME)/android-x86/libRuntime.so $(STAGING_DIR)/lib/x86/libRuntime.so
 	cp $(BUILD_DIR)/dex/classes.dex $(STAGING_DIR)/classes.dex
 	cp -r tree/* $(STAGING_DIR)/assets/tree/ 2>/dev/null || cp -r assets/* $(STAGING_DIR)/assets/ 2>/dev/null || true
 	cd $(STAGING_DIR) && zip -r ../$(notdir $(UNSIGNED_APK)) AndroidManifest.xml classes.dex lib assets && zip -g -0 ../$(notdir $(UNSIGNED_APK)) resources.arsc

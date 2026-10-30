@@ -3,3 +3,4 @@
 # <target>/muse-native.yaml with no workspace-root fallback.
 name: gallery
 version: 0.0.0
+sdk: 0.1.0
