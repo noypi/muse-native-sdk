@@ -1,4 +1,6 @@
 // T11 — Pixel-level present-window tests for vector text (F1 bars/frozen/blank).
+// T12 — hardened cell-interior modulation (uniform per-glyph cells fail).
+// T13 — curved-glyph enclosed-counter case (stems-only coverage fails).
 // FR-TEXT-016 / AC-TEXT-045 (shaped vector text visible on device; atlas reuse)
 // / AC-TEXT-046 (script/scale rendering reaches pixels).
 //
@@ -19,7 +21,9 @@
 // slice with one viewport height, and paints real card/shadow ink.
 // Once it compiles, each case pins one F1 defect: (a) uniform solid fill OR
 // uniform per-glyph cells (T12: a per-cell-constant CoverageMask fails the
-// cell-interior modulation leg), (b) frozen frames, (c) cleared-white post on failure, (d) near-white cards.
+// cell-interior modulation leg), (b) frozen frames, (c) cleared-white post on failure, (d) near-white cards,
+// (e) stems-only coverage (T13: a stem-span CoverageMask with no enclosed
+// counter fails the counter-hole legs; true outline coverage passes).
 // `glyphRunId == 0 -> UnknownPrimitive` stays untouched (render_smoke_test).
 #include <cmath>
 #include <cstdint>
@@ -371,6 +375,92 @@ static bool check_card_row_pixels_differ_from_background() {
   return false;  // Near-white cards: defect 3.
 }
 
+// (e) T13 (round-three residual: stems-only, no bowls/curves/diagonals):
+// a curved glyph with an enclosed counter ('O') presents outline-driven
+// coverage — the counter hole stays background while the outline paints
+// ink. A stem-span stylization fills each glyph cell with a solid vertical
+// stem (no hole) and deterministically FAILS both legs below; true outline
+// coverage passes. Observed only through blended pixels on the public
+// PresentDeviceGalleryPage boundary (no internal-hook assertions), over
+// every submitted ShapedText cmd so header/footer cmds cannot mask the
+// label under test.
+static bool check_curved_glyph_counter_hole_stays_background() {
+  runtime::Renderer renderer(baseline_device());
+  constexpr int kViewportH = 800;
+  FakePixelWindow window(720, kViewportH, kClear);
+  std::string error;
+  const std::vector<runtime::GalleryRow> rows = {MakeRow("O")};
+  const bool ok = runtime::PresentDeviceGalleryPage(rows, 0, renderer, window,
+                                                    kViewportH, &error);
+  if (!ok) return false;
+  if (!error.empty()) return false;
+  const auto at = [&](int x, int y) -> std::uint32_t {
+    return window.pixels()[static_cast<std::size_t>(y * window.w() + x)];
+  };
+  const auto inWindow = [&](int x, int y) -> bool {
+    return x >= 0 && y >= 0 && x < window.w() && y < window.h();
+  };
+  // A counter hole is a background pixel strictly enclosed by ink along a
+  // scanline: ink on both sides. A single stem-span bar (clear-ink-clear)
+  // never encloses background on its long axis, and a solid cell fill or a
+  // blank presents no background at all — both fail. A true 'O' ring
+  // encloses its hole on BOTH the mid-row and the mid-column, so both legs
+  // are required: bar pairs (two stems, top/bottom bars) pass at most one.
+  for (const auto& cmd : window.submitted()) {
+    if (cmd.kind != runtime::PrimitiveKind::ShapedText) continue;
+    if (cmd.payload.glyphRunId == 0) continue;
+    const int x0 = static_cast<int>(std::round(cmd.bounds.x));
+    const int y0 = static_cast<int>(std::round(cmd.bounds.y));
+    const int w = static_cast<int>(std::round(cmd.bounds.w));
+    const int h = static_cast<int>(std::round(cmd.bounds.h));
+    if (w < 7 || h < 7) continue;  // Too small to enclose a counter.
+    bool holeOnRow = false;
+    bool holeOnCol = false;
+    for (int y = y0; y < y0 + h && !holeOnRow; ++y) {
+      for (int x = x0; x < x0 + w && !holeOnRow; ++x) {
+        if (!inWindow(x, y) || at(x, y) != kClear) continue;
+        bool inkLeft = false;
+        bool inkRight = false;
+        for (int lx = x0; lx < x; ++lx) {
+          if (inWindow(lx, y) && at(lx, y) != kClear) {
+            inkLeft = true;
+            break;
+          }
+        }
+        for (int rx = x + 1; rx < x0 + w; ++rx) {
+          if (inWindow(rx, y) && at(rx, y) != kClear) {
+            inkRight = true;
+            break;
+          }
+        }
+        holeOnRow = inkLeft && inkRight;
+      }
+    }
+    for (int x = x0; x < x0 + w && !holeOnCol; ++x) {
+      for (int y = y0; y < y0 + h && !holeOnCol; ++y) {
+        if (!inWindow(x, y) || at(x, y) != kClear) continue;
+        bool inkAbove = false;
+        bool inkBelow = false;
+        for (int uy = y0; uy < y; ++uy) {
+          if (inWindow(x, uy) && at(x, uy) != kClear) {
+            inkAbove = true;
+            break;
+          }
+        }
+        for (int dy = y + 1; dy < y0 + h; ++dy) {
+          if (inWindow(x, dy) && at(x, dy) != kClear) {
+            inkBelow = true;
+            break;
+          }
+        }
+        holeOnCol = inkAbove && inkBelow;
+      }
+    }
+    if (holeOnRow && holeOnCol) return true;
+  }
+  return false;  // Stems-only coverage: no enclosed counter anywhere.
+}
+
 }  // namespace
 
 #define RUN_CASE(name)                      \
@@ -389,6 +479,7 @@ int main() {
   RUN_CASE(check_consecutive_pages_present_different_frames);
   RUN_CASE(check_out_of_range_page_leaves_buffer_untouched);
   RUN_CASE(check_card_row_pixels_differ_from_background);
+  RUN_CASE(check_curved_glyph_counter_hole_stays_background);
   if (failures > 0) {
     std::printf("present_window_text_pixels_test: %d failing\n", failures);
     return 1;

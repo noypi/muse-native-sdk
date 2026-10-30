@@ -87,20 +87,22 @@ class Renderer {
 // FR-TEXT-016 / AC-TEXT-045 (BUG-M3-FIDELITY-005 T11): per-pixel glyph
 // coverage for one rasterized run, in bounds-local pixels. Row-major
 // `alpha` (`width * height` floats, 0 = background, 1 = full ink) threads
-// true per-pixel stem coverage (T12: analytic at each pixel center, with a
-// soft edge falloff) out of `RasterizeShapedText` so window painters
-// src-over blend per pixel instead of filling text bounds solid. Never
-// throws.
+// true outline coverage (T13: stems, bowls/counters, diagonals, and
+// crossbars resolved through tile_raster at 4x supersampling, so edges
+// modulate per pixel per the T12 leg) out of `RasterizeShapedText` so
+// window painters src-over blend per pixel instead of filling text bounds
+// solid. Never throws.
 struct CoverageMask {
   int width = 0;
   int height = 0;
   std::vector<float> alpha;
 };
 
-// FR-TEXT-016 / AC-TEXT-045 (BUG-M3-FIDELITY-005 T11, T12): rasterize a
-// cached ShapedText run into a CoverageMask via slug_msdf pen offsets +
-// per-pixel analytic stem coverage (CPU mirror; pure C++, zero JNI on the
-// frame path per NFR-TEXT-001). The run resolves through the T5 gallery shaping cache
+// FR-TEXT-016 / AC-TEXT-045 (BUG-M3-FIDELITY-005 T11, T12, T13): rasterize
+// a cached ShapedText run into a CoverageMask via slug_msdf pen offsets +
+// per-glyph outline segments resolved through tile_raster coverage at 4x
+// supersampling (CPU mirror; pure C++, zero JNI on the frame path per
+// NFR-TEXT-001). The run resolves through the T5 gallery shaping cache
 // (no synthesis: unknown/dangling ids fail closed with kMissingGlyph and
 // paint nothing, extending the glyphRunId == 0 sentinel rule). The caller
 // maps a failed Status onto DrawError::UnknownPrimitive. Never throws.
