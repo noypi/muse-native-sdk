@@ -18,6 +18,7 @@ ENGINE_LIBS = ../../build/android-arm64-v8a/libRuntime.so ../../build/android-ar
 .PHONY: apk sign verify install clean
 
 apk:
+	rm -f $(UNSIGNED_APK)
 	mkdir -p $(STAGING_DIR) $(BUILD_DIR)/gen $(BUILD_DIR)/classes $(BUILD_DIR)/dex
 	aapt2 compile --dir res -o $(BUILD_DIR)/compiled.zip
 	aapt2 link -o $(LINKED_ZIP) -I $(ANDROID_JAR) --manifest AndroidManifest.xml --java $(BUILD_DIR)/gen -A assets $(BUILD_DIR)/compiled.zip
@@ -35,7 +36,7 @@ apk:
 	cp ../../build/android-x86/libRuntime.so $(STAGING_DIR)/lib/x86/libRuntime.so
 	cp $(BUILD_DIR)/dex/classes.dex $(STAGING_DIR)/classes.dex
 	cp -r tree/* $(STAGING_DIR)/assets/tree/ 2>/dev/null || cp -r assets/* $(STAGING_DIR)/assets/ 2>/dev/null || true
-	cd $(STAGING_DIR) && zip -r ../$(notdir $(UNSIGNED_APK)) AndroidManifest.xml classes.dex lib assets && zip -0 ../$(notdir $(UNSIGNED_APK)) resources.arsc
+	cd $(STAGING_DIR) && zip -r ../$(notdir $(UNSIGNED_APK)) AndroidManifest.xml classes.dex lib assets && zip -g -0 ../$(notdir $(UNSIGNED_APK)) resources.arsc
 
 sign: apk
 	zipalign -f 4 $(UNSIGNED_APK) $(ALIGNED_APK)
@@ -45,6 +46,8 @@ sign: apk
 verify: sign
 	apksigner verify --verbose $(SIGNED_APK)
 	for entry in AndroidManifest.xml classes.dex resources.arsc; do if ! unzip -l $(SIGNED_APK) | grep -q "$$entry"; then echo "error: verify failed: APK entry missing: $$entry in $(SIGNED_APK)" >&2; exit 1; fi; done
+	if ! unzip -lv $(SIGNED_APK) | grep "resources.arsc" | grep -q "Stored"; then echo "error: verify failed: resources.arsc must be Stored (method 0) + 4-byte aligned in $(SIGNED_APK)" >&2; exit 1; fi
+	if command -v zipalign >/dev/null 2>&1; then if ! zipalign -c 4 $(SIGNED_APK) >/dev/null 2>&1; then echo "error: verify failed: resources.arsc not Stored+aligned (zipalign -c 4 rejected $(SIGNED_APK))" >&2; exit 1; fi; fi
 	if ! apksigner verify $(SIGNED_APK) >/dev/null 2>&1; then echo "error: verify failed: apksigner verify rejected $(SIGNED_APK)" >&2; exit 1; fi
 
 install: sign

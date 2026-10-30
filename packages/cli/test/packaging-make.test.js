@@ -559,3 +559,203 @@ describe('T3 review tightening: link/zip paths + per-ABI lib gates (AC-PACKAGING
     assert.equal(stubCalls.length, 0, 'review T3 assertions must not shell out to any tool');
   });
 });
+
+// --- BUG-PACKAGING-002 T1: resources.arsc Stored + 4-byte aligned --------------
+// Scope: FR-PACKAGING-004 (no ACs per bug entry; AC-PACKAGING-008/009 adjacent
+// context only). Interface (plan T1 verbatim):
+//   `node --test packages/cli/test/packaging-make.test.js → exit 0` when
+//   (a) scaffold-Makefile text contains stale-archive hygiene (`rm -f` of
+//   `$(UNSIGNED_APK)` before reassembly) + an explicit Stored arsc step
+//   (`zip -g -0` naming `resources.arsc`, arsc excluded from the deflated
+//   `zip -r` set), (b) `verify`-target text contains a fail-closed
+//   Stored+alignment gate naming `resources.arsc` (non-zero exit otherwise),
+//   (c) a fixture-APK central-directory parser asserts `resources.arsc`
+//   method 0 (Stored) with data-offset 4-byte aligned and fails a Deflated
+//   fixture; hermetic (stubbed child_process, stdlib only, zero tool
+//   invocations).
+// Hermetic: scaffold-Makefile-text assertions + pure-JS central-directory
+// reader over two minimal in-test fixture zips (no `unzip` binary, no
+// aapt2/zipalign/apksigner/adb, no device/network). Must RED on the current
+// recipe (no `-g`, no `rm -f`, no verify gate). Negative control: Deflated
+// fixture must fail the gate.
+// ASSUMPTION A-B1 (contract genuinely silent): 4-byte alignment is checked
+// as `dataOffset % 4 === 0` where dataOffset is the local-file data start
+// derived from the central directory + local header (zipalign 4-byte
+// alignment proxy); extra-field padding details are coder-owned.
+function arscZipLines(body) {
+  return body.split('\n').filter((l) => /(^|\s)zip\b/.test(l));
+}
+
+function zipRArscSet(body) {
+  // Returns the file-set tokens of the deflated `zip -r` pass (tokens after
+  // the archive operand), or null when no `zip -r` line exists.
+  for (const line of arscZipLines(body)) {
+    for (const seg of line.split('&&')) {
+      const m = /zip\s+(?:-[^\s]*r[^\s]*)\s+\S+\s+(.*)/.exec(seg);
+      if (m) return m[1];
+    }
+  }
+  return null;
+}
+
+// Minimal in-test ZIP builder: local headers + central directory + EOCD,
+// stdlib only (no compression library needed — Deflated fixture stores
+// pre-deflated bytes verbatim with method 8).
+function buildFixtureZip(entries) {
+  const chunks = [];
+  const centrals = [];
+  let offset = 0;
+  for (const e of entries) {
+    const name = Buffer.from(e.name, 'utf8');
+    const data = Buffer.from(e.data);
+    const lh = Buffer.alloc(30);
+    lh.writeUInt32LE(0x04034b50, 0);
+    lh.writeUInt16LE(20, 4);
+    lh.writeUInt16LE(0, 6);
+    lh.writeUInt16LE(e.method, 8);
+    lh.writeUInt16LE(0, 10);
+    lh.writeUInt16LE(0, 12);
+    lh.writeUInt32LE(0, 14);
+    lh.writeUInt32LE(data.length, 18);
+    lh.writeUInt32LE(data.length, 22);
+    lh.writeUInt16LE(name.length, 26);
+    lh.writeUInt16LE(0, 28);
+    chunks.push(lh, name, data);
+    const cd = Buffer.alloc(46);
+    cd.writeUInt32LE(0x02014b50, 0);
+    cd.writeUInt16LE(20, 4);
+    cd.writeUInt16LE(20, 6);
+    cd.writeUInt16LE(0, 8);
+    cd.writeUInt16LE(e.method, 10);
+    cd.writeUInt16LE(0, 12);
+    cd.writeUInt16LE(0, 14);
+    cd.writeUInt32LE(0, 16);
+    cd.writeUInt32LE(data.length, 20);
+    cd.writeUInt32LE(data.length, 24);
+    cd.writeUInt16LE(name.length, 28);
+    cd.writeUInt16LE(0, 30);
+    cd.writeUInt16LE(0, 32);
+    cd.writeUInt16LE(0, 34);
+    cd.writeUInt16LE(0, 36);
+    cd.writeUInt32LE(0, 38);
+    cd.writeUInt32LE(offset, 42);
+    centrals.push(cd, name);
+    offset += lh.length + name.length + data.length;
+  }
+  const cdStart = offset;
+  const cdBytes = Buffer.concat(centrals);
+  chunks.push(cdBytes);
+  offset += cdBytes.length;
+  const eocd = Buffer.alloc(22);
+  eocd.writeUInt32LE(0x06054b50, 0);
+  eocd.writeUInt16LE(0, 8);
+  eocd.writeUInt16LE(0, 10);
+  eocd.writeUInt16LE(entries.length, 8);
+  eocd.writeUInt16LE(entries.length, 10);
+  eocd.writeUInt32LE(cdBytes.length, 12);
+  eocd.writeUInt32LE(cdStart, 16);
+  chunks.push(eocd);
+  return Buffer.concat(chunks);
+}
+
+// Pure-JS central-directory reader: returns { method, dataOffset } for the
+// named entry. Throws when the entry or EOCD is absent.
+function readCentralEntry(buf, entryName) {
+  const b = Buffer.from(buf);
+  let eocd = -1;
+  for (let i = b.length - 22; i >= 0; i -= 1) {
+    if (b.readUInt32LE(i) === 0x06054b50) { eocd = i; break; }
+  }
+  assert.ok(eocd !== -1, 'fixture zip must contain EOCD');
+  const count = b.readUInt16LE(eocd + 10);
+  let p = b.readUInt32LE(eocd + 16);
+  for (let n = 0; n < count; n += 1) {
+    assert.equal(b.readUInt32LE(p), 0x02014b50, 'central directory entry signature');
+    const method = b.readUInt16LE(p + 10);
+    const nameLen = b.readUInt16LE(p + 28);
+    const extraLen = b.readUInt16LE(p + 30);
+    const commentLen = b.readUInt16LE(p + 32);
+    const lhOff = b.readUInt32LE(p + 42);
+    const name = b.subarray(p + 46, p + 46 + nameLen).toString('utf8');
+    if (name === entryName) {
+      assert.equal(b.readUInt32LE(lhOff), 0x04034b50, 'local header signature');
+      const lhName = b.readUInt16LE(lhOff + 26);
+      const lhExtra = b.readUInt16LE(lhOff + 28);
+      return { method, dataOffset: lhOff + 30 + lhName + lhExtra };
+    }
+    p += 46 + nameLen + extraLen + commentLen;
+  }
+  throw new Error(`fixture zip missing entry: ${entryName}`);
+}
+
+function arscGatePass(zipBuf) {
+  const e = readCentralEntry(zipBuf, 'resources.arsc');
+  return e.method === 0 && e.dataOffset % 4 === 0;
+}
+
+describe('BUG-PACKAGING-002 T1 arsc Stored + aligned (FR-PACKAGING-004)', () => {
+  it('apk removes the stale archive before reassembly (rm -f $(UNSIGNED_APK))', () => {
+    const body = scaffoldTargetBody(readScaffoldMakefile(), 'apk');
+    const rmIdx = body.indexOf('rm -f');
+    const zipIdx = body.indexOf('zip -r');
+    assert.ok(rmIdx !== -1, 'apk must rm -f any stale archive before the final zip');
+    assert.ok(body.includes('$(UNSIGNED_APK)'),
+      'stale-archive hygiene must name $(UNSIGNED_APK)');
+    assert.ok(zipIdx !== -1 && rmIdx < zipIdx,
+      'rm -f hygiene must precede the final zip reassembly');
+  });
+
+  it('apk keeps resources.arsc out of the deflated zip -r set (detail)', () => {
+    const body = scaffoldTargetBody(readScaffoldMakefile(), 'apk');
+    const set = zipRArscSet(body);
+    assert.ok(set !== null, 'apk must assemble the deflatable set via zip -r');
+    assert.ok(!set.includes('resources.arsc'),
+      'deflated zip -r set must exclude resources.arsc (Stored step owns it)');
+  });
+
+  it('apk adds resources.arsc via an explicit zip -g -0 Stored step', () => {
+    const body = scaffoldTargetBody(readScaffoldMakefile(), 'apk');
+    const lines = arscZipLines(body).filter((l) => l.includes('resources.arsc'));
+    assert.ok(lines.length >= 1, 'apk must add resources.arsc via an explicit zip step');
+    const stored = lines.some((l) => /zip\s+[^\n]*-g[^\n]*-0[^\n]*resources\.arsc|zip\s+[^\n]*-0[^\n]*-g[^\n]*resources\.arsc/.test(l));
+    assert.ok(stored,
+      'resources.arsc must be added Stored via zip -g -0 (explicit grow flag so the step cannot silently no-op)');
+  });
+
+  it('verify fails closed on non-Stored or misaligned resources.arsc', () => {
+    const body = scaffoldTargetBody(readScaffoldMakefile(), 'verify');
+    assert.ok(body.includes('resources.arsc'), 'verify gate must name resources.arsc');
+    assert.match(body, /Stored|method 0|zipalign -c/i,
+      'verify gate must assert the Stored method / alignment state');
+    assert.match(body, /exit\s+1/,
+      'verify gate must exit non-zero when resources.arsc is not Stored+aligned');
+  });
+
+  it('central-directory reader: Stored aligned arsc passes the gate', () => {
+    // "resources.arsc" (14 bytes) as the first entry → local data offset
+    // 30+14=44, 44 % 4 === 0 (zipalign 4-byte proxy).
+    const zip = buildFixtureZip([
+      { name: 'resources.arsc', method: 0, data: [9, 9, 9, 9] },
+      { name: 'AndroidManifest.xml', method: 8, data: [1, 2, 3, 4] },
+    ]);
+    const e = readCentralEntry(zip, 'resources.arsc');
+    assert.equal(e.method, 0, 'fixture arsc must be Stored (method 0)');
+    assert.equal(e.dataOffset % 4, 0, `fixture arsc data offset ${e.dataOffset} must be 4-byte aligned`);
+    assert.equal(arscGatePass(zip), true, 'Stored+aligned arsc must pass the gate');
+  });
+
+  it('central-directory reader: Deflated arsc fails the gate (negative control)', () => {
+    const zip = buildFixtureZip([
+      { name: 'AndroidManifest.xml', method: 8, data: [1, 2, 3, 4] },
+      { name: 'resources.arsc', method: 8, data: [7, 7, 7, 7] },
+    ]);
+    const e = readCentralEntry(zip, 'resources.arsc');
+    assert.equal(e.method, 8, 'negative-control fixture arsc must be Deflated (method 8)');
+    assert.equal(arscGatePass(zip), false, 'Deflated arsc must fail the Stored+aligned gate');
+  });
+
+  it('hermetic: T1 asserts Makefile text + in-memory zips only, zero tool invocations', () => {
+    readScaffoldMakefile();
+    assert.equal(stubCalls.length, 0, 'T1 assertions must not shell out to any tool');
+  });
+});
