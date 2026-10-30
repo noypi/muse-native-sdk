@@ -15,7 +15,24 @@ const TEMPLATE_FILES = [
   'README.md',
   path.join('src', 'App.tsx'),
   path.join('proxy', 'proxy.config.json'),
+  'Makefile',
+  'AndroidManifest.xml',
+  path.join('res', 'values', 'strings.xml'),
 ];
+
+// D4: after copy, rewrite only the single `APP_NAME =` line in the
+// scaffolded Makefile to the target directory's basename. All other
+// files stay byte-equal to their template sources.
+function rewriteMakefileAppName(makefilePath, targetDir) {
+  const raw = fs.readFileSync(makefilePath, 'utf8');
+  const base = path.basename(String(targetDir));
+  const sanitized = base.replace(/[^A-Za-z0-9_.-]/g, '-');
+  const name = sanitized.length > 0 ? sanitized : 'hello-app';
+  const next = raw.replace(/^APP_NAME\s*=.*$/m, `APP_NAME = ${name}`);
+  if (next !== raw) {
+    fs.writeFileSync(makefilePath, next, 'utf8');
+  }
+}
 
 function printInitUsage() {
   process.stderr.write('Usage: muse-native init <dir>\n');
@@ -58,6 +75,7 @@ function runInit(dir, opts) {
       fs.mkdirSync(path.dirname(dest), { recursive: true });
       fs.copyFileSync(src, dest);
     }
+    rewriteMakefileAppName(path.join(dir, 'Makefile'), dir);
   } catch (err) {
     // Best-effort rollback so no partial scaffold remains (mirrors
     // build.js's artefact cleanup); the error below is what matters.
@@ -81,6 +99,11 @@ function runInit(dir, opts) {
           fs.rmSync(path.join(dir, 'proxy'), { recursive: true, force: true });
         } catch (_) {
           // proxy/ may not have been created; ignore.
+        }
+        try {
+          fs.rmSync(path.join(dir, 'res'), { recursive: true, force: true });
+        } catch (_) {
+          // res/ may not have been created; ignore.
         }
       }
     } catch (_) {
@@ -154,6 +177,7 @@ function scaffoldProject(args) {
       fs.mkdirSync(path.dirname(dest), { recursive: true });
       fs.copyFileSync(src, dest);
     }
+    rewriteMakefileAppName(path.join(outDir, 'Makefile'), outDir);
   } catch (err) {
     if (err && err.message && err.message.indexOf('scaffold-failed:') === 0) {
       throw err;
@@ -178,6 +202,11 @@ function scaffoldProject(args) {
           fs.rmSync(path.join(outDir, 'proxy'), { recursive: true, force: true });
         } catch (_) {
           // proxy/ may not have been created; ignore.
+        }
+        try {
+          fs.rmSync(path.join(outDir, 'res'), { recursive: true, force: true });
+        } catch (_) {
+          // res/ may not have been created; ignore.
         }
       }
     } catch (_) {

@@ -486,7 +486,193 @@ describe('T4 hermetic gate coverage TC-017..022 (AC-PACKAGING-017..022)', () => 
   });
 });
 
-// --- Review fix: exact x86 slot token + NDK_HOME re-derived (T2) ---------
+// --- BUG-SAMPLE-005 Batch 1 / T1+T2: flappy + muse-demo scaffold backfill ---
+// Scope: FR-SAMPLE-007/009, FR-PACKAGING-008/009; AC-SAMPLE-016/018/022,
+// AC-PACKAGING-020/021/022/023.
+// Interface (plan T1 verbatim):
+//   `make apk | make sign | make verify | make install | make clean` (run in
+//   `examples/flappy`) → exit 0 on success; `install` with no `adb` device
+//   fails closed naming the missing device; unset `MUSE_NATIVE_HOME` fails
+//   before compilation naming the variable — none — make precondition surface,
+//   no new callable
+// Interface (plan T2 verbatim): same five make targets run in
+// `examples/muse-demo` (identical fail-closed shape).
+// Hermetic: Makefile/manifest/strings text assertions only; child_process stays
+// stubbed (no aapt2/d8/javac/zipalign/apksigner/adb, no device/network).
+// RED until the coder backfills each demo's Makefile + AndroidManifest.xml +
+// res/values/strings.xml.
+// ASSUMPTION A-D1 (contract genuinely silent): per-demo Makefiles are verbatim
+// copies of examples/m3-gallery/Makefile except the APP_NAME line (flappy /
+// muse-demo per D1) — tests accept any `APP_NAME = <demo>` assignment form.
+// ASSUMPTION A-D2 (contract genuinely silent): the manifest application label
+// mirrors the strings app_name verbatim (gallery pairs a distinct label with
+// its app_name; per-demo label follows D3, so label === app_name is tested).
+const DEMOS_005 = [
+  { dir: 'flappy', appName: 'flappy', label: 'Flappy Demo' },
+  { dir: 'muse-demo', appName: 'muse-demo', label: 'Muse Demo' },
+];
+
+function demoMakefilePath(demo) {
+  return path.join(ROOT, 'examples', demo, 'Makefile');
+}
+
+function readDemoMakefile(demo) {
+  const p = demoMakefilePath(demo);
+  assert.ok(fs.existsSync(p),
+    `examples/${demo}/Makefile must exist (BUG-SAMPLE-005 T1/T2 own it; RED until the coder backfills it)`);
+  return fs.readFileSync(p, 'utf8');
+}
+
+function demoTargetBody(text, demo, name) {
+  const lines = text.split('\n');
+  const idx = lines.findIndex((l) => new RegExp(`^${name}\\s*:`).test(l));
+  assert.ok(idx !== -1, `examples/${demo}/Makefile must define target: ${name}`);
+  let end = lines.length;
+  for (let i = idx + 1; i < lines.length; i += 1) {
+    if (/^[A-Za-z0-9_.-]+\s*:(?![:=])/.test(lines[i]) && !/^\s/.test(lines[i])) { end = i; break; }
+  }
+  return lines.slice(idx, end).join('\n');
+}
+
+function readDemoManifest(demo) {
+  const p = path.join(ROOT, 'examples', demo, 'AndroidManifest.xml');
+  assert.ok(fs.existsSync(p),
+    `examples/${demo}/AndroidManifest.xml must exist (RED until the coder backfills it)`);
+  return fs.readFileSync(p, 'utf8');
+}
+
+function readDemoStrings(demo) {
+  const p = path.join(ROOT, 'examples', demo, 'res', 'values', 'strings.xml');
+  assert.ok(fs.existsSync(p),
+    `examples/${demo}/res/values/strings.xml must exist (RED until the coder backfills it)`);
+  return fs.readFileSync(p, 'utf8');
+}
+
+for (const { dir: DEMO, appName: APP, label: LABEL } of DEMOS_005) {
+  describe(`BUG-SAMPLE-005 ${DEMO} Makefile five targets (AC-PACKAGING-020/021/022)`, () => {
+    it('demo Makefile exists with apk, sign, verify, install, clean targets', () => {
+      const text = readDemoMakefile(DEMO);
+      for (const t of ['apk', 'sign', 'verify', 'install', 'clean']) {
+        assert.match(text, new RegExp(`^${t}\\s*:`, 'm'), `missing make target: ${t}`);
+      }
+    });
+
+    it('APP_NAME equals the demo directory name (D1)', () => {
+      const text = readDemoMakefile(DEMO);
+      const m = /^APP_NAME\s*[:?+]?=\s*(.+?)\s*$/m.exec(text);
+      assert.ok(m, 'demo Makefile must assign APP_NAME');
+      assert.equal(m[1].trim(), APP, `APP_NAME must equal ${APP} (D1)`);
+    });
+
+    it('apk links via aapt2 and dexes via javac + d8 (AC-PACKAGING-020)', () => {
+      const body = demoTargetBody(readDemoMakefile(DEMO), DEMO, 'apk');
+      assert.match(body, /\baapt2\b/, 'apk must link via aapt2');
+      assert.match(body, /\bjavac\b/, 'apk must compile shell sources via javac');
+      assert.match(body, /\bd8\b/, 'apk must dex via d8');
+    });
+
+    it('sign aligns + debug-signs only (AC-PACKAGING-021)', () => {
+      const body = demoTargetBody(readDemoMakefile(DEMO), DEMO, 'sign');
+      assert.match(body, /\bzipalign\b/i, 'sign must align the APK (zipalign)');
+      assert.match(body, /\bapksigner\b/, 'sign must sign via apksigner');
+      assert.match(body, /debug|--ks\b/i, 'sign must use the debug key only');
+    });
+
+    it('verify runs apksigner verify and checks the required APK entries (AC-PACKAGING-021)', () => {
+      const body = demoTargetBody(readDemoMakefile(DEMO), DEMO, 'verify');
+      assert.match(body, /\bapksigner\b/, 'verify must run apksigner verify');
+      assert.match(body, /verify/, 'verify must invoke the apksigner verify subcommand');
+      for (const entry of ['AndroidManifest.xml', 'classes.dex', 'resources.arsc']) {
+        assert.ok(body.includes(entry), `verify must check APK entry ${entry}`);
+      }
+      assert.match(body, /exit\s+1|&&\s*exit|false\b|set\s+-e/i,
+        'verify must fail the target non-zero on a missing entry or failed apksigner verify');
+    });
+
+    it('install with no device fails closed naming the missing device (AC-PACKAGING-022)', () => {
+      const body = demoTargetBody(readDemoMakefile(DEMO), DEMO, 'install');
+      assert.match(body, /\badb\b/, 'install must use adb');
+      assert.match(body, /install/, 'install must run adb install');
+      assert.match(body, /adb\s+devices|no device|missing device|device.*(not found|missing)|UNAUTHORIZED/i,
+        'install must gate on a connected device and name the missing device');
+      assert.match(body, /exit\s+1/,
+        'install with no device must exit non-zero instead of partial-installing');
+    });
+
+    it('clean removes demo build outputs (T1/T2 interface)', () => {
+      const body = demoTargetBody(readDemoMakefile(DEMO), DEMO, 'clean');
+      assert.match(body, /rm\s+-rf|rmdir|\bdist\b|\bbuild\b|\.apk/i,
+        'clean must remove demo APK/build outputs');
+    });
+
+    it('unset MUSE_NATIVE_HOME fails before compilation naming the variable (AC-PACKAGING-023)', () => {
+      const text = readDemoMakefile(DEMO);
+      assert.match(text, /ifndef\s+MUSE_NATIVE_HOME/, 'Makefile must open with the HOME guard');
+      assert.match(text, /\$\(error[^)]*MUSE_NATIVE_HOME[^)]*\)/,
+        'HOME gate must $(error) naming the variable');
+      const homeIdx = text.indexOf('ifndef MUSE_NATIVE_HOME');
+      const apkIdx = text.search(/^apk\s*:/m);
+      assert.ok(homeIdx !== -1 && apkIdx !== -1 && homeIdx < apkIdx,
+        'HOME guard must precede compilation (parse-time, before any target)');
+      const body = demoTargetBody(text, DEMO, 'apk');
+      assert.match(body, /MUSE_NATIVE_HOME[^;\n]*is not set/,
+        'apk recipe must re-guard an empty MUSE_NATIVE_HOME naming the variable');
+    });
+
+    it('no ../ SDK traversal; ENGINE_LIBS rooted at $(MUSE_NATIVE_HOME) (AC-PACKAGING-023)', () => {
+      const text = readDemoMakefile(DEMO);
+      assert.ok(!text.includes('../../'), 'demo Makefile must not contain ../../ traversal');
+      assert.ok(!text.includes('../build'), 'demo Makefile must not traverse to ../build');
+      const m = /ENGINE_LIBS\s*[:?]?=\s*(.*)/.exec(text);
+      assert.ok(m, 'ENGINE_LIBS must be defined');
+      assert.ok(m[1].includes('$(MUSE_NATIVE_HOME)'),
+        'ENGINE_LIBS must be rooted at $(MUSE_NATIVE_HOME)');
+      assert.ok(!m[1].includes('..'), 'ENGINE_LIBS must not traverse upward');
+    });
+  });
+
+  describe(`BUG-SAMPLE-005 ${DEMO} manifest + strings identity (AC-SAMPLE-016/018/022)`, () => {
+    it('manifest carries package com.muse.host with minSdk 26 / targetSdk 34 (D2)', () => {
+      const xml = readDemoManifest(DEMO);
+      assert.match(xml, /package="com\.muse\.host"/, 'manifest package must be com.muse.host (D2)');
+      assert.match(xml, /android:minSdkVersion="26"/, 'manifest minSdk must be 26');
+      assert.match(xml, /android:targetSdkVersion="34"/, 'manifest targetSdk must be 34');
+      assert.match(xml, /android:name="\.MainActivity"/, 'manifest must declare .MainActivity');
+    });
+
+    it('manifest application label follows D3', () => {
+      const xml = readDemoManifest(DEMO);
+      const m = /android:label="([^"]*)"/.exec(xml);
+      assert.ok(m, 'manifest application must carry android:label');
+      assert.equal(m[1], LABEL, `manifest label must be ${LABEL} (D3)`);
+    });
+
+    it('strings.xml carries a single app_name following D3', () => {
+      const xml = readDemoStrings(DEMO);
+      const names = [...xml.matchAll(/<string\s+name="([^"]*)"/g)].map((m) => m[1]);
+      assert.deepEqual(names, ['app_name'], 'strings.xml must carry exactly one app_name string');
+      assert.ok(xml.includes(`<string name="app_name">${LABEL}</string>`),
+        `app_name must equal ${LABEL} (D3)`);
+    });
+
+    it('demo app_name differs from the gallery value', () => {
+      const xml = readDemoStrings(DEMO);
+      assert.ok(!xml.includes('M3 UI Gallery'),
+        'demo app_name must differ from the gallery M3 UI Gallery value');
+    });
+  });
+}
+
+describe('BUG-SAMPLE-005 Batch 1 hermetic gate', () => {
+  it('T1+T2 assertions run hermetic: zero external tool invocations', () => {
+    for (const { dir: DEMO } of DEMOS_005) {
+      readDemoMakefile(DEMO);
+      readDemoManifest(DEMO);
+      readDemoStrings(DEMO);
+    }
+    assert.equal(stubCalls.length, 0, 'Batch 1 assertions must not shell out to any tool');
+  });
+});
 // Code-review follow-up (BLOCKER + apk MAJORS fixed in Makefiles): tighten the
 // T2 gates so (a) the cmake configure line cannot reference an unset per-line
 // shell var, and (d) the x86 allow-list slot cannot be subsumed by x86_64.
