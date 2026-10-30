@@ -26,7 +26,8 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
@@ -245,4 +246,92 @@ test('T2: resolveTokens rejects non-string input with UnknownComponentError', ()
       `non-string input ${String(bad)} must throw UnknownComponentError, not leak internals`,
     );
   }
+});
+
+// ---------------------------------------------------------------------------
+// T3 — token gate: missing table and divergence fail test:tokens (AC-052/053)
+// ---------------------------------------------------------------------------
+//
+// Interface under test: `node scripts/check-tokens.js --scope lib` — exit 1
+// naming `component` when (a) a matrix/registry component has no token table,
+// or (b) `resolveTokens(component, mode)` output differs from the tabled roles
+// for `light` and `dark`; exit 0 otherwise.
+//
+// Hermetic note: the failure-mode cases briefly rewrite
+// `engine/layout/m3_matrix.json` on disk (the gate under test is a separate
+// process, so in-process stubs cannot reach it) and always restore the exact
+// original bytes in `finally`. No T1/T2 assertion above is modified.
+
+const GATE_JS = join(HERE, '..', 'scripts', 'check-tokens.js');
+const PACKAGE_DIR = join(HERE, '..');
+
+function runGate() {
+  try {
+    const stdout = execFileSync('node', [GATE_JS, '--scope', 'lib'], {
+      cwd: PACKAGE_DIR,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    return { status: 0, output: String(stdout) };
+  } catch (err) {
+    const out = `${err.stdout ?? ''}${err.stderr ?? ''}`;
+    return { status: typeof err.status === 'number' ? err.status : 1, output: String(out) };
+  }
+}
+
+function withMatrix(mutated, fn) {
+  const original = readFileSync(MATRIX_JSON, 'utf8');
+  try {
+    writeFileSync(MATRIX_JSON, JSON.stringify(mutated, null, 2));
+    return fn();
+  } finally {
+    writeFileSync(MATRIX_JSON, original);
+  }
+}
+
+function withoutTable(matrix, name) {
+  const copy = JSON.parse(JSON.stringify(matrix));
+  const entry = copy.components.find((c) => c.name === name);
+  delete entry.tokenTable;
+  delete entry.tokens;
+  return copy;
+}
+
+function withDivergentRole(matrix, name) {
+  const copy = JSON.parse(JSON.stringify(matrix));
+  const entry = copy.components.find((c) => c.name === name);
+  const table = entry.tokenTable ?? entry.tokens;
+  table.container = `${table.container}.diverged`;
+  return copy;
+}
+
+test('T3: token gate passes on a clean tree', () => {
+  const result = runGate();
+  assert.equal(
+    result.status,
+    0,
+    `gate must exit 0 on a clean tree, got ${result.status}: ${result.output}`,
+  );
+});
+
+test('T3: token gate fails naming the component when its token table is missing', () => {
+  const matrix = loadMatrix();
+  const name = matrix.components[0].name;
+  const result = withMatrix(withoutTable(matrix, name), runGate);
+  assert.equal(result.status, 1, `gate must exit 1 for a missing table, got ${result.status}`);
+  assert.ok(
+    result.output.includes(name),
+    `gate failure must name the component "${name}", got: ${result.output}`,
+  );
+});
+
+test('T3: token gate fails naming the component when resolved tokens diverge from the table', () => {
+  const matrix = loadMatrix();
+  const name = matrix.components[0].name;
+  const result = withMatrix(withDivergentRole(matrix, name), runGate);
+  assert.equal(result.status, 1, `gate must exit 1 for a divergent role, got ${result.status}`);
+  assert.ok(
+    result.output.includes(name),
+    `gate failure must name the component "${name}", got: ${result.output}`,
+  );
 });
