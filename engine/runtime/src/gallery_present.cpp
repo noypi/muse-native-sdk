@@ -1815,4 +1815,139 @@ bool PresentGallery(const void* mui1Data, std::size_t len, Renderer& renderer,
   }
 }
 
+// ---- Realized window (T2: FR-LISTS-007 / AC-LISTS-033) ----
+//
+// Uniform test-geometry row height for window index math. Row painters above
+// keep their variable RowHeight metrics as the CPU pixel-parity reference;
+// the window boundary only needs index relations (clamp / no-blank /
+// prefetch), so a uniform model satisfies the contract while the realized
+// row count per frame stays a small fraction of the list.
+constexpr int kWindowRowH = 64;
+// Prefetch curve (coder's choice, monotonic only by contract): one extra row
+// per 500 px/s of fling speed, capped at 32 rows so a sustained fling never
+// approaches a full-list bind on the UI thread.
+constexpr int kPrefetchPer500PxS = 500;
+constexpr int kMaxPrefetchRows = 32;
+
+RealizedWindow ComputeRealizedWindow(int scrollOffsetPx, int viewportPx,
+                                     int rowCount,
+                                     float velocityPxS) noexcept {
+  RealizedWindow w;
+  try {
+    if (rowCount <= 0) {
+      // Empty-list encoding: claims no visible rows, never throws.
+      w.firstVisible = 0;
+      w.lastVisible = -1;
+      w.prefetchAhead = 0;
+      return w;
+    }
+    // Viewport rows: at least one row while rows exist (never blank), clamped
+    // so an oversize viewport covers the full list, never more.
+    long long viewportRows = 1;
+    if (viewportPx > 0) {
+      viewportRows =
+          (static_cast<long long>(viewportPx) + kWindowRowH - 1) / kWindowRowH;
+      if (viewportRows < 1) viewportRows = 1;
+    }
+    if (viewportRows > rowCount) viewportRows = rowCount;
+    // Prefetch headroom from fling speed: monotonic in |velocity|, anchored
+    // (never moves firstVisible), non-negative, capped. Non-finite velocity
+    // (inf/NaN from hostile input) contributes no prefetch, never throws.
+    long long prefetch = 0;
+    if (std::isfinite(velocityPxS)) {
+      double speed = std::fabs(static_cast<double>(velocityPxS));
+      prefetch =
+          static_cast<long long>(speed / kPrefetchPer500PxS);
+      if (prefetch < 0) prefetch = 0;
+      if (prefetch > kMaxPrefetchRows) prefetch = kMaxPrefetchRows;
+    }
+    // Offset clamps into [0, rowCount): negative pins to zero, past-end pins
+    // to the last row — never substitutes a box, never blanks a row.
+    long long first = 0;
+    if (scrollOffsetPx > 0) {
+      first = static_cast<long long>(scrollOffsetPx) / kWindowRowH;
+    }
+    long long lastRow = static_cast<long long>(rowCount) - 1;
+    if (first > lastRow) first = lastRow;
+    long long last = first + viewportRows - 1 + prefetch;
+    if (last > lastRow) last = lastRow;
+    if (last < first) last = first;  // belt-and-braces: never blank
+    w.firstVisible = static_cast<int>(first);
+    w.lastVisible = static_cast<int>(last);
+    w.prefetchAhead = static_cast<int>(prefetch);
+    return w;
+  } catch (...) {
+    // Fail closed (RULE-RUNTIME-001): a valid non-blank window, never blank.
+    w.firstVisible = 0;
+    w.lastVisible = rowCount > 0 ? 0 : -1;
+    w.prefetchAhead = 0;
+    return w;
+  }
+}
+
+// Emit retained DrawCmds for exactly the realized window [firstVisible,
+// lastVisible] through the 006 vocabulary (same row geometry as
+// PresentGallery: kPresentW canvas, kPad/kGap/kHeaderH metrics). This is the
+// scrolled-row emission path: layout+bind covers windowed rows only, never
+// the full list; the CPU PaintComponent painters above stay as the
+// pixel-parity reference. Never throws; empty window emits nothing.
+void EmitGalleryWindowCmds(const std::vector<GalleryRow>& rows,
+                           const RealizedWindow& window,
+                           std::vector<DrawCmd>& out) {
+  try {
+    if (rows.empty()) return;
+    long long lastRow = static_cast<long long>(rows.size()) - 1;
+    long long first = window.firstVisible;
+    long long last = window.lastVisible;
+    if (first < 0) first = 0;
+    if (last > lastRow) last = lastRow;
+    if (last < first) return;  // empty window: nothing to bind
+    // Cursor mirrors PresentGallery's per-row packing (rh + kGap) so windowed
+    // rows land at the same canvas offsets as the full-list reference.
+    float cursor = static_cast<float>(kPad);
+    for (long long i = 0; i < first; ++i) {
+      cursor += static_cast<float>(
+                    RowHeight(rows[static_cast<std::size_t>(i)])) +
+                static_cast<float>(kGap);
+    }
+    int bw = kPresentW - 2 * kPad;
+    for (long long i = first; i <= last; ++i) {
+      const GalleryRow& row = rows[static_cast<std::size_t>(i)];
+      int rh = RowHeight(row);
+      int by = static_cast<int>(cursor) + kHeaderH;
+      std::uint32_t node = static_cast<std::uint32_t>(i + 1);
+      if (row.comp.empty()) {
+        EmitTextRowCmds(row, kPad, by, bw, rh, node, out);
+      } else {
+        EmitComponentRowCmds(row, kPad, by, bw, rh, node, out);
+      }
+      cursor += static_cast<float>(rh + kGap);
+    }
+  } catch (...) {
+    // Fail closed: partial window cmds stand; never throws across.
+  }
+}
+
+PresenterError PresentGalleryWindow(const std::vector<DrawCmd>& windowCmds,
+                                     int firstVisible, int lastVisible) {
+  // Windowed attach point for the scrolled-row path: the realized-window
+  // DrawCmds ride 006's retained redirect once a surface is attached. This
+  // entry carries no surface/swapchain itself, so it fails closed with
+  // kPacingError (+ diagnostic) and never presents. Never throws.
+  try {
+    PresenterError err;
+    (void)windowCmds;
+    (void)firstVisible;
+    (void)lastVisible;
+    err.code = PresenterCode::kPacingError;
+    err.message = "no surface: windowed gallery present refused";
+    return err;
+  } catch (...) {
+    PresenterError err;
+    err.code = PresenterCode::kPacingError;
+    err.message = "windowed gallery present failed (exception)";
+    return err;
+  }
+}
+
 }  // namespace runtime

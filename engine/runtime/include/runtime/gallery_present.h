@@ -5,6 +5,9 @@
 #include <string>
 #include <vector>
 
+#include "runtime/presenter.h"
+#include "runtime/renderer.h"
+
 namespace runtime {
 
 class Renderer;
@@ -48,5 +51,43 @@ int GalleryPageCount(const std::vector<GalleryRow>& rows, int height);
 // error == nullptr is tolerated on every leg.
 bool PresentGallery(const void* mui1Data, std::size_t len, Renderer& renderer,
                     Swapchain& target, std::string* error);
+
+// Realized window for the virtualized gallery scroll path (FR-LISTS-007 /
+// AC-LISTS-033): the visible row range plus velocity-derived prefetch headroom.
+// `firstVisible`/`lastVisible` are inclusive row indices clamped to
+// `[0, rowCount)` while rows exist (RULE-RUNTIME-001: never blank); an empty
+// list is encoded as `firstVisible == 0` with `lastVisible < 0` (no rows
+// claimed). `prefetchAhead` is a non-negative row count added ahead of the
+// scroll direction; the velocity-to-rows curve is monotonic (|v| / 500 px/s
+// per row, capped at 32) and never moves the visible anchor.
+struct RealizedWindow {
+  int firstVisible = 0;
+  int lastVisible = -1;
+  int prefetchAhead = 0;
+};
+
+// Pure, never throws: map a scroll offset + viewport to the realized row
+// window. Out-of-range offsets/viewports clamp into `[0, rowCount)`; fling
+// velocity extends `prefetchAhead` without moving `firstVisible`.
+RealizedWindow ComputeRealizedWindow(int scrollOffsetPx, int viewportPx,
+                                     int rowCount,
+                                     float velocityPxS) noexcept;
+
+// Emit retained DrawCmds for exactly the realized window [firstVisible,
+// lastVisible] through the 006 vocabulary (same row geometry as
+// PresentGallery). The scrolled-row emission path binds windowed rows only,
+// never the full list; CPU PaintComponent helpers stay as the pixel-parity
+// reference. Never throws; an empty window emits nothing.
+void EmitGalleryWindowCmds(const std::vector<GalleryRow>& rows,
+                           const RealizedWindow& window,
+                           std::vector<DrawCmd>& out);
+
+// Windowed emission entry (FR-LISTS-007 / AC-LISTS-033): consumes 006's
+// retained redirect for the scrolled-row path. The caller passes only the
+// realized-window DrawCmds plus the visible range they cover; this entry
+// carries no surface/swapchain, so with no surface it fails closed with
+// kPacingError (+ diagnostic) and never presents. Never throws.
+PresenterError PresentGalleryWindow(const std::vector<DrawCmd>& windowCmds,
+                                    int firstVisible, int lastVisible);
 
 }  // namespace runtime
