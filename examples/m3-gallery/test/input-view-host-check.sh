@@ -4,8 +4,9 @@
 #
 # Hermetic static half (runs anywhere with sh+grep): asserts the D1 input-view
 # form in examples/m3-gallery/src/MainActivity.java —
-#   focusable input view realized as TextInput + MuseField widgets/views
-#   (no bare hidden EditText, no SurfaceView-subclass editor).
+#   focusable input view realized as TextInput + MuseField widgets/views,
+#   backed by a non-visible EditText editor path (D1 amended, T5-retry),
+#   no bare hidden EditText, no SurfaceView/EditText-subclass editor.
 # Device half (not run here; executed by the tester on 127.0.0.1:6569):
 #   adb -s 127.0.0.1:6569 shell "dumpsys input_method | grep -E 'mInputShown|mShowRequested|mCurrentFocus'"
 # must show a focusable com.muse.host target after tapping the L7 probe row.
@@ -45,21 +46,51 @@ else
   fail "mainactivity references MuseField widget/view"
 fi
 
-# T2-D1-3 (denial): no bare hidden EditText editor.
-# A bare `new EditText(` with no TextInput/MuseField reference alongside is
+# T2-D1-3 (denial, re-scoped per D1-amended / T5-retry): no *bare* hidden
+# EditText editor. The authorized fix backs the input view with a
+# non-visible EditText, so `new EditText(` is allowed ONLY when tied to the
+# TextInput/MuseField refs (both present in this file). A bare
+# `new EditText(` with no TextInput/MuseField reference alongside remains
 # the forbidden form per D1.
 if grep -q 'new EditText(' "$JAVA_FILE"; then
-  fail "mainactivity must not use a bare hidden EditText editor"
+  if grep -q 'TextInput' "$JAVA_FILE" && grep -q 'MuseField' "$JAVA_FILE"; then
+    pass "EditText backing is tied to TextInput/MuseField refs (authorized D1-amended form)"
+  else
+    fail "mainactivity must not use a bare hidden EditText editor (no TextInput/MuseField refs)"
+  fi
 else
   pass "mainactivity has no bare hidden EditText editor"
 fi
 
-# T2-D1-4 (denial): no SurfaceView-subclass editor (the SurfaceView present
-# in the file must remain the render surface only, never an input editor).
-if grep -qE 'class .* extends SurfaceView|extends .*EditText|onCreateInputConnection' "$JAVA_FILE"; then
+# T2-D1-4 (denial, re-scoped per D1-amended / T5-retry): no
+# SurfaceView/EditText-subclass editor (the SurfaceView present in the file
+# must remain the render surface only, never an input editor; the editor
+# must be reached by composition, never by subclassing). NOTE:
+# `onCreateInputConnection` is deliberately NOT denied here — the
+# authorized fix REQUIRES an onCheckIsTextEditor/onCreateInputConnection
+# path (see T2-D1-5); only subclassing is forbidden.
+if grep -qE 'class .* extends SurfaceView|extends SurfaceView|extends .*EditText' "$JAVA_FILE"; then
   fail "mainactivity must not subclass SurfaceView/EditText as an editor"
 else
   pass "mainactivity has no SurfaceView-subclass editor"
+fi
+
+# T2-D1-5 (regression, T5-retry device 127.0.0.1:6569): editor-capable input
+# path. Evidence workflow.local/runs/bug-runtime-004/evidence/t5r_dumpsys_ime.txt
+# shows the 1x1 plain Views take focus but expose no InputConnection
+# (`mServedInputConnectionWrapper=null`), so `showSoftInput` is a no-op and
+# LatinIME never shows. MainActivity must therefore back the TextInput /
+# MuseField refs with a non-visible EditText (same TextInput/MuseField
+# tags/refs, still no SurfaceView-subclass editor, touch routing unchanged)
+# so the IME gets an onCheckIsTextEditor/onCreateInputConnection path.
+if grep -q 'EditText' "$JAVA_FILE" || grep -q 'onCreateInputConnection' "$JAVA_FILE"; then
+  if grep -q 'TextInput' "$JAVA_FILE" && grep -q 'MuseField' "$JAVA_FILE"; then
+    pass "mainactivity provides an editor-capable input path tied to TextInput/MuseField refs"
+  else
+    fail "editor-capable input path must stay tied to TextInput/MuseField refs"
+  fi
+else
+  fail "mainactivity provides an editor-capable input path (EditText or onCreateInputConnection) tied to TextInput/MuseField refs"
 fi
 
 # T2-routing guard (A3): native-first touch routing and page-flip fallback

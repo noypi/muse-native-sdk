@@ -14,6 +14,7 @@ import android.view.View;
 import android.view.WindowInsets;
 import android.view.WindowInsetsAnimation;
 import android.view.inputmethod.InputMethodManager;
+import android.widget.EditText;
 import android.widget.FrameLayout;
 import java.util.List;
 import java.io.ByteArrayOutputStream;
@@ -50,20 +51,21 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
 
     /**
      * Focusable input view backing the TextInput widget (tier-2 native
-     * component, {@code packages/native/textinput.js}). Plain focusable
-     * {@link View} host — deliberately not an editor subclass — so the
-     * InputMethodManager gains a showable {@code com.muse.host} target.
-     * Sized 1x1 and never touch-consuming, so the native tap chain stays
-     * first (A3).
+     * component, {@code packages/native/textinput.js}). Non-visible
+     * {@link EditText} host (D1 amended, T5-retry) — composition, not an
+     * editor subclass — so the InputMethodManager gains an
+     * onCheckIsTextEditor/onCreateInputConnection path and a showable
+     * {@code com.muse.host} target. Sized 1x1, invisible and never
+     * touch-consuming, so the native tap chain stays first (A3).
      */
     private View inputViewTextInput;
 
     /**
      * Focusable input view backing the MuseField field surface
      * ({@code packages/intelligence/lib/field.js}). Same host form as the
-     * TextInput view above: a plain focusable {@link View}, not an editor
-     * subclass. Both views share one 1x1 host parent and are focused
-     * together on the L7 probe tap path.
+     * TextInput view above: a non-visible {@link EditText} by composition,
+     * not an editor subclass. Both views share one 1x1 host parent and are
+     * focused together on the L7 probe tap path.
      */
     private View inputViewMuseField;
 
@@ -190,22 +192,26 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         });
         FrameLayout root = new FrameLayout(this);
         root.addView(surfaceView);
-        // D1 input-view host (T2): TextInput + MuseField-backed focusable
-        // input view. A 1x1 focusable plain-View pair parked at the origin —
-        // focusable so dumpsys input_method reports a focusable
-        // com.muse.host target, but never clickable/touch-consuming so every
-        // touch still enters the native tap chain first (A3) and the
-        // outside-tap page-flip fallback above is untouched.
-        inputViewTextInput = new View(this);
+        // D1 input-view host (T2, D1 amended / T5-retry): TextInput +
+        // MuseField-backed focusable input view. A 1x1 non-visible EditText
+        // pair parked at the origin — EditText by composition (never a
+        // SurfaceView/EditText subclass) so the IME gets an
+        // onCheckIsTextEditor/onCreateInputConnection path; invisible and
+        // never clickable/touch-consuming so every touch still enters the
+        // native tap chain first (A3) and the outside-tap page-flip
+        // fallback above is untouched.
+        inputViewTextInput = new EditText(this);
         inputViewTextInput.setFocusable(true);
         inputViewTextInput.setFocusableInTouchMode(true);
         inputViewTextInput.setClickable(false);
+        inputViewTextInput.setVisibility(View.INVISIBLE);
         inputViewTextInput.setContentDescription("TextInput IME probe input view");
         inputViewTextInput.setTag("TextInput");
-        inputViewMuseField = new View(this);
+        inputViewMuseField = new EditText(this);
         inputViewMuseField.setFocusable(true);
         inputViewMuseField.setFocusableInTouchMode(true);
         inputViewMuseField.setClickable(false);
+        inputViewMuseField.setVisibility(View.INVISIBLE);
         inputViewMuseField.setContentDescription("MuseField IME probe input view");
         inputViewMuseField.setTag("MuseField");
         FrameLayout.LayoutParams imeParams = new FrameLayout.LayoutParams(1, 1);
