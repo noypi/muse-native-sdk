@@ -18,7 +18,15 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <map>
+#include <unordered_map>
+#include <utility>
+#include <vector>
 
+#include "muse/text/font_discovery.h"
+#include "muse/text/glyph_atlas.h"
+#include "muse/text/rich_buffer.h"
+#include "muse/text/shaper.h"
 #include "runtime/layout.h"
 #include "runtime/renderer.h"
 #include "runtime/tree.h"
@@ -233,6 +241,235 @@ bool SplitTopObjects(const char* arr, const char* end,
   return true;
 }
 
+// ---- Gallery shaping seam (FR-TEXT-016 / AC-TEXT-045/046) ----
+//
+// The gallery emission path shapes each label once through the engine text
+// stack and emits a retained ShapedText/Text cmd carrying the shared cache
+// handle (glyphRunId), never the row nodeId. Per the planner ruling on T5,
+// this seam must shape via shapeRunWithFallback over the T2
+// SystemFontEnumerator chain (with bundled last-resort fallback), cache the
+// run in the T3 GlyphAtlas keyed (font, Density::fontScale, scale, glyphId)
+// with T3 eviction semantics, and size with measureLine advances
+// (HarfBuzz-parity authority) — never a runtime-local byte-keyed map and
+// never TextWidth byte math. The interim scaffolding (exact-bytes map +
+// code-point*6px metric) is removed below; the one residual local map
+// (run-handle assignment keyed by the atlas key domain) remains only
+// because the T3 atlas stores per-glyph texels while DrawCmd needs a
+// uint32 run handle — see GalleryShaper.
+//
+// Flow per label: RichBuffer owns the emission text (plainText feeds the
+// shaper) -> shapeRunWithFallback resolves the T2 fallback chain and
+// shapes (variations where applicable) -> each shaped glyph's texel record
+// (advance from the shaped run) is published to the T3 atlas under
+// (face, kGalleryFontScale, glyphId); the atlas owns residency and LRU
+// eviction -> the run handle is assigned from the atlas key domain
+// (face id, scale bits, glyph-id sequence), so identical labels share one
+// cached run id AND identical measureLine bounds across rows/frames.
+// Fail-closed (RULE-RUNTIME-001): empty input, a shaping failure
+// (kInvalidInput, e.g. malformed UTF-8), or a kCacheFull atlas insert
+// yields run id 0 — the dangling sentinel the retained ShapedText path
+// rejects with UnknownPrimitive — and PresentGallery converts a 0 handle
+// on a non-empty label into a diagnostic (never a gallery bitmap).
+
+// Gallery text metrics in the engine stack. The gallery paints at the
+// kScale device factor; the atlas/fontScale key dimension carries that same
+// factor so distinct gallery font scales are distinct atlas keys (per the
+// T3 GlyphAtlas contract), and the shaping size tracks it through the
+// engine (advances scale in the shaper, not in gallery byte math).
+constexpr float kGalleryFontScale = 2.0f;  // == kScale below.
+constexpr float kGalleryTextSizePx = 16.0f;  // Engine reference size.
+constexpr float kGalleryMeasureBudgetPx = 100000.0f;
+
+// Bit pattern of the gallery atlas scale key (mirrors the T3 MakeKey
+// float-bits convention; MakeKey itself is atlas-private).
+std::uint32_t GalleryScaleBits(float scale) {
+  static_assert(sizeof(float) == sizeof(std::uint32_t),
+                "gallery atlas key needs 32-bit float bits");
+  std::uint32_t bits = 0;
+  std::memcpy(&bits, &scale, sizeof(bits));
+  return bits;
+}
+
+// Run-handle index over the atlas key domain: (face id, atlas scale bits,
+// shaped glyph-id sequence). Keyed by shape identity under the resolved
+// chain face — never by exact label bytes — so labels that shape
+// identically share one run; the per-glyph texels and LRU eviction live
+// in the T3 atlas itself. This map assigns uint32 handles only because
+// DrawCmd carries a uint32 glyphRunId while the atlas stores glyphs.
+struct GalleryRunKey {
+  std::uint64_t font_id = 0;
+  std::uint32_t scale_bits = 0;
+  std::vector<std::uint32_t> glyphs;
+  bool operator<(const GalleryRunKey& other) const {
+    if (font_id != other.font_id) return font_id < other.font_id;
+    if (scale_bits != other.scale_bits)
+      return scale_bits < other.scale_bits;
+    return glyphs < other.glyphs;
+  }
+};
+
+struct GalleryShaper {
+  muse::text::GlyphAtlas atlas;
+  std::map<GalleryRunKey, std::uint32_t> runs;
+  std::uint32_t next = 0x1000u;
+};
+
+GalleryShaper& GalleryShaperState() {
+  static GalleryShaper state;
+  return state;
+}
+
+// The shaping face for gallery labels: the T2 fallback chain terminus for
+// the gallery request (script-agnostic request, bundled last-resort
+// fallback). Resolved here for the atlas key; shapeRunWithFallback
+// resolves the same chain internally on the shaping leg, so the key face
+// and the shaping face agree.
+muse::text::FontHandle GalleryChainFace() {
+  muse::text::StatusOr<muse::text::FontHandle> chained =
+      muse::text::resolveFallbackChain(0, nullptr, nullptr);
+  if (chained.ok()) return *chained;
+  // kNoFaceAvailable analogue: the bundled terminus is always present, so
+  // this is belt-and-braces; callers still fail closed on a zero id.
+  return muse::text::SystemFontEnumerator().LastResortFace(0);
+}
+
+// Shape one label through the engine stack. Returns false on empty input,
+// malformed UTF-8 (kInvalidInput), or any engine failure: the caller must
+// fail closed (0 handle -> diagnostic, never a bitmap). Never throws.
+bool ShapeLabelThroughEngine(const std::string& label,
+                             muse::text::ShapedRun* run,
+                             muse::text::FontHandle* face) {
+  if (label.empty() || run == nullptr) return false;
+  try {
+    // RichBuffer owns the emission text; its plainText feeds the shaper.
+    muse::text::RichBuffer buffer;
+    buffer.insert(0, label);
+    const std::string text = buffer.plainText();
+    if (text.empty()) return false;
+    muse::text::TextStyle style;
+    style.size_px = kGalleryTextSizePx;
+    // Script-agnostic gallery request: no variations, no downloadable font,
+    // so the run shapes over the T2 SystemFontEnumerator chain ending at
+    // the bundled last-resort face. Only malformed UTF-8 is an error.
+    muse::text::FontRequest req;
+    muse::text::StatusOr<muse::text::ShapedRun> shaped =
+        muse::text::shapeRunWithFallback(
+            reinterpret_cast<const std::uint8_t*>(text.data()), text.size(),
+            style, req);
+    if (!shaped.ok() || shaped->glyph_ids.empty()) return false;
+    *run = *shaped;
+    if (face != nullptr) *face = GalleryChainFace();
+    return true;
+  } catch (...) {
+    return false;
+  }
+}
+
+// measureLine sizing for gallery layout: the width is the engine-measured
+// advance sum of the shaped run (HarfBuzz-parity authority), scaled through
+// the engine text size for the gallery device factor. Replaces TextWidth
+// byte math at every gallery layout call site (pill widths, centering).
+// Unshapable input measures 0; callers clamp to their minima.
+int MeasureGalleryLabelWidth(const std::string& label, int scale) {
+  if (label.empty()) return 0;
+  float size_px = kGalleryTextSizePx;
+  if (scale > 0) {
+    size_px = kGalleryTextSizePx * static_cast<float>(scale) /
+              kGalleryFontScale;
+  }
+  muse::text::ShapedRun run;
+  muse::text::FontHandle face;
+  try {
+    muse::text::RichBuffer buffer;
+    buffer.insert(0, label);
+    const std::string text = buffer.plainText();
+    if (text.empty()) return 0;
+    muse::text::TextStyle style;
+    style.size_px = size_px;
+    muse::text::FontRequest req;
+    muse::text::StatusOr<muse::text::ShapedRun> shaped =
+        muse::text::shapeRunWithFallback(
+            reinterpret_cast<const std::uint8_t*>(text.data()), text.size(),
+            style, req);
+    if (!shaped.ok()) return 0;
+    run = *shaped;
+  } catch (...) {
+    return 0;
+  }
+  const muse::text::MeasuredLine measured = muse::text::measureLine(
+      muse::text::ShapedRunView(run), kGalleryMeasureBudgetPx);
+  if (!(measured.width_px > 0.0f)) return 0;
+  return static_cast<int>(std::ceil(measured.width_px));
+}
+
+// ShapeGalleryLabel: label bytes -> shared nonzero glyph-run handle.
+//
+// The handle is assigned from the T3 atlas key domain (chain face,
+// fontScale, shaped glyph-id sequence): identical labels shape identically
+// and resolve to one cached run (atlas reuse across rows and frames);
+// distinct shapes never collide within the process. Each shaped glyph's
+// texel record (advance from the engine run) is published to the T3
+// GlyphAtlas under (font, Density::fontScale, scale, glyphId), so
+// residency and LRU eviction follow T3 bound semantics; a kCacheFull
+// insert fails closed. Empty input (the kNoFaceAvailable/kShapingFailed
+// analogue on this boundary) yields the dangling sentinel 0: the caller
+// emits a fail-closed diagnostic, never a gallery bitmap.
+std::uint32_t ShapeGalleryLabel(const std::string& label) {
+  if (label.empty()) return 0;
+  muse::text::ShapedRun run;
+  muse::text::FontHandle face;
+  if (!ShapeLabelThroughEngine(label, &run, &face)) return 0;
+  GalleryShaper& shaper = GalleryShaperState();
+  for (std::size_t i = 0; i < run.glyph_ids.size(); ++i) {
+    muse::text::TexelRecord texels;
+    texels.glyph_id = run.glyph_ids[i];
+    texels.advance_px =
+        i < run.advances.size() ? run.advances[i] : 0.0f;
+    if (shaper.atlas.insert(face, kGalleryFontScale, run.glyph_ids[i],
+                            texels) != muse::text::Status::kOk) {
+      return 0;  // Atlas bound breach past evict-and-retry: fail closed.
+    }
+  }
+  GalleryRunKey key;
+  key.font_id = face.id;
+  key.scale_bits = GalleryScaleBits(kGalleryFontScale);
+  key.glyphs = run.glyph_ids;
+  const auto it = shaper.runs.find(key);
+  if (it != shaper.runs.end()) return it->second;
+  std::uint32_t id = shaper.next;
+  ++shaper.next;
+  if (shaper.next == 0u) shaper.next = 0x1000u;  // Never hand out 0.
+  shaper.runs.emplace(std::move(key), id);
+  return id;
+}
+
+// Row-admission predicate: gallery labels start with a letter or digit.
+// ASCII fast path preserves the structural-lowerer filter (stray closers
+// such as "});" never become rows); non-ASCII lead bytes decode the first
+// UTF-8 sequence and admit valid CJK/emoji-first labels byte-exact.
+bool IsGalleryLabelStart(const std::string& value) {
+  if (value.empty()) return false;
+  unsigned char first = static_cast<unsigned char>(value[0]);
+  if ((first & 0x80u) == 0u) {
+    return (first >= 'A' && first <= 'Z') || (first >= 'a' && first <= 'z') ||
+           (first >= '0' && first <= '9');
+  }
+  std::size_t len = value.size();
+  if ((first & 0xE0u) == 0xC0u) {
+    return len >= 2 && (static_cast<unsigned char>(value[1]) & 0xC0u) == 0x80u;
+  }
+  if ((first & 0xF0u) == 0xE0u) {
+    return len >= 3 && (static_cast<unsigned char>(value[1]) & 0xC0u) == 0x80u &&
+           (static_cast<unsigned char>(value[2]) & 0xC0u) == 0x80u;
+  }
+  if ((first & 0xF8u) == 0xF0u) {
+    return len >= 4 && (static_cast<unsigned char>(value[1]) & 0xC0u) == 0x80u &&
+           (static_cast<unsigned char>(value[2]) & 0xC0u) == 0x80u &&
+           (static_cast<unsigned char>(value[3]) & 0xC0u) == 0x80u;
+  }
+  return false;  // Stray continuation byte: not a label start.
+}
+
 // ---- 5x7 bitmap font (ASCII subset, mixed case) ----
 
 struct Glyph {
@@ -355,6 +592,12 @@ constexpr std::uint32_t kFooterFg = RGBA(0xFF, 0xFF, 0xFF, 0xFF);
 constexpr std::uint32_t kErrorBg = RGBA(0xBA, 0x1A, 0x1A, 0xFF);
 
 // ---- Raster helpers ----
+//
+// The 5x7 bitmap text below survives solely as the fail-closed
+// diagnostic-screen path (RasterGalleryPage's empty-rows branch names the
+// failure in plain text via DrawText). No gallery page painter calls it:
+// gallery copy rides the retained ShapedText path (FR-TEXT-016 AC-TEXT-045,
+// "no bitmap fallback on gallery pages").
 
 void FillRect(std::uint32_t* px, int stride, int w, int h, int x, int y, int rw,
               int rh, std::uint32_t color) {
@@ -386,20 +629,6 @@ void DrawText(std::uint32_t* px, int stride, int w, int h, const char* s,
     }
     cx += 6 * scale;
   }
-}
-
-int TextWidth(const char* s, int scale) {
-  int n = 0;
-  for (const char* p = s; *p != '\0'; ++p) ++n;
-  if (n == 0) return 0;
-  return n * 6 * scale - scale;
-}
-
-void DrawTextCentered(std::uint32_t* px, int stride, int w, int h,
-                      const char* s, int cx, int y, int scale,
-                      std::uint32_t color) {
-  DrawText(px, stride, w, h, s, cx - TextWidth(s, scale) / 2, y, scale,
-           color);
 }
 
 // Src-over blend of a solid RGBA source over the buffer (for soft shadows;
@@ -623,14 +852,11 @@ std::vector<GalleryRow> ParseGalleryRows(const void* data, std::size_t len,
         std::string value;
         if (ParseJsonString(textVal, span.second, value) == nullptr) continue;
         // Structural lowerer leaks source lines (comments, code) as text;
-        // only literal gallery copy becomes rows. Gallery labels always
-        // start with a letter or digit; stray closers like "});" do not.
-        if (value.empty()) continue;
-        char first = value[0];
-        bool alnum = (first >= 'A' && first <= 'Z') ||
-                     (first >= 'a' && first <= 'z') ||
-                     (first >= '0' && first <= '9');
-        if (!alnum) continue;
+        // only literal gallery copy becomes rows. Gallery labels start
+        // with a letter or digit (IsGalleryLabelStart admits Unicode
+        // letters so CJK/emoji-first labels survive byte-exact); stray
+        // closers like "});" do not.
+        if (!IsGalleryLabelStart(value)) continue;
         if (value == "M3 Gallery dark") dark = true;
         if (value == "M3 Gallery light") dark = false;
         GalleryRow row;
@@ -869,15 +1095,11 @@ std::string ShortCaption(const GalleryRow& row) {
   return out;
 }
 
-void PaintCaption(std::uint32_t* px, int stride, int w, int h, int bx, int by,
-                  int bw, int bh, const std::string& caption) {
-  int maxChars = (bw - 32) / (6 * kScale);
-  if (maxChars < 4) maxChars = 4;
-  std::string c = caption;
-  if (static_cast<int>(c.size()) > maxChars) c.resize(maxChars);
-  DrawTextCentered(px, stride, w, h, c.c_str(), bx + bw / 2,
-                   by + bh - 14 - kScale * 7, kScale, kLightOnSurfaceVariant);
-}
+// Captions ride the retained ShapedText path (EmitCaptionCmd) since T5;
+// the CPU oracle no longer paints caption bitmaps. Kept as a no-op so
+// every painter's structure (and its geometry) is unchanged.
+void PaintCaption(std::uint32_t*, int, int, int, int, int, int, int,
+                  const std::string&) {}
 
 // One M3 component miniature inside its card. (bx,by,bw,bh) is the card
 // rect; the painter draws the card background plus the control.
@@ -897,7 +1119,7 @@ void PaintComponent(std::uint32_t* px, int stride, int w, int h, int bx,
     if (variant.empty()) variant = "filled";
     std::string label = ShortCaption(row);
     int pillH = 56;
-    int pillW = TextWidth(label.c_str(), kScale) + 72;
+    int pillW = MeasureGalleryLabelWidth(label, kScale) + 72;
     if (pillW > bw - 32) pillW = bw - 32;
     if (pillW < 120) pillW = 120;
     int x0 = cx - pillW / 2;
@@ -905,26 +1127,16 @@ void PaintComponent(std::uint32_t* px, int stride, int w, int h, int bx,
     if (variant == "filled") {
       FillRoundedRect(px, stride, w, h, x0, y0, pillW, pillH, 28,
                       kLightPrimary);
-      DrawTextCentered(px, stride, w, h, label.c_str(), cx, y0 + 21, kScale,
-                       kLightOnPrimary);
     } else if (variant == "tonal") {
       FillRoundedRect(px, stride, w, h, x0, y0, pillW, pillH, 28,
                       kLightSecondaryContainer);
-      DrawTextCentered(px, stride, w, h, label.c_str(), cx, y0 + 21, kScale,
-                       kLightOnPrimaryContainer);
     } else if (variant == "outlined") {
       StrokeRoundedRect(px, stride, w, h, x0, y0, pillW, pillH, 28, 2,
                         kLightPrimary, kCardBg);
-      DrawTextCentered(px, stride, w, h, label.c_str(), cx, y0 + 21, kScale,
-                       kLightPrimary);
     } else if (variant == "text") {
-      DrawTextCentered(px, stride, w, h, label.c_str(), cx, y0 + 21, kScale,
-                       kLightPrimary);
     } else {  // elevated
       ShadowRounded(px, stride, w, h, x0, y0, pillW, pillH, 28);
       FillRoundedRect(px, stride, w, h, x0, y0, pillW, pillH, 28, kWhite);
-      DrawTextCentered(px, stride, w, h, label.c_str(), cx, y0 + 21, kScale,
-                       kLightPrimary);
     }
     PaintCaption(px, stride, w, h, bx, by, bw, bh, "Button " + variant);
     return;
@@ -936,7 +1148,7 @@ void PaintComponent(std::uint32_t* px, int stride, int w, int h, int bx,
     std::string icon = PropValue(d, "icon");
     bool extended = (c == "ExtendedFab");
     int size = (c == "Fab") ? 72 : 56;
-    int pillW = extended ? TextWidth(label.c_str(), kScale) + 96 : size;
+    int pillW = extended ? MeasureGalleryLabelWidth(label, kScale) + 96 : size;
     if (pillW > bw - 32) pillW = bw - 32;
     int x0 = cx - pillW / 2;
     int y0 = by + (bh - 20 - size) / 2;
@@ -947,9 +1159,6 @@ void PaintComponent(std::uint32_t* px, int stride, int w, int h, int bx,
     if (extended) {
       FillRoundedRect(px, stride, w, h, x0, y0, pillW, size, size / 2, bg);
       FillCircle(px, stride, w, h, x0 + 34, y0 + size / 2, 9, dot);
-      DrawText(px, stride, w, h, label.c_str(), x0 + 52, y0 + size / 2 - 7,
-               kScale, dot == kLightOnPrimary ? kLightOnPrimary
-                                              : kLightOnPrimaryContainer);
     } else {
       if (c == "Fab") {
         FillRoundedRect(px, stride, w, h, x0, y0, size, size, 18, bg);
@@ -998,8 +1207,6 @@ void PaintComponent(std::uint32_t* px, int stride, int w, int h, int bx,
       StrokeRoundedRect(px, stride, w, h, x0, y0, cw, chh, 16, 2,
                         kLightOutlineVariant, kCardBg);
     }
-    DrawTextCentered(px, stride, w, h, variant.c_str(), cx,
-                     y0 + chh / 2 - 7, kScale, kLightOnSurfaceVariant);
     PaintCaption(px, stride, w, h, bx, by, bw, bh, "Card " + variant);
     return;
   }
@@ -1009,7 +1216,7 @@ void PaintComponent(std::uint32_t* px, int stride, int w, int h, int bx,
     std::string label = ShortCaption(row);
     bool selected = PropIs(d, "selected", "true");
     int pillH = 52;
-    int pillW = TextWidth(label.c_str(), kScale) + 88;
+    int pillW = MeasureGalleryLabelWidth(label, kScale) + 88;
     if (pillW > bw - 32) pillW = bw - 32;
     int x0 = cx - pillW / 2;
     int y0 = by + (bh - 20 - pillH) / 2;
@@ -1020,15 +1227,11 @@ void PaintComponent(std::uint32_t* px, int stride, int w, int h, int bx,
                kLightOnPrimaryContainer);
       DrawLine(px, stride, w, h, x0 + 27, y0 + 34, x0 + 38, y0 + 18, 4,
                kLightOnPrimaryContainer);
-      DrawText(px, stride, w, h, label.c_str(), x0 + 48, y0 + 19, kScale,
-               kLightOnPrimaryContainer);
     } else {
       StrokeRoundedRect(px, stride, w, h, x0, y0, pillW, pillH, 14, 2,
                         kLightOutlineVariant, kCardBg);
       FillCircle(px, stride, w, h, x0 + 30, y0 + pillH / 2, 8,
                  kLightOnSurfaceVariant);
-      DrawText(px, stride, w, h, label.c_str(), x0 + 46, y0 + 19, kScale,
-               kLightOnSurface);
     }
     PaintCaption(px, stride, w, h, bx, by, bw, bh, "Chip " + variant);
     return;
@@ -1059,15 +1262,11 @@ void PaintComponent(std::uint32_t* px, int stride, int w, int h, int bx,
         StrokeRoundedRect(px, stride, w, h, x0, ymid - s / 2, s, s, 7, 3,
                           kLightOutline, kCardBg);
       }
-      DrawText(px, stride, w, h, on ? "Checked" : "Unchecked", x0 + 44,
-               ymid - 7, kScale, kLightOnSurface);
     } else if (c == "Radio") {
       int x0 = cx - 90;
       RingCircle(px, stride, w, h, x0 + 15, ymid, 14, on ? 4 : 3,
                  on ? kLightPrimary : kLightOutline);
       if (on) FillCircle(px, stride, w, h, x0 + 15, ymid, 7, kLightPrimary);
-      DrawText(px, stride, w, h, on ? "Selected" : "Unselected", x0 + 44,
-               ymid - 7, kScale, kLightOnSurface);
     } else {
       int tw = 60;
       int th = 34;
@@ -1086,8 +1285,6 @@ void PaintComponent(std::uint32_t* px, int stride, int w, int h, int bx,
         FillCircle(px, stride, w, h, x0 + 18, ymid, 10,
                    kLightOnSurfaceVariant);
       }
-      DrawText(px, stride, w, h, on ? "On" : "Off", x0 + tw + 16, ymid - 7,
-               kScale, kLightOnSurface);
     }
     PaintCaption(px, stride, w, h, bx, by, bw, bh, name);
     return;
@@ -1133,68 +1330,32 @@ void PaintComponent(std::uint32_t* px, int stride, int w, int h, int bx,
   }
 
   if (c == "Badge") {
-    std::string label = PropValue(d, "label");
-    if (label.empty()) label = "3";
     int ymid = by + (bh - 20) / 2;
     FillCircle(px, stride, w, h, cx - 40, ymid, 17, kLightError);
-    DrawTextCentered(px, stride, w, h, label.c_str(), cx - 40, ymid - 7,
-                     kScale, kLightOnPrimary);
-    DrawText(px, stride, w, h, "Badge", cx - 8, ymid - 7, kScale,
-             kLightOnSurface);
     PaintCaption(px, stride, w, h, bx, by, bw, bh, "Badge");
     return;
   }
 
   if (c == "ListItem") {
-    std::string headline = PropValue(d, "headline");
-    std::string supporting = PropValue(d, "supporting");
-    if (headline.empty()) headline = ShortCaption(row);
     int y0 = by + (bh - 20) / 2 - 16;
     FillCircle(px, stride, w, h, bx + 64, y0 + 16, 20,
                kLightSecondaryContainer);
-    if (!headline.empty()) {
-      DrawText(px, stride, w, h, headline.c_str(), bx + 100, y0 - 4, kScale,
-               kLightOnSurface);
-    }
-    if (!supporting.empty()) {
-      std::string s = supporting;
-      int maxChars = (bw - 140) / (6 * kScale);
-      if (static_cast<int>(s.size()) > maxChars) s.resize(maxChars);
-      DrawText(px, stride, w, h, s.c_str(), bx + 100, y0 + 18, kScale,
-               kLightOnSurfaceVariant);
-    }
     PaintCaption(px, stride, w, h, bx, by, bw, bh, "ListItem");
     return;
   }
 
   if (c == "Avatar") {
-    std::string label = PropValue(d, "label");
-    if (label.empty()) label = ShortCaption(row);
-    std::string initials;
-    for (char ch : label) {
-      if ((ch >= 'A' && ch <= 'Z') && initials.size() < 2) initials += ch;
-    }
-    if (initials.empty() && !label.empty()) initials = label.substr(0, 1);
     int ymid = by + (bh - 20) / 2;
     FillCircle(px, stride, w, h, cx - 60, ymid, 30, kLightPrimary);
-    DrawTextCentered(px, stride, w, h, initials.c_str(), cx - 60, ymid - 7,
-                     kScale, kLightOnPrimary);
-    DrawText(px, stride, w, h, label.c_str(), cx - 12, ymid - 7, kScale,
-             kLightOnSurface);
     PaintCaption(px, stride, w, h, bx, by, bw, bh, "Avatar");
     return;
   }
 
   if (c == "Icon" || c == "Image") {
-    std::string name = PropValue(d, c == "Icon" ? "name" : "source");
-    if (name.empty()) name = ShortCaption(row);
     int ymid = by + (bh - 20) / 2;
     if (c == "Icon") {
       FillCircle(px, stride, w, h, cx - 60, ymid, 26,
                  kLightSecondaryContainer);
-      std::string initial = name.empty() ? "?" : name.substr(0, 1);
-      DrawTextCentered(px, stride, w, h, initial.c_str(), cx - 60, ymid - 7,
-                       kScale, kLightOnPrimaryContainer);
     } else {
       int iw = 220;
       int ih = bh - 64;
@@ -1207,11 +1368,6 @@ void PaintComponent(std::uint32_t* px, int stride, int w, int h, int bx,
       DrawLine(px, stride, w, h, cx - 60 - 10, ymid - 6, cx - 60 + 30,
                ymid + ih / 2 - 24, 5, kLightOnSurfaceVariant);
     }
-    std::string cap = c + " " + name;
-    int maxChars = (bw - 32) / (6 * kScale);
-    if (static_cast<int>(cap.size()) > maxChars) cap.resize(maxChars);
-    DrawText(px, stride, w, h, cap.c_str(), cx - 20, ymid - 7, kScale,
-             kLightOnSurface);
     PaintCaption(px, stride, w, h, bx, by, bw, bh, c);
     return;
   }
@@ -1225,9 +1381,6 @@ void PaintComponent(std::uint32_t* px, int stride, int w, int h, int bx,
   }
 
   if (c == "TextFieldEditCore" || c == "TextInput" || c == "SearchBar") {
-    std::string hint = PropValue(d, "placeholder");
-    if (hint.empty()) hint = PropValue(d, "value");
-    if (hint.empty()) hint = "Search";
     bool pill = (c == "SearchBar");
     int fw = bw - 64;
     int fh = pill ? 68 : 60;
@@ -1243,25 +1396,15 @@ void PaintComponent(std::uint32_t* px, int stride, int w, int h, int bx,
     }
     FillCircle(px, stride, w, h, x0 + 34, y0 + fh / 2, 9,
                kLightOnSurfaceVariant);
-    std::string t = hint;
-    int maxChars = (fw - 100) / (6 * kScale);
-    if (static_cast<int>(t.size()) > maxChars) t.resize(maxChars);
-    DrawText(px, stride, w, h, t.c_str(), x0 + 52, y0 + fh / 2 - 7, kScale,
-             kLightOnSurfaceVariant);
     PaintCaption(px, stride, w, h, bx, by, bw, bh, c);
     return;
   }
 
   if (c == "TopAppBar") {
     std::string size = PropValue(d, "size");
-    std::string title = PropValue(d, "title");
-    if (title.empty()) title = "m3-gallery";
     int barH = (size == "large") ? bh - 48 : (size == "medium" ? 150 : 110);
     int y0 = by + 10;
     FillRoundedRect(px, stride, w, h, bx + 8, y0, bw - 16, barH, 20, kWhite);
-    int tscale = (size == "small") ? kScale : 3;
-    DrawText(px, stride, w, h, title.c_str(), bx + 40, y0 + 22, tscale,
-             kLightOnSurface);
     FillCircle(px, stride, w, h, bx + bw - 96, y0 + 34, 9,
                kLightOnSurfaceVariant);
     FillCircle(px, stride, w, h, bx + bw - 56, y0 + 34, 9,
@@ -1325,8 +1468,6 @@ void PaintComponent(std::uint32_t* px, int stride, int w, int h, int bx,
                    s == 0 ? kLightOnPrimaryContainer
                           : kLightOnSurfaceVariant);
       }
-      DrawText(px, stride, w, h, "Rail", x0 + rw + 20, by + bh / 2 - 7,
-               kScale, kLightOnSurface);
     } else if (c == "NavigationDrawer") {
       int dw = 300;
       if (dw > bw - 32) dw = bw - 32;
@@ -1343,21 +1484,14 @@ void PaintComponent(std::uint32_t* px, int stride, int w, int h, int bx,
         FillCircle(px, stride, w, h, x0 + 40, yy + 17, 8,
                    s == 0 ? kLightOnPrimaryContainer
                           : kLightOnSurfaceVariant);
-        DrawText(px, stride, w, h, s == 0 ? "Home" : "Item", x0 + 60, yy + 10,
-                 kScale,
-                 s == 0 ? kLightOnPrimaryContainer : kLightOnSurface);
       }
     } else {
-      std::string title = PropValue(d, "title");
-      if (title.empty()) title = ShortCaption(row);
       int barH = 76;
       int y0 = by + (bh - 20 - barH) / 2;
       FillRoundedRect(px, stride, w, h, bx + 8, y0, bw - 16, barH, 20,
                       kWhite);
       FillCircle(px, stride, w, h, bx + 56, y0 + barH / 2, 9,
                  kLightOnSurfaceVariant);
-      DrawText(px, stride, w, h, title.c_str(), bx + 76, y0 + barH / 2 - 7,
-               kScale, kLightOnSurface);
       FillCircle(px, stride, w, h, bx + bw - 72, y0 - 6, 24,
                  kLightSecondaryContainer);
       DrawLine(px, stride, w, h, bx + bw - 80, y0 - 6, bx + bw - 64, y0 - 6,
@@ -1372,8 +1506,6 @@ void PaintComponent(std::uint32_t* px, int stride, int w, int h, int bx,
   if (c == "Dialog" || c == "Menu" || c == "BottomSheet" || c == "SnackbarHost" ||
       c == "Tooltip" || c == "Carousel") {
     if (c == "Dialog") {
-      std::string title = PropValue(d, "title");
-      if (title.empty()) title = "Dialog";
       int dw = 380;
       if (dw > bw - 32) dw = bw - 32;
       int dhh = bh - 60;
@@ -1381,14 +1513,8 @@ void PaintComponent(std::uint32_t* px, int stride, int w, int h, int bx,
       int y0 = by + 8;
       ShadowRounded(px, stride, w, h, x0, y0, dw, dhh, 28);
       FillRoundedRect(px, stride, w, h, x0, y0, dw, dhh, 28, kWhite);
-      DrawText(px, stride, w, h, title.c_str(), x0 + 28, y0 + 22, kScale,
-               kLightOnSurface);
       DrawLine(px, stride, w, h, x0 + 28, y0 + 56, x0 + dw - 28, y0 + 56, 2,
                kLightOutlineVariant);
-      DrawText(px, stride, w, h, "Cancel", x0 + dw - 170, y0 + dhh - 34,
-               kScale, kLightPrimary);
-      DrawText(px, stride, w, h, "OK", x0 + dw - 70, y0 + dhh - 34, kScale,
-               kLightPrimary);
     } else if (c == "Menu") {
       int dw = 260;
       int dhh = bh - 60;
@@ -1396,11 +1522,6 @@ void PaintComponent(std::uint32_t* px, int stride, int w, int h, int bx,
       int y0 = by + 8;
       ShadowRounded(px, stride, w, h, x0, y0, dw, dhh, 16);
       FillRoundedRect(px, stride, w, h, x0, y0, dw, dhh, 16, kWhite);
-      const char* items[3] = {"Edit", "Share", "Delete"};
-      for (int i = 0; i < 3; ++i) {
-        DrawText(px, stride, w, h, items[i], x0 + 24, y0 + 20 + i * 34,
-                 kScale, kLightOnSurface);
-      }
     } else if (c == "BottomSheet") {
       int sh = 110;
       int y0 = by + bh - 20 - sh;
@@ -1408,33 +1529,21 @@ void PaintComponent(std::uint32_t* px, int stride, int w, int h, int bx,
                       kWhite);
       FillRoundedRect(px, stride, w, h, cx - 40, y0 + 12, 80, 8, 4,
                       kLightOutlineVariant);
-      DrawTextCentered(px, stride, w, h, "Bottom sheet", cx, y0 + 36, kScale,
-                       kLightOnSurface);
     } else if (c == "SnackbarHost") {
-      std::string msg = PropValue(d, "message");
-      if (msg.empty()) msg = ShortCaption(row);
       int barH = 64;
       int y0 = by + (bh - 20 - barH) / 2;
       FillRoundedRect(px, stride, w, h, bx + 24, y0, bw - 48, barH, 12,
                       kLightInverseSurface);
-      std::string m = msg;
-      int maxChars = (bw - 140) / (6 * kScale);
-      if (static_cast<int>(m.size()) > maxChars) m.resize(maxChars);
-      DrawText(px, stride, w, h, m.c_str(), bx + 48, y0 + 25, kScale, kWhite);
-      DrawText(px, stride, w, h, "Undo", bx + bw - 110, y0 + 25, kScale,
-               kLightSecondaryContainer);
     } else if (c == "Tooltip") {
       std::string text = PropValue(d, "text");
       if (text.empty()) text = ShortCaption(row);
-      int tw = TextWidth(text.c_str(), kScale) + 48;
+      int tw = MeasureGalleryLabelWidth(text, kScale) + 48;
       if (tw > bw - 32) tw = bw - 32;
       int th = 52;
       int x0 = cx - tw / 2;
       int y0 = by + (bh - 20 - th) / 2;
       FillRoundedRect(px, stride, w, h, x0, y0, tw, th, 10,
                       kLightInverseSurface);
-      DrawTextCentered(px, stride, w, h, text.c_str(), cx, y0 + 19, kScale,
-                       kWhite);
     } else {  // Carousel
       int cw = bw - 64;
       int chh = bh - 76;
@@ -1456,9 +1565,6 @@ void PaintComponent(std::uint32_t* px, int stride, int w, int h, int bx,
   // Fallback: tonal card with the component name — never a blank band.
   FillRoundedRect(px, stride, w, h, bx + 8, by + 8, bw - 16, bh - 44, 18,
                   kLightSecondaryContainer);
-  std::string name = c.empty() ? ShortCaption(row) : c;
-  DrawTextCentered(px, stride, w, h, name.c_str(), cx, by + (bh - 44) / 2,
-                   kScale, kLightOnPrimaryContainer);
   PaintCaption(px, stride, w, h, bx, by, bw, bh, ShortCaption(row));
 }
 
@@ -1466,20 +1572,10 @@ void PaintComponent(std::uint32_t* px, int stride, int w, int h, int bx,
 void PaintTextRow(std::uint32_t* px, int stride, int w, int h, int bx, int by,
                   int bw, int bh, const GalleryRow& row) {
   std::uint32_t bg = row.dark ? kDarkSurface : kLightSurface;
-  std::uint32_t fg = row.dark ? kDarkOnSurface : kLightOnSurface;
   if (row.header) {
     bg = row.dark ? kDarkPrimary : kLightPrimary;
-    fg = row.dark ? kDarkOnPrimary : kLightOnPrimary;
   }
   FillRoundedRect(px, stride, w, h, bx, by, bw, bh, 18, bg);
-  std::string label = row.label;
-  int maxChars = (bw - 48) / (6 * kScale);
-  if (maxChars < 8) maxChars = 8;
-  if (static_cast<int>(label.size()) > maxChars) {
-    label.resize(static_cast<std::size_t>(maxChars));
-  }
-  DrawText(px, stride, w, h, label.c_str(), bx + 24, by + bh / 2 - 7, kScale,
-           fg);
 }
 
 int RasterGalleryPage(const std::vector<GalleryRow>& rows, int page,
@@ -1572,10 +1668,6 @@ int RasterGalleryPage(const std::vector<GalleryRow>& rows, int page,
     // Title bar.
     FillRect(pixels, stridePx, width, height, 0, 0, width, kHeaderH,
              kLightPrimary);
-    char title[64];
-    std::snprintf(title, sizeof(title), "M3 GALLERY %d/%d", page + 1, pages);
-    DrawText(pixels, stridePx, width, height, title, kPad, 28, 3,
-             kLightOnPrimary);
 
     for (int i = 0; i < count; ++i) {
       const GalleryRow& row = rows[static_cast<std::size_t>(start + i)];
@@ -1595,11 +1687,6 @@ int RasterGalleryPage(const std::vector<GalleryRow>& rows, int page,
     // Footer with paging hint.
     FillRect(pixels, stridePx, width, height, 0, height - kFooterH, width,
              kFooterH, kFooterBg);
-    char footer[96];
-    std::snprintf(footer, sizeof(footer), "PAGE %d OF %d - TAP FOR NEXT",
-                  page + 1, pages);
-    DrawText(pixels, stridePx, width, height, footer, kPad,
-             height - kFooterH + 18, kScale, kFooterFg);
     return count;
   } catch (...) {
     if (error != nullptr) *error = "raster failed (exception)";
@@ -1650,9 +1737,11 @@ PrimitiveKind FamilyKind(const std::string& comp) {
 }
 
 // One accent content cmd for a component row: centered control rect with
-// theme payload colors. nodeId (== rowIndex + 1, never the 0 sentinel) is
-// the row key golden tooling uses to resolve label strings.
-void EmitFamilyCmd(const GalleryRow& /*row*/, PrimitiveKind kind, int bx,
+// theme payload payload colors. nodeId (== rowIndex + 1, never the 0
+// sentinel) is the row key golden tooling uses to resolve label strings;
+// ShapedText payloads carry the ShapeGalleryLabel cache handle for the row
+// caption so identical labels share one atlas run across rows/frames.
+void EmitFamilyCmd(const GalleryRow& row, PrimitiveKind kind, int bx,
                    int by, int bw, int bh, std::uint32_t node,
                    std::vector<DrawCmd>& out) {
   int cx = bx + bw / 2;
@@ -1724,24 +1813,36 @@ void EmitFamilyCmd(const GalleryRow& /*row*/, PrimitiveKind kind, int bx,
       cmd.kind = PrimitiveKind::ShapedText;
       cmd.bounds = {static_cast<float>(bx + 40), static_cast<float>(y0 + 4),
                     static_cast<float>(bw - 80), 28.0f};
-      cmd.payload.glyphRunId = node;
+      // Real shaped-run handle from the engine-stack gallery shaping cache
+      // (shared across identical labels via the T3 atlas key domain),
+      // never the row nodeId. Empty captions yield the dangling
+      // sentinel 0 and fail closed downstream.
+      cmd.payload.glyphRunId = ShapeGalleryLabel(ShortCaption(row));
       cmd.payload.textColor = kLightOnSurface;
       break;
   }
   out.push_back(cmd);
 }
 
-// Caption strip cmd shared by component and text rows (golden tooling
-// resolves ShortCaption(row) via nodeId and paints it with DrawText).
+// Caption strip cmd shared by component and text rows. The payload carries
+// the engine-stack ShapeGalleryLabel cache handle for the caption (the T3
+// atlas key domain resolves identical labels to one shared run id); sizing
+// rides measureLine advances via MeasureGalleryLabelWidth, clamped to the
+// strip so identical labels share identical non-degenerate bounds.
 void EmitCaptionCmd(int bx, int by, int bw, int bh, std::uint32_t node,
-                    std::vector<DrawCmd>& out) {
+                    const std::string& label, std::vector<DrawCmd>& out) {
   DrawCmd cmd;
   cmd.kind = PrimitiveKind::Text;
+  int avail = bw - 32;
+  if (avail < 1) avail = 1;
+  int wpx = MeasureGalleryLabelWidth(label, kScale) + 16;
+  if (wpx > avail) wpx = avail;
+  if (wpx < 1) wpx = 1;
   cmd.bounds = {static_cast<float>(bx + 16),
                 static_cast<float>(by + bh - 14 - kScale * 7),
-                static_cast<float>(bw - 32), 14.0f};
+                static_cast<float>(wpx), 14.0f};
   cmd.nodeId = node;
-  cmd.payload.glyphRunId = node;
+  cmd.payload.glyphRunId = ShapeGalleryLabel(label);
   cmd.payload.textColor = kLightOnSurfaceVariant;
   out.push_back(cmd);
 }
@@ -1766,12 +1867,11 @@ void EmitComponentRowCmds(const GalleryRow& row, int bx, int by, int bw,
   card.nodeId = node;
   out.push_back(card);
   EmitFamilyCmd(row, FamilyKind(row.comp), bx, by, bw, bh, node, out);
-  EmitCaptionCmd(bx, by, bw, bh, node, out);
+  EmitCaptionCmd(bx, by, bw, bh, node, ShortCaption(row), out);
 }
 
 void EmitTextRowCmds(const GalleryRow& row, int bx, int by, int bw, int bh,
                      std::uint32_t node, std::vector<DrawCmd>& out) {
-  (void)row;
   DrawCmd band;
   band.kind = PrimitiveKind::RoundedRect;
   band.bounds = {static_cast<float>(bx), static_cast<float>(by),
@@ -1779,7 +1879,7 @@ void EmitTextRowCmds(const GalleryRow& row, int bx, int by, int bw, int bh,
   band.radius = 18.0f;
   band.nodeId = node;
   out.push_back(band);
-  EmitCaptionCmd(bx, by, bw, bh, node, out);
+  EmitCaptionCmd(bx, by, bw, bh, node, row.label, out);
 }
 
 bool PresentGallery(const void* mui1Data, std::size_t len, Renderer& renderer,
@@ -1795,6 +1895,22 @@ bool PresentGallery(const void* mui1Data, std::size_t len, Renderer& renderer,
                      : parseError;
       }
       return false;
+    }
+    // Fail-closed shaping gate (RULE-RUNTIME-001 / FR-TEXT-016): every
+    // non-empty label must resolve to a nonzero engine-stack run handle
+    // before any cmd is emitted. A 0 handle here is the
+    // kNoFaceAvailable/kShapingFailed analogue (malformed UTF-8 the parser
+    // passed through raw, or an atlas bound breach): report a diagnostic
+    // and record nothing, never a gallery bitmap.
+    for (const GalleryRow& row : rows) {
+      const std::string& label =
+          row.comp.empty() ? row.label : ShortCaption(row);
+      if (!label.empty() && ShapeGalleryLabel(label) == 0) {
+        if (error != nullptr) {
+          *error = "gallery label shaping failed (fail-closed: no bitmap)";
+        }
+        return false;
+      }
     }
     // Page packing mirrors RasterGalleryPage (same RowHeight/PageStarts
     // metrics); each page lands at pageIndex * kPresentH in the virtual

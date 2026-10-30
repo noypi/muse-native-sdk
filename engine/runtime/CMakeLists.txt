@@ -39,6 +39,32 @@ target_include_directories(runtime PUBLIC include)
 target_include_directories(runtime PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../input/include)
 target_compile_options(runtime PRIVATE -Wall -Wextra -Wpedantic)
 
+# BUG-M3-FIDELITY-005 T5: gallery emission shapes through the engine text
+# stack (shapeRunWithFallback over the T2 chain, RichBuffer-owned text, T3
+# atlas, measureLine sizing), so the text TUs gallery_present.cpp consumes
+# compile into the static runtime (engine/text itself is untouched —
+# consumed, never modified).
+target_include_directories(runtime PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../text/include)
+target_sources(runtime PRIVATE
+  ../text/src/shaper.cpp
+  ../text/src/layout_cache.cpp
+  ../text/src/font_discovery.cpp
+  ../text/src/font_discovery_android.cpp
+  ../text/src/glyph_atlas.cpp
+  ../text/src/rich_buffer.cpp
+)
+
+# BUG-M3-FIDELITY-005 T6: Swapchain rasterization of ShapedText runs consumes
+# the slug_msdf placement + tile_raster CPU mirror directly (consume-only:
+# engine/graphics/vector stays untouched — compiled in, like engine/input).
+# The slug_msdf.cc TU self-includes as "engine/graphics/vector/...", so the
+# repo root rides the private include path.
+target_sources(runtime PRIVATE
+  ../graphics/vector/slug_msdf.cc
+  ../graphics/vector/tile_raster.cc
+)
+target_include_directories(runtime PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../..)
+
 # BUG-M3-FIDELITY-007 T5: the valid-env touch dispatch body in jni_bridge.cpp
 # drives ResolveTapTarget/ClaimTap/FireTapHandler (input_chain.cpp) over the
 # consume-only engine/input units, so their TUs compile into the static
@@ -96,6 +122,14 @@ if(DEFINED ANDROID_ABI AND NOT TARGET Runtime)
     src/input_chain.cpp
     src/gallery_present.cpp
     src/presenter.cpp
+    ../graphics/vector/slug_msdf.cc
+    ../text/src/shaper.cpp
+    ../text/src/layout_cache.cpp
+    ../text/src/font_discovery.cpp
+    ../text/src/font_discovery_android.cpp
+    ../text/src/glyph_atlas.cpp
+    ../text/src/rich_buffer.cpp
+    ../graphics/vector/tile_raster.cc
     ${MUSE_INPUT_SOURCES}
     ../graphics/pacing/frame_rate.cc
     ../graphics/pacing/render_ahead.cc
@@ -108,6 +142,7 @@ if(DEFINED ANDROID_ABI AND NOT TARGET Runtime)
   )
   target_include_directories(Runtime PUBLIC include)
   target_include_directories(Runtime PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../input/include)
+  target_include_directories(Runtime PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../text/include)
   # T4 pacing link fix: frame_rate.cc/render_ahead.cc self-include as
   # "engine/graphics/pacing/...", so the repo root must be on the include
   # path (mirrors the T4 pinning test's `-I .`).
@@ -336,6 +371,19 @@ add_executable(gallery_text_decode_test tests/gallery_text_decode_test.cpp)
 target_link_libraries(gallery_text_decode_test PRIVATE runtime)
 target_compile_options(gallery_text_decode_test PRIVATE -Wall -Wextra -Wpedantic)
 add_test(NAME gallery_text_decode_test COMMAND gallery_text_decode_test)
+
+# BUG-M3-FIDELITY-005 T5: gallery emission wiring (shape -> cache -> real
+# ShapedText{glyphRunId}, measureLine sizing, UTF-8 row admission).
+add_executable(gallery_text_emission_test tests/gallery_text_emission_test.cpp)
+target_link_libraries(gallery_text_emission_test PRIVATE runtime)
+target_compile_options(gallery_text_emission_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME gallery_text_emission_test COMMAND gallery_text_emission_test)
+
+# BUG-M3-FIDELITY-005 T6: Swapchain rasterization of ShapedText runs.
+add_executable(gallery_text_raster_test tests/gallery_text_raster_test.cpp)
+target_link_libraries(gallery_text_raster_test PRIVATE runtime)
+target_compile_options(gallery_text_raster_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME gallery_text_raster_test COMMAND gallery_text_raster_test)
 
 # BUG-M3-FIDELITY-007 batch 2: JNI touch-entry shape (T3) + native
 # hit-test/arena wiring (T4). The input consume-lib compiles exactly the

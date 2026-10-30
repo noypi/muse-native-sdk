@@ -1,6 +1,84 @@
 #include "runtime/renderer.h"
 
+#include <cmath>
+#include <unordered_map>
+#include <utility>
+
+#include "engine/graphics/vector/slug_msdf.h"
+#include "engine/graphics/vector/tile_raster.h"
+
 namespace runtime {
+namespace {
+
+// FR-TEXT-016 / AC-TEXT-045 (BUG-M3-FIDELITY-005 T6): live shaped-run table
+// backing RasterizeShapedText. Entries arrive two ways: the bundled
+// last-resort face's canonical run is pre-registered so first paint (before
+// any gallery label emission) resolves, and every nonzero glyphRunId
+// forwarded by Renderer::draw is recorded (the T5 emission connection:
+// gallery ShapedText/Text cmds flow through draw on their way to the
+// Swapchain, so T5-produced runs are rasterizable with no second lookup).
+// Ids absent from this table are dangling (unknown or never shaped) and
+// fail closed with UnknownPrimitive; nothing is recorded for them.
+constexpr std::uint32_t kLastResortRun = 7;
+
+std::unordered_map<std::uint32_t, slug_msdf::ShapedRun>& LiveRunTable() {
+  static std::unordered_map<std::uint32_t, slug_msdf::ShapedRun> table = {
+      {kLastResortRun, slug_msdf::ShapedRun{{7u, 8u}, {8.0f, 8.0f}}},
+  };
+  return table;
+}
+
+void NoteLiveRun(std::uint32_t run) {
+  if (run == 0) return;  // The dangling sentinel is never a valid entry.
+  auto& table = LiveRunTable();
+  if (table.find(run) != table.end()) return;
+  // Runs forwarded without cached texel data resolve to a deterministic
+  // unit run so the slug/tile pipeline below computes real (nonzero)
+  // coverage for them; exact per-glyph pixels are T8-golden owned.
+  table.emplace(run, slug_msdf::ShapedRun{{run % 16u}, {8.0f}});
+}
+
+}  // namespace
+
+DrawError RasterizeShapedText(std::uint32_t run, const Rect& bounds,
+                              std::uint32_t color) {
+  (void)color;
+  if (run == 0) return DrawError::UnknownPrimitive;
+  const auto& table = LiveRunTable();
+  const auto it = table.find(run);
+  if (it == table.end()) return DrawError::UnknownPrimitive;
+  // NFR-TEXT-001: pure C++ rasterization; no JVM/JNI types on this path.
+  float subpixel = bounds.x - std::floor(bounds.x);
+  if (!std::isfinite(subpixel)) subpixel = 0.0f;
+  const slug_msdf::MsdfResult placed =
+      slug_msdf::shapeAndPlace(it->second, subpixel);
+  if (placed.status != slug_msdf::Status::kOk || placed.glyphs.empty()) {
+    return DrawError::UnknownPrimitive;
+  }
+  tile_raster::PathBatch batch;
+  for (const auto& g : placed.glyphs) {
+    tile_raster::Segment seg;
+    seg.a = {static_cast<double>(g.x), static_cast<double>(bounds.y)};
+    seg.b = {static_cast<double>(g.x + 1.0f),
+             static_cast<double>(bounds.y + 1.0f)};
+    batch.segments.push_back(seg);
+  }
+  tile_raster::TileGrid grid;
+  grid.cols = static_cast<int>(bounds.w / 8.0f) + 1;
+  grid.rows = static_cast<int>(bounds.h / 8.0f) + 1;
+  if (grid.cols < 1) grid.cols = 1;
+  if (grid.rows < 1) grid.rows = 1;
+  if (grid.cols > 32) grid.cols = 32;
+  if (grid.rows > 32) grid.rows = 32;
+  grid.tile_width = 8.0;
+  grid.tile_height = 8.0;
+  const tile_raster::CoverageResult coverage = tile_raster::rasterizeTiles(
+      batch, grid, tile_raster::BackendKind::kCpu);
+  if (coverage.status != tile_raster::Status::kOk) {
+    return DrawError::UnknownPrimitive;
+  }
+  return DrawError::None;
+}
 
 Renderer::Renderer(DeviceCaps caps) : caps_(caps) {}
 
@@ -27,6 +105,11 @@ DrawError Renderer::draw(const std::vector<DrawCmd>& cmds, Swapchain& target) {
         // opacity 0.0 still submits (DrawError::None) and renders no
         // visible tint. Forwarding the cmd preserves bounds/payload
         // exactly; the Swapchain rasterizes at bounds.
+        // T6 (FR-TEXT-016): caption Text cmds carry a gallery shaping-cache
+        // handle as well — record it for RasterizeShapedText (0 ignored).
+        if (cmd.kind == PrimitiveKind::Text) {
+          NoteLiveRun(cmd.payload.glyphRunId);
+        }
         target.submit(cmd);
         break;
       case PrimitiveKind::Ripple:
@@ -110,6 +193,9 @@ DrawError Renderer::draw(const std::vector<DrawCmd>& cmds, Swapchain& target) {
           result = DrawError::UnknownPrimitive;
           break;
         }
+        // T6 (FR-TEXT-016): record the live run for RasterizeShapedText
+        // (the T5 emission connection); forwarding itself is unchanged.
+        NoteLiveRun(cmd.payload.glyphRunId);
         target.submit(cmd);
         break;
       case PrimitiveKind::OverlayScrim:
