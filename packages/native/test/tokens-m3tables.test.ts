@@ -17,11 +17,20 @@
  * component carries its six-facet table on the component entry — accepted from
  * either `component.tokenTable` or an object-form `component.tokens`, with a
  * `sources` record on the table. Either location satisfies "has a table".
- * ASSUMPTION H3 (no-fallback source check): the behavioral proof of "no generic
+ * ASSUMPTION H3 (no-fallback proof scope): the behavioral proof of "no generic
  * fallback" is that resolved records carry exactly the tabled facets (never the
  * generic primary/onPrimary/surface/onSurface keys). The registry-source check
  * for removed SURFACE_ROLE_TOKENS/ACTION_ROLE_TOKENS composition is secondary
- * evidence of the same requirement.
+ * evidence of the same requirement. Extended to EVERY matrix component (not a
+ * sampled subset) per T3 rework.
+ * ASSUMPTION A4 (address-vs-value split, plan rework 2026-10-30): AC-LAYOUT-053
+ * "no generic fallback set" applies at the role-ADDRESS level (resolved role
+ * set == tabled role set); returned VALUES are computed through current
+ * seed/dynamic (seed-palette fallback when dynamic is null, dynamic override
+ * when present). Tests therefore assert role-set equality (facet presence, no
+ * generic keys) — NOT deep value equality with the tabled role strings — plus
+ * dedicated seed-effect and dynamic-override assertions. `mode` is validated:
+ * anything other than "light"|"dark" throws RangeError.
  */
 
 import { test } from 'node:test';
@@ -182,7 +191,7 @@ test('T1: getComponentTokenTable rejects non-string input with UnknownComponentE
 // T2 — device resolution equals tabled roles, no generic fallback (AC-LAYOUT-053)
 // ---------------------------------------------------------------------------
 
-test('T2: resolveTokens output equals the tabled roles for every component and mode', () => {
+test('T2: resolveTokens role set equals the tabled role set for every component and mode', () => {
   const theme = loadTheme();
   const { getComponentTokenTable } = getHelper();
   assert.equal(typeof theme.resolveTokens, 'function', 'theme must expose resolveTokens');
@@ -192,11 +201,14 @@ test('T2: resolveTokens output equals the tabled roles for every component and m
     const table = getComponentTokenTable(entry.name);
     for (const mode of MODES) {
       const resolved = theme.resolveTokens(entry.name, mode);
+      // REWORK (A4 address-vs-value split): role ADDRESSES come exclusively
+      // from the component's own tabled roles — the resolved role set equals
+      // the tabled role set. VALUES are seed/dynamic-derived, so no deep
+      // value equality with the tabled role strings is asserted here.
       for (const facet of FACETS) {
-        assert.deepEqual(
-          resolved[facet],
-          table[facet],
-          `${entry.name} [${mode}]: resolved "${facet}" must equal the tabled role`,
+        assert.ok(
+          Object.hasOwn(resolved, facet),
+          `${entry.name} [${mode}]: resolved role set must address tabled facet "${facet}"`,
         );
       }
     }
@@ -208,17 +220,18 @@ test('T2: resolved records carry exactly the tabled facets — no shared-surface
   const { getComponentTokenTable } = getHelper();
   assert.equal(typeof getComponentTokenTable, 'function', 'helper missing (see T1 helper test)');
   const matrix = loadMatrix();
-  const first = matrix.components[0].name;
-  for (const mode of MODES) {
-    const resolved = theme.resolveTokens(first, mode);
-    for (const facet of FACETS) {
-      assert.ok(Object.hasOwn(resolved, facet), `${first} [${mode}]: resolved must carry "${facet}"`);
-    }
-    for (const generic of ['primary', 'onPrimary', 'surface', 'onSurface']) {
-      assert.ok(
-        !Object.hasOwn(resolved, generic),
-        `${first} [${mode}]: resolved must not carry generic fallback key "${generic}"`,
-      );
+  for (const entry of matrix.components) {
+    for (const mode of MODES) {
+      const resolved = theme.resolveTokens(entry.name, mode);
+      for (const facet of FACETS) {
+        assert.ok(Object.hasOwn(resolved, facet), `${entry.name} [${mode}]: resolved must carry "${facet}"`);
+      }
+      for (const generic of ['primary', 'onPrimary', 'surface', 'onSurface']) {
+        assert.ok(
+          !Object.hasOwn(resolved, generic),
+          `${entry.name} [${mode}]: resolved must not carry generic fallback key "${generic}"`,
+        );
+      }
     }
   }
 });
@@ -235,6 +248,74 @@ test('T2: resolveTokens throws UnknownComponentError for an unknown component', 
   const theme = loadTheme();
   assert.throws(() => theme.resolveTokens('NoSuchM3Component', 'light'), isUnknownComponentError);
   assert.throws(() => theme.resolveTokens('', 'dark'), isUnknownComponentError);
+});
+
+test('T2: changing seed changes resolved values (seed-palette fallback when dynamic is null)', () => {
+  // Regression note: the old theme.test.ts seed/dynamic tests passed vacuously
+  // via the mode echo. This asserts a REAL seed effect.
+  const theme = loadTheme();
+  const matrix = loadMatrix();
+  const name = matrix.components[0].name;
+  try {
+    theme.setTheme({ seed: 'seed-alpha-fr-layout-016', dynamic: null });
+    const before = theme.resolveTokens(name, 'light');
+    theme.setTheme({ seed: 'seed-beta-fr-layout-016', dynamic: null });
+    const after = theme.resolveTokens(name, 'light');
+    const differs = FACETS.some(
+      (facet) => JSON.stringify(before[facet]) !== JSON.stringify(after[facet]),
+    );
+    assert.ok(
+      differs,
+      `${name}: different seeds must yield different resolved values (dynamic null)`,
+    );
+  } finally {
+    theme.setTheme({ mode: 'light', seed: '', dynamic: null });
+    if (typeof theme.clearMounted === 'function') theme.clearMounted();
+  }
+});
+
+test('T2: setting dynamic overrides seed-derived values', () => {
+  // ASSUMPTION A4b: `dynamic` is an opaque non-null override input; when
+  // present it must perturb the resolved values for the same tabled roles.
+  const theme = loadTheme();
+  const matrix = loadMatrix();
+  const name = matrix.components[0].name;
+  const seed = 'seed-gamma-fr-layout-016';
+  try {
+    theme.setTheme({ seed, dynamic: null });
+    const seeded = theme.resolveTokens(name, 'light');
+    theme.setTheme({ seed, dynamic: { container: '#ff0000', source: 'test-override' } });
+    const overridden = theme.resolveTokens(name, 'light');
+    const differs = FACETS.some(
+      (facet) => JSON.stringify(seeded[facet]) !== JSON.stringify(overridden[facet]),
+    );
+    assert.ok(
+      differs,
+      `${name}: dynamic override must change seed-derived values for the same tabled roles`,
+    );
+  } finally {
+    theme.setTheme({ mode: 'light', seed: '', dynamic: null });
+    if (typeof theme.clearMounted === 'function') theme.clearMounted();
+  }
+});
+
+test('T2: resolveTokens throws RangeError for an invalid mode (light/dark still pass)', () => {
+  const theme = loadTheme();
+  const matrix = loadMatrix();
+  const name = matrix.components[0].name;
+  for (const mode of MODES) {
+    assert.ok(
+      theme.resolveTokens(name, mode),
+      `${name}: mode "${mode}" must keep resolving`,
+    );
+  }
+  for (const bad of ['LIGHT', 'dark ', '', null, undefined, 42]) {
+    assert.throws(
+      () => theme.resolveTokens(name, bad),
+      (err) => err !== null && typeof err === 'object' && err.name === 'RangeError',
+      `${name}: invalid mode ${JSON.stringify(bad)} must throw RangeError`,
+    );
+  }
 });
 
 test('T2: resolveTokens rejects non-string input with UnknownComponentError', () => {
@@ -254,8 +335,12 @@ test('T2: resolveTokens rejects non-string input with UnknownComponentError', ()
 //
 // Interface under test: `node scripts/check-tokens.js --scope lib` — exit 1
 // naming `component` when (a) a matrix/registry component has no token table,
-// or (b) `resolveTokens(component, mode)` output differs from the tabled roles
-// for `light` and `dark`; exit 0 otherwise.
+// (b) a table fails STRUCTURAL validation (six facets present, container/
+// label/shape/elevation/typescale strings, state string array, sources record
+// with only component|role|theme|default values), or (c)
+// `resolveTokens(component, mode)` role set differs from the tabled role set
+// for `light` and `dark`; exit 0 otherwise. No exact md.comp.<slug>.<facet>
+// namespace rule.
 //
 // Hermetic note: the failure-mode cases briefly rewrite
 // `engine/layout/m3_matrix.json` on disk (the gate under test is a separate
@@ -297,11 +382,42 @@ function withoutTable(matrix, name) {
   return copy;
 }
 
-function withDivergentRole(matrix, name) {
+// Same-file value swaps are OUT OF GATE SCOPE by design (T1.10 re-scope
+// 2026-10-30): gate and theme read the same m3_matrix.json bytes in one
+// process, so a same-file value swap moves both sides together and exact
+// set equality passes by construction. No matrix-mutation gate on branch
+// (c) "resolved role set != tabled role set" can catch it without a
+// spelling-based per-facet rule. Branch (c) is proven via the extra-address
+// + structural paths below.
+function withMissingFacet(matrix, name) {
+  // STRUCTURALLY invalid: drop one facet (sources entry left dangling).
   const copy = JSON.parse(JSON.stringify(matrix));
   const entry = copy.components.find((c) => c.name === name);
   const table = entry.tokenTable ?? entry.tokens;
-  table.container = `${table.container}.diverged`;
+  delete table.shape;
+  return copy;
+}
+
+function withBadSource(matrix, name) {
+  // STRUCTURALLY invalid: sources value outside component|role|theme|default.
+  const copy = JSON.parse(JSON.stringify(matrix));
+  const entry = copy.components.find((c) => c.name === name);
+  const table = entry.tokenTable ?? entry.tokens;
+  table.sources = { ...table.sources, container: 'shared-fallback' };
+  return copy;
+}
+
+function withExtraFacet(matrix, name) {
+  // WELL-FORMED-but-diverged (cardinality): adds an extra role key with a
+  // well-formed md.comp-shaped value and a valid sources entry, so every
+  // STRUCTURAL check passes — only exact resolved==tabled role-set equality
+  // (branch c) can catch the extra address.
+  const copy = JSON.parse(JSON.stringify(matrix));
+  const entry = copy.components.find((c) => c.name === name);
+  const table = entry.tokenTable ?? entry.tokens;
+  const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+  table.icon = `md.comp.${slug}.icon`;
+  table.sources = { ...table.sources, icon: 'component' };
   return copy;
 }
 
@@ -325,13 +441,29 @@ test('T3: token gate fails naming the component when its token table is missing'
   );
 });
 
-test('T3: token gate fails naming the component when resolved tokens diverge from the table', () => {
+// NOTE (T1.10 re-scope): the former withSwappedFacets divergence test was
+// removed — same-file value swaps are out of gate scope by design (see note
+// above). Branch (c) coverage lives in the extra-address test below.
+test('T3: token gate fails naming the component when a table carries an extra role address', () => {
   const matrix = loadMatrix();
   const name = matrix.components[0].name;
-  const result = withMatrix(withDivergentRole(matrix, name), runGate);
-  assert.equal(result.status, 1, `gate must exit 1 for a divergent role, got ${result.status}`);
+  const result = withMatrix(withExtraFacet(matrix, name), runGate);
+  assert.equal(result.status, 1, `gate must exit 1 for an extra role address, got ${result.status}`);
   assert.ok(
     result.output.includes(name),
     `gate failure must name the component "${name}", got: ${result.output}`,
   );
+});
+
+test('T3: token gate fails naming the component when a table is structurally invalid', () => {
+  const matrix = loadMatrix();
+  const name = matrix.components[0].name;
+  for (const [label, mutate] of [['missing facet', withMissingFacet], ['bad source', withBadSource]]) {
+    const result = withMatrix(mutate(matrix, name), runGate);
+    assert.equal(result.status, 1, `gate must exit 1 for a table with a ${label}, got ${result.status}`);
+    assert.ok(
+      result.output.includes(name),
+      `gate failure (${label}) must name the component "${name}", got: ${result.output}`,
+    );
+  }
 });
