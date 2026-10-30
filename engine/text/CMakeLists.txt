@@ -22,6 +22,7 @@ add_library(muse_text STATIC
   src/font_scale.cpp
   src/scale_layout.cpp
   src/scale_config.cpp
+  src/glyph_atlas.cpp
   ink/ink_stroke_pipeline.cpp
   ink/palm_rejector.cpp
   ink/handwriting_committer.cpp
@@ -152,6 +153,10 @@ add_executable(pipeline_acceptance acceptance/pipeline_acceptance.cpp)
 target_link_libraries(pipeline_acceptance PRIVATE muse_text)
 target_compile_options(pipeline_acceptance PRIVATE -Wall -Wextra -Wpedantic)
 
+add_executable(glyph_atlas_test tests/glyph_atlas_test.cpp)
+target_link_libraries(glyph_atlas_test PRIVATE muse_text)
+target_compile_options(glyph_atlas_test PRIVATE -Wall -Wextra -Wpedantic)
+
 include(CTest)
 enable_testing()
 add_test(NAME jni_free_path_test COMMAND jni_free_path_test)
@@ -183,4 +188,5 @@ add_test(NAME nonlinear_scale_test COMMAND nonlinear_scale_test)
 add_test(NAME scale_remeasure_test COMMAND scale_remeasure_test)
 add_test(NAME scale_config_test COMMAND scale_config_test)
 add_test(NAME scale_churn_test COMMAND scale_churn_test)
+add_test(NAME glyph_atlas_test COMMAND glyph_atlas_test)
 add_test(NAME pipeline_acceptance COMMAND pipeline_acceptance)

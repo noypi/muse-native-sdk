@@ -39,6 +39,9 @@ enum class Status {
   // FR-TEXT-003 / AC-TEXT-005: no supported-locale face covers the script
   // (resolveFallbackForScript fallback miss). No payload, no internals.
   kMissingGlyph = 5,
+  // FR-TEXT-016 / AC-TEXT-045 + Q-TEXT-005: glyph-atlas bound breach that
+  // survives evict-LRU-then-retry-once (cache never grows past its caps).
+  kCacheFull = 6,
 };
 
 // Minimal StatusOr: ok()/status()/operator* surface the contract needs.

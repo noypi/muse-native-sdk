@@ -332,6 +332,11 @@ target_link_libraries(gallery_present_test PRIVATE runtime)
 target_compile_options(gallery_present_test PRIVATE -Wall -Wextra -Wpedantic)
 add_test(NAME gallery_present_test COMMAND gallery_present_test)
 
+add_executable(gallery_text_decode_test tests/gallery_text_decode_test.cpp)
+target_link_libraries(gallery_text_decode_test PRIVATE runtime)
+target_compile_options(gallery_text_decode_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME gallery_text_decode_test COMMAND gallery_text_decode_test)
+
 # BUG-M3-FIDELITY-007 batch 2: JNI touch-entry shape (T3) + native
 # hit-test/arena wiring (T4). The input consume-lib compiles exactly the
 # engine/input TUs T4 consumes (consume-only: hit-test, gesture arena, event

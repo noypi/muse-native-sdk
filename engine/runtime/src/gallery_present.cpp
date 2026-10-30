@@ -68,6 +68,47 @@ const char* SkipWs(const char* p, const char* end) {
   return p;
 }
 
+// Parse 4 hex digits at q (caller guarantees q[0..3] readable); false on
+// non-hex input. Fail-closed helper for \uXXXX decoding below.
+bool ParseHex4(const char* q, unsigned& code) {
+  code = 0;
+  for (int i = 0; i < 4; ++i) {
+    char h = q[i];
+    code <<= 4;
+    if (h >= '0' && h <= '9') {
+      code |= static_cast<unsigned>(h - '0');
+    } else if (h >= 'a' && h <= 'f') {
+      code |= static_cast<unsigned>(h - 'a' + 10);
+    } else if (h >= 'A' && h <= 'F') {
+      code |= static_cast<unsigned>(h - 'A' + 10);
+    } else {
+      return false;
+    }
+  }
+  return true;
+}
+
+// Append the UTF-8 encoding of the scalar value cp (caller guarantees cp is
+// not a surrogate). Surrogate halves never reach here: they fail closed in
+// ParseJsonString below.
+void AppendUtf8(std::string& out, unsigned cp) {
+  if (cp < 0x80u) {
+    out.push_back(static_cast<char>(cp));
+  } else if (cp < 0x800u) {
+    out.push_back(static_cast<char>(0xC0u | (cp >> 6)));
+    out.push_back(static_cast<char>(0x80u | (cp & 0x3Fu)));
+  } else if (cp < 0x10000u) {
+    out.push_back(static_cast<char>(0xE0u | (cp >> 12)));
+    out.push_back(static_cast<char>(0x80u | ((cp >> 6) & 0x3Fu)));
+    out.push_back(static_cast<char>(0x80u | (cp & 0x3Fu)));
+  } else {
+    out.push_back(static_cast<char>(0xF0u | (cp >> 18)));
+    out.push_back(static_cast<char>(0x80u | ((cp >> 12) & 0x3Fu)));
+    out.push_back(static_cast<char>(0x80u | ((cp >> 6) & 0x3Fu)));
+    out.push_back(static_cast<char>(0x80u | (cp & 0x3Fu)));
+  }
+}
+
 // Parse a JSON string at *p (expects '"'), appending the decoded value to
 // out and returning the position past the closing quote (or nullptr).
 const char* ParseJsonString(const char* p, const char* end, std::string& out) {
@@ -91,19 +132,26 @@ const char* ParseJsonString(const char* p, const char* end, std::string& out) {
       case 't': out.push_back('\t'); break;
       case 'r': out.push_back('\r'); break;
       case 'u': {
-        // Minimal \uXXXX: ASCII range maps directly, else '?'.
+        // FR-TEXT-016 / AC-TEXT-046: full UTF-16 escape decoding with
+        // surrogate-pair composition to UTF-8 so CJK/emoji reach the
+        // shaper intact. Malformed input fails closed (nullptr drops the
+        // row at the call site); never '?' substitution.
         if (p + 4 >= end) return nullptr;
         unsigned code = 0;
-        for (int i = 1; i <= 4; ++i) {
-          char h = p[i];
-          code <<= 4;
-          if (h >= '0' && h <= '9') code |= static_cast<unsigned>(h - '0');
-          else if (h >= 'a' && h <= 'f') code |= static_cast<unsigned>(h - 'a' + 10);
-          else if (h >= 'A' && h <= 'F') code |= static_cast<unsigned>(h - 'A' + 10);
-          else return nullptr;
-        }
-        out.push_back(code < 128 ? static_cast<char>(code) : '?');
+        if (!ParseHex4(p + 1, code)) return nullptr;
         p += 4;
+        if (code >= 0xD800u && code <= 0xDBFFu) {
+          // High surrogate: must be followed immediately by \uDC00-\uDFFF.
+          if (p + 6 >= end || p[1] != '\\' || p[2] != 'u') return nullptr;
+          unsigned low = 0;
+          if (!ParseHex4(p + 3, low)) return nullptr;
+          if (low < 0xDC00u || low > 0xDFFFu) return nullptr;
+          code = 0x10000u + ((code - 0xD800u) << 10) + (low - 0xDC00u);
+          p += 6;
+        } else if (code >= 0xDC00u && code <= 0xDFFFu) {
+          return nullptr;  // Lone low surrogate: fail closed, never '?'.
+        }
+        AppendUtf8(out, code);
         break;
       }
       default: out.push_back(*p); break;
