@@ -131,7 +131,12 @@ function checkScrim(codeRoot) {
   if (!/\bDismissResult\b/.test(presenter)) {
     return { ok: false, reason: 'DismissResult dismiss contract is missing (L3 scrim-dismiss)' };
   }
-  const dismissed = showcase.includes('dismiss-topmost') || presenter.includes('"topmost"');
+  // The dismissed|none verdict derives from the Showcase routing VALUE
+  // alone: the onScrimTap="..." value must equal the dismiss-topmost
+  // routing. The presenter "topmost" only proves the engine half (already
+  // covered by layering-dismiss.test.ts) and must not mask a scene-only
+  // value regression.
+  const dismissed = /onScrimTap=(["'])dismiss-topmost\1/.test(showcase);
   return { ok: true, scrim: dismissed ? 'dismissed' : 'none' };
 }
 

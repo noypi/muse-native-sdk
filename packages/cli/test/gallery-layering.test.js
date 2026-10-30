@@ -408,6 +408,29 @@ describe('L5 — each flag independently falsifiable (AC-M3-022)', () => {
       `stderr must name the failing stage 'gallery-layering failed: ime: <reason>'; got: ${(res.stderr || '').slice(0, 300)}`,
     );
   });
+
+  it('scene-only routing-value regression does not report dismissed (showcase value falsifiable)', () => {
+    const root = writeFixtureRoot((r) =>
+      replaceFirstInFile(
+        r,
+        path.join('examples', 'm3-gallery', 'src', 'Showcase.tsx'),
+        'onScrimTap="dismiss-topmost"',
+        'onScrimTap="nothing"',
+      ),
+    );
+    const res = runGate(
+      ['gallery-layering', '--assert-zorder', '--scrim-dismiss', '--ime-safe'],
+      { cwd: root },
+    );
+    const failedScrim =
+      res.status !== 0 && /gallery-layering failed: scrim: /.test(res.stderr || '');
+    const noneVerdict =
+      res.status === 0 && /scrim=none/.test(res.stdout || '');
+    assert.ok(
+      failedScrim || noneVerdict,
+      `scene-only onScrimTap value regression must surface as scrim=none or a scrim: stage failure (not dismissed); got status=${res.status} stdout=${(res.stdout || '').slice(0, 200)} stderr=${(res.stderr || '').slice(0, 200)}`,
+    );
+  });
 });
 
 describe('L5 — help and misuse (usage + nonzero, no side effects)', () => {

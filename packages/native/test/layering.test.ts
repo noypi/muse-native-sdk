@@ -123,3 +123,18 @@ test('layering scene declares the scrim dismiss hook site (L3 contract)', () => 
   );
 });
 
+test('LayeringPage BottomSheet usage satisfies the L4 imeSafe/insetSource contract', () => {
+  const body = layeringBody(read(SHOWCASE_URL));
+  const match = body.match(/<BottomSheet[^>]*>/);
+  assert.ok(match, 'LayeringPage must render <BottomSheet> in its OverlayHost scene');
+  const tag = match[0];
+  assert.ok(
+    tag.includes('imeSafe'),
+    'LayeringPage <BottomSheet> must carry the imeSafe prop (L4 contract)',
+  );
+  assert.ok(
+    tag.includes('insetSource') && tag.includes('FR-LAYOUT-012'),
+    'LayeringPage <BottomSheet> must carry insetSource="FR-LAYOUT-012" (L4 contract)',
+  );
+});
+

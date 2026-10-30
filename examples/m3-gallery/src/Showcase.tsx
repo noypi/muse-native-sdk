@@ -141,7 +141,7 @@ export function LayeringPage() {
       <OverlayHost onScrimTap="dismiss-topmost">
         <Surface tone="scrim" />
         <Dialog open={true} title="Layering dialog" />
-        <BottomSheet open={true} />
+        <BottomSheet open={true} imeSafe={true as const} insetSource="FR-LAYOUT-012" />
         <Menu open={true} />
         <SnackbarHost message="Layering snackbar" />
         <Tooltip text="Layering tooltip" />

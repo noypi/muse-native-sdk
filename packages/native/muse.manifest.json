@@ -332,7 +332,7 @@
       "props": {
         "open": { "type": "boolean", "required": true },
         "content": { "type": "slot" },
-        "imeSafe": { "type": "boolean" }
+        "imeSafe": { "type": "boolean", "required": true }
       }
     },
     {
