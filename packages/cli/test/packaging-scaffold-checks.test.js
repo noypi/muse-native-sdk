@@ -363,3 +363,144 @@ describe('T3 sdk_pin extraction strictness (S-C2)', () => {
       'indented exact pin still extracts verbatim');
   });
 });
+
+// --- BUG-SAMPLE-005 Batch 1 / T1+T2: flappy + muse-demo precondition gates ---
+// Scope: FR-SAMPLE-007/009, FR-PACKAGING-008/009; AC-SAMPLE-016/018/022,
+// AC-PACKAGING-020/021/022/023.
+// Interface (plan T1 verbatim):
+//   `make apk | make sign | make verify | make install | make clean` (run in
+//   `examples/flappy`) → exit 0 on success; `install` with no `adb` device
+//   fails closed naming the missing device; unset `MUSE_NATIVE_HOME` fails
+//   before compilation naming the variable — none — make precondition surface,
+//   no new callable
+// Interface (plan T2 verbatim): same five make targets run in
+// `examples/muse-demo` (identical fail-closed shape).
+// Hermetic: Makefile-text assertions plus `make -n` dry runs against a sandbox
+// SDK dir under os.tmpdir() (fixture VERSION + libRuntime.so files, local
+// `make` binary only — dry-run executes no recipe, needs no NDK/SDK/device/
+// network). No secrets, no .env, no live service. RED until the coder backfills
+// each demo's Makefile (+ manifest/strings for the presence cases).
+// ASSUMPTION A-D3 (contract genuinely silent): per-demo Makefiles carry the
+// same HOME → VERSION-present → version-match → per-ABI gate order as the
+// gallery Makefile (verbatim copy per plan Detail) — order assertions mirror T3.
+const DEMOS_005 = ['flappy', 'muse-demo'];
+
+function demoDir(demo) {
+  return path.join(ROOT, 'examples', demo);
+}
+
+function readDemoScaffold(demo) {
+  const p = path.join(ROOT, 'examples', demo, 'Makefile');
+  assert.ok(fs.existsSync(p),
+    `examples/${demo}/Makefile must exist (BUG-SAMPLE-005 T1/T2 own it; RED until the coder backfills it)`);
+  return fs.readFileSync(p, 'utf8');
+}
+
+function demoApkBody(text, demo) {
+  const lines = text.split('\n');
+  const idx = lines.findIndex((l) => /^apk\s*:/.test(l));
+  assert.ok(idx !== -1, `examples/${demo}/Makefile must define target: apk`);
+  let end = lines.length;
+  for (let i = idx + 1; i < lines.length; i += 1) {
+    if (/^[A-Za-z0-9_.-]+\s*:(?![:=])/.test(lines[i]) && !/^\s/.test(lines[i])) { end = i; break; }
+  }
+  return lines.slice(idx, end).join('\n');
+}
+
+function demoMakeN(demo, home) {
+  const env = { ...process.env };
+  if (home === null) delete env.MUSE_NATIVE_HOME;
+  else env.MUSE_NATIVE_HOME = home;
+  return cp.spawnSync('make', ['-n', 'apk'], { cwd: demoDir(demo), encoding: 'utf8', env });
+}
+
+for (const DEMO of DEMOS_005) {
+  describe(`BUG-SAMPLE-005 ${DEMO} HOME gate first (AC-PACKAGING-023)`, () => {
+    it('ifndef MUSE_NATIVE_HOME errors naming the variable + example export', () => {
+      const text = readDemoScaffold(DEMO);
+      assert.match(text, /ifndef\s+MUSE_NATIVE_HOME/, 'check block must open with the HOME guard');
+      assert.match(text, /\$\(error[^)]*MUSE_NATIVE_HOME[^)]*\)/, 'HOME gate must $(error) naming the variable');
+      assert.ok(/export/.test(text), 'HOME error must show an example export');
+    });
+
+    it('HOME guard precedes every other SDK check', () => {
+      const text = readDemoScaffold(DEMO);
+      const homeIdx = text.indexOf('ifndef MUSE_NATIVE_HOME');
+      assert.ok(homeIdx !== -1, 'HOME guard must exist');
+      assert.ok(homeIdx < text.indexOf('VERSION'), 'HOME guard must precede the VERSION check');
+      assert.ok(homeIdx < text.indexOf('test -s'), 'HOME guard must precede the per-ABI gates');
+    });
+
+    it('make -n apk with unset HOME fails closed naming the variable', () => {
+      const r = demoMakeN(DEMO, null);
+      assert.notEqual(r.status, 0, 'unset HOME must fail before compilation');
+      assert.match(r.stdout + r.stderr, /MUSE_NATIVE_HOME/, 'failure must name the variable');
+    });
+  });
+
+  describe(`BUG-SAMPLE-005 ${DEMO} VERSION + match + per-ABI gates (AC-PACKAGING-020/023)`, () => {
+    it('apk recipe gates on test -f $(MUSE_NATIVE_HOME)/VERSION before compilation', () => {
+      const body = demoApkBody(readDemoScaffold(DEMO), DEMO);
+      assert.match(body, /test\s+-f[^;\n]*MUSE_NATIVE_HOME[^;\n]*\/VERSION/,
+        'apk must gate on test -f $(MUSE_NATIVE_HOME)/VERSION');
+      assert.match(body, /exit\s+1/, 'VERSION gate must exit non-zero on failure');
+    });
+
+    it('line 1 is compared against the muse-native.yaml sdk: pin; mismatch names both', () => {
+      const body = demoApkBody(readDemoScaffold(DEMO), DEMO);
+      assert.ok(body.includes('sdk:'), 'match check must read the sdk: pin from muse-native.yaml');
+      const idx = Math.max(body.indexOf('sdk_pin'), body.indexOf('MISMATCH'));
+      assert.ok(idx !== -1, 'a mismatch branch must exist');
+      assert.match(body.slice(idx, idx + 600), /exit\s+1/, 'version mismatch must stop the build non-zero');
+    });
+
+    it('every ABI slot is gated with test -s on a MUSE_NATIVE_HOME-rooted lib', () => {
+      const body = demoApkBody(readDemoScaffold(DEMO), DEMO);
+      for (const abi of ABIS) {
+        const gateRe = new RegExp(`test\\s+-s\\s+[^\\n]*MUSE_NATIVE_HOME[^\\n]*${abi.replace('+', '\\+')}[^\\n]*libRuntime\\.so`);
+        assert.match(body, gateRe, `slot ${abi} must be gated with test -s on its libRuntime.so`);
+      }
+    });
+
+    it('no ../../build or ../build traversal remains; ENGINE_LIBS rooted at $(MUSE_NATIVE_HOME)', () => {
+      const text = readDemoScaffold(DEMO);
+      assert.ok(!text.includes('../../'), 'demo Makefile must not contain ../../ traversal');
+      assert.ok(!text.includes('../build'), 'demo Makefile must not traverse to ../build');
+      const m = /ENGINE_LIBS\s*[:?]?=\s*(.*)/.exec(text);
+      assert.ok(m, 'ENGINE_LIBS must be defined');
+      assert.ok(m[1].includes('$(MUSE_NATIVE_HOME)'),
+        'ENGINE_LIBS must be rooted at $(MUSE_NATIVE_HOME)');
+    });
+
+    it('make -n apk with correct HOME exits 0 and surfaces gates + compile in order', () => {
+      const home = sandboxHome({ versionLine1: '0.1.0' });
+      const r = demoMakeN(DEMO, home);
+      assert.equal(r.status, 0, `correct env must pass dry-run: ${r.stderr}`);
+      const vIdx = r.stdout.indexOf('VERSION');
+      const sIdx = r.stdout.indexOf('test -s');
+      const cIdx = r.stdout.indexOf('aapt2');
+      assert.ok(vIdx !== -1 && sIdx !== -1 && cIdx !== -1, 'dry-run must surface gates + compile');
+      assert.ok(vIdx < sIdx && sIdx < cIdx, 'dry-run order must be VERSION → test -s → aapt2');
+    });
+  });
+
+  describe(`BUG-SAMPLE-005 ${DEMO} manifest + strings presence (AC-SAMPLE-016/018/022)`, () => {
+    it('AndroidManifest.xml exists with the per-demo identity', () => {
+      const p = path.join(ROOT, 'examples', DEMO, 'AndroidManifest.xml');
+      assert.ok(fs.existsSync(p), `examples/${DEMO}/AndroidManifest.xml must exist`);
+      const xml = fs.readFileSync(p, 'utf8');
+      assert.match(xml, /package="com\.muse\.host"/, 'manifest package must be com.muse.host');
+      assert.match(xml, /android:minSdkVersion="26"/, 'manifest minSdk must be 26');
+      assert.match(xml, /android:targetSdkVersion="34"/, 'manifest targetSdk must be 34');
+    });
+
+    it('res/values/strings.xml exists with a single demo app_name', () => {
+      const p = path.join(ROOT, 'examples', DEMO, 'res', 'values', 'strings.xml');
+      assert.ok(fs.existsSync(p), `examples/${DEMO}/res/values/strings.xml must exist`);
+      const xml = fs.readFileSync(p, 'utf8');
+      const names = [...xml.matchAll(/<string\s+name="([^"]*)"/g)].map((m) => m[1]);
+      assert.deepEqual(names, ['app_name'], 'strings.xml must carry exactly one app_name string');
+      assert.ok(!xml.includes('M3 UI Gallery'), 'demo app_name must differ from the gallery value');
+    });
+  });
+}
