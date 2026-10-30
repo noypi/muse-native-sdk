@@ -7,6 +7,7 @@ import android.content.Intent;
 import android.content.IntentFilter;
 import android.os.Build;
 import android.os.Bundle;
+import android.view.MotionEvent;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
 import java.io.ByteArrayOutputStream;
@@ -26,6 +27,20 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     }
 
     private long engineHandle = 0;
+
+    /**
+     * Touch-slop mirror for the page-flip fallback gate below. Sole source
+     * of truth is {@code runtime::touch_detail::kTouchSlopPx} (plan A2,
+     * 8px); this literal must track it — the native slop verdict and this
+     * Java gate must agree, otherwise a scroll could page-flip or an
+     * outside tap could go silent.
+     */
+    private static final float TOUCH_SLOP_PX = 8.0f;
+
+    /** DOWN anchor of the active gesture, for the drag-vs-outside gate. */
+    private float downX = 0f;
+    private float downY = 0f;
+    private int downPointerId = -1;
 
     /** Broadcast action the proof pages through (same entry as the tap path). */
     static final String ACTION_NATIVE_ADVANCE_PAGE = "muse.native.NATIVE_ADVANCE_PAGE";
@@ -54,6 +69,16 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     /** Advance one gallery page and render it. Returns the new page index. */
     private static native int nativeAdvancePage(long handle);
 
+    /**
+     * Dispatch a raw touch event to the native tap chain (Option A input
+     * entry, BUG-M3-FIDELITY-007). Forwards raw MotionEvent fields only —
+     * never a pre-decided node id; the node resolves natively from
+     * laid-out bounds. Returns the claimed-and-fired node id, or -1 when
+     * the gesture fired nothing (outside, drag, unclaimed).
+     */
+    private static native int nativeDispatchTouch(
+            long handle, int action, float x, float y, int pointerId, long timestampMs);
+
     /** Release the attached surface without destroying the handle. */
     private static native void nativeDetachSurface(long handle);
 
@@ -65,13 +90,68 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         super.onCreate(savedInstanceState);
         SurfaceView surfaceView = new SurfaceView(this);
         surfaceView.getHolder().addCallback(this);
-        // Tap anywhere to page through the gallery (host input entry; all
-        // pixels are still drawn natively, never a View).
-        surfaceView.setOnClickListener(v -> {
-            if (engineHandle != 0) {
-                nativeAdvancePage(engineHandle);
-                nativeRenderFrame(engineHandle);
+        // Tap routing (BUG-M3-FIDELITY-007 disposition): every touch goes to
+        // the native tap chain first with raw MotionEvent fields. The old
+        // `setOnClickListener -> nativeAdvancePage` page-flip is gone as a
+        // tap handler — a tap that claims a button fires the button only and
+        // never turns the page. Page advance survives solely as the
+        // outside-tap fallback below (dispatch returned -1 AND the gesture
+        // never dragged past slop), so a tap cannot both fire and flip and
+        // a drag-release can never turn the page (AC-INPUT-020 drag-no-fire).
+        surfaceView.setOnTouchListener((v, event) -> {
+            if (engineHandle == 0) {
+                return false;
             }
+            int action = event.getActionMasked();
+            int index = event.getActionIndex();
+            if (action == MotionEvent.ACTION_DOWN) {
+                downX = event.getX(index);
+                downY = event.getY(index);
+                downPointerId = event.getPointerId(index);
+            }
+            if (action == MotionEvent.ACTION_MOVE) {
+                // MOVE batching (run decision UNSETTLED per support.md: the
+                // evidence does not settle a batching/coalescing policy, so
+                // this is the smallest safe choice, not a settled policy).
+                // Only the action-index sample is forwarded by default,
+                // which under-measures fast drags; forward each batched
+                // historical sample first so the native UP slop verdict sees
+                // the full gesture displacement. No native contract change:
+                // history reuses the same MOVE entry.
+                int historySize = event.getHistorySize();
+                for (int h = 0; h < historySize; h++) {
+                    nativeDispatchTouch(
+                            engineHandle,
+                            action,
+                            event.getHistoricalX(index, h),
+                            event.getHistoricalY(index, h),
+                            event.getPointerId(index),
+                            event.getHistoricalEventTime(h));
+                }
+            }
+            int claimed = nativeDispatchTouch(
+                    engineHandle,
+                    action,
+                    event.getX(index),
+                    event.getY(index),
+                    event.getPointerId(index),
+                    event.getEventTime());
+            if (action == MotionEvent.ACTION_UP) {
+                boolean dragged = false;
+                if (event.getPointerId(index) == downPointerId) {
+                    float dx = event.getX(index) - downX;
+                    float dy = event.getY(index) - downY;
+                    dragged = Math.hypot(dx, dy) >= TOUCH_SLOP_PX;
+                }
+                downPointerId = -1;
+                if (claimed < 0 && !dragged) {
+                    nativeAdvancePage(engineHandle);
+                }
+                nativeRenderFrame(engineHandle);
+            } else if (action == MotionEvent.ACTION_CANCEL) {
+                downPointerId = -1;
+            }
+            return true;
         });
         setContentView(surfaceView);
         byte[] treeBytes = readTreeAsset();

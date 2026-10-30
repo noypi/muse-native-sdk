@@ -62,6 +62,21 @@ else()
     # (see engine/runtime/CMakeLists.txt); no tree/frame/layout/renderer
     # behavior change — this only adds per-ABI shared outputs with the
     # JNI-only export surface (hidden visibility).
+    #
+    # The input TU set mirrors MUSE_INPUT_SOURCES (single-sourced in
+    # CMakeLists.txt; local fallback when this file is included before it is
+    # defined, e.g. via CMAKE_PROJECT_INCLUDE which runs before the rest of
+    # the project body). The pacing TUs mirror the real-Android `Runtime`
+    # lane (presenter.cpp's device lane calls pacing::selectIntendedFrameRate
+    # / tryQueueFrame), with the repo root on the include path for the
+    # pacing headers' own "engine/..." includes.
+    if(NOT DEFINED MUSE_INPUT_SOURCES)
+      set(MUSE_INPUT_SOURCES
+        ../input/src/event_model.cpp
+        ../input/src/hit_test.cpp
+        ../input/src/gesture_arena.cpp
+      )
+    endif()
     foreach(MUSE_ABI IN ITEMS arm64-v8a x86_64)
       if(MUSE_ABI STREQUAL "arm64-v8a")
         set(_muse_tgt Runtime_android_arm64_v8a)
@@ -77,6 +92,12 @@ else()
         src/vulkan_baseline.cpp
         src/renderer.cpp
         src/jni_bridge.cpp
+        src/input_chain.cpp
+        src/gallery_present.cpp
+        src/presenter.cpp
+        ${MUSE_INPUT_SOURCES}
+        ../graphics/pacing/frame_rate.cc
+        ../graphics/pacing/render_ahead.cc
       )
       set_target_properties(${_muse_tgt} PROPERTIES
         OUTPUT_NAME Runtime
@@ -88,6 +109,11 @@ else()
         VISIBILITY_INLINES_HIDDEN ON
       )
       target_include_directories(${_muse_tgt} PUBLIC include)
+      target_include_directories(${_muse_tgt} PRIVATE ../input/include)
+      # Pacing TUs self-include as "engine/graphics/pacing/..." (mirrors the
+      # real-Android Runtime lane in CMakeLists.txt). This file lives in
+      # engine/runtime/cmake, so the repo root is three levels up.
+      target_include_directories(${_muse_tgt} PRIVATE ${CMAKE_CURRENT_LIST_DIR}/../../..)
       if(JNI_FOUND)
         target_include_directories(${_muse_tgt} PUBLIC ${JNI_INCLUDE_DIRS})
       endif()

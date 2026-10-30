@@ -9,11 +9,18 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <memory>
 #include <mutex>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "runtime/gallery_present.h"
+#include "runtime/input_chain.h"
+
+#include "gesture_arena.h"
+#include "hit_test.h"
+#include "input/event_model.h"
 
 #ifdef __ANDROID__
 #include <android/log.h>
@@ -209,15 +216,71 @@ struct GalleryHandle {
   std::string parseError;
   bool parsed = false;
   int page = 0;
+  // Device tap chain state (BUG-M3-FIDELITY-007 T5): layout-bounds hit-test
+  // tree plus the gesture arena the valid-env dispatch body drives. The
+  // tree is populated from the layout engine's laid-out bounds; until then
+  // it is empty and every tap resolves -1 (fail closed, never a phantom
+  // node). Guarded by mu like the rest of the handle.
+  HitTestTree tapTree;
+  GestureArena tapArena;
 #ifdef __ANDROID__
   ANativeWindow* window = nullptr;
 #endif
   std::mutex mu;
 };
 
-GalleryHandle* ToGallery(jlong handle) {
+// Validated handle registry (cleared-review SECURITY MEDIUM, binding a;
+// re-audit MEDIUM fix: counted lifetime for the ToGallery waiter):
+// the raw jlong slot is never cast-and-dereferenced blindly. Only handles
+// created by nativeLoadTree and still live resolve; forged/stale/zero
+// handles fail closed (nullptr → -1/no-op, no deref). The registry holds
+// one shared-ownership ref per live handle; every lookup returns a counted
+// reference the caller holds across its g->mu critical section, so a racing
+// destroy (erase + teardown) can never free a handle an earlier holder is
+// about to lock: destroy drops only the registry ref and the object dies
+// when the last in-flight ref drains. Unregister happens exactly once in
+// nativeDestroy, which also zeroes the Java-side slot
+// (MainActivity.onDestroy sets engineHandle = 0 after the call).
+std::mutex g_handleRegistryMu;
+std::unordered_map<GalleryHandle*, std::shared_ptr<GalleryHandle>>
+    g_liveHandles;
+
+void RegisterHandle(const std::shared_ptr<GalleryHandle>& g) {
+  if (g == nullptr) return;
+  std::lock_guard<std::mutex> lock(g_handleRegistryMu);
+  g_liveHandles.emplace(g.get(), g);
+}
+
+// Counted lookup: returns a shared ref held across the caller's g->mu
+// critical section (never a bare pointer outliving the registry lock).
+std::shared_ptr<GalleryHandle> ToGallery(jlong handle) {
   if (handle == 0) return nullptr;
-  return reinterpret_cast<GalleryHandle*>(static_cast<intptr_t>(handle));
+  GalleryHandle* raw =
+      reinterpret_cast<GalleryHandle*>(static_cast<intptr_t>(handle));
+  std::lock_guard<std::mutex> lock(g_handleRegistryMu);
+  const auto it = g_liveHandles.find(raw);
+  return it != g_liveHandles.end() ? it->second : nullptr;
+}
+
+// Atomic destroy claim (SECURITY MEDIUM): lookup + erase under the one
+// registry lock, handing the live handle out exactly once. A second destroy
+// (or any racing entry) finds the handle already erased and fails closed,
+// so teardown below runs exclusively and re-entry during destroy is barred.
+// New dispatches fail closed too (erased from the live set); an in-flight
+// dispatch keeps its own counted ref, so the object outlives this destroy
+// until that critical section drains.
+std::shared_ptr<GalleryHandle> ClaimForDestroy(jlong handle) {
+  if (handle == 0) return nullptr;
+  GalleryHandle* raw =
+      reinterpret_cast<GalleryHandle*>(static_cast<intptr_t>(handle));
+  std::lock_guard<std::mutex> lock(g_handleRegistryMu);
+  const auto it = g_liveHandles.find(raw);
+  if (it == g_liveHandles.end()) {
+    return nullptr;
+  }
+  std::shared_ptr<GalleryHandle> claimed = std::move(it->second);
+  g_liveHandles.erase(it);
+  return claimed;
 }
 
 #ifdef __ANDROID__
@@ -226,7 +289,7 @@ GalleryHandle* ToGallery(jlong handle) {
 // `GalleryPage` tag so the `GalleryPage:I` logcat filter sees them. Counts
 // always come from the live row model + pager (rows.size() and
 // GalleryPageCount with the attached window height) — never constants.
-// Callers must hold g->mu.
+// Callers must hold a counted registry ref and g->mu.
 void EmitGalleryMarkersLocked(GalleryHandle* g, int pages, int w, int h) {
   (void)w;
   (void)h;
@@ -305,18 +368,24 @@ extern "C" MUSE_JNI_EXPORT jlong Java_com_muse_host_MainActivity_nativeLoadTree(
 #endif
       return 0;
     }
-    GalleryHandle* g = new GalleryHandle();
+    std::shared_ptr<GalleryHandle> g = std::make_shared<GalleryHandle>();
     g->tree.resize(static_cast<std::size_t>(len));
     env->GetByteArrayRegion(treeBytes, 0, len,
                             reinterpret_cast<jbyte*>(g->tree.data()));
     if (env->ExceptionCheck() == JNI_TRUE) {
       env->ExceptionClear();
-      delete g;
+      // g is a counted ref: returning drops it, no explicit delete.
       return 0;
     }
     g->rows = ::runtime::ParseGalleryRows(g->tree.data(), g->tree.size(),
                                           &g->parseError);
     g->parsed = true;
+    // Review BLOCKER: populate the tap tree from the laid-out bounds at
+    // load so the device dispatch path resolves real button nodes. Runs
+    // before registration (single-threaded here: no entry can observe the
+    // handle yet, so no lock is needed).
+    PopulateTapTreeFromLayout(g->tapTree);
+    RegisterHandle(g);
 #ifdef __ANDROID__
     char msg[192];
     std::snprintf(msg, sizeof(msg),
@@ -337,7 +406,7 @@ extern "C" MUSE_JNI_EXPORT jlong Java_com_muse_host_MainActivity_nativeLoadTree(
       GalleryLogInfo(marker);
     }
 #endif
-    return static_cast<jlong>(reinterpret_cast<intptr_t>(g));
+    return static_cast<jlong>(reinterpret_cast<intptr_t>(g.get()));
   } catch (...) {
     if (env != nullptr && env->ExceptionCheck() == JNI_TRUE) {
       env->ExceptionClear();
@@ -352,7 +421,7 @@ extern "C" MUSE_JNI_EXPORT void Java_com_muse_host_MainActivity_nativeAttachSurf
   if (env == nullptr || env->ExceptionCheck() == JNI_TRUE) {
     return;
   }
-  GalleryHandle* g = ToGallery(handle);
+  std::shared_ptr<GalleryHandle> g = ToGallery(handle);
   if (g == nullptr) return;
   try {
 #ifdef __ANDROID__
@@ -404,12 +473,12 @@ extern "C" MUSE_JNI_EXPORT void Java_com_muse_host_MainActivity_nativeRenderFram
   if (env->ExceptionCheck() == JNI_TRUE) {
     return;
   }
-  GalleryHandle* g = ToGallery(handle);
+  std::shared_ptr<GalleryHandle> g = ToGallery(handle);
   if (g == nullptr) return;
   try {
 #ifdef __ANDROID__
     std::lock_guard<std::mutex> lock(g->mu);
-    RenderLocked(g);
+    RenderLocked(g.get());
 #endif
   } catch (...) {
     if (env->ExceptionCheck() == JNI_TRUE) {
@@ -424,13 +493,13 @@ extern "C" MUSE_JNI_EXPORT jint Java_com_muse_host_MainActivity_nativeAdvancePag
   if (env == nullptr || env->ExceptionCheck() == JNI_TRUE) {
     return 0;
   }
-  GalleryHandle* g = ToGallery(handle);
+  std::shared_ptr<GalleryHandle> g = ToGallery(handle);
   if (g == nullptr) return 0;
   try {
 #ifdef __ANDROID__
     std::lock_guard<std::mutex> lock(g->mu);
     g->page += 1;
-    RenderLocked(g);
+    RenderLocked(g.get());
     {
       // A page turn is a deliberate user action: always worth one line.
       char msg[64];
@@ -450,13 +519,104 @@ extern "C" MUSE_JNI_EXPORT jint Java_com_muse_host_MainActivity_nativeAdvancePag
   }
 }
 
+// JNI touch entry (BUG-M3-FIDELITY-007 T3/T5; FR-INPUT-011 / AC-INPUT-020).
+// Java forwards raw MotionEvent fields (action, x, y, pointerId,
+// timestampMs); node-id resolution happens natively from laid-out bounds —
+// never a pre-decided node id from Java (plan A1). Fail-closed mirror of the
+// sibling entries: null env, pending exception, or an unregistered (zero,
+// forged, stale) handle yields -1 with no exception crossing into the VM
+// and no dereference. Coordinates cross raw and are only trusted once the
+// env/handle guards pass; ResolveTapTarget fails negative/NaN closed.
+// Valid-env dispatch core (T5): ACTION_DOWN records the down origin and adds
+// the pointer; ACTION_UP resolves the target from laid-out bounds, claims
+// via ClaimTap, and fires exactly once via FireTapHandler (ClaimTap-
+// exclusive: no direct arena read bypasses the claim). A fired tap posts
+// its write-through repaint hook and re-renders on the gallery path; the
+// one-frame vsync proof itself is device-measured (T7).
+// Returns the claimed-and-fired node id, or -1 when nothing fired.
+extern "C" MUSE_JNI_EXPORT jint Java_com_muse_host_MainActivity_nativeDispatchTouch(
+    JNIEnv* env, jobject thiz, jlong handle, jint action, jfloat x, jfloat y,
+    jint pointerId, jlong timestampMs) {
+  (void)thiz;
+  (void)timestampMs;
+  if (env == nullptr || env->ExceptionCheck() == JNI_TRUE) {
+    return -1;
+  }
+  std::shared_ptr<GalleryHandle> g = ToGallery(handle);
+  if (g == nullptr) {
+    return -1;
+  }
+  try {
+    // MotionEvent action codes (platform constants, mirrored hermetically
+    // in jni_touch_dispatch_shape_test.cpp).
+    constexpr jint kActionDown = 0;
+    constexpr jint kActionUp = 1;
+    input::AxisState axes{};
+    axes.x = x;
+    axes.y = y;
+    axes.pressure = 1.0f;
+    const input::NormalizedEvent ev = input::NormalizeMotion(
+        pointerId, input::ToolType::Touch, 0u, axes, 0u,
+        input::SourceClass::Touch);
+    std::lock_guard<std::mutex> lock(g->mu);
+    if (action == kActionDown) {
+#ifdef __ANDROID__
+      char msg[128];
+      std::snprintf(msg, sizeof(msg),
+                    "nativeDispatchTouch: action=%d x=%.1f y=%.1f pointer=%d",
+                    static_cast<int>(action), static_cast<double>(x),
+                    static_cast<double>(y), static_cast<int>(pointerId));
+      MuseLogInfo(msg);
+#endif
+      RecordTapDown(pointerId, x, y);
+      g->tapArena.AddPointer(ev, g->tapTree);
+      return -1;
+    }
+    if (action == kActionUp) {
+      const int32_t target = ResolveTapTarget(g->tapTree, x, y);
+      if (target < 0) {
+        return -1;
+      }
+      const ArenaAction claim = ClaimTap(g->tapArena, pointerId, target);
+      if (!claim.claimed) {
+        return -1;
+      }
+      if (!FireTapHandler(target)) {
+        return -1;
+      }
+      const bool posted = RepaintWithinOneFrame(target);
+      (void)posted;
+#ifdef __ANDROID__
+      RenderLocked(g.get());
+      {
+        char msg[128];
+        std::snprintf(msg, sizeof(msg),
+                      "nativeDispatchTouch: tap fired node=%d repaint=%d",
+                      static_cast<int>(target), posted ? 1 : 0);
+        MuseLogInfo(msg);
+      }
+#endif
+      return static_cast<jint>(target);
+    }
+    // MOVE and other actions: keep the arena displacement current so the
+    // UP slop verdict measures the full gesture; never fires.
+    g->tapArena.AddPointer(ev, g->tapTree);
+    return -1;
+  } catch (...) {
+    if (env->ExceptionCheck() == JNI_TRUE) {
+      env->ExceptionClear();
+    }
+    return -1;
+  }
+}
+
 extern "C" MUSE_JNI_EXPORT void Java_com_muse_host_MainActivity_nativeDetachSurface(
     JNIEnv* env, jobject thiz, jlong handle) {
   (void)thiz;
   if (env == nullptr || env->ExceptionCheck() == JNI_TRUE) {
     return;
   }
-  GalleryHandle* g = ToGallery(handle);
+  std::shared_ptr<GalleryHandle> g = ToGallery(handle);
   if (g == nullptr) return;
   try {
 #ifdef __ANDROID__
@@ -483,20 +643,27 @@ extern "C" MUSE_JNI_EXPORT void Java_com_muse_host_MainActivity_nativeDestroy(
   if (env->ExceptionCheck() == JNI_TRUE) {
     return;
   }
-  GalleryHandle* g = ToGallery(handle);
-  if (g == nullptr) return;
+  // Atomic, exclusive teardown: a single registry-locked claim hands the
+  // live handle out exactly once (re-entry during destroy, stale-slot reuse
+  // after destroy, and racing destroys all fail closed in ClaimForDestroy
+  // with no deref). New dispatches fail closed too (erased from the live
+  // set). The teardown lock below waits on g->mu, so an in-flight dispatch
+  // — which holds its own counted ref across its critical section — finishes
+  // first; the object itself dies only when that last in-flight ref drains
+  // (the local `claimed` going out of scope here). The Java side zeroes its
+  // slot after this call (engineHandle = 0).
+  std::shared_ptr<GalleryHandle> claimed = ClaimForDestroy(handle);
+  if (claimed == nullptr) return;
   try {
 #ifdef __ANDROID__
-    std::lock_guard<std::mutex> lock(g->mu);
-    if (g->window != nullptr) {
-      ANativeWindow_release(g->window);
-      g->window = nullptr;
+    std::lock_guard<std::mutex> lock(claimed->mu);
+    if (claimed->window != nullptr) {
+      ANativeWindow_release(claimed->window);
+      claimed->window = nullptr;
     }
 #endif
   } catch (...) {
   }
-  try {
-    delete g;
-  } catch (...) {
-  }
+  // No explicit delete: `claimed` going out of scope drops the destroy-side
+  // ref; in-flight holders keep the handle alive until they release g->mu.
 }

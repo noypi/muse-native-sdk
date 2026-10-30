@@ -5,6 +5,18 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+# Single source for the consume-only engine/input TUs (review MINOR): the
+# host `runtime` lib, the real-Android `Runtime` shared lib, and the
+# `muse_input_units` hermetic helper all compile this exact set (engine/input
+# itself stays untouched — consumed, never modified). Add a TU here, not in
+# three places; the NDK hermetic gate (cmake/android-ndk.cmake) mirrors it
+# via the same variable with a local fallback.
+set(MUSE_INPUT_SOURCES
+  ../input/src/event_model.cpp
+  ../input/src/hit_test.cpp
+  ../input/src/gesture_arena.cpp
+)
+
 add_library(runtime
   src/tree.cpp
   src/frame.cpp
@@ -17,13 +29,21 @@ add_library(runtime
   src/gallery_present.cpp
   src/host.cpp
   src/input.cpp
+  src/input_chain.cpp
   src/ime_inset.cpp
   src/text.cpp
   src/text_field.cpp
   src/presenter.cpp
 )
 target_include_directories(runtime PUBLIC include)
+target_include_directories(runtime PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../input/include)
 target_compile_options(runtime PRIVATE -Wall -Wextra -Wpedantic)
+
+# BUG-M3-FIDELITY-007 T5: the valid-env touch dispatch body in jni_bridge.cpp
+# drives ResolveTapTarget/ClaimTap/FireTapHandler (input_chain.cpp) over the
+# consume-only engine/input units, so their TUs compile into the static
+# runtime (engine/input itself is untouched — consumed, never modified).
+target_sources(runtime PRIVATE ${MUSE_INPUT_SOURCES})
 
 # T4 pacing link fix (Android-configured static lane): under the Android
 # toolchain __ANDROID__ is defined, so presenter.cpp's device lane calls
@@ -73,8 +93,10 @@ if(DEFINED ANDROID_ABI AND NOT TARGET Runtime)
     src/vulkan_baseline.cpp
     src/renderer.cpp
     src/jni_bridge.cpp
+    src/input_chain.cpp
     src/gallery_present.cpp
     src/presenter.cpp
+    ${MUSE_INPUT_SOURCES}
     ../graphics/pacing/frame_rate.cc
     ../graphics/pacing/render_ahead.cc
   )
@@ -85,6 +107,7 @@ if(DEFINED ANDROID_ABI AND NOT TARGET Runtime)
     VISIBILITY_INLINES_HIDDEN ON
   )
   target_include_directories(Runtime PUBLIC include)
+  target_include_directories(Runtime PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../input/include)
   # T4 pacing link fix: frame_rate.cc/render_ahead.cc self-include as
   # "engine/graphics/pacing/...", so the repo root must be on the include
   # path (mirrors the T4 pinning test's `-I .`).
@@ -197,9 +220,27 @@ target_compile_options(host_lifecycle_test PRIVATE -Wall -Wextra -Wpedantic)
 add_test(NAME host_lifecycle_test COMMAND host_lifecycle_test)
 
 add_executable(touch_dispatch_test tests/touch_dispatch_test.cpp)
-target_link_libraries(touch_dispatch_test PRIVATE runtime)
+target_include_directories(touch_dispatch_test PRIVATE ../input/include)
+target_link_libraries(touch_dispatch_test PRIVATE runtime muse_input_units)
 target_compile_options(touch_dispatch_test PRIVATE -Wall -Wextra -Wpedantic)
 add_test(NAME touch_dispatch_test COMMAND touch_dispatch_test)
+
+# BUG-M3-FIDELITY-007 batch 3 (T5): component-handler dispatch +
+# write-through one-frame repaint halves of the device tap chain.
+add_executable(tap_handler_repaint_test tests/tap_handler_repaint_test.cpp)
+target_include_directories(tap_handler_repaint_test PRIVATE ../input/include)
+target_link_libraries(tap_handler_repaint_test PRIVATE runtime muse_input_units)
+target_compile_options(tap_handler_repaint_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME tap_handler_repaint_test COMMAND tap_handler_repaint_test)
+
+# BUG-M3-FIDELITY-007 T5 lifetime re-audit (security MEDIUM: ToGallery waiter
+# UAF — registry lock released before use; fix: counted lifetime). Entry-shape
+# pins for the registry-guarding JNI entries (null-env fail-closed halves);
+# the live-handle + waiter halves are JVM/device-only (ASSUMPTION → T7).
+add_executable(gallery_registry_lifetime_test tests/gallery_registry_lifetime_test.cpp)
+target_link_libraries(gallery_registry_lifetime_test PRIVATE runtime)
+target_compile_options(gallery_registry_lifetime_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME gallery_registry_lifetime_test COMMAND gallery_registry_lifetime_test)
 
 add_executable(config_change_test tests/config_change_test.cpp)
 target_link_libraries(config_change_test PRIVATE runtime)
@@ -290,6 +331,26 @@ add_executable(gallery_present_test tests/gallery_present_test.cpp)
 target_link_libraries(gallery_present_test PRIVATE runtime)
 target_compile_options(gallery_present_test PRIVATE -Wall -Wextra -Wpedantic)
 add_test(NAME gallery_present_test COMMAND gallery_present_test)
+
+# BUG-M3-FIDELITY-007 batch 2: JNI touch-entry shape (T3) + native
+# hit-test/arena wiring (T4). The input consume-lib compiles exactly the
+# engine/input TUs T4 consumes (consume-only: hit-test, gesture arena, event
+# model) so the hermetic device-chain tests link without pulling the whole
+# input project into the runtime configure.
+add_executable(jni_touch_dispatch_shape_test tests/jni_touch_dispatch_shape_test.cpp)
+target_link_libraries(jni_touch_dispatch_shape_test PRIVATE runtime)
+target_compile_options(jni_touch_dispatch_shape_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME jni_touch_dispatch_shape_test COMMAND jni_touch_dispatch_shape_test)
+
+add_library(muse_input_units STATIC ${MUSE_INPUT_SOURCES})
+target_include_directories(muse_input_units PUBLIC ../input/include)
+target_compile_options(muse_input_units PRIVATE -Wall -Wextra -Wpedantic)
+
+add_executable(input_chain_test tests/input_chain_test.cpp)
+target_include_directories(input_chain_test PRIVATE ../input/include)
+target_link_libraries(input_chain_test PRIVATE runtime muse_input_units)
+target_compile_options(input_chain_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME input_chain_test COMMAND input_chain_test)
 
 # T2 JNI contract regression (BUG-RUNTIME-002): every native* method in
 # MainActivity.java must have a matching Java_com_muse_host_MainActivity_*
