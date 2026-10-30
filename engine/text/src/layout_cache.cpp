@@ -102,10 +102,15 @@ StatusOr<ShapedRun> shapeRunWithVariations(
     }
     ShapedRun run = *base;
 
-    // Fold the variation vector into the advances: the hash-derived delta
-    // is uniform per run (identical vectors -> identical advances) with a
-    // small per-glyph slope so multi-glyph runs read as shaped output.
-    const std::uint64_t hash = VariationHash(vars, var_count);
+    // Fold the variation vector AND the face id into the advances: the
+    // hash-derived delta is uniform per (face, run) pair (identical
+    // vectors on the same face -> identical advances) with a small
+    // per-glyph slope so multi-glyph runs read as shaped output.
+    // Folding font.id keeps the hermetic stub face-sensitive so the
+    // downloadable-font success path is observable via advances_differ.
+    std::uint64_t hash = VariationHash(vars, var_count);
+    hash ^= static_cast<std::uint64_t>(font.id);
+    hash *= 1099511628211ull;
     float delta =
         static_cast<float>(static_cast<std::int64_t>(hash % 200001u) -
                            100000) *
