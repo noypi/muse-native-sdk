@@ -168,6 +168,24 @@ function printBuildHelp() {
 
 function main() {
   const argv = process.argv.slice(2);
+  if (argv[0] === 'gallery-tree') {
+    if (argv.includes('--help') || argv.includes('-h')) {
+      process.stdout.write('Usage: muse-native gallery-tree --assert-evaluated --fail-on-static-fallback [--static-fallback]\n');
+      process.exitCode = 0;
+      return;
+    }
+    const tree = require('./gallery-tree.js');
+    let result;
+    try {
+      result = tree.runGalleryTree(argv.slice(1));
+    } catch (err) {
+      process.stderr.write(`${(err && err.message) || String(err)}\nUsage: muse-native gallery-tree --assert-evaluated --fail-on-static-fallback\n`);
+      process.exitCode = 1;
+      return;
+    }
+    process.stdout.write(`gallery-tree ok: proofGate=${result.proofGate}\n`);
+    return;
+  }
   if (argv[0] === 'gallery-proof') {
     if (argv.includes('--help') || argv.includes('-h')) {
       printGalleryProofHelp();
