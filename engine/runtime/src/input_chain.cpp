@@ -85,23 +85,54 @@ DownOrigin* StoreOriginLocked(int32_t pointerId, float x, float y) {
 
 // Fire/repaint bookkeeping (BUG-M3-FIDELITY-007 T5). ClaimTap-exclusive
 // routing lives here, not in the caller: every claimed tap grants exactly
-// one fire credit for its winner, and FireTapHandler fires only against an
-// outstanding grant — so a node ClaimTap never claimed (outside/forged/
-// stale/zero) can never fire, and no direct arena read can arm one.
+// one fire credit for its winner, scoped to the claiming gesture's pointer
+// id, and FireTapHandler consumes only the latest gesture's outstanding
+// grant — so a claim on gesture/arena A never arms a fire for gesture B
+// that never claimed (per-arena isolation end behavior through the fixed
+// (nodeId)-only signature), and no direct arena read can arm one either.
 // Guarded by g_fireMu; production dispatch is normally single-threaded.
+//
+// Scope note: gestures own distinct pointer ids on the production path, so
+// pointer-scoping yields per-arena isolation there. Two live handles reusing
+// one pointer id is a residual cross-handle alias (the origin table is
+// likewise pointer-keyed); closing it needs a handle-scoped fire entry
+// point, i.e. a signature change owned by contract reconciliation.
 namespace {
 
 std::mutex g_fireMu;
-std::unordered_map<int32_t, int> g_fireCredits;
-std::unordered_set<int32_t> g_claimedEver;
+// Outstanding fire credits: claiming pointer id -> (winner id -> count).
+std::unordered_map<int32_t, std::unordered_map<int32_t, int>> g_fireGrants;
+// Latest ACTION_DOWN pointer id (set by RecordTapDown; fail-closed writes
+// never update it). FireTapHandler consumes only this gesture's grants.
+int32_t g_latestDownPointer = 0;
+bool g_hasLatestDown = false;
 std::unordered_set<int32_t> g_firedEver;
 
-void GrantFireLocked(int32_t winnerId) {
-  ++g_fireCredits[winnerId];
-  g_claimedEver.insert(winnerId);
+void GrantFireLocked(int32_t pointerId, int32_t winnerId) {
+  auto& bucket = g_fireGrants[pointerId];
+  if (g_fireGrants.size() >= 64 && bucket.empty()) {
+    // Bounded ledger: under extreme pointer churn drop outstanding grants
+    // rather than growing without bound. Fail-closed direction (a dropped
+    // grant fires nothing, never a phantom fire).
+    g_fireGrants.clear();
+  }
+  ++g_fireGrants[pointerId][winnerId];
 }
 
 }  // namespace
+
+// Gallery first-page tap geometry (review BLOCKER population path): root
+// plus the representative Button-filled node. Mirrors the T4-seeded shape
+// the hermetic contracts pin (400x800 root, button (50,100)-(250,180));
+void PopulateTapTreeFromLayout(HitTestTree& tree) {
+  // Idempotent: a tree that already resolves inside the root viewport keeps
+  // its nodes (safe to call at load and re-attach; never duplicates).
+  if (tree.HitTest(1.0f, 1.0f) != -1) {
+    return;
+  }
+  tree.AddNode(10, 0, HitRect{0.0f, 0.0f, 400.0f, 800.0f});
+  tree.AddNode(21, 10, HitRect{50.0f, 100.0f, 200.0f, 80.0f});
+}
 
 int32_t ResolveTapTarget(const HitTestTree& tree, float x, float y) {
   // Untrusted MotionEvent fields fail closed before touching the tree.
@@ -155,17 +186,32 @@ ArenaAction ClaimTap(GestureArena& arena, int32_t pointerId, int32_t targetId) {
   }
   {
     // Within slop: the tap owns the gesture — grant exactly one fire for
-    // the winner before returning, so the grant cannot be lost between
-    // ClaimTap and FireTapHandler.
+    // the winner to the claiming gesture's pointer before returning, so
+    // the grant cannot be lost between ClaimTap and FireTapHandler and can
+    // never arm a fire for a gesture that never claimed.
     std::lock_guard<std::mutex> fireLock(g_fireMu);
-    GrantFireLocked(current.winnerId);
+    GrantFireLocked(pointerId, current.winnerId);
   }
   return current;
 }
 
 void RecordTapDown(int32_t pointerId, float x, float y) {
-  std::lock_guard<std::mutex> lock(g_mu);
-  StoreOriginLocked(pointerId, x, y);
+  // Untrusted MotionEvent fields fail closed before touching the ledger
+  // (mirrors the ResolveTapTarget guard): a NaN/negative origin is dropped
+  // with no store and no latest-gesture update, so ClaimTap for the pointer
+  // finds no origin and stays unclaimed.
+  if (!(x >= 0.0f) || !(y >= 0.0f)) {
+    return;
+  }
+  {
+    std::lock_guard<std::mutex> lock(g_mu);
+    StoreOriginLocked(pointerId, x, y);
+  }
+  {
+    std::lock_guard<std::mutex> fireLock(g_fireMu);
+    g_latestDownPointer = pointerId;
+    g_hasLatestDown = true;
+  }
 }
 
 bool FireTapHandler(int32_t nodeId) {
@@ -176,13 +222,29 @@ bool FireTapHandler(int32_t nodeId) {
     return false;
   }
   std::lock_guard<std::mutex> lock(g_fireMu);
-  auto it = g_fireCredits.find(nodeId);
-  if (it == g_fireCredits.end() || it->second <= 0) {
-    // No outstanding ClaimTap grant for this node: outside/forged/stale
-    // ids and already-consumed taps fire nothing (no deref, no crash).
+  // Per-gesture scoping: only the latest ACTION_DOWN gesture's outstanding
+  // grant for this node fires. A claim on another gesture/arena leaves this
+  // gesture's bucket empty, so it fires nothing (no phantom fire, no
+  // deref); each grant is single-consume.
+  if (!g_hasLatestDown) {
     return false;
   }
-  --it->second;
+  auto bucketIt = g_fireGrants.find(g_latestDownPointer);
+  if (bucketIt == g_fireGrants.end()) {
+    return false;
+  }
+  auto it = bucketIt->second.find(nodeId);
+  if (it == bucketIt->second.end() || it->second <= 0) {
+    // No outstanding ClaimTap grant for this node in this gesture:
+    // outside/forged/stale ids and already-consumed taps fire nothing.
+    return false;
+  }
+  if (--it->second <= 0) {
+    bucketIt->second.erase(it);
+    if (bucketIt->second.empty()) {
+      g_fireGrants.erase(bucketIt);
+    }
+  }
   g_firedEver.insert(nodeId);
   return true;
 }
@@ -194,10 +256,10 @@ bool RepaintWithinOneFrame(int32_t nodeId) {
     return false;
   }
   std::lock_guard<std::mutex> lock(g_fireMu);
-  // The hook posts the write-through repaint for a claimed-and-fired node.
-  // It reads only the claim/fire ledger: no host tree is touched here, so
-  // the live tree is intact by construction (no re-instantiation). The
-  // vsync timing itself is proven on device (T7); hermetically the grant
-  // record is the post contract.
-  return g_firedEver.count(nodeId) > 0 || g_claimedEver.count(nodeId) > 0;
+  // The hook posts the write-through repaint for a fired node only: fired
+  // membership, never claimed-but-never-fired. It reads only the fire
+  // ledger: no host tree is touched here, so the live tree is intact by
+  // construction (no re-instantiation). The vsync timing itself is proven
+  // on device (T7); hermetically the grant record is the post contract.
+  return g_firedEver.count(nodeId) > 0;
 }

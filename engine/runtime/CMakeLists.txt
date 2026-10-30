@@ -5,6 +5,18 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+# Single source for the consume-only engine/input TUs (review MINOR): the
+# host `runtime` lib, the real-Android `Runtime` shared lib, and the
+# `muse_input_units` hermetic helper all compile this exact set (engine/input
+# itself stays untouched — consumed, never modified). Add a TU here, not in
+# three places; the NDK hermetic gate (cmake/android-ndk.cmake) mirrors it
+# via the same variable with a local fallback.
+set(MUSE_INPUT_SOURCES
+  ../input/src/event_model.cpp
+  ../input/src/hit_test.cpp
+  ../input/src/gesture_arena.cpp
+)
+
 add_library(runtime
   src/tree.cpp
   src/frame.cpp
@@ -31,11 +43,7 @@ target_compile_options(runtime PRIVATE -Wall -Wextra -Wpedantic)
 # drives ResolveTapTarget/ClaimTap/FireTapHandler (input_chain.cpp) over the
 # consume-only engine/input units, so their TUs compile into the static
 # runtime (engine/input itself is untouched — consumed, never modified).
-target_sources(runtime PRIVATE
-  ../input/src/event_model.cpp
-  ../input/src/hit_test.cpp
-  ../input/src/gesture_arena.cpp
-)
+target_sources(runtime PRIVATE ${MUSE_INPUT_SOURCES})
 
 # T4 pacing link fix (Android-configured static lane): under the Android
 # toolchain __ANDROID__ is defined, so presenter.cpp's device lane calls
@@ -88,9 +96,7 @@ if(DEFINED ANDROID_ABI AND NOT TARGET Runtime)
     src/input_chain.cpp
     src/gallery_present.cpp
     src/presenter.cpp
-    ../input/src/event_model.cpp
-    ../input/src/hit_test.cpp
-    ../input/src/gesture_arena.cpp
+    ${MUSE_INPUT_SOURCES}
     ../graphics/pacing/frame_rate.cc
     ../graphics/pacing/render_ahead.cc
   )
@@ -327,11 +333,7 @@ target_link_libraries(jni_touch_dispatch_shape_test PRIVATE runtime)
 target_compile_options(jni_touch_dispatch_shape_test PRIVATE -Wall -Wextra -Wpedantic)
 add_test(NAME jni_touch_dispatch_shape_test COMMAND jni_touch_dispatch_shape_test)
 
-add_library(muse_input_units STATIC
-  ../input/src/event_model.cpp
-  ../input/src/hit_test.cpp
-  ../input/src/gesture_arena.cpp
-)
+add_library(muse_input_units STATIC ${MUSE_INPUT_SOURCES})
 target_include_directories(muse_input_units PUBLIC ../input/include)
 target_compile_options(muse_input_units PRIVATE -Wall -Wextra -Wpedantic)
 

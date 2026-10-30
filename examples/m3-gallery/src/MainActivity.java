@@ -28,6 +28,20 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
 
     private long engineHandle = 0;
 
+    /**
+     * Touch-slop mirror for the page-flip fallback gate below. Sole source
+     * of truth is {@code runtime::touch_detail::kTouchSlopPx} (plan A2,
+     * 8px); this literal must track it — the native slop verdict and this
+     * Java gate must agree, otherwise a scroll could page-flip or an
+     * outside tap could go silent.
+     */
+    private static final float TOUCH_SLOP_PX = 8.0f;
+
+    /** DOWN anchor of the active gesture, for the drag-vs-outside gate. */
+    private float downX = 0f;
+    private float downY = 0f;
+    private int downPointerId = -1;
+
     /** Broadcast action the proof pages through (same entry as the tap path). */
     static final String ACTION_NATIVE_ADVANCE_PAGE = "muse.native.NATIVE_ADVANCE_PAGE";
 
@@ -81,15 +95,40 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         // `setOnClickListener -> nativeAdvancePage` page-flip is gone as a
         // tap handler — a tap that claims a button fires the button only and
         // never turns the page. Page advance survives solely as the
-        // no-claim fallback below (dispatch returned -1: outside every
-        // button, or a drag the arena did not claim as a tap), so a tap
-        // cannot both fire and flip.
+        // outside-tap fallback below (dispatch returned -1 AND the gesture
+        // never dragged past slop), so a tap cannot both fire and flip and
+        // a drag-release can never turn the page (AC-INPUT-020 drag-no-fire).
         surfaceView.setOnTouchListener((v, event) -> {
             if (engineHandle == 0) {
                 return false;
             }
             int action = event.getActionMasked();
             int index = event.getActionIndex();
+            if (action == MotionEvent.ACTION_DOWN) {
+                downX = event.getX(index);
+                downY = event.getY(index);
+                downPointerId = event.getPointerId(index);
+            }
+            if (action == MotionEvent.ACTION_MOVE) {
+                // MOVE batching (run decision UNSETTLED per support.md: the
+                // evidence does not settle a batching/coalescing policy, so
+                // this is the smallest safe choice, not a settled policy).
+                // Only the action-index sample is forwarded by default,
+                // which under-measures fast drags; forward each batched
+                // historical sample first so the native UP slop verdict sees
+                // the full gesture displacement. No native contract change:
+                // history reuses the same MOVE entry.
+                int historySize = event.getHistorySize();
+                for (int h = 0; h < historySize; h++) {
+                    nativeDispatchTouch(
+                            engineHandle,
+                            action,
+                            event.getHistoricalX(index, h),
+                            event.getHistoricalY(index, h),
+                            event.getPointerId(index),
+                            event.getHistoricalEventTime(h));
+                }
+            }
             int claimed = nativeDispatchTouch(
                     engineHandle,
                     action,
@@ -98,10 +137,19 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                     event.getPointerId(index),
                     event.getEventTime());
             if (action == MotionEvent.ACTION_UP) {
-                if (claimed < 0) {
+                boolean dragged = false;
+                if (event.getPointerId(index) == downPointerId) {
+                    float dx = event.getX(index) - downX;
+                    float dy = event.getY(index) - downY;
+                    dragged = Math.hypot(dx, dy) >= TOUCH_SLOP_PX;
+                }
+                downPointerId = -1;
+                if (claimed < 0 && !dragged) {
                     nativeAdvancePage(engineHandle);
                 }
                 nativeRenderFrame(engineHandle);
+            } else if (action == MotionEvent.ACTION_CANCEL) {
+                downPointerId = -1;
             }
             return true;
         });

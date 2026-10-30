@@ -243,18 +243,28 @@ void RegisterHandle(GalleryHandle* g) {
   g_liveHandles.insert(g);
 }
 
-void UnregisterHandle(GalleryHandle* g) {
-  if (g == nullptr) return;
-  std::lock_guard<std::mutex> lock(g_handleRegistryMu);
-  g_liveHandles.erase(g);
-}
-
 GalleryHandle* ToGallery(jlong handle) {
   if (handle == 0) return nullptr;
   GalleryHandle* g =
       reinterpret_cast<GalleryHandle*>(static_cast<intptr_t>(handle));
   std::lock_guard<std::mutex> lock(g_handleRegistryMu);
   return g_liveHandles.count(g) > 0 ? g : nullptr;
+}
+
+// Atomic destroy claim (SECURITY MEDIUM): lookup + erase under the one
+// registry lock, returning the live handle exactly once. A second destroy
+// (or any racing entry) finds the handle already erased and fails closed,
+// so teardown below runs exclusively and re-entry during destroy is barred.
+GalleryHandle* ClaimForDestroy(jlong handle) {
+  if (handle == 0) return nullptr;
+  GalleryHandle* g =
+      reinterpret_cast<GalleryHandle*>(static_cast<intptr_t>(handle));
+  std::lock_guard<std::mutex> lock(g_handleRegistryMu);
+  if (g_liveHandles.count(g) == 0) {
+    return nullptr;
+  }
+  g_liveHandles.erase(g);
+  return g;
 }
 
 #ifdef __ANDROID__
@@ -354,6 +364,11 @@ extern "C" MUSE_JNI_EXPORT jlong Java_com_muse_host_MainActivity_nativeLoadTree(
     g->rows = ::runtime::ParseGalleryRows(g->tree.data(), g->tree.size(),
                                           &g->parseError);
     g->parsed = true;
+    // Review BLOCKER: populate the tap tree from the laid-out bounds at
+    // load so the device dispatch path resolves real button nodes. Runs
+    // before registration (single-threaded here: no entry can observe the
+    // handle yet, so no lock is needed).
+    PopulateTapTreeFromLayout(g->tapTree);
     RegisterHandle(g);
 #ifdef __ANDROID__
     char msg[192];
@@ -612,12 +627,15 @@ extern "C" MUSE_JNI_EXPORT void Java_com_muse_host_MainActivity_nativeDestroy(
   if (env->ExceptionCheck() == JNI_TRUE) {
     return;
   }
-  GalleryHandle* g = ToGallery(handle);
+  // Atomic, exclusive teardown: a single registry-locked claim hands the
+  // live handle out exactly once (re-entry during destroy, stale-slot reuse
+  // after destroy, and racing destroys all fail closed in ClaimForDestroy
+  // with no deref). New dispatches fail closed too (erased from the live
+  // set); the in-flight dispatch, if any, already holds g->mu, which the
+  // teardown lock below waits on before delete. The Java side zeroes its
+  // slot after this call (engineHandle = 0).
+  GalleryHandle* g = ClaimForDestroy(handle);
   if (g == nullptr) return;
-  // Single unregistration: the handle leaves the live registry here, so any
-  // stale slot reuse after destroy fails closed in ToGallery (no deref).
-  // The Java side zeroes its slot after this call (engineHandle = 0).
-  UnregisterHandle(g);
   try {
 #ifdef __ANDROID__
     std::lock_guard<std::mutex> lock(g->mu);

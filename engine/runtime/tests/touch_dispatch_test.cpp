@@ -33,6 +33,15 @@
 // malformed test).
 bool FireTapHandler(int32_t nodeId);
 
+// PROVISIONAL production population path (review BLOCKER: tapTree never
+// populated from layout bounds, so device dispatch resolves -1 forever).
+// The coder owns the real name/signature (e.g. PopulateTapTreeFromLayout);
+// this declaration is an ASSUMPTION for the hermetic cases below. If the
+// coder names it differently, update these call sites (reconciliation, not
+// weakening) and re-publish the contract. Until the coder defines it,
+// linking this file MUST fail (expected red).
+void PopulateTapTreeFromLayout(HitTestTree& tree);
+
 // --- harness cases (convention copied from instantiate_test.cpp) -----------
 
 static bool check_harness_entry_reached() { return true; }
@@ -67,6 +76,11 @@ constexpr int32_t kPJitter = 34;
 constexpr int32_t kPReuse = 35;
 constexpr int32_t kPAbsent = 36;    // AddPointer but NEVER RecordTapDown
 constexpr int32_t kPUnknown = 999;  // never AddPointer'd, never recorded
+// Fresh pointer ids for the re-audit cases below (never reused elsewhere in
+// this file; the origin table has no reset).
+constexpr int32_t kPPopulated = 51;
+constexpr int32_t kPIsolateA = 52;
+constexpr int32_t kPIsolateB = 53;
 
 HitTestTree make_tree_with_button_and_list() {
   HitTestTree tree;
@@ -247,6 +261,86 @@ static bool check_unknown_ids_fail_closed() {
   return ok;
 }
 
+// Named case (review BLOCKER, hermetic half): a tree populated via the
+// production population path resolves a real laid-out button node at the
+// button's bounds (not -1); an unpopulated tree resolves -1 (fail-closed,
+// current behavior pinned). ASSUMPTION: the layout bounds behind the
+// population path match the T4-seeded shape, so (150,140) is in a button.
+static bool check_populated_tree_resolves_button_unpopulated_minus_one() {
+  HitTestTree populated;
+  PopulateTapTreeFromLayout(populated);
+  const int32_t got = ResolveTapTarget(populated, 150.0f, 140.0f);
+  if (got == -1) {
+    std::printf("  detail: populated tree resolved -1 at button bounds\n");
+    return false;
+  }
+  HitTestTree unpopulated;
+  if (ResolveTapTarget(unpopulated, 150.0f, 140.0f) != -1) {
+    std::printf("  detail: expected -1 on unpopulated tree\n");
+    return false;
+  }
+  return true;
+}
+
+// Named case (review MAJOR, per-arena isolation at dispatch level): a claim
+// on arena/handle A must NOT let a different arena/handle B fire the same
+// node id. B runs its own DOWN + AddPointer chain but never claims, so the
+// fire for the node id from B's chain must be false. NOTE: the current
+// FireTapHandler(nodeId) signature carries no arena, so this case pins only
+// the end behavior; the coder's per-arena ledger fix may need a scoped fire
+// entry point (design decision + contract reconciliation, not weakening).
+static bool check_claim_on_arena_a_does_not_arm_fire_for_arena_b() {
+  HitTestTree tree = make_tree_with_button_and_list();
+  GestureArena arenaA;
+  GestureArena arenaB;
+  RecordTapDown(kPIsolateA, 150.0f, 140.0f);
+  arenaA.AddPointer(down_at(kPIsolateA, 150.0f, 140.0f), tree);
+  const ArenaAction claimA = ClaimTap(arenaA, kPIsolateA, kButtonId);
+  if (!claimA.claimed) return false;  // setup broken
+  RecordTapDown(kPIsolateB, 150.0f, 140.0f);
+  arenaB.AddPointer(down_at(kPIsolateB, 150.0f, 140.0f), tree);
+  // B never claimed: no fire for the node id on B's chain.
+  if (FireTapHandler(kButtonId)) {
+    std::printf("  detail: phantom fire on unfired chain B\n");
+    return false;
+  }
+  return true;
+}
+
+// Named case (security: pointerId flood): more than 32 distinct down
+// origins stay bounded (the table is GestureArena-sized, oldest evicted)
+// and fail closed — a never-recorded pointer claims nothing, an evicted
+// oldest pointer claims nothing, and nothing fires for node -1. Never
+// throws, no phantom winner.
+static bool check_pointer_id_flood_stays_bounded_and_fail_closed() {
+  HitTestTree tree = make_tree_with_button_and_list();
+  constexpr int32_t kFloodBase = 1000;
+  constexpr int kFloodCount = 40;  // > 32-slot table
+  for (int i = 0; i < kFloodCount; ++i) {
+    RecordTapDown(kFloodBase + i, 150.0f, 140.0f);
+  }
+  GestureArena arena;
+  // Never-recorded pointer: unclaimed, no arena state for it.
+  const ArenaAction unknown = ClaimTap(arena, kPUnknown, kButtonId);
+  if (unknown.claimed) {
+    std::printf("  detail: expected unclaimed for never-recorded pointer\n");
+    return false;
+  }
+  // Oldest flooded pointer was evicted: AddPointer hits the button in the
+  // arena, but ClaimTap finds no origin and stays unclaimed (fail closed).
+  arena.AddPointer(down_at(kFloodBase, 150.0f, 140.0f), tree);
+  const ArenaAction evicted = ClaimTap(arena, kFloodBase, kButtonId);
+  if (evicted.claimed) {
+    std::printf("  detail: expected unclaimed for evicted oldest pointer\n");
+    return false;
+  }
+  if (FireTapHandler(-1)) {
+    std::printf("  detail: expected no fire for node -1 after flood\n");
+    return false;
+  }
+  return true;
+}
+
 #define RUN_CASE(name)                                       \
   do {                                                       \
     if (!(name)()) {                                         \
@@ -271,6 +365,9 @@ int main() {
   RUN_CASE(check_two_hosts_have_independent_trees);
   RUN_CASE(check_two_arenas_have_independent_claims);
   RUN_CASE(check_unknown_ids_fail_closed);
+  RUN_CASE(check_populated_tree_resolves_button_unpopulated_minus_one);
+  RUN_CASE(check_claim_on_arena_a_does_not_arm_fire_for_arena_b);
+  RUN_CASE(check_pointer_id_flood_stays_bounded_and_fail_closed);
   if (failures > 0) {
     std::printf("touch_dispatch_test: %d failing\n", failures);
     return 1;
