@@ -443,3 +443,13 @@ add_test(NAME gallery_handle_lifecycle_test COMMAND gallery_handle_lifecycle_tes
 if(NOT DEFINED ANDROID_ABI AND NOT TARGET Runtime_android_arm64_v8a)
   include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/android-ndk.cmake")
 endif()
+
+add_executable(egl_blit_test tests/egl_blit_test.cpp)
+target_link_libraries(egl_blit_test PRIVATE runtime)
+target_compile_options(egl_blit_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME egl_blit_test COMMAND egl_blit_test)
+
+add_executable(present_fallback_test tests/present_fallback_test.cpp)
+target_link_libraries(present_fallback_test PRIVATE runtime)
+target_compile_options(present_fallback_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME present_fallback COMMAND present_fallback_test)

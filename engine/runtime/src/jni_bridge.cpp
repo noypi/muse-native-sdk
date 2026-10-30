@@ -5,6 +5,13 @@
 
 #include "runtime/jni_bridge.h"
 #include "runtime/presenter.h"
+#include "runtime/egl_blit.h"
+// FR-GRAPHICS-012 T3: single-definition compile of the fallback branch.
+// `src/egl_blit.cpp` is not listed in any CMake target (header-only project
+// pattern, see that TU's note); including it here compiles the
+// `PresentFrameWithFallback` definition exactly once into `runtime` so the
+// hermetic `present_fallback` test links, with no build-file change.
+#include "egl_blit.cpp"
 
 #include <cstdint>
 #include <cstdio>
@@ -614,6 +621,16 @@ void RenderLocked(GalleryHandle* g) {
   std::string error = g->parseError;
   const bool presented = ::runtime::PresentDeviceGalleryPage(
       g->rows, g->page, renderer, window, h, &error);
+  // FR-GRAPHICS-012 T3: EGL blit-present attempt with automatic in-process
+  // CPU fallback. Observational until T4 proves EGL pixels: the proven CPU
+  // copy below always posts, so a failed (or dormant — EGL never initialized
+  // yet) EGL lane can never blank the device frame. Every EGL failure is
+  // logged inside as `GFX-BLIT-FALLBACK: <trigger>`; lock/unlockAndPost below
+  // are reused unchanged.
+  if (presented && w > 0 && h > 0 && !staged.empty()) {
+    std::string eglFallback;
+    PresentFrameWithFallback(staged.data(), w, h, &eglFallback);
+  }
   if (presented) {
     std::uint32_t* bits = static_cast<std::uint32_t*>(buf.bits);
     for (int y = 0; y < h; ++y) {
