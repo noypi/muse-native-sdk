@@ -17,12 +17,14 @@ add_library(runtime
   src/gallery_present.cpp
   src/host.cpp
   src/input.cpp
+  src/input_chain.cpp
   src/ime_inset.cpp
   src/text.cpp
   src/text_field.cpp
   src/presenter.cpp
 )
 target_include_directories(runtime PUBLIC include)
+target_include_directories(runtime PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../input/include)
 target_compile_options(runtime PRIVATE -Wall -Wextra -Wpedantic)
 
 # T4 pacing link fix (Android-configured static lane): under the Android
@@ -73,6 +75,7 @@ if(DEFINED ANDROID_ABI AND NOT TARGET Runtime)
     src/vulkan_baseline.cpp
     src/renderer.cpp
     src/jni_bridge.cpp
+    src/input_chain.cpp
     src/gallery_present.cpp
     src/presenter.cpp
     ../graphics/pacing/frame_rate.cc
@@ -85,6 +88,7 @@ if(DEFINED ANDROID_ABI AND NOT TARGET Runtime)
     VISIBILITY_INLINES_HIDDEN ON
   )
   target_include_directories(Runtime PUBLIC include)
+  target_include_directories(Runtime PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../input/include)
   # T4 pacing link fix: frame_rate.cc/render_ahead.cc self-include as
   # "engine/graphics/pacing/...", so the repo root must be on the include
   # path (mirrors the T4 pinning test's `-I .`).
@@ -290,6 +294,30 @@ add_executable(gallery_present_test tests/gallery_present_test.cpp)
 target_link_libraries(gallery_present_test PRIVATE runtime)
 target_compile_options(gallery_present_test PRIVATE -Wall -Wextra -Wpedantic)
 add_test(NAME gallery_present_test COMMAND gallery_present_test)
+
+# BUG-M3-FIDELITY-007 batch 2: JNI touch-entry shape (T3) + native
+# hit-test/arena wiring (T4). The input consume-lib compiles exactly the
+# engine/input TUs T4 consumes (consume-only: hit-test, gesture arena, event
+# model) so the hermetic device-chain tests link without pulling the whole
+# input project into the runtime configure.
+add_executable(jni_touch_dispatch_shape_test tests/jni_touch_dispatch_shape_test.cpp)
+target_link_libraries(jni_touch_dispatch_shape_test PRIVATE runtime)
+target_compile_options(jni_touch_dispatch_shape_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME jni_touch_dispatch_shape_test COMMAND jni_touch_dispatch_shape_test)
+
+add_library(muse_input_units STATIC
+  ../input/src/event_model.cpp
+  ../input/src/hit_test.cpp
+  ../input/src/gesture_arena.cpp
+)
+target_include_directories(muse_input_units PUBLIC ../input/include)
+target_compile_options(muse_input_units PRIVATE -Wall -Wextra -Wpedantic)
+
+add_executable(input_chain_test tests/input_chain_test.cpp)
+target_include_directories(input_chain_test PRIVATE ../input/include)
+target_link_libraries(input_chain_test PRIVATE runtime muse_input_units)
+target_compile_options(input_chain_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME input_chain_test COMMAND input_chain_test)
 
 # T2 JNI contract regression (BUG-RUNTIME-002): every native* method in
 # MainActivity.java must have a matching Java_com_muse_host_MainActivity_*

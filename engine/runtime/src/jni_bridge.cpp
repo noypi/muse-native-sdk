@@ -450,6 +450,53 @@ extern "C" MUSE_JNI_EXPORT jint Java_com_muse_host_MainActivity_nativeAdvancePag
   }
 }
 
+// JNI touch entry (BUG-M3-FIDELITY-007 T3; FR-INPUT-011 / AC-INPUT-020).
+// Java forwards raw MotionEvent fields (action, x, y, pointerId,
+// timestampMs); node-id resolution happens natively from laid-out bounds —
+// never a pre-decided node id from Java (plan A1). Fail-closed mirror of the
+// sibling entries: null env, pending exception, or zero handle yields -1
+// with no exception crossing into the VM. Coordinates cross raw and are only
+// trusted once the env/handle guards pass.
+// The valid-env dispatch core (hit-test/arena/handler via input_chain) and
+// the MainActivity.java onTouchEvent forwarding land with T5; until then no
+// node claims the tap and this returns -1 after logging the dispatch line
+// under the muse-host tag.
+extern "C" MUSE_JNI_EXPORT jint Java_com_muse_host_MainActivity_nativeDispatchTouch(
+    JNIEnv* env, jobject thiz, jlong handle, jint action, jfloat x, jfloat y,
+    jint pointerId, jlong timestampMs) {
+  (void)thiz;
+  (void)action;
+  (void)x;
+  (void)y;
+  (void)pointerId;
+  (void)timestampMs;
+  if (env == nullptr || env->ExceptionCheck() == JNI_TRUE) {
+    return -1;
+  }
+  GalleryHandle* g = ToGallery(handle);
+  if (g == nullptr) {
+    return -1;
+  }
+  try {
+#ifdef __ANDROID__
+    char msg[128];
+    std::snprintf(msg, sizeof(msg),
+                  "nativeDispatchTouch: action=%d x=%.1f y=%.1f pointer=%d",
+                  static_cast<int>(action), static_cast<double>(x),
+                  static_cast<double>(y), static_cast<int>(pointerId));
+    MuseLogInfo(msg);
+#else
+    (void)g;
+#endif
+    return -1;
+  } catch (...) {
+    if (env->ExceptionCheck() == JNI_TRUE) {
+      env->ExceptionClear();
+    }
+    return -1;
+  }
+}
+
 extern "C" MUSE_JNI_EXPORT void Java_com_muse_host_MainActivity_nativeDetachSurface(
     JNIEnv* env, jobject thiz, jlong handle) {
   (void)thiz;
