@@ -1,1 +1,2 @@
+# sdk.yaml — sole SDK-version input; build/VERSION is derived from this file.
 version: 0.1.0

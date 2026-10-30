@@ -32,6 +32,10 @@ apk:
 	sdk_ver="$$(sed -n '1p' "$(MUSE_NATIVE_HOME)/VERSION")"; \
 	if [ -z "$$sdk_pin" ]; then echo "warning: no 'sdk:' pin in muse-native.yaml; building against SDK version $$sdk_ver" >&2; \
 	elif [ "$$sdk_pin" != "$$sdk_ver" ]; then echo "error: SDK version mismatch: expected $$sdk_ver (from '$(MUSE_NATIVE_HOME)/VERSION' line 1), found sdk: $$sdk_pin (from muse-native.yaml)" >&2; exit 1; fi
+	test -s "$(MUSE_NATIVE_HOME)/android-arm64-v8a/libRuntime.so" || { echo "error: missing engine lib for ABI slot arm64-v8a at '$(MUSE_NATIVE_HOME)/android-arm64-v8a/libRuntime.so'" >&2; exit 1; }
+	test -s "$(MUSE_NATIVE_HOME)/android-armeabi-v7a/libRuntime.so" || { echo "error: missing engine lib for ABI slot armeabi-v7a at '$(MUSE_NATIVE_HOME)/android-armeabi-v7a/libRuntime.so'" >&2; exit 1; }
+	test -s "$(MUSE_NATIVE_HOME)/android-x86_64/libRuntime.so" || { echo "error: missing engine lib for ABI slot x86_64 at '$(MUSE_NATIVE_HOME)/android-x86_64/libRuntime.so'" >&2; exit 1; }
+	test -s "$(MUSE_NATIVE_HOME)/android-x86/libRuntime.so" || { echo "error: missing engine lib for ABI slot x86 at '$(MUSE_NATIVE_HOME)/android-x86/libRuntime.so'" >&2; exit 1; }
 	rm -f $(UNSIGNED_APK)
 	mkdir -p $(STAGING_DIR) $(BUILD_DIR)/gen $(BUILD_DIR)/classes $(BUILD_DIR)/dex
 	aapt2 compile --dir res -o $(BUILD_DIR)/compiled.zip
@@ -40,13 +44,9 @@ apk:
 	d8 --lib $(ANDROID_JAR) --output $(BUILD_DIR)/dex $$(find $(BUILD_DIR)/classes -name '*.class')
 	mkdir -p $(STAGING_DIR)/lib/arm64-v8a $(STAGING_DIR)/lib/armeabi-v7a $(STAGING_DIR)/lib/x86_64 $(STAGING_DIR)/lib/x86 $(STAGING_DIR)/assets/tree
 	unzip -o $(LINKED_ZIP) AndroidManifest.xml resources.arsc -d $(STAGING_DIR)
-	test -s "$(MUSE_NATIVE_HOME)/android-arm64-v8a/libRuntime.so" || { echo "error: missing engine lib for ABI slot arm64-v8a at '$(MUSE_NATIVE_HOME)/android-arm64-v8a/libRuntime.so'" >&2; exit 1; }
 	cp "$(MUSE_NATIVE_HOME)/android-arm64-v8a/libRuntime.so" $(STAGING_DIR)/lib/arm64-v8a/libRuntime.so
-	test -s "$(MUSE_NATIVE_HOME)/android-armeabi-v7a/libRuntime.so" || { echo "error: missing engine lib for ABI slot armeabi-v7a at '$(MUSE_NATIVE_HOME)/android-armeabi-v7a/libRuntime.so'" >&2; exit 1; }
 	cp "$(MUSE_NATIVE_HOME)/android-armeabi-v7a/libRuntime.so" $(STAGING_DIR)/lib/armeabi-v7a/libRuntime.so
-	test -s "$(MUSE_NATIVE_HOME)/android-x86_64/libRuntime.so" || { echo "error: missing engine lib for ABI slot x86_64 at '$(MUSE_NATIVE_HOME)/android-x86_64/libRuntime.so'" >&2; exit 1; }
 	cp "$(MUSE_NATIVE_HOME)/android-x86_64/libRuntime.so" $(STAGING_DIR)/lib/x86_64/libRuntime.so
-	test -s "$(MUSE_NATIVE_HOME)/android-x86/libRuntime.so" || { echo "error: missing engine lib for ABI slot x86 at '$(MUSE_NATIVE_HOME)/android-x86/libRuntime.so'" >&2; exit 1; }
 	cp "$(MUSE_NATIVE_HOME)/android-x86/libRuntime.so" $(STAGING_DIR)/lib/x86/libRuntime.so
 	cp $(BUILD_DIR)/dex/classes.dex $(STAGING_DIR)/classes.dex
 	cp -r tree/* $(STAGING_DIR)/assets/tree/ 2>/dev/null || cp -r assets/* $(STAGING_DIR)/assets/ 2>/dev/null || true
