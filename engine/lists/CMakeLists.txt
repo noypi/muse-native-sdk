@@ -5,7 +5,7 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-add_library(lists STATIC src/stable_key.cpp src/myers_diff.cpp src/scroll_physics.cpp src/scroll_signal.cpp src/refresh_rate.cpp src/position_persist.cpp src/snap_refresh.cpp src/item_animator.cpp src/drag_reorder.cpp src/swipe_dismiss.cpp src/selection_mode.cpp src/collection_contract.cpp src/letter_jump.cpp src/sticky_header.cpp src/slot_state.cpp src/collection_shape.cpp src/collection_semantics.cpp src/collection_item_info.cpp src/collection_announce.cpp src/collection_order.cpp)
+add_library(lists STATIC src/stable_key.cpp src/myers_diff.cpp src/scroll_physics.cpp src/scroll_signal.cpp src/refresh_rate.cpp src/position_persist.cpp src/snap_refresh.cpp src/item_animator.cpp src/drag_reorder.cpp src/swipe_dismiss.cpp src/selection_mode.cpp src/collection_contract.cpp src/letter_jump.cpp src/sticky_header.cpp src/slot_state.cpp src/collection_shape.cpp src/collection_semantics.cpp src/collection_item_info.cpp src/collection_announce.cpp src/collection_order.cpp src/prefetch_gap.cpp)
 target_include_directories(lists PUBLIC include)
 target_compile_options(lists PRIVATE -Wall -Wextra -Wpedantic -Werror)
 

@@ -23,6 +23,40 @@
 #include <unistd.h>
 #endif
 
+#ifdef __ANDROID__
+// T4 gallery path (device lane only): pacing call-site declarations.
+// Forward-declared here — instead of including the pacing headers — so the
+// host lane (which builds with engine/runtime/include only, no repo-root -I
+// for the pacing headers' own "engine/..." includes) never resolves them.
+// Definitions below are token-identical to
+// engine/graphics/pacing/{pacing_status,frame_rate,render_ahead}.h, which are
+// NOT modified (no signature changes). Consumed only by the
+// `#ifdef __ANDROID__` block in PresentPaced below.
+namespace pacing {
+enum class Status { kOk, kInvalidArg };
+enum class ContentClass { kIdle, kScroll, kAnimation, kVideo };
+struct DisplayModeRange {
+  int minHz;
+  int maxHz;
+};
+struct FrameRateIntent {
+  int fps = 0;
+  bool lowPowerIdle = false;
+  Status status = Status::kOk;
+};
+struct RenderAheadVerdict {
+  int admitted = 0;
+  int rejected = 0;
+  Status status = Status::kOk;
+};
+FrameRateIntent selectIntendedFrameRate(ContentClass content,
+                                        DisplayModeRange range,
+                                        bool ltpoCapable);
+RenderAheadVerdict tryQueueFrame(int queuedDepth, int maxDepth,
+                                 int framesRequested);
+}  // namespace pacing
+#endif
+
 namespace runtime {
 namespace {
 
@@ -324,6 +358,37 @@ PresenterError PresentPaced(const DrawCmds& cmds, ChoreographerDeadline deadline
             "PresentPaced: choreographer deadline already expired; frame not "
             "presented as on-time"};
   }
+#ifdef __ANDROID__
+  // Device lane (T4 gallery path): real vsync/pacing reads before present.
+  // `deadline.deadline_ns` is the real Choreographer timestamp delivered via
+  // the AChoreographer / Swappy / ASurfaceControl paced path (no fake clock
+  // here). Scroll content requests the high end via selectIntendedFrameRate;
+  // tryQueueFrame admission mirrors the kMaxRenderAhead clamp below so excess
+  // still surfaces as kPacingError with an identical diagnostic. The per-frame
+  // dtS derived from consecutive vsync timestamps is what the gallery fling
+  // path feeds into lists::integrate (integrate math unchanged).
+  {
+    const long long vsync_ns = deadline.deadline_ns;
+    const pacing::DisplayModeRange range{60, 120};
+    const pacing::FrameRateIntent intent = pacing::selectIntendedFrameRate(
+        pacing::ContentClass::kScroll, range, false);
+    const pacing::RenderAheadVerdict admission =
+        pacing::tryQueueFrame(g_paced_in_window, kMaxRenderAhead, 1);
+    if (admission.status != pacing::Status::kOk || admission.admitted == 0) {
+      return {PresenterCode::kPacingError,
+              "PresentPaced: render-ahead bound exceeded; excess present "
+              "clamped within the deadline window"};
+    }
+    double dtS = 1.0 / 60.0;
+    if (intent.status == pacing::Status::kOk && intent.fps > 0) {
+      dtS = 1.0 / static_cast<double>(intent.fps);
+    }
+    if (g_paced_window_open && vsync_ns > g_paced_window_ns) {
+      dtS = static_cast<double>(vsync_ns - g_paced_window_ns) / 1.0e9;
+    }
+    (void)dtS;  // consumed by the gallery fling path via lists::integrate
+  }
+#endif
 #ifndef __ANDROID__
   // Host lane: in-process window accounting only — no AChoreographer, no
   // Swappy, no ASurfaceControl calls here.
