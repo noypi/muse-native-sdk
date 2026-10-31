@@ -54,6 +54,8 @@ target_compile_options(pviews-lifecycle PRIVATE -Wall -Wextra -Wpedantic)
 # render-graph queue; never flushes synchronously.
 add_library(pviews-canvas
   src/canvas.cpp
+  src/canvas_record.cpp
+  src/picture.cpp
 )
 target_include_directories(pviews-canvas PUBLIC include)
 target_compile_options(pviews-canvas PRIVATE -Wall -Wextra -Wpedantic)
@@ -115,3 +117,8 @@ add_executable(canvas_record_test tests/canvas_record_test.cpp)
 target_link_libraries(canvas_record_test PRIVATE pviews-canvas)
 target_compile_options(canvas_record_test PRIVATE -Wall -Wextra -Wpedantic)
 add_test(NAME canvas_record COMMAND canvas_record_test)
+
+add_executable(canvas_conformance_test tests/canvas_conformance_test.cpp)
+target_link_libraries(canvas_conformance_test PRIVATE pviews-canvas)
+target_compile_options(canvas_conformance_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME canvas_conformance COMMAND canvas_conformance_test)

@@ -36,6 +36,17 @@ struct RecordStatus {
 
 class Canvas {
  public:
+  // T4 record path observation (FR-PVIEWS-014 / AC-PVIEWS-022). Exposes the
+  // recorded op queue read-only so recordCanvas can schedule it into the
+  // render graph. Record-only: no flush, no mutation.
+  enum class OpKind {
+    kDrawRect,
+    kDrawPath,
+    kSave,
+    kRestore,
+    kClipRect,
+  };
+
   Canvas() = default;
 
   RecordStatus drawRect(RectF r, const Paint& p) noexcept;
@@ -44,14 +55,12 @@ class Canvas {
   RecordStatus restore() noexcept;
   RecordStatus clipRect(RectF r) noexcept;
 
+  std::size_t recordedOpCount() const noexcept { return ops_.size(); }
+  OpKind recordedOpAt(std::size_t i) const noexcept {
+    return ops_[i].kind;
+  }
+
  private:
-  enum class OpKind {
-    kDrawRect,
-    kDrawPath,
-    kSave,
-    kRestore,
-    kClipRect,
-  };
 
   struct Op {
     OpKind kind = OpKind::kDrawRect;
