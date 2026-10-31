@@ -55,6 +55,16 @@ tasks.register('zOrder', Exec) {
     commandLine 'sh', '-c', 'g++ -std=c++17 ../engine/platform-views/tests/z_order_test.cpp ../engine/platform-views/src/z_order.cpp -I../engine/platform-views/include -o /tmp/pviews_z_order && /tmp/pviews_z_order'
 }
 
+tasks.register('hybridEmbedding', Exec) {
+    description = 'Run hybrid embedding checks (TC-PVIEWS-008).'
+    commandLine 'sh', '-c', 'g++ -std=c++17 ../engine/platform-views/tests/hybrid_embedding_test.cpp ../engine/platform-views/src/hybrid_embedding.cpp -I../engine/platform-views/include -o /tmp/pviews_hybrid_embedding && /tmp/pviews_hybrid_embedding'
+}
+
+tasks.register('fallbackComposition', Exec) {
+    description = 'Run fallback composition checks (TC-PVIEWS-020).'
+    commandLine 'sh', '-c', 'g++ -std=c++17 ../engine/platform-views/tests/fallback_composition_test.cpp ../engine/platform-views/src/fallback_composition.cpp -I../engine/platform-views/include -o /tmp/pviews_fallback_composition && /tmp/pviews_fallback_composition'
+}
+
 tasks.register('clipping', Exec) {
     description = 'Run dynamic surface clipping checks (TC-PVIEWS-007).'
     commandLine 'sh', '-c', 'g++ -std=c++17 ../engine/platform-views/tests/clipping_test.cpp -I../engine/platform-views/include -o /tmp/pviews_clipping && /tmp/pviews_clipping'
