@@ -21,6 +21,11 @@
 
 const STORY_LINK_PREFIX = 'gallery://story/';
 const BROADCAST_ADVANCE_PAGE = 'muse.native.NATIVE_ADVANCE_PAGE';
+// Proof-only harness entry (BUG-RUNTIME-005 T1): `muse.native.PROOF_ADVANCE_PAGE`
+// pages through the same `navigateStory` path as shell chrome. Harness-only,
+// unreachable from surface gestures — `handleBroadcast` below stays false for
+// every input including this action (AC-SAMPLE-039).
+const PROOF_ADVANCE_PAGE = 'muse.native.PROOF_ADVANCE_PAGE';
 
 function storyIdOf(story) {
   if (story !== null && typeof story === 'object') {
@@ -321,4 +326,5 @@ module.exports = {
   handleBroadcast,
   STORY_LINK_PREFIX,
   BROADCAST_ADVANCE_PAGE,
+  PROOF_ADVANCE_PAGE,
 };

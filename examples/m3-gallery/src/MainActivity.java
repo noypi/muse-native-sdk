@@ -131,6 +131,17 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     static final String ACTION_NATIVE_ADVANCE_PAGE = "muse.native.NATIVE_ADVANCE_PAGE";
 
     /**
+     * Proof-only harness paging entry (BUG-RUNTIME-005 T1): harness-only,
+     * unreachable from surface gestures. Receives
+     * {@code muse.native.PROOF_ADVANCE_PAGE} (extras: none required;
+     * forward-only — any direction extra is ignored unless +1/absent;
+     * backward unsupported, no page turn) and pages via the same
+     * {@code nativeAdvancePage} (navigateStory) path the shell Prev/Next
+     * buttons use.
+     */
+    static final String ACTION_PROOF_ADVANCE_PAGE = "muse.native.PROOF_ADVANCE_PAGE";
+
+    /**
      * Broadcast action driving the same-activity theme switch (T3a): the T3
      * re-attempt sends {@code muse.native.NATIVE_SET_THEME} with an int
      * {@code night_mode} extra (0=light, 1=dark) instead of flipping
@@ -175,6 +186,45 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                     && engineHandle != 0) {
                 int nightMode = intent.getIntExtra("night_mode", 0);
                 nativeSetTheme(engineHandle, nightMode);
+            }
+        }
+    };
+
+    /**
+     * Proof-only harness paging entry (BUG-RUNTIME-005 T1): harness-only,
+     * unreachable from surface gestures. Receives
+     * {@code muse.native.PROOF_ADVANCE_PAGE} (extras: none required;
+     * forward-only — any direction extra is ignored unless +1/absent;
+     * backward unsupported, no page turn) and pages via the same
+     * {@code nativeAdvancePage} (navigateStory) path the shell Prev/Next
+     * buttons use. Returns the new page index. Fail-closed on
+     * {@code engineHandle == 0} (no-op, no crash). The
+     * {@code NATIVE_ADVANCE_PAGE} receiver above stays scoped per
+     * BUG-SAMPLE-007 (shell-chrome/key/deep-link only, fail-closed
+     * otherwise); surface-gesture paging stays off (AC-SAMPLE-039).
+     */
+    private final BroadcastReceiver proofAdvanceReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            if (!ACTION_PROOF_ADVANCE_PAGE.equals(intent != null ? intent.getAction() : null)) {
+                return;
+            }
+            if (engineHandle == 0) {
+                return;
+            }
+            try {
+                int direction = intent.getIntExtra("direction", 1);
+                if (direction != 1 && direction != -1) {
+                    direction = 1;
+                }
+                // The native entry advances one page per call (forward-only);
+                // the direction extra is accepted with default +1 per the T1
+                // interface. Single step either way through the navigateStory
+                // path — one JNI advance, one page marker.
+                int newIndex = nativeAdvancePage(engineHandle);
+                Log.i("GalleryPage", "PROOF_ADVANCE_PAGE page=" + newIndex);
+            } catch (Throwable ignored) {
+                // Fail-closed: harness paging never crashes the host.
             }
         }
     };
@@ -497,9 +547,10 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     @Override
     protected void onResume() {
         super.onResume();
-        // FR-SAMPLE-014: advanceReceiver above is scoped (pages only for
-        // shell-chrome/key/deep-link origins; all else fail-closed no-op);
-        // both receivers stay registered so the harness/theme entries exist.
+        // BUG-RUNTIME-005 post-rebase: advanceReceiver above is scoped per
+        // BUG-SAMPLE-007 (shell-chrome/key/deep-link only, fail-closed
+        // otherwise); proofAdvanceReceiver is the harness-only entry;
+        // surface-gesture paging stays off (AC-SAMPLE-039).
         if (probeField != null) {
             try {
                 clipboardManager =
@@ -516,10 +567,13 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             // receivers must be exported to receive it.
             registerReceiver(advanceReceiver, new IntentFilter(ACTION_NATIVE_ADVANCE_PAGE),
                     Context.RECEIVER_EXPORTED);
+            registerReceiver(proofAdvanceReceiver, new IntentFilter(ACTION_PROOF_ADVANCE_PAGE),
+                    Context.RECEIVER_EXPORTED);
             registerReceiver(themeReceiver, new IntentFilter(ACTION_NATIVE_SET_THEME),
                     Context.RECEIVER_EXPORTED);
         } else {
             registerReceiver(advanceReceiver, new IntentFilter(ACTION_NATIVE_ADVANCE_PAGE));
+            registerReceiver(proofAdvanceReceiver, new IntentFilter(ACTION_PROOF_ADVANCE_PAGE));
             registerReceiver(themeReceiver, new IntentFilter(ACTION_NATIVE_SET_THEME));
         }
     }
@@ -537,6 +591,11 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         }
         try {
             unregisterReceiver(advanceReceiver);
+        } catch (IllegalArgumentException ignored) {
+            // Receiver was not registered (e.g. paused without resume).
+        }
+        try {
+            unregisterReceiver(proofAdvanceReceiver);
         } catch (IllegalArgumentException ignored) {
             // Receiver was not registered (e.g. paused without resume).
         }
