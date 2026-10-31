@@ -3,6 +3,7 @@
 // T1 scaffold — FR-PVIEWS-005 / AC-PVIEWS-007 / TC-PVIEWS-007.
 // Stub header; T3 implements compositeOffscreen. Consumes the graphics
 // external-memory import contract via a seam (mocked hermetically in tests).
+#include <cmath>
 #include <cstdint>
 
 #include "surface_clipper.h"
@@ -84,16 +85,31 @@ struct ImportSeam {
 constexpr int kGoldenW = 16;
 constexpr int kGoldenH = 16;
 
+inline std::uint64_t blendMagnitude(int blendMode) {
+  // Negation-free absolute value: `-blendMode` overflows (UB) for INT_MIN,
+  // so promote to int64 first. Result feeds synthetic pixels only.
+  const std::int64_t v = static_cast<std::int64_t>(blendMode);
+  return static_cast<std::uint64_t>(v < 0 ? -v : v);
+}
+
+inline std::uint64_t radiusTerm(float cornerRadiusPx) {
+  // Non-finite or out-of-range radius must stay defined: float-to-integer
+  // casts are UB for NaN/Inf/out-of-range, so clamp in double first.
+  // Non-finite maps to zero contribution (deterministic, finite diff).
+  if (!std::isfinite(cornerRadiusPx)) return 0u;
+  double v = static_cast<double>(cornerRadiusPx) * 7.0;
+  if (v < 0.0) v = 0.0;
+  if (v > 4294967295.0) v = 4294967295.0;
+  return static_cast<std::uint64_t>(v);
+}
+
 inline float synthPixel(TextureRef tex, const ClipSpec& clip,
                         const EffectSpec& effect, int x, int y) {
   std::uint64_t h = tex.handle +
                     static_cast<std::uint64_t>(effect.shaderId) * 31u +
-                    static_cast<std::uint64_t>(effect.blendMode < 0
-                                                   ? -effect.blendMode
-                                                   : effect.blendMode) *
-                        17u +
+                    blendMagnitude(effect.blendMode) * 17u +
                     static_cast<std::uint64_t>(x * 3 + y * 5) +
-                    static_cast<std::uint64_t>(clip.cornerRadiusPx * 7.0f);
+                    radiusTerm(clip.cornerRadiusPx);
   return static_cast<float>((h >> 3) & 0xFFu) / 255.0f;
 }
 

@@ -13,6 +13,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <limits>
 #include <vector>
 
 #include "../clipping/offscreen_fallback.h"
@@ -322,6 +323,175 @@ static bool check_import_failure() {
   return true;
 }
 
+// ---------------------------------------------------------------------------
+// Security hardening cases (security-review.md, CLEARED WITH NOTES).
+// Hermetic: NaN/Inf via <limits>, INT_MIN/MAX via <limits>, no device,
+// no clock, no env/config, no network. Each case asserts a TYPED denial or
+// a defined result — never a throw, never UB-dependent behavior.
+// ---------------------------------------------------------------------------
+
+// (1) Non-finite geometry denied: NaN/Inf path coordinates and NaN/Inf
+// cornerRadiusPx must be rejected with a typed error (InvalidPath), not
+// validated as ok and never via a float-to-integer UB cast.
+static bool check_sec_nonfinite_geometry() {
+  const float qnan = std::numeric_limits<float>::quiet_NaN();
+  const float inf = std::numeric_limits<float>::infinity();
+  ViewId view{101};
+  // All-NaN triangle: NaN != 0.0f is true, so the unguarded shoelace gate
+  // counts it valid — the hardened contract demands InvalidPath.
+  ClipSpec nanPath;
+  nanPath.kind = ClipSpec::Kind::Path;
+  nanPath.points = {{qnan, 0.0f}, {0.0f, qnan}, {qnan, qnan}};
+  ClipResult r1 = applyClip(view, nanPath, 31);
+  EXPECT_TRUE(!r1.ok);
+  EXPECT_TRUE(r1.error.code == ClipError::Code::InvalidPath);
+  // Inf coordinate likewise.
+  ClipSpec infPath;
+  infPath.kind = ClipSpec::Kind::Path;
+  infPath.points = {{0.0f, 0.0f}, {10.0f, 0.0f}, {inf, 10.0f}};
+  ClipResult r2 = applyClip(view, infPath, 31);
+  EXPECT_TRUE(!r2.ok);
+  EXPECT_TRUE(r2.error.code == ClipError::Code::InvalidPath);
+  // Non-finite corner radius must be denied, not stored-and-ok.
+  for (float bad : {qnan, inf, -inf}) {
+    ClipSpec rr;
+    rr.kind = ClipSpec::Kind::RoundRect;
+    rr.cornerRadiusPx = bad;
+    ClipResult r = applyClip(view, rr, 31);
+    EXPECT_TRUE(!r.ok);
+    EXPECT_TRUE(r.error.code != ClipError::Code::None);
+  }
+  // Fallback sink must also stay defined: composite with Inf radius must
+  // return (ok or typed error) with a finite diff — reaching the return
+  // with finite output proves no trap on the cast path.
+  TextureRef tex{0xAB, true};
+  ClipSpec clip;
+  clip.kind = ClipSpec::Kind::RoundRect;
+  clip.cornerRadiusPx = inf;
+  EffectSpec effect;
+  CompositeResult c = compositeOffscreen(tex, clip, effect);
+  EXPECT_TRUE(std::isfinite(c.diff.meanPerChannelError));
+  return true;
+}
+
+// (2) Extreme blendMode defined: INT_MIN must not take the signed-negation
+// UB path (`-effect.blendMode` overflows for INT_MIN at
+// offscreen_fallback.h:91-94). INT_MIN/INT_MAX must composite within the
+// blend-leg tolerance or return a typed denial — and never throw.
+static bool check_sec_int_min_blend() {
+  TextureRef tex{0xAB, true};
+  ClipSpec clip;
+  clip.kind = ClipSpec::Kind::Rect;
+  for (int extreme : {std::numeric_limits<int>::min(),
+                      std::numeric_limits<int>::max()}) {
+    EffectSpec effect;
+    effect.kind = EffectSpec::Kind::BlendMode;
+    effect.blendMode = extreme;
+    CompositeResult r = compositeOffscreen(tex, clip, effect);
+    // Either a defined in-tolerance composite or a typed denial — both are
+    // acceptable hardened outcomes; UB/thow/crash is not.
+    if (r.ok) {
+      EXPECT_TRUE(r.error.code == ImportError::Code::None);
+      EXPECT_TRUE(std::isfinite(r.diff.meanPerChannelError));
+      EXPECT_TRUE(r.diff.meanPerChannelError <= kBlendMeanTol);
+      EXPECT_TRUE(r.diff.differingPixels <= kBlendPixelBound);
+    } else {
+      EXPECT_TRUE(r.error.code == ImportError::Code::ImportFailed ||
+                  r.error.code == ImportError::Code::FenceTimeout);
+    }
+  }
+  return true;
+}
+
+// (3) Unbounded-points bound: a large PathPoints vector (attacker-shaped,
+// O(n) shoelace cost) must complete with a typed result — never hang,
+// throw, or corrupt. Documents the DoS posture: O(n) single pass, no cap.
+static bool check_sec_unbounded_points() {
+  PathPoints many;
+  many.reserve(100000);
+  for (int i = 0; i < 100000; ++i) {
+    float t = static_cast<float>(i) * 0.001f;
+    many.push_back({t, (i % 2 == 0) ? 0.0f : 10.0f});
+  }
+  ClipSpec spec;
+  spec.kind = ClipSpec::Kind::Path;
+  spec.points = std::move(many);
+  ViewId view{103};
+  ClipResult r = applyClip(view, spec, 31);  // must return, not hang/throw
+  EXPECT_TRUE(r.error.code == ClipError::Code::None ||
+              r.error.code == ClipError::Code::InvalidPath ||
+              r.error.code == ClipError::Code::UnsupportedApi);
+  return true;
+}
+
+// (4) Combined routing precedence pinned (contract-silent, INFO finding):
+// routing wins over validation — apiLevel<31 + invalid path reports
+// UnsupportedApi (not InvalidPath), and CustomShader + invalid path
+// likewise. Both deny the hardware path; this locks which denial wins.
+static bool check_sec_routing_precedence() {
+  ClipSpec bad;
+  bad.kind = ClipSpec::Kind::Path;
+  bad.points = {};  // invalid AND routed-out
+  ViewId view{104};
+  ClipResult api = applyClip(view, bad, 28);
+  EXPECT_TRUE(!api.ok);
+  EXPECT_TRUE(api.fallbackRequired);
+  EXPECT_TRUE(api.error.code == ClipError::Code::UnsupportedApi);
+  ClipSpec badShader;
+  badShader.kind = ClipSpec::Kind::Path;
+  badShader.points = {};
+  badShader.hint = BlendHint::CustomShader;
+  ClipResult sh = applyClip(view, badShader, 31);
+  EXPECT_TRUE(!sh.ok);
+  EXPECT_TRUE(sh.fallbackRequired);
+  EXPECT_TRUE(sh.error.code == ClipError::Code::UnsupportedApi);
+  return true;
+}
+
+// (5) Extreme apiLevel values route sanely (RULE-PVIEWS-002): -1, INT_MIN
+// → UnsupportedApi + fallback; INT_MAX → normal hardware-path result;
+// none throws.
+static bool check_sec_extreme_api_level() {
+  ClipSpec spec;
+  spec.kind = ClipSpec::Kind::Rect;
+  ViewId view{105};
+  for (int api : {-1, std::numeric_limits<int>::min()}) {
+    ClipResult r = applyClip(view, spec, api);
+    EXPECT_TRUE(!r.ok);
+    EXPECT_TRUE(r.fallbackRequired);
+    EXPECT_TRUE(r.error.code == ClipError::Code::UnsupportedApi);
+  }
+  ClipResult hi = applyClip(view, spec, std::numeric_limits<int>::max());
+  EXPECT_TRUE(hi.ok);
+  EXPECT_TRUE(!hi.fallbackRequired);
+  EXPECT_TRUE(hi.error.code == ClipError::Code::None);
+  return true;
+}
+
+// (6) T4 guard: the 0xCD fence discriminant is confined to the hermetic
+// layer (offscreen_detail) and never leaks toward a real backend. Pins:
+// the constant lives in offscreen_detail, equals 0xCD exactly, fires ONLY
+// on exact handle equality (0xCE stays ok), and the fence leg is a single
+// typed FenceTimeout with no throw.
+static bool check_sec_t4_guard() {
+  static_assert(offscreen_detail::kUnsignaledFenceHandle == 0xCDu,
+                "fence discriminant must stay the exact hermetic sentinel");
+  TextureRef fence{offscreen_detail::kUnsignaledFenceHandle, true};
+  ClipSpec clip;
+  clip.kind = ClipSpec::Kind::Rect;
+  EffectSpec effect;
+  CompositeResult t = compositeOffscreen(fence, clip, effect);
+  EXPECT_TRUE(!t.ok);
+  EXPECT_TRUE(t.error.code == ImportError::Code::FenceTimeout);
+  // Neighboring handle must NOT trip the fence path: exact-equality only,
+  // no mask/range sniffing that could ship to a real backend.
+  TextureRef near{0xCE, true};
+  CompositeResult n = compositeOffscreen(near, clip, effect);
+  EXPECT_TRUE(n.ok);
+  EXPECT_TRUE(n.error.code == ImportError::Code::None);
+  return true;
+}
+
 #define RUN_CASE(name)                 \
   do {                                 \
     if (!(name)()) {                   \
@@ -341,6 +511,12 @@ int main() {
   RUN_CASE(check_fallback_golden_diff);
   RUN_CASE(check_fence_timeout);
   RUN_CASE(check_import_failure);
+  RUN_CASE(check_sec_nonfinite_geometry);
+  RUN_CASE(check_sec_int_min_blend);
+  RUN_CASE(check_sec_unbounded_points);
+  RUN_CASE(check_sec_routing_precedence);
+  RUN_CASE(check_sec_extreme_api_level);
+  RUN_CASE(check_sec_t4_guard);
   if (failures > 0) {
     std::printf("clipping_test: %d failing\n", failures);
     return 1;

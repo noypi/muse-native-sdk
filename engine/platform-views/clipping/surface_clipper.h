@@ -3,6 +3,7 @@
 // T1 scaffold — FR-PVIEWS-005 / AC-PVIEWS-007 / TC-PVIEWS-007.
 // Declare-only header; T2 implements applyClip. No Vulkan/JNI calls here;
 // platform calls stay behind seams mockable hermetically.
+#include <cmath>
 #include <cstdint>
 #include <vector>
 
@@ -81,17 +82,37 @@ inline ClipResult applyClip(ViewId view, const ClipSpec& spec, int apiLevel) {
     r.error.detail = "custom shader";
     return r;
   }
+  // Non-finite corner radius is a typed InvalidPath denial (never a
+  // float-to-integer UB cast downstream). Checked after the routing legs so
+  // routing precedence (apiLevel<31 / CustomShader wins) is preserved.
+  if (!std::isfinite(spec.cornerRadiusPx)) {
+    ClipResult r;
+    r.ok = false;
+    r.fallbackRequired = false;
+    r.error.code = ClipError::Code::InvalidPath;
+    r.error.detail = "invalid path";
+    return r;
+  }
   // Path validity is checked BEFORE any SurfaceControl call: >= 3 points and
   // nonzero (shoelace) area. Invalid path leaves the surface seam untouched.
   if (spec.kind == ClipSpec::Kind::Path) {
     const PathPoints& pts = spec.points;
     bool valid = false;
     if (pts.size() >= 3) {
-      float area = 0.0f;
-      for (std::size_t i = 0, j = pts.size() - 1; i < pts.size(); j = i++) {
-        area += pts[j].x * pts[i].y - pts[i].x * pts[j].y;
+      bool finite = true;
+      for (const PathPoint& p : pts) {
+        if (!std::isfinite(p.x) || !std::isfinite(p.y)) {
+          finite = false;
+          break;
+        }
       }
-      valid = (area != 0.0f);
+      if (finite) {
+        float area = 0.0f;
+        for (std::size_t i = 0, j = pts.size() - 1; i < pts.size(); j = i++) {
+          area += pts[j].x * pts[i].y - pts[i].x * pts[j].y;
+        }
+        valid = (area != 0.0f);
+      }
     }
     if (!valid) {
       ClipResult r;
