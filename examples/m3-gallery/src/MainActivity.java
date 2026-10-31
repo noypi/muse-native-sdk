@@ -50,6 +50,12 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     /** T1 (FR-STARTUP-002/AC-STARTUP-003): cold-readiness flag set on the UI-thread post-back. */
     private volatile boolean treeReady = false;
 
+    /** T2 (FR-STARTUP-002/AC-STARTUP-003): cold-readiness flag set in surfaceCreated/surfaceChanged. */
+    private volatile boolean surfaceReady = false;
+
+    /** T2: latest surface holder for the single first-render gate (RULE-STARTUP-002). */
+    private SurfaceHolder pendingHolder;
+
     /** T1 generation token (feeds T3): late post-backs with a stale generation are dropped. */
     private int treeLoadGeneration = 0;
 
@@ -367,13 +373,23 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     }
 
     /**
-     * First-render gate entry (T2 owns the full {@code treeReady &&
-     * surfaceReady} gate): T1 completion calls it; T2 expands the body.
+     * First-render gate (T2, FR-STARTUP-002/AC-STARTUP-003): posts
+     * {@code nativeAttachSurface + nativeRenderFrame} only when
+     * {@code treeReady && surfaceReady && engineHandle != 0}; else silent no-op.
+     * Single first-render entry (RULE-STARTUP-002): both the T1 post-back and
+     * the surface callbacks call this method.
      */
     private void maybeRenderFirstFrame() {
-        if (!treeReady || engineHandle == 0) {
+        if (!(treeReady && surfaceReady && engineHandle != 0)) {
             return;
         }
+        SurfaceHolder holder = pendingHolder;
+        if (holder == null) {
+            return;
+        }
+        nativeAttachSurface(engineHandle, holder.getSurface());
+        nativeRenderFrame(engineHandle);
+        maybeReportFullyDrawn();
     }
 
     @Override
@@ -801,21 +817,16 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
 
     @Override
     public void surfaceCreated(SurfaceHolder holder) {
-        // Attach the native window, then drive one frame through the bridge.
-        if (engineHandle != 0) {
-            nativeAttachSurface(engineHandle, holder.getSurface());
-            nativeRenderFrame(engineHandle);
-            maybeReportFullyDrawn();
-        }
+        pendingHolder = holder;
+        surfaceReady = true;
+        maybeRenderFirstFrame();
     }
 
     @Override
     public void surfaceChanged(SurfaceHolder holder, int format, int width, int height) {
-        if (engineHandle != 0) {
-            nativeAttachSurface(engineHandle, holder.getSurface());
-            nativeRenderFrame(engineHandle);
-            maybeReportFullyDrawn();
-        }
+        pendingHolder = holder;
+        surfaceReady = true;
+        maybeRenderFirstFrame();
     }
 
     @Override
