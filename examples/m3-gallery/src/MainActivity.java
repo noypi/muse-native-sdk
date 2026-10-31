@@ -20,6 +20,8 @@ import android.view.WindowInsetsAnimation;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.EditText;
 import android.widget.FrameLayout;
+import android.widget.LinearLayout;
+import android.widget.TextView;
 import java.util.List;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -157,6 +159,11 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        // BUG-M3-FIDELITY-003 round-2: `--es page m3-text-probe` routes to the
+        // TextProbePage (sharedId="m3-text-probe"). Any other value (or no
+        // extra) keeps the gallery behavior below byte-identical.
+        String requestedPage = getIntent() != null ? getIntent().getStringExtra("page") : null;
+        boolean showTextProbe = "m3-text-probe".equals(requestedPage);
         SurfaceView surfaceView = new SurfaceView(this);
         surfaceView.getHolder().addCallback(this);
         // Tap routing (BUG-M3-FIDELITY-007 disposition): every touch goes to
@@ -258,6 +265,9 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         root.addView(inputViewTextInput, imeParams);
         root.addView(inputViewMuseField, imeParams);
         setContentView(root);
+        if (showTextProbe) {
+            showTextProbePage(root);
+        }
         attachImeInsetListener(root);
         byte[] treeBytes = readTreeAsset();
         if (treeBytes != null) {
@@ -304,6 +314,36 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             engineHandle = 0;
         }
         super.onDestroy();
+    }
+
+    /**
+     * BUG-M3-FIDELITY-003 round-2: Java-side host for the TextProbePage
+     * (Showcase TextProbePage, sharedId="m3-text-probe"). Overlays the probe
+     * title plus the "Probe live field" input on top of the gallery surface
+     * so the `--es page m3-text-probe` launch shows the probe page. The
+     * engine tree underneath is untouched; without the extra this method
+     * never runs and gallery behavior is unchanged.
+     */
+    private void showTextProbePage(FrameLayout root) {
+        LinearLayout probe = new LinearLayout(this);
+        probe.setOrientation(LinearLayout.VERTICAL);
+        probe.setTag("m3-text-probe");
+        probe.setContentDescription("m3-text-probe");
+        TextView title = new TextView(this);
+        title.setText("Text probe page");
+        title.setContentDescription("m3-text-probe");
+        probe.addView(title);
+        EditText field = new EditText(this);
+        field.setHint("Probe live field");
+        field.setContentDescription("Probe live field");
+        field.setTag("m3-text-probe");
+        field.setFocusable(true);
+        field.setFocusableInTouchMode(true);
+        probe.addView(field);
+        FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT);
+        root.addView(probe, params);
     }
 
     /**
