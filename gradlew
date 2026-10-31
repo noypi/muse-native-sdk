@@ -43,6 +43,14 @@
 #                              + src/brownfield.cpp + src/embed.cpp (-I engine/platform-views/include)
 #   :pviews:sharedEngineTeardown -> g++ engine/platform-views/tests/shared_engine_teardown_test.cpp
 #                              + src/brownfield.cpp + src/embed.cpp (-I engine/platform-views/include)
+#   :pviews:webviewBridge -> g++ engine/platform-views/tests/webview_bridge_test.cpp
+#                              + src/webview_bridge.cpp (-I engine/platform-views/include)
+#   :pviews:webviewPersistence -> g++ engine/platform-views/tests/webview_persistence_test.cpp
+#                              + src/webview_persistence.cpp (-I engine/platform-views/include)
+#   :pviews:webviewHosting -> g++ engine/platform-views/tests/webview_hosting_test.cpp
+#                              + src/webview_hosting.cpp + src/webview_bridge.cpp (-I engine/platform-views/include)
+#   :pviews:mapsHosting -> g++ engine/platform-views/tests/maps_hosting_test.cpp
+#                              + src/maps_hosting.cpp (-I engine/platform-views/include)
 set -eu
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 
@@ -80,6 +88,10 @@ Tasks:
   :pviews:semanticsMerge    g++ semantics_merge_test + semantics
   :pviews:brownfieldHost    g++ brownfield_host_test + brownfield + embed
   :pviews:sharedEngineTeardown g++ shared_engine_teardown_test + brownfield + embed
+  :pviews:webviewBridge   g++ webview_bridge_test + webview_bridge
+  :pviews:webviewPersistence g++ webview_persistence_test + webview_persistence
+  :pviews:webviewHosting   g++ webview_hosting_test + webview_hosting + webview_bridge
+  :pviews:mapsHosting      g++ maps_hosting_test + maps_hosting
 Extra args after :benchmark:perfGate are forwarded to benchmark/gate/run.py
 as <manifest> <results-json>.
 EOF
@@ -548,6 +560,51 @@ print('golden diff sensitivity ok: rerun zero-diff, shift + blend flagged')"
       "$ROOT/engine/platform-views/src/embed.cpp" \
       -o "$PVDIR/shared_engine_teardown_test" || exit 1
     "$PVDIR/shared_engine_teardown_test" || exit 1
+    rm -rf "$PVDIR"
+    trap - EXIT INT TERM
+    ;;
+  :pviews:webviewBridge)
+    PVDIR="$(mktemp -d)" || exit 1
+    trap 'rm -rf "$PVDIR"' EXIT INT TERM
+    g++ -std=c++17 -Wall -Wextra -Wpedantic -I "$ROOT/engine/platform-views/include" \
+      "$ROOT/engine/platform-views/tests/webview_bridge_test.cpp" \
+      "$ROOT/engine/platform-views/src/webview_bridge.cpp" \
+      -o "$PVDIR/webview_bridge_test" || exit 1
+    "$PVDIR/webview_bridge_test" || exit 1
+    rm -rf "$PVDIR"
+    trap - EXIT INT TERM
+    ;;
+  :pviews:webviewPersistence)
+    PVDIR="$(mktemp -d)" || exit 1
+    trap 'rm -rf "$PVDIR"' EXIT INT TERM
+    g++ -std=c++17 -Wall -Wextra -Wpedantic -I "$ROOT/engine/platform-views/include" \
+      "$ROOT/engine/platform-views/tests/webview_persistence_test.cpp" \
+      "$ROOT/engine/platform-views/src/webview_persistence.cpp" \
+      -o "$PVDIR/webview_persistence_test" || exit 1
+    "$PVDIR/webview_persistence_test" || exit 1
+    rm -rf "$PVDIR"
+    trap - EXIT INT TERM
+    ;;
+  :pviews:webviewHosting)
+    PVDIR="$(mktemp -d)" || exit 1
+    trap 'rm -rf "$PVDIR"' EXIT INT TERM
+    g++ -std=c++17 -Wall -Wextra -Wpedantic -I "$ROOT/engine/platform-views/include" \
+      "$ROOT/engine/platform-views/tests/webview_hosting_test.cpp" \
+      "$ROOT/engine/platform-views/src/webview_hosting.cpp" \
+      "$ROOT/engine/platform-views/src/webview_bridge.cpp" \
+      -o "$PVDIR/webview_hosting_test" || exit 1
+    "$PVDIR/webview_hosting_test" || exit 1
+    rm -rf "$PVDIR"
+    trap - EXIT INT TERM
+    ;;
+  :pviews:mapsHosting)
+    PVDIR="$(mktemp -d)" || exit 1
+    trap 'rm -rf "$PVDIR"' EXIT INT TERM
+    g++ -std=c++17 -Wall -Wextra -Wpedantic -I "$ROOT/engine/platform-views/include" \
+      "$ROOT/engine/platform-views/tests/maps_hosting_test.cpp" \
+      "$ROOT/engine/platform-views/src/maps_hosting.cpp" \
+      -o "$PVDIR/maps_hosting_test" || exit 1
+    "$PVDIR/maps_hosting_test" || exit 1
     rm -rf "$PVDIR"
     trap - EXIT INT TERM
     ;;

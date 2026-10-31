@@ -38,6 +38,10 @@ android {
 //   ./gradlew :pviews:semanticsMerge   — semantics merge (FR-PVIEWS-009)
 //   ./gradlew :pviews:brownfieldHost   — brownfield host (FR-PVIEWS-010)
 //   ./gradlew :pviews:sharedEngineTeardown — shared-engine teardown (FR-PVIEWS-010)
+//   ./gradlew :pviews:webviewBridge      — webview bridge (TC-PVIEWS-016)
+//   ./gradlew :pviews:webviewPersistence — webview persistence (TC-PVIEWS-017)
+//   ./gradlew :pviews:webviewHosting     — webview hosting (TC-PVIEWS-018)
+//   ./gradlew :pviews:mapsHosting        — maps hosting (TC-PVIEWS-019)
 // Each lane compiles its hermetic binary (test + production source,
 // -I engine/platform-views/include) and executes it; the build fails on
 // any nonzero exit.
@@ -79,4 +83,24 @@ tasks.register('brownfieldHost', Exec) {
 tasks.register('sharedEngineTeardown', Exec) {
     description = 'Run shared-engine teardown checks (TC-PVIEWS-014).'
     commandLine 'sh', '-c', 'g++ -std=c++17 ../engine/platform-views/tests/shared_engine_teardown_test.cpp ../engine/platform-views/src/brownfield.cpp ../engine/platform-views/src/embed.cpp -I../engine/platform-views/include -o /tmp/pviews_shared_engine_teardown && /tmp/pviews_shared_engine_teardown'
+}
+
+tasks.register('webviewBridge', Exec) {
+    description = 'Run webview bridge checks (TC-PVIEWS-016).'
+    commandLine 'sh', '-c', 'g++ -std=c++17 ../engine/platform-views/tests/webview_bridge_test.cpp ../engine/platform-views/src/webview_bridge.cpp -I../engine/platform-views/include -o /tmp/pviews_webview_bridge && /tmp/pviews_webview_bridge'
+}
+
+tasks.register('webviewPersistence', Exec) {
+    description = 'Run webview persistence checks (TC-PVIEWS-017).'
+    commandLine 'sh', '-c', 'g++ -std=c++17 ../engine/platform-views/tests/webview_persistence_test.cpp ../engine/platform-views/src/webview_persistence.cpp -I../engine/platform-views/include -o /tmp/pviews_webview_persistence && /tmp/pviews_webview_persistence'
+}
+
+tasks.register('webviewHosting', Exec) {
+    description = 'Run webview hosting checks (TC-PVIEWS-018).'
+    commandLine 'sh', '-c', 'g++ -std=c++17 ../engine/platform-views/tests/webview_hosting_test.cpp ../engine/platform-views/src/webview_hosting.cpp ../engine/platform-views/src/webview_bridge.cpp -I../engine/platform-views/include -o /tmp/pviews_webview_hosting && /tmp/pviews_webview_hosting'
+}
+
+tasks.register('mapsHosting', Exec) {
+    description = 'Run maps hosting checks (TC-PVIEWS-019).'
+    commandLine 'sh', '-c', 'g++ -std=c++17 ../engine/platform-views/tests/maps_hosting_test.cpp ../engine/platform-views/src/maps_hosting.cpp -I../engine/platform-views/include -o /tmp/pviews_maps_hosting && /tmp/pviews_maps_hosting'
 }
