@@ -154,6 +154,22 @@ export default function Showcase() {
 }
 
 // BUG-M3-FIDELITY-008 L1 — layering page (FR-M3-010 / AC-M3-022 / RULE-M3-006).
+// BUG-M3-FIDELITY-003 T2 — live probe text page (FR-M3-006, single-probe
+// scope BQ1, API-29-only gate). The device presenter replaces this page's
+// static TextInput box with the live evaluating field once
+// AttachLiveTextField("m3-text-probe", deps) succeeds (RULE-M3-004 engines:
+// FR-TEXT-008 InputConnection bridge, FR-TEXT-009 editing engine, FR-TEXT-013
+// clipboard transport, plus the live FR-LAYOUT-012 imeBottom feed reusing
+// the anchorSheetToImeInset per-frame pattern). Static pages above are
+// untouched; the static-box painter stays as the fail-closed fallback.
+export function TextProbePage() {
+  return (
+    <View sharedId="m3-text-probe">
+      <Text>Text probe page</Text>
+      <TextInput value="" placeholder="Probe live field" insetSource="FR-LAYOUT-012" />
+    </View>
+  );
+}
 // Static scene: dimmed content background plus all five overlays stacked on
 // exactly one OverlayHost in submission order, dimming layer submitted before
 // overlay content. The dismiss hook site is declared on the host below; the

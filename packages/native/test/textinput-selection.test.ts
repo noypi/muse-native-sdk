@@ -1,3 +1,4 @@
+// Hermetic: in-memory fakes only — no device/adb/network. Device leg: RunSelectionLeg on 127.0.0.1:6569 (TC-M3-012).
 /**
  * TC-M3-012 — Batch 2 / T3: caret/selection model (FR-M3-006, AC-M3-012,
  * RULE-M3-004).

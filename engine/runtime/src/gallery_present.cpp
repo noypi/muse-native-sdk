@@ -1816,6 +1816,17 @@ PrimitiveKind FamilyKind(const std::string& comp) {
   }
   if (comp == "TextFieldEditCore" || comp == "TextInput" ||
       comp == "SearchBar" || comp == "Carousel") {
+    // T2 (BUG-M3-FIDELITY-003 / FR-M3-006): the live probe field promotes off
+    // Image to an editable retained kind once AttachLiveTextField succeeds
+    // (retained-kind override active): caret + composing-region underline
+    // re-emit per frame through the ShapedText leg. The static-box painter
+    // (PaintComponent TextInput branch) stays as the fail-closed fallback for
+    // rows without a live field. SearchBar/Carousel stay Image (out of the
+    // single-probe scope BQ1).
+    if (::liveKindOverrideActive() &&
+        (comp == "TextFieldEditCore" || comp == "TextInput")) {
+      return PrimitiveKind::ShapedText;
+    }
     return PrimitiveKind::Image;
   }
   if (comp == "Card" || comp == "Divider" || comp == "BottomSheet" ||

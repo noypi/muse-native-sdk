@@ -97,6 +97,20 @@ PresenterError Runtime_detachSurface() {
   }
 }
 
+// T2 (BUG-M3-FIDELITY-003 / FR-M3-006): JNI-lane view of the live probe
+// field. The IME/touch entries consult this before routing composition or
+// caret events at the probe page: while no live field is attached the static
+// box painter stands in (fail-closed, never a phantom editable). Consumes the
+// RULE-M3-004 attach gate (FR-TEXT-008/009/013, FR-LAYOUT-012) without
+// reimplementing it. Never throws across the VM boundary.
+bool LiveTextProbeAttachedForIme() noexcept {
+  try {
+    return ::liveKindOverrideActive();
+  } catch (...) {
+    return false;
+  }
+}
+
 }  // namespace runtime
 
 MUSE_JNI_EXPORT jint JNI_OnLoad(JavaVM* vm, void* reserved) {
@@ -1162,4 +1176,374 @@ extern "C" MUSE_JNI_EXPORT void Java_com_muse_host_MainActivity_nativeDestroy(
   }
   // No explicit delete: `claimed` going out of scope drops the destroy-side
   // ref; in-flight holders keep the handle alive until they release g->mu.
+}
+
+// T8 (BUG-M3-FIDELITY-003 / FR-M3-006 / AC-M3-011/012/014): in-app
+// IME/text/clipboard observation surface — logcat-relay sink.
+//
+// The Java probe field (`IMEInterceptingEditText`) forwards every IME,
+// TextWatcher, and clipboard event through `nativeOnIMEEvent` /
+// `nativeOnTextUpdated` (exact contract signatures). This sink does no heavy
+// work in the callback: it copies the strings, canonicalizes the event id,
+// and emits exactly one `muse_text` JSON logcat line per call
+// (`adb logcat -s muse_text`), then returns. Fail-closed/never-throw:
+// exception-check + early return on every JNI entry; null/empty/rapid
+// inputs never crash the process.
+//
+// Canonical event ids: the sink owns one atomic sequence shared by both
+// entries. Each line takes `max(javaHint, seq + 1)` via CAS, so the emitted
+// `eventId` stream is strictly monotonic with continuity == count even when
+// the TextWatcher entry (which carries no id) interleaves with IME events
+// or callbacks race. A separate atomic receive-counter is emitted as `rx`
+// per line for the tester's same-stream count proof.
+//
+// Envelope: span-carrying and clipboard events pack trailing metadata into
+// the `text` argument as `<payload>\x01key=value;...` (keys: spanStart,
+// spanEnd, mime). The sink strips the envelope and re-emits those keys
+// top-level; a malformed envelope fails closed (whole string stays `text`).
+namespace {
+
+constexpr char kMuseTextTag[] = "muse_text";
+
+// Canonical event-id sequence + receive counter (relaxed: ordering across
+// lines is established by the CAS/id itself, not by cross-thread sync).
+std::atomic<long long> g_museTextSeq{0};
+std::atomic<long long> g_museTextRx{0};
+
+// Strictly parses the trailing `\x01` envelope. On success sets the outputs
+// (span pair only when BOTH parse with 0 <= start <= end; mime only when it
+// matches the token vocabulary) and returns the payload end (index of the
+// separator). On any malformation returns npos: the whole string is payload.
+std::size_t SplitMuseTextEnvelope(const std::string& text, long long* spanStart,
+                                   long long* spanEnd, std::string* mime) {
+  const std::size_t sep = text.find_last_of('\x01');
+  if (sep == std::string::npos || sep + 1 >= text.size()) {
+    return std::string::npos;
+  }
+  const std::string tail = text.substr(sep + 1);
+  if (tail.empty()) {
+    return std::string::npos;
+  }
+  long long start = -1;
+  long long end = -1;
+  bool sawSpanStart = false;
+  bool sawSpanEnd = false;
+  std::string mimeValue;
+  bool sawMime = false;
+  std::size_t pos = 0;
+  while (pos <= tail.size()) {
+    const std::size_t semi = tail.find(';', pos);
+    const std::string kv =
+        (semi == std::string::npos) ? tail.substr(pos) : tail.substr(pos, semi - pos);
+    const std::size_t eq = kv.find('=');
+    if (eq == std::string::npos || eq == 0 || eq + 1 >= kv.size()) {
+      return std::string::npos;
+    }
+    const std::string key = kv.substr(0, eq);
+    const std::string value = kv.substr(eq + 1);
+    if (key == "spanStart" || key == "spanEnd") {
+      if (value.size() > 9) {
+        return std::string::npos;
+      }
+      for (char c : value) {
+        if (c < '0' || c > '9') {
+          return std::string::npos;
+        }
+      }
+      long long parsed = 0;
+      for (char c : value) {
+        parsed = parsed * 10 + (c - '0');
+      }
+      if (key == "spanStart") {
+        if (sawSpanStart) {
+          return std::string::npos;
+        }
+        sawSpanStart = true;
+        start = parsed;
+      } else {
+        if (sawSpanEnd) {
+          return std::string::npos;
+        }
+        sawSpanEnd = true;
+        end = parsed;
+      }
+    } else if (key == "mime") {
+      if (sawMime || value.empty() || value.size() > 64) {
+        return std::string::npos;
+      }
+      for (char c : value) {
+        const bool ok = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+                        (c >= '0' && c <= '9') || c == '.' || c == '+' ||
+                        c == '-' || c == '*' || c == '/';
+        if (!ok) {
+          return std::string::npos;
+        }
+      }
+      sawMime = true;
+      mimeValue = value;
+    } else {
+      return std::string::npos;
+    }
+    if (semi == std::string::npos) {
+      break;
+    }
+    pos = semi + 1;
+  }
+  if (sawSpanStart != sawSpanEnd) {
+    return std::string::npos;
+  }
+  if (sawSpanStart && !(start >= 0 && end >= start)) {
+    return std::string::npos;
+  }
+  if (sawSpanStart) {
+    *spanStart = start;
+    *spanEnd = end;
+  }
+  if (sawMime) {
+    *mime = mimeValue;
+  }
+  return sep;
+}
+
+// JSON string escaper for the one-line relay: quotes, backslashes, and
+// control bytes are escaped; UTF-8 continuation bytes pass through so the
+// line stays single-line and parseable. Never throws (works on raw bytes).
+void AppendMuseTextJsonString(std::string* out, const char* data, std::size_t len) {
+  static const char* kHex = "0123456789abcdef";
+  out->push_back('"');
+  for (std::size_t i = 0; i < len; ++i) {
+    const unsigned char c = static_cast<unsigned char>(data[i]);
+    switch (c) {
+      case '"':
+        out->append("\\\"");
+        break;
+      case '\\':
+        out->append("\\\\");
+        break;
+      case '\b':
+        out->append("\\b");
+        break;
+      case '\f':
+        out->append("\\f");
+        break;
+      case '\n':
+        out->append("\\n");
+        break;
+      case '\r':
+        out->append("\\r");
+        break;
+      case '\t':
+        out->append("\\t");
+        break;
+      default:
+        if (c < 0x20) {
+          out->append("\\u00");
+          out->push_back(kHex[(c >> 4) & 0xF]);
+          out->push_back(kHex[c & 0xF]);
+        } else {
+          out->push_back(static_cast<char>(c));
+        }
+        break;
+    }
+  }
+  out->push_back('"');
+}
+
+// Publishes one canonical event id: max(hint, seq + 1) via CAS (hint <= 0
+// always advances). Returns the id stamped on the emitted line.
+long long PublishMuseTextId(long long hint) {
+  long long cur = g_museTextSeq.load(std::memory_order_relaxed);
+  for (;;) {
+    long long want = (hint > cur) ? hint : (cur + 1);
+    if (want <= 0) {
+      want = cur + 1;
+    }
+    if (g_museTextSeq.compare_exchange_weak(cur, want, std::memory_order_relaxed)) {
+      return want;
+    }
+  }
+}
+
+}  // namespace
+
+// Relay definitions (declared in `runtime/gallery_present.h`). Noexcept in
+// practice: every failure mode is absorbed into a degraded-but-valid line.
+void EmitMuseTextEvent(const char* eventType, const char* text,
+                         int cursorPosition, long long eventId) {
+  try {
+    const std::string type = eventType != nullptr ? eventType : "";
+    const std::string payload = text != nullptr ? text : "";
+    const long long id = PublishMuseTextId(eventId);
+    const long long rx = g_museTextRx.fetch_add(1, std::memory_order_relaxed) + 1;
+    // Strip the optional trailing envelope; malformed envelopes stay payload.
+    long long spanStart = -1;
+    long long spanEnd = -1;
+    std::string mime;
+    std::size_t payloadLen = payload.size();
+    const std::size_t sep =
+        SplitMuseTextEnvelope(payload, &spanStart, &spanEnd, &mime);
+    if (sep != std::string::npos) {
+      payloadLen = sep;
+    }
+    std::string line;
+    line.reserve(payloadLen + type.size() + mime.size() + 128);
+    line.append("{\"eventId\":");
+    line.append(std::to_string(id));
+    line.append(",\"rx\":");
+    line.append(std::to_string(rx));
+    line.append(",\"type\":");
+    AppendMuseTextJsonString(&line, type.data(), type.size());
+    line.append(",\"text\":");
+    AppendMuseTextJsonString(&line, payload.data(), payloadLen);
+    line.append(",\"cursor\":");
+    line.append(std::to_string(cursorPosition < 0 ? 0 : cursorPosition));
+    if (sep != std::string::npos && spanStart >= 0 && spanEnd >= 0) {
+      line.append(",\"spanStart\":");
+      line.append(std::to_string(spanStart));
+      line.append(",\"spanEnd\":");
+      line.append(std::to_string(spanEnd));
+    }
+    if (sep != std::string::npos && !mime.empty()) {
+      line.append(",\"mime\":");
+      AppendMuseTextJsonString(&line, mime.data(), mime.size());
+    }
+    line.push_back('}');
+#ifdef __ANDROID__
+    __android_log_print(ANDROID_LOG_DEBUG, kMuseTextTag, "%s", line.c_str());
+#else
+    (void)kMuseTextTag;
+#endif
+  } catch (...) {
+    // Fail-closed: the sink never throws.
+  }
+}
+
+void EmitMuseTextUpdated(const char* currentText) {
+  try {
+    const std::string payload = currentText != nullptr ? currentText : "";
+    const long long id = PublishMuseTextId(0);
+    const long long rx = g_museTextRx.fetch_add(1, std::memory_order_relaxed) + 1;
+    std::string line;
+    line.reserve(payload.size() + 96);
+    line.append("{\"eventId\":");
+    line.append(std::to_string(id));
+    line.append(",\"rx\":");
+    line.append(std::to_string(rx));
+    line.append(",\"type\":\"text_updated\",\"text\":");
+    AppendMuseTextJsonString(&line, payload.data(), payload.size());
+    line.append(",\"cursor\":-1}");
+#ifdef __ANDROID__
+    __android_log_print(ANDROID_LOG_DEBUG, kMuseTextTag, "%s", line.c_str());
+#else
+    (void)kMuseTextTag;
+#endif
+  } catch (...) {
+    // Fail-closed: the sink never throws.
+  }
+}
+
+long long MuseTextReceiveCount() noexcept {
+  try {
+    return g_museTextRx.load(std::memory_order_relaxed);
+  } catch (...) {
+    return 0;
+  }
+}
+
+// JNI observation entries for `com.muse.host.IMEInterceptingEditText`
+// (exact T8 contract signatures). Fail-closed mirror of the sibling
+// entries: null env, a pending exception, or any C++/JNI failure yields an
+// early return with no exception crossing into the VM. Strings are copied
+// out (length-bounded, Modified-UTF-8 safe) and released before the relay
+// runs, so no JNI reference is held across the log call.
+extern "C" MUSE_JNI_EXPORT void Java_com_muse_host_IMEInterceptingEditText_nativeOnIMEEvent(
+    JNIEnv* env, jobject thiz, jstring eventType, jstring text,
+    jint cursorPosition, jlong eventId) {
+  (void)thiz;
+  if (env == nullptr || env->ExceptionCheck() == JNI_TRUE) {
+    return;
+  }
+  try {
+    std::string typeCopy;
+    std::string textCopy;
+    if (eventType != nullptr) {
+      const jsize ulen = env->GetStringUTFLength(eventType);
+      if (env->ExceptionCheck() == JNI_TRUE) {
+        env->ExceptionClear();
+        return;
+      }
+      const char* chars = env->GetStringUTFChars(eventType, nullptr);
+      if (env->ExceptionCheck() == JNI_TRUE) {
+        env->ExceptionClear();
+        return;
+      }
+      if (chars != nullptr) {
+        typeCopy.assign(chars, ulen >= 0 ? static_cast<std::size_t>(ulen) : 0);
+        env->ReleaseStringUTFChars(eventType, chars);
+      }
+    }
+    if (text != nullptr) {
+      const jsize ulen = env->GetStringUTFLength(text);
+      if (env->ExceptionCheck() == JNI_TRUE) {
+        env->ExceptionClear();
+        return;
+      }
+      const char* chars = env->GetStringUTFChars(text, nullptr);
+      if (env->ExceptionCheck() == JNI_TRUE) {
+        env->ExceptionClear();
+        return;
+      }
+      if (chars != nullptr) {
+        textCopy.assign(chars, ulen >= 0 ? static_cast<std::size_t>(ulen) : 0);
+        env->ReleaseStringUTFChars(text, chars);
+      }
+    }
+    if (env->ExceptionCheck() == JNI_TRUE) {
+      env->ExceptionClear();
+      return;
+    }
+    ::EmitMuseTextEvent(typeCopy.c_str(), textCopy.c_str(),
+                        static_cast<int>(cursorPosition),
+                        static_cast<long long>(eventId));
+  } catch (...) {
+    if (env->ExceptionCheck() == JNI_TRUE) {
+      env->ExceptionClear();
+    }
+  }
+}
+
+extern "C" MUSE_JNI_EXPORT void Java_com_muse_host_IMEInterceptingEditText_nativeOnTextUpdated(
+    JNIEnv* env, jobject thiz, jstring currentText) {
+  (void)thiz;
+  if (env == nullptr || env->ExceptionCheck() == JNI_TRUE) {
+    return;
+  }
+  try {
+    std::string textCopy;
+    if (currentText != nullptr) {
+      const jsize ulen = env->GetStringUTFLength(currentText);
+      if (env->ExceptionCheck() == JNI_TRUE) {
+        env->ExceptionClear();
+        return;
+      }
+      const char* chars = env->GetStringUTFChars(currentText, nullptr);
+      if (env->ExceptionCheck() == JNI_TRUE) {
+        env->ExceptionClear();
+        return;
+      }
+      if (chars != nullptr) {
+        textCopy.assign(chars, ulen >= 0 ? static_cast<std::size_t>(ulen) : 0);
+        env->ReleaseStringUTFChars(currentText, chars);
+      }
+    }
+    if (env->ExceptionCheck() == JNI_TRUE) {
+      env->ExceptionClear();
+      return;
+    }
+    ::EmitMuseTextUpdated(textCopy.c_str());
+  } catch (...) {
+    if (env->ExceptionCheck() == JNI_TRUE) {
+      env->ExceptionClear();
+    }
+  }
 }

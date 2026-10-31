@@ -1,3 +1,4 @@
+// Hermetic: in-memory fakes only — no device/adb/network. Device leg: RunInsetLeg on 127.0.0.1:6569 (TC-M3-013).
 'use strict';
 // T4 — Follow the animated IME inset: stay above the keyboard every frame,
 // no jump, no full-tree relayout (Batch 3, FR-M3-006 AC-M3-013, TC-M3-013).
