@@ -27,6 +27,10 @@
 #   :testing:fuzzGate         -> testing.fuzz.gate merge-time gate (AC-026)
 #   :testing:goldenCoverage    -> testing.goldens.coverage matrix check (AC-032)
 #   :testing:goldenDiffSensitivity -> testing.goldens.diff sensitivity (AC-035)
+#   :pviews:externalMemory -> g++ engine/platform-views/tests/external_memory_test.cpp
+#                              + src/external_memory_probe.cpp (-I engine/platform-views/include)
+#   :pviews:zOrder         -> g++ engine/platform-views/tests/z_order_test.cpp
+#                              + src/z_order.cpp (-I engine/platform-views/include)
 set -eu
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 
@@ -56,6 +60,8 @@ Tasks:
   :testing:fuzzGate         testing.fuzz.gate merge-time gate (AC-026)
   :testing:goldenCoverage    testing.goldens.coverage matrix check (AC-032)
   :testing:goldenDiffSensitivity testing.goldens.diff sensitivity (AC-035)
+  :pviews:externalMemory   g++ external_memory_test + external_memory_probe (NFR-PVIEWS-001)
+  :pviews:zOrder           g++ z_order_test + z_order (FR-PVIEWS-001)
 Extra args after :benchmark:perfGate are forwarded to benchmark/gate/run.py
 as <manifest> <results-json>.
 EOF
@@ -437,6 +443,28 @@ with tempfile.TemporaryDirectory() as tmp:
     blend = pixel_diff(c, d, strict)
     assert blend['flagged'] and blend['differing_pixels'] == 16, blend
 print('golden diff sensitivity ok: rerun zero-diff, shift + blend flagged')"
+    ;;
+  :pviews:externalMemory)
+    PVDIR="$(mktemp -d)" || exit 1
+    trap 'rm -rf "$PVDIR"' EXIT INT TERM
+    g++ -std=c++17 -Wall -Wextra -Wpedantic -I "$ROOT/engine/platform-views/include" \
+      "$ROOT/engine/platform-views/tests/external_memory_test.cpp" \
+      "$ROOT/engine/platform-views/src/external_memory_probe.cpp" \
+      -o "$PVDIR/external_memory_test" || exit 1
+    "$PVDIR/external_memory_test" || exit 1
+    rm -rf "$PVDIR"
+    trap - EXIT INT TERM
+    ;;
+  :pviews:zOrder)
+    PVDIR="$(mktemp -d)" || exit 1
+    trap 'rm -rf "$PVDIR"' EXIT INT TERM
+    g++ -std=c++17 -Wall -Wextra -Wpedantic -I "$ROOT/engine/platform-views/include" \
+      "$ROOT/engine/platform-views/tests/z_order_test.cpp" \
+      "$ROOT/engine/platform-views/src/z_order.cpp" \
+      -o "$PVDIR/z_order_test" || exit 1
+    "$PVDIR/z_order_test" || exit 1
+    rm -rf "$PVDIR"
+    trap - EXIT INT TERM
     ;;
   *)
     echo "gradlew: unknown task '$TASK'" >&2

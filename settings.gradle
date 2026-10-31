@@ -1,0 +1,4 @@
+// Root Gradle settings: registers the pviews Android library module
+// (NFR-PVIEWS-001 / FR-PVIEWS-001) so `:pviews:externalMemory` and
+// `:pviews:zOrder` resolve.
+include ':pviews'
