@@ -5,6 +5,7 @@
 // check_*() cases + main, return 0 all-green / non-zero + failing name.
 #include <cmath>
 #include <cstdio>
+#include <limits>
 #include <type_traits>
 
 #include "muse/text/font_scale.h"
@@ -129,6 +130,23 @@ static bool check_out_of_range_input_stays_finite_and_bounded() {
   return true;
 }
 
+static bool check_nonfinite_input_clamps_to_endpoints() {
+  // Interface: NaN/inf clamp to endpoint multipliers, never NaN/inf.
+  const float nanLo = muse::text::NonlinearScale(
+      std::numeric_limits<float>::quiet_NaN());
+  const float posInf = muse::text::NonlinearScale(
+      std::numeric_limits<float>::infinity());
+  const float negInf = muse::text::NonlinearScale(
+      -std::numeric_limits<float>::infinity());
+  if (!(std::isfinite(nanLo) && std::isfinite(posInf) &&
+        std::isfinite(negInf)))
+    return false;
+  if (!near(nanLo, muse::text::NonlinearScale(0.85f), 1e-6f)) return false;
+  if (!near(posInf, muse::text::NonlinearScale(2.0f), 1e-6f)) return false;
+  if (!near(negInf, muse::text::NonlinearScale(0.85f), 1e-6f)) return false;
+  return true;
+}
+
 static bool check_zero_size_px_scales_to_zero() {
   if (!near(muse::text::ScaledSizePx(0.0f, 1.5f, 2.0f), 0.0f, 1e-6f))
     return false;
@@ -167,6 +185,7 @@ int main() {
   RUN_CASE(check_scaled_size_px_density_scales_linearly);
   RUN_CASE(check_line_box_encloses_ascender_descender_at_200);
   RUN_CASE(check_out_of_range_input_stays_finite_and_bounded);
+  RUN_CASE(check_nonfinite_input_clamps_to_endpoints);
   RUN_CASE(check_zero_size_px_scales_to_zero);
   RUN_CASE(check_signatures_match_plan);
   if (failures > 0) {
