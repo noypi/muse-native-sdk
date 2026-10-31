@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- ExistingFragment layout: pre-existing stock layout, now containing
+     EngineView. Fallback view is host-owned (T7 contract). -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <com.muse.pviews.EngineView
+        android:id="@+id/engine_view"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+    <TextView
+        android:id="@+id/engine_fallback"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:visibility="gone"
+        android:gravity="center"
+        android:text="Engine unavailable — host fallback" />
+</FrameLayout>

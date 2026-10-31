@@ -1,0 +1,32 @@
+// Brownfield sample (FR-PVIEWS-010 / AC-PVIEWS-015, TC-PVIEWS-015).
+// Stock app hosting EngineView with a SINGLE dependency addition:
+//
+//   dependencies {
+//       implementation "com.muse.pviews:pviews:<version>"  // the one addition
+//   }
+//
+// Manifest-clean: no <activity>/<service>/<provider>/<permission> entries
+// beyond the engine's own (see ../AndroidManifest.xml). Shared-engine mode
+// (two hosts, one engine, isolated UI) is required; multi-engine is shown
+// as an optional second screen. Engine init failure shows a host-owned
+// fallback view (T7 contract).
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.muse.brownfieldsample'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId 'com.muse.brownfieldsample'
+        minSdk 29
+        targetSdk 34
+        versionCode 1
+        versionName "1.0"
+    }
+}
+
+dependencies {
+    implementation "com.muse.pviews:pviews:1.0.0"  // the one addition
+}

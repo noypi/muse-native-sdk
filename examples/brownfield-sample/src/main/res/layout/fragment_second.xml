@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SecondFragment layout: second host on the SAME shared engine. -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <com.muse.pviews.EngineView
+        android:id="@+id/engine_view_b"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+</FrameLayout>

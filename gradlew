@@ -33,6 +33,16 @@
 #                              + src/z_order.cpp (-I engine/platform-views/include)
 #   :pviews:clipping        -> g++ engine/platform-views/tests/clipping_test.cpp
 #                              (-I engine/platform-views/include, headers-only)
+#   :pviews:brownfieldEmbed -> g++ engine/platform-views/tests/brownfield_embed_test.cpp
+#                              + src/embed.cpp (-I engine/platform-views/include)
+#   :pviews:composeInterop  -> g++ engine/platform-views/tests/compose_interop_test.cpp
+#                              + src/interop.cpp (-I engine/platform-views/include)
+#   :pviews:semanticsMerge  -> g++ engine/platform-views/tests/semantics_merge_test.cpp
+#                              + src/semantics.cpp (-I engine/platform-views/include)
+#   :pviews:brownfieldHost   -> g++ engine/platform-views/tests/brownfield_host_test.cpp
+#                              + src/brownfield.cpp + src/embed.cpp (-I engine/platform-views/include)
+#   :pviews:sharedEngineTeardown -> g++ engine/platform-views/tests/shared_engine_teardown_test.cpp
+#                              + src/brownfield.cpp + src/embed.cpp (-I engine/platform-views/include)
 set -eu
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 
@@ -65,6 +75,11 @@ Tasks:
   :pviews:externalMemory   g++ external_memory_test + external_memory_probe (NFR-PVIEWS-001)
   :pviews:zOrder           g++ z_order_test + z_order (FR-PVIEWS-001)
   :pviews:clipping         g++ clipping_test (FR-PVIEWS-005, headers-only)
+  :pviews:brownfieldEmbed   g++ brownfield_embed_test + embed
+  :pviews:composeInterop    g++ compose_interop_test + interop
+  :pviews:semanticsMerge    g++ semantics_merge_test + semantics
+  :pviews:brownfieldHost    g++ brownfield_host_test + brownfield + embed
+  :pviews:sharedEngineTeardown g++ shared_engine_teardown_test + brownfield + embed
 Extra args after :benchmark:perfGate are forwarded to benchmark/gate/run.py
 as <manifest> <results-json>.
 EOF
@@ -476,6 +491,63 @@ print('golden diff sensitivity ok: rerun zero-diff, shift + blend flagged')"
       "$ROOT/engine/platform-views/tests/clipping_test.cpp" \
       -o "$PVDIR/clipping_test" || exit 1
     "$PVDIR/clipping_test" || exit 1
+    rm -rf "$PVDIR"
+    trap - EXIT INT TERM
+    ;;
+  :pviews:brownfieldEmbed)
+    PVDIR="$(mktemp -d)" || exit 1
+    trap 'rm -rf "$PVDIR"' EXIT INT TERM
+    g++ -std=c++17 -Wall -Wextra -Wpedantic -I "$ROOT/engine/platform-views/include" \
+      "$ROOT/engine/platform-views/tests/brownfield_embed_test.cpp" \
+      "$ROOT/engine/platform-views/src/embed.cpp" \
+      -o "$PVDIR/brownfield_embed_test" || exit 1
+    "$PVDIR/brownfield_embed_test" || exit 1
+    rm -rf "$PVDIR"
+    trap - EXIT INT TERM
+    ;;
+  :pviews:composeInterop)
+    PVDIR="$(mktemp -d)" || exit 1
+    trap 'rm -rf "$PVDIR"' EXIT INT TERM
+    g++ -std=c++17 -Wall -Wextra -Wpedantic -I "$ROOT/engine/platform-views/include" \
+      "$ROOT/engine/platform-views/tests/compose_interop_test.cpp" \
+      "$ROOT/engine/platform-views/src/interop.cpp" \
+      -o "$PVDIR/compose_interop_test" || exit 1
+    "$PVDIR/compose_interop_test" || exit 1
+    rm -rf "$PVDIR"
+    trap - EXIT INT TERM
+    ;;
+  :pviews:semanticsMerge)
+    PVDIR="$(mktemp -d)" || exit 1
+    trap 'rm -rf "$PVDIR"' EXIT INT TERM
+    g++ -std=c++17 -Wall -Wextra -Wpedantic -I "$ROOT/engine/platform-views/include" \
+      "$ROOT/engine/platform-views/tests/semantics_merge_test.cpp" \
+      "$ROOT/engine/platform-views/src/semantics.cpp" \
+      -o "$PVDIR/semantics_merge_test" || exit 1
+    "$PVDIR/semantics_merge_test" || exit 1
+    rm -rf "$PVDIR"
+    trap - EXIT INT TERM
+    ;;
+  :pviews:brownfieldHost)
+    PVDIR="$(mktemp -d)" || exit 1
+    trap 'rm -rf "$PVDIR"' EXIT INT TERM
+    g++ -std=c++17 -Wall -Wextra -Wpedantic -I "$ROOT/engine/platform-views/include" \
+      "$ROOT/engine/platform-views/tests/brownfield_host_test.cpp" \
+      "$ROOT/engine/platform-views/src/brownfield.cpp" \
+      "$ROOT/engine/platform-views/src/embed.cpp" \
+      -o "$PVDIR/brownfield_host_test" || exit 1
+    "$PVDIR/brownfield_host_test" || exit 1
+    rm -rf "$PVDIR"
+    trap - EXIT INT TERM
+    ;;
+  :pviews:sharedEngineTeardown)
+    PVDIR="$(mktemp -d)" || exit 1
+    trap 'rm -rf "$PVDIR"' EXIT INT TERM
+    g++ -std=c++17 -Wall -Wextra -Wpedantic -I "$ROOT/engine/platform-views/include" \
+      "$ROOT/engine/platform-views/tests/shared_engine_teardown_test.cpp" \
+      "$ROOT/engine/platform-views/src/brownfield.cpp" \
+      "$ROOT/engine/platform-views/src/embed.cpp" \
+      -o "$PVDIR/shared_engine_teardown_test" || exit 1
+    "$PVDIR/shared_engine_teardown_test" || exit 1
     rm -rf "$PVDIR"
     trap - EXIT INT TERM
     ;;
