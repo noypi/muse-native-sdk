@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
-import { View, Text, manifest, components, TopAppBar, NavigationRail, OverlayHost } from '@muse/native';
+import { View, Text, manifest, components, TopAppBar, BottomAppBar, NavigationRail, OverlayHost } from '@muse/native';
 import { spring } from '@muse/core';
 import ButtonScreen from "./screens/ButtonScreen";
 import { LayeringPage } from "./Showcase";
 import { buildStories } from "./stories";
 import { shuffleRemix, encodeRemix, decodeRemix } from "./remix";
+import { parseStoryLink, storyIdOf, isPagingGesture } from "./galleryNav";
 
 // M3 motion tokens only (AC-SAMPLE-030; AC-TSX-029/030/031 consume-only):
 // route/state transitions reference motion tokens, never literal curves.
@@ -144,6 +145,17 @@ export function applyTheme(mode: 'light' | 'dark', seedFallback: boolean): void 
   activePalette = { ...palette, primary: seed };
 }
 
+export type PagingOrigin = 'inside-surface' | 'shell-chrome';
+export type PagingGesture = 'tap' | 'double-tap' | 'drag' | 'long-press' | 'scroll' | 'key' | 'deep-link';
+// Single-sourced paging predicate (FR-SAMPLE-014, AC-SAMPLE-040): this module
+// reuses galleryNav.isPagingGesture so the tested denial-by-default rule and
+// the shipped shell path cannot diverge. Re-exported for existing imports.
+export { isPagingGesture };
+// Shell-chrome origin constant: touch/key/deep-link handlers thread this
+// real origin through instead of repeating the 'shell-chrome' literal at
+// every guard site.
+const SHELL_ORIGIN: PagingOrigin = 'shell-chrome';
+
 export default function App() {
   const [demoState, setDemoState] = useState<DemoState>('loading');
   const [attempt, setAttempt] = useState(0);
@@ -167,6 +179,67 @@ export default function App() {
     setAttempt((n) => n + 1);
   };
   const stories = buildStories(manifest);
+  // Gallery shell Prev/Next navigation (FR-SAMPLE-014, AC-SAMPLE-039): a
+  // single selected-story index over buildStories(manifest). Shell buttons,
+  // ArrowLeft/ArrowRight, and gallery://story/<id> deep links all move
+  // through the same index path; paging changes only the index, never story
+  // state. Boundary/unknown-id denials keep the current story (never blank).
+  const [selectedIndex, setSelectedIndex] = useState(0);
+  const clampedIndex = stories.length === 0 ? 0 : Math.min(Math.max(selectedIndex, 0), stories.length - 1);
+  const selectedStory = stories.length === 0 ? null : stories[clampedIndex];
+  const prevDisabled = clampedIndex <= 0;
+  const nextDisabled = stories.length === 0 || clampedIndex >= stories.length - 1;
+  const onPrev = (origin: PagingOrigin = SHELL_ORIGIN): void => {
+    if (!isPagingGesture(origin, 'tap')) {
+      return;
+    }
+    setSelectedIndex((i) => Math.max(0, i - 1));
+  };
+  const onNext = (origin: PagingOrigin = SHELL_ORIGIN): void => {
+    if (!isPagingGesture(origin, 'tap')) {
+      return;
+    }
+    setSelectedIndex((i) => Math.min(Math.max(stories.length - 1, 0), i + 1));
+  };
+  // ArrowLeft/ArrowRight dispatch the same navigate path as the buttons.
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.addEventListener !== 'function') {
+      return;
+    }
+    const onKeyDown = (event: KeyboardEvent, origin: PagingOrigin = SHELL_ORIGIN): void => {
+      if (!isPagingGesture(origin, 'key')) {
+        return;
+      }      if (event.key === 'ArrowRight') {
+        onNext(origin);
+      } else if (event.key === 'ArrowLeft') {
+        onPrev(origin);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+    };
+  }, [stories.length]);
+  // Deep-link movement delegates to galleryNav (single storyIdOf rule:
+  // story.id || story.component): bare gallery://story/<id> and seeded
+  // ?seed=<n> links agree with galleryNav.openStoryLink, and unknown ids
+  // surface { code: 'unknown-story' } instead of a silent no-op.
+  const onOpenStoryLink = (link: string, origin: PagingOrigin = SHELL_ORIGIN): { index: number; storyId: string } | { code: 'unknown-story'; storyId?: string } => {
+    if (!isPagingGesture(origin, 'deep-link')) {
+      return { code: 'unknown-story', storyId: link };
+    }
+    const parsed = parseStoryLink(link);
+    if ((parsed as { code?: string }).code) {
+      return parsed as { code: 'unknown-story'; storyId?: string };
+    }
+    const id = (parsed as { id: string }).id;
+    const found = stories.findIndex((story) => storyIdOf(story) === id);
+    if (found < 0) {
+      return { code: 'unknown-story', storyId: id };
+    }
+    setSelectedIndex(found);
+    return { index: found, storyId: storyIdOf(stories[found]) as string };
+  };
   // Gallery remix viral loop (AC-SAMPLE-031): one-tap shuffle renders the
   // current story with a fresh (seed, palette, shapeScale); the deep link
   // (gallery://story/<id>?seed=<n>) copies to the clipboard and pasting it
@@ -188,12 +261,31 @@ export default function App() {
     applyTheme(next, true);
     setTheme(currentPalette());
   };
-  const firstStoryId = stories.length > 0 ? stories[0].component : 'story';
+  const firstStoryId = stories.length > 0 ? (storyIdOf(stories[0]) as string) : 'story';
+  const selectedStoryId = selectedStory !== null ? (storyIdOf(selectedStory) as string) : firstStoryId;
+  const selectedRendered = selectedStory !== null ? selectedStory.render() : null;
+  // Map the descriptor type string through the real @muse/native
+  // component table (RULE-M3-006): a bare <rendered.type /> would
+  // render the string as a host tag instead of the real component.
+  // Overlay members nest the inner component as OverlayHost content.
+  const SelectedComponent = selectedRendered !== null ? components[selectedRendered.type] : null;
   return (
     <View>
       <TopAppBar title="m3-gallery" />
+      <View>
+        <View onTouchStart={prevDisabled ? undefined : () => onPrev(SHELL_ORIGIN)}>
+          <Text color={theme.onSurface}>{prevDisabled ? 'Prev (disabled)' : 'Prev'}</Text>
+        </View>
+        <Text color={theme.onSurface}>{`${clampedIndex + 1} of ${stories.length}`}</Text>
+        <View onTouchStart={nextDisabled ? undefined : () => onNext(SHELL_ORIGIN)}>
+          <Text color={theme.onSurface}>{nextDisabled ? 'Next (disabled)' : 'Next'}</Text>
+        </View>
+      </View>
       <NavigationRail selected="home" />
       <View sharedId="gallery-hero" />
+      <View onTouchStart={() => onOpenStoryLink(`gallery://story/${selectedStoryId}`, SHELL_ORIGIN)}>
+        <Text color={theme.secondary}>Open story gallery://story/{selectedStoryId}</Text>
+      </View>
       <View onTouchStart={onToggleTheme}>
         <Text color={theme.onSurface}>Toggle theme</Text>
       </View>
@@ -216,24 +308,17 @@ export default function App() {
       ) : null}
       <ButtonScreen />
       <LayeringPage />
-      {stories.map((story, index) => {
-        const rendered = story.render();
-        // Map the descriptor type string through the real @muse/native
-        // component table (RULE-M3-006): a bare <rendered.type /> would
-        // render the string as a host tag instead of the real component.
-        // Overlay members nest the inner component as OverlayHost content.
-        const StoryComponent = components[rendered.type];
-        return (
-          <View key={`${story.component}-${story.variant}-${story.state}-${story.theme}-${index}`}>
-            <Text color={theme.onSurface}>{`${story.component} ${story.variant} ${story.state} ${story.theme}`}</Text>
-            {rendered.host ? (
-              <OverlayHost content={<StoryComponent {...rendered.props} />} />
-            ) : (
-              <StoryComponent {...rendered.props} />
-            )}
-          </View>
-        );
-      })}
+      {selectedStory !== null && selectedRendered !== null && SelectedComponent ? (
+        <View key={`${selectedStory.component}-${selectedStory.variant}-${selectedStory.state}-${selectedStory.theme}-${clampedIndex}`}>
+          <Text color={theme.onSurface}>{`${selectedStory.component} ${selectedStory.variant} ${selectedStory.state} ${selectedStory.theme}`}</Text>
+          {selectedRendered.host ? (
+            <OverlayHost content={<SelectedComponent {...selectedRendered.props} />} />
+          ) : (
+            <SelectedComponent {...selectedRendered.props} />
+          )}
+        </View>
+      ) : null}
+      <BottomAppBar title={`${clampedIndex + 1} of ${stories.length}`} />
     </View>
   );
 }

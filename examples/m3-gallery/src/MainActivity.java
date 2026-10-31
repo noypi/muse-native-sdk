@@ -51,18 +51,10 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     private float lastImeBottomPx = -1f;
 
     /**
-     * Touch-slop mirror for the page-flip fallback gate below. Sole source
-     * of truth is {@code runtime::touch_detail::kTouchSlopPx} (plan A2,
-     * 8px); this literal must track it — the native slop verdict and this
-     * Java gate must agree, otherwise a scroll could page-flip or an
-     * outside tap could go silent.
+     * FR-SAMPLE-014 removed the Java page-flip gate that consumed the DOWN
+     * anchor: every touch goes to the native tap chain untouched, and no
+     * Java gate pages anymore.
      */
-    private static final float TOUCH_SLOP_PX = 8.0f;
-
-    /** DOWN anchor of the active gesture, for the drag-vs-outside gate. */
-    private float downX = 0f;
-    private float downY = 0f;
-    private int downPointerId = -1;
 
     /**
      * Focusable input view backing the TextInput widget (tier-2 native
@@ -132,11 +124,9 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     private final BroadcastReceiver advanceReceiver = new BroadcastReceiver() {
         @Override
         public void onReceive(Context context, Intent intent) {
-            if (ACTION_NATIVE_ADVANCE_PAGE.equals(intent != null ? intent.getAction() : null)
-                    && engineHandle != 0) {
-                nativeAdvancePage(engineHandle);
-                nativeRenderFrame(engineHandle);
-            }
+            // FR-SAMPLE-014: neutralized — no broadcast paginates
+            // (AC-SAMPLE-039). The receiver entry is kept for the proof
+            // harness, but it intentionally never calls nativeAdvancePage.
         }
     };
 
@@ -202,25 +192,23 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         boolean showTextProbe = "m3-text-probe".equals(requestedPage);
         SurfaceView surfaceView = new SurfaceView(this);
         surfaceView.getHolder().addCallback(this);
-        // Tap routing (BUG-M3-FIDELITY-007 disposition): every touch goes to
-        // the native tap chain first with raw MotionEvent fields. The old
-        // `setOnClickListener -> nativeAdvancePage` page-flip is gone as a
-        // tap handler — a tap that claims a button fires the button only and
-        // never turns the page. Page advance survives solely as the
-        // outside-tap fallback below (dispatch returned -1 AND the gesture
-        // never dragged past slop), so a tap cannot both fire and flip and
-        // a drag-release can never turn the page (AC-INPUT-020 drag-no-fire).
+        // Tap routing (BUG-M3-FIDELITY-007 disposition, FR-SAMPLE-014):
+        // every touch goes to the native tap chain first with raw
+        // MotionEvent fields. The old `setOnClickListener ->
+        // nativeAdvancePage` page-flip is gone as a tap handler — a tap
+        // that claims a button fires the button only and never turns the
+        // page. The outside-tap fallback (dispatch returned -1 AND the
+        // gesture never dragged past slop) is removed: no surface gesture
+        // paginates (AC-SAMPLE-039). Gallery paging lives only in the
+        // shell chrome (Prev/Next buttons, ArrowLeft/ArrowRight, and
+        // gallery://story/<id> deep links). A drag-release never turns
+        // the page (AC-INPUT-020 drag-no-fire).
         surfaceView.setOnTouchListener((v, event) -> {
             if (engineHandle == 0) {
                 return false;
             }
             int action = event.getActionMasked();
             int index = event.getActionIndex();
-            if (action == MotionEvent.ACTION_DOWN) {
-                downX = event.getX(index);
-                downY = event.getY(index);
-                downPointerId = event.getPointerId(index);
-            }
             if (action == MotionEvent.ACTION_MOVE) {
                 // MOVE batching (run decision UNSETTLED per support.md: the
                 // evidence does not settle a batching/coalescing policy, so
@@ -249,26 +237,16 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                     event.getPointerId(index),
                     event.getEventTime());
             if (action == MotionEvent.ACTION_UP) {
-                boolean dragged = false;
-                if (event.getPointerId(index) == downPointerId) {
-                    float dx = event.getX(index) - downX;
-                    float dy = event.getY(index) - downY;
-                    dragged = Math.hypot(dx, dy) >= TOUCH_SLOP_PX;
-                }
-                downPointerId = -1;
-                if (claimed < 0 && !dragged) {
-                    nativeAdvancePage(engineHandle);
-                } else if (claimed >= 0) {
+                // FR-SAMPLE-014: no outside-tap fallback — an unclaimed
+                // tap renders the frame but never advances the page.
+                if (claimed >= 0) {
                     // L7 probe tap path (T2): the native chain already ran
                     // first and claimed a node (e.g. the Layering IME probe
                     // row) — focus the TextInput + MuseField-backed input
                     // view and hand InputMethodManager a showable target.
-                    // Page-flip fallback above is untouched.
                     requestImeForProbeTap();
                 }
                 nativeRenderFrame(engineHandle);
-            } else if (action == MotionEvent.ACTION_CANCEL) {
-                downPointerId = -1;
             }
             return true;
         });
@@ -314,6 +292,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     @Override
     protected void onResume() {
         super.onResume();
+        // FR-SAMPLE-014: advanceReceiver above is neutralized (never pages);
+        // both receivers stay registered so the harness/theme entries exist.
         if (probeField != null) {
             try {
                 clipboardManager =

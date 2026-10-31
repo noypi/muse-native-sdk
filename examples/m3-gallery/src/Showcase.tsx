@@ -1,4 +1,11 @@
 // Static M3 component showcase (FR-M3-007 / AC-M3-015 companion).
+// FR-SAMPLE-014 T3 (AC-SAMPLE-041): the default gallery tree no longer uses
+// this static root. Static Text-label rows were removed so the default tree
+// contains zero static duplicates; the static fallback survives solely as the
+// explicit-flag diagnostic (`--static-fallback` / `MUSE_STATIC_FALLBACK=1`,
+// see src/gallerySurface.js `renderStaticFallback`), which reports the
+// fallback and fails the proof gate. This file is kept for quarantine
+// reference only and is not rendered on the default path.
 // Fully static JSX: every component appears with literal props and literal
 // text children, so the built tree carries the whole gallery with no JS
 // evaluation on device. Covers all three tiers with their documented
@@ -15,7 +22,6 @@ function GalleryRow() { return null; }
 export default function Showcase() {
   return (
     <View>
-      <Text>M3 Gallery light</Text>
       <View theme="light">
         <TopAppBar title="m3-gallery" size="small" />
         <TopAppBar title="m3-gallery" size="medium" />
@@ -82,7 +88,6 @@ export default function Showcase() {
         <GalleryRow desc='TextFieldEditCore state="pressed" theme="light"' state="pressed" />
         <GalleryRow desc='TextFieldEditCore state="disabled" theme="light"' state="disabled" />
       </View>
-      <Text>M3 Gallery dark</Text>
       <View theme="dark">
         <TopAppBar title="m3-gallery" size="small" />
         <TopAppBar title="m3-gallery" size="medium" />
