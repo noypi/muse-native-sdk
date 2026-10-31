@@ -178,5 +178,43 @@ struct DismissResult {
 // Never throws.
 DismissResult onScrimTap(bool scrimHit, bool isDrag,
                          int overlayCount) noexcept;
+// Plan T62 `Interface:` line (verbatim): maps a state token to its numeric
+// M3 state-layer opacity (0.08 hover / 0.12 focus / 0.16 pressed / 0.38
+// disabled baseline per D1). Unknown/empty input returns the 0.0f no-wash
+// sentinel; nothing throws.
+float StateLayerOpacity(const std::string& state);
+
+// Raster/retained wash (T62 detail 2): src-over state-layer fill driven by
+// `StateLayerOpacity`, primary-role wash, ripple-bounded for Ripple kind,
+// theme-matched via token resolution (D4). Fail-closed input yields the base
+// command untouched, so the row is kept as-is. Never throws.
+DrawCmd PaintStateWash(const DrawCmd& base, const std::string& kind,
+                       const std::string& state);
+
+// CPU-oracle wash (T62 detail 3): mirrors the raster wash 1:1 so raster and
+// retained commands agree. Same resolver, same src-over application, same
+// fail-closed shape. Never throws.
+DrawCmd CpuOraclePaintStateWash(const DrawCmd& base, const std::string& kind,
+                                const std::string& state);
+
+// Whitelist gate (T62 detail 1): true only for descriptor prop keys that
+// survive into `desc`. `"state"` is whitelisted so the T61 literal reaches
+// the paint path. Never throws.
+bool IsPropKeyWhitelisted(const std::string& key);
+
+// Retained row path (renderer lane): paints the wash for one parsed gallery
+// state row behind the `IsPropKeyWhitelisted("state")` gate. Fail-closed:
+// unwhitelisted or unknown state keeps the base command, never blank, never
+// throws across JNI.
+DrawCmd BuildRetainedGalleryRowCmd(const DrawCmd& base,
+                                   const std::string& kind,
+                                   const std::string& state);
+
+// Oracle row path (presenter lane): paints the 1:1 oracle expectation for
+// one parsed gallery state row behind the `IsPropKeyWhitelisted("state")`
+// gate. Same fail-closed shape as the retained lane. Never throws.
+DrawCmd BuildOracleGalleryRowCmd(const DrawCmd& base,
+                                 const std::string& kind,
+                                 const std::string& state);
 
 }  // namespace runtime

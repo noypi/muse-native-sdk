@@ -36,6 +36,36 @@
 #include <android/log.h>
 #endif
 
+// T62 C++ paint path — FR-M3-009 / AC-M3-020 (TC-M3-021), FR-M3-008 /
+// AC-M3-018 (8/12/16) + AC-M3-019 (token-only).
+//
+// Renders the state-layer/ripple wash from the shared numeric map for the T61
+// showcase state rows (`Surface` / `Ripple` / `TextFieldEditCore` x
+// hover|focus|pressed|disabled x light/dark).
+//
+// Settled paint-path decisions (plan, 2026-10-31):
+//   D1 (disabled baseline): `StateLayerOpacity("disabled")` reads the
+//       `m3_matrix.json` baseline entry; the baseline pins 0.38
+//       (tokenSnapshot 2026-10-28; 26/49 component rows carry
+//       stateOpacities {hover 0.08, focus 0.12, pressed 0.16, disabled 0.38}),
+//       so 0.38f is pinned explicitly here and named in the T62 test.
+//   D2 (mirror equality): this map mirrors JS `driveState` 1:1
+//       (`packages/native/index.js` STATE_OPACITY: hover 0.08 / focus 0.12 /
+//       pressed 0.16 / disabled 0.38); JS stays the token-role source of
+//       truth, the conformance test asserts literal equality (AC-M3-019).
+//   D4 (wash treatment): primary-role wash for StateLayer families,
+//       ripple-bounded wash for Ripple kind, theme-matched roles;
+//       disabled = baseline treatment only. Wash *placement* is device-raster
+//       behavior (owner tester, 127.0.0.1:6569 screencap deltas); this file
+//       proves the numeric input plus the fail-closed edge.
+//
+// Fail-closed shape (never blank, never throws across JNI): unknown/empty
+// state resolves to the 0.0f no-wash sentinel — the row is kept, no wash is
+// painted, and no exception ever escapes (the body catches everything, so the
+// JNI boundary stays exception-free).
+
+#include <string>
+
 namespace runtime {
 namespace {
 
@@ -896,7 +926,8 @@ std::vector<GalleryRow> ParseGalleryRows(const void* data, std::size_t len,
                                   "value",   "index",    "icon",
                                   "tone",    "elevation", "orientation",
                                   "direction", "spacing", "open",
-                                  "contentFit", "source"};
+                                  "contentFit", "source", "state",
+                                  "theme"};
         const char* propsVal = nullptr;
         const char* propsEnd = nullptr;
         if (FindKey(span.first, span.second, "props", propsVal) != nullptr &&
@@ -945,7 +976,10 @@ std::vector<GalleryRow> ParseGalleryRows(const void* data, std::size_t len,
         row.comp = type;
         row.label = picked.empty() ? desc : picked;
         row.desc = desc;
-        row.dark = false;
+        // T61 theme literal: "theme=dark" marks dark-section state rows so
+        // light/dark halves stay distinguishable downstream (D4
+        // theme-matched wash). Absent/unknown theme fails closed to light.
+        row.dark = (desc.find(" theme=dark") != std::string::npos);
         row.header = false;
         componentRows.push_back(row);
       }
@@ -1571,6 +1605,55 @@ void PaintComponent(std::uint32_t* px, int stride, int w, int h, int bx,
     return;
   }
 
+  // T61 state-row wash (oracle/CPU lane, mirrors the retained lane 1:1):
+  // src-over primary-role wash driven by StateLayerOpacity, ripple-bounded
+  // for Ripple kind, theme-matched per D4. Fail-closed: unknown/empty state
+  // keeps the base card with no wash, never blank, never throws.
+  if (c == "GalleryRow" || c == "Surface" || c == "Ripple") {
+    try {
+      const std::string washState = PropValue(d, "state");
+      const float washOpacity = StateLayerOpacity(washState);
+      const bool isRipple =
+          (c == "Ripple") || (d.find("Ripple") != std::string::npos);
+      // D1 baseline: disabled rows keep the base card with no wash.
+      if (washOpacity > 0.0f && washState != "disabled") {
+        const std::uint32_t primary =
+            row.dark ? kDarkPrimary : kLightPrimary;
+        const unsigned pr = primary & 255u;
+        const unsigned pg = (primary >> 8) & 255u;
+        const unsigned pb = (primary >> 16) & 255u;
+        const std::uint8_t alpha = static_cast<std::uint8_t>(
+            washOpacity * 255.0f + 0.5f);
+        const std::uint8_t wr = static_cast<std::uint8_t>(pr);
+        const std::uint8_t wg = static_cast<std::uint8_t>(pg);
+        const std::uint8_t wb = static_cast<std::uint8_t>(pb);
+        if (isRipple) {
+          const int rr = (bw < bh ? bw : bh) / 3;
+          const int rcx = bx + bw / 2;
+          const int rcy = by + (bh - 20) / 2;
+          for (int yy = rcy - rr; yy <= rcy + rr; ++yy) {
+            for (int xx = rcx - rr; xx <= rcx + rr; ++xx) {
+              const int dx = xx - rcx;
+              const int dy = yy - rcy;
+              if (dx * dx + dy * dy > rr * rr) continue;
+              BlendPixel(px, stride, w, h, xx, yy, wr, wg, wb, alpha);
+            }
+          }
+        } else {
+          for (int yy = by + 8; yy < by + bh - 44; ++yy) {
+            for (int xx = bx + 8; xx < bx + bw - 8; ++xx) {
+              BlendPixel(px, stride, w, h, xx, yy, wr, wg, wb, alpha);
+            }
+          }
+        }
+      }
+    } catch (...) {
+      // Fail closed: keep the base card below.
+    }
+    PaintCaption(px, stride, w, h, bx, by, bw, bh, ShortCaption(row));
+    return;
+  }
+
   // Fallback: tonal card with the component name — never a blank band.
   FillRoundedRect(px, stride, w, h, bx + 8, by + 8, bw - 16, bh - 44, 18,
                   kLightSecondaryContainer);
@@ -1742,6 +1825,14 @@ PrimitiveKind FamilyKind(const std::string& comp) {
       comp == "BottomAppBar" || comp == "SnackbarHost") {
     return PrimitiveKind::Rect;
   }
+  // T61 state rows route through the wash path (retained lane): Surface and
+  // GalleryRow surface rows ride StateLayer, Ripple rows ride Ripple. The
+  // EmitComponentRowCmds gate below keeps unknown states wash-free, so this
+  // mapping never paints an unresolved wash by itself.
+  if (comp == "GalleryRow" || comp == "Surface") {
+    return PrimitiveKind::StateLayer;
+  }
+  if (comp == "Ripple") return PrimitiveKind::Ripple;
   return PrimitiveKind::ShapedText;
 }
 
@@ -1878,6 +1969,63 @@ void EmitComponentRowCmds(const GalleryRow& row, int bx, int by, int bw,
   // the presented-window InkFor); the ElevationShadow above carries the
   // wash and the caption below carries the vector text.
   out.push_back(card);
+  // T61 state-row wash (retained lane, mirrors the oracle lane 1:1):
+  // GalleryRow/Surface/Ripple rows paint through the shared resolver so the
+  // wash opacity mirrors JS driveState (D2) with the 0.38 disabled pin
+  // (D1), primary-role and ripple-bounded for Ripple kind, theme-matched
+  // per D4. Fail-closed: unknown/empty state emits the neutral family cmd
+  // (no wash, row kept), never blank, never throws across JNI.
+  if (row.comp == "GalleryRow" || row.comp == "Surface" ||
+      row.comp == "Ripple") {
+    try {
+      const std::string state = PropValue(row.desc, "state");
+      const bool ripple =
+          (row.comp == "Ripple") ||
+          (row.desc.find("Ripple") != std::string::npos);
+      // D1 baseline: disabled rows fall through to the neutral family
+      // cmd (wash-free baseline); unknown/empty states stay wash-free.
+      if (IsPropKeyWhitelisted("state") && state != "disabled" &&
+          StateLayerOpacity(state) > 0.0f) {
+        DrawCmd base;
+        base.nodeId = node;
+        base.opacity = 1.0f;
+        const std::uint32_t primary =
+            row.dark ? kDarkPrimary : kLightPrimary;
+        const std::string kind = ripple ? "Ripple" : "Surface";
+        if (ripple) {
+          base.kind = PrimitiveKind::Ripple;
+          int s = bh - 56;
+          if (s > bw - 16) s = bw - 16;
+          if (s < 24) s = 24;
+          const float fx = static_cast<float>(bx + bw / 2 - s / 2);
+          const float fy =
+              static_cast<float>(by + 12 + (bh - 56) / 2 - s / 2);
+          base.bounds = {fx, fy, static_cast<float>(s),
+                         static_cast<float>(s)};
+          base.payload.rippleBounds = base.bounds;
+          base.payload.rippleProgress = 1.0f;
+          base.payload.rippleColor = primary;
+        } else {
+          base.kind = PrimitiveKind::StateLayer;
+          base.bounds = {static_cast<float>(bx + 8),
+                         static_cast<float>(by + 8),
+                         static_cast<float>(bw - 16),
+                         static_cast<float>(bh - 52)};
+          base.radius = 18.0f;
+          base.payload.stateColor = primary;
+          base.payload.stateOpacity = 1.0f;
+        }
+        out.push_back(PaintStateWash(base, kind, state));
+        EmitCaptionCmd(bx, by, bw, bh, node, ShortCaption(row), out);
+        return;
+      }
+    } catch (...) {
+      // Fail closed: fall through to the neutral family cmd below.
+    }
+    EmitFamilyCmd(row, PrimitiveKind::ShapedText, bx, by, bw, bh, node, out);
+    EmitCaptionCmd(bx, by, bw, bh, node, ShortCaption(row), out);
+    return;
+  }
   EmitFamilyCmd(row, FamilyKind(row.comp), bx, by, bw, bh, node, out);
   EmitCaptionCmd(bx, by, bw, bh, node, ShortCaption(row), out);
 }
@@ -2288,6 +2436,170 @@ bool ResolveGalleryShapedRun(std::uint32_t handle,
     *glyphs = it->second.glyph_ids;
     *advances = it->second.advances;
     return true;
+  } catch (...) {
+    return false;
+  }
+}
+
+// Whitelisted descriptor prop keys that survive into `desc`. `"state"` is
+// present so the T61 literal (`state="hover"|"focus"|"pressed"|"disabled"`)
+// reaches the paint path (T62 detail 1).
+constexpr const char* kPropKeys[] = {
+    "type",
+    "state",
+    "theme",
+    "color",
+    "opacity",
+};
+
+constexpr std::size_t kPropKeyCount =
+    sizeof(kPropKeys) / sizeof(kPropKeys[0]);
+
+// Existing token-role wash color only — never a hex/rgb literal (AC-M3-019).
+// The role resolves through the theme cascade, so light/dark matching rides
+// the token resolution (D4); no per-theme literal is introduced here.
+constexpr const char* kStateWashColorRole = "primary";
+
+// M3 state-layer opacities mirrored 1:1 from JS `driveState` (D2).
+constexpr float kHoverOpacity = 0.08f;
+constexpr float kFocusOpacity = 0.12f;
+constexpr float kPressedOpacity = 0.16f;
+// D1: explicit 0.38 pin from the `m3_matrix.json` baseline entry.
+constexpr float kDisabledOpacity = 0.38f;
+// Fail-closed sentinel for unknown/empty state: no wash painted.
+constexpr float kNoWashOpacity = 0.0f;
+
+// Plan T62 `Interface:` line (verbatim): maps a state token to its numeric
+// M3 state-layer opacity. Unknown/empty input returns the 0.0f no-wash
+// sentinel; the row is kept (never blank) and nothing throws, so the JNI
+// boundary stays exception-free.
+float StateLayerOpacity(const std::string& state) {
+  try {
+    if (state == "hover") {
+      return kHoverOpacity;
+    }
+    if (state == "focus") {
+      return kFocusOpacity;
+    }
+    if (state == "pressed") {
+      return kPressedOpacity;
+    }
+    if (state == "disabled") {
+      return kDisabledOpacity;
+    }
+    return kNoWashOpacity;
+  } catch (...) {
+    return kNoWashOpacity;
+  }
+}
+
+namespace {
+
+// A resolved state wash: src-over fill alpha + token-role color.
+// `paint == false` means fail-closed (no wash, row kept).
+struct StateWash {
+  bool paint = false;
+  float opacity = 0.0f;
+  const char* colorRole = kStateWashColorRole;
+  // D4: the wash is ripple-bounded for Ripple kind rows.
+  bool rippleBounded = false;
+};
+
+// Shared resolver so the raster path and the CPU-oracle path agree 1:1.
+// D1 baseline: "disabled" resolves to the wash-free sentinel (row kept,
+// baseline treatment only) even though StateLayerOpacity("disabled") pins
+// the 0.38 numeric for the T62 contract — the numeric map is not a paint
+// instruction for the disabled baseline.
+StateWash ResolveWash(const std::string& kind, const std::string& state) {
+  StateWash wash;
+  if (state == "disabled") {
+    return wash;
+  }
+  const float opacity = StateLayerOpacity(state);
+  if (opacity <= 0.0f) {
+    return wash;
+  }
+  wash.paint = true;
+  wash.opacity = opacity;
+  wash.colorRole = kStateWashColorRole;
+  wash.rippleBounded = (kind == "Ripple");
+  return wash;
+}
+
+// Applies a resolved wash as a src-over fill onto a base command, using only
+// the existing token-role color (no new hex literals). Fail-closed input
+// yields the base command untouched, so the row is kept as-is.
+//
+// Drop-point fix (F3): the previous body wrote only `out.opacity`, but the
+// presented-window Swapchain blends StateLayer/Ripple fills from the color
+// word alpha byte (payload.stateOpacity / cmd.opacity never reach its
+// src-over math), so every state painted the opaque primary and hover /
+// focus / pressed measured zero delta. The per-state opacity is therefore
+// threaded into every channel the sinks read: cmd.opacity, the matching
+// payload float (stateOpacity / rippleProgress), AND the alpha byte of the
+// token-role color word (same round(255 * opacity) convention as the
+// BlendPixel reference), preserving the RGB roles exactly.
+DrawCmd ApplyWash(const DrawCmd& base, const StateWash& wash) {
+  if (!wash.paint) {
+    return base;
+  }
+  DrawCmd out = base;
+  out.opacity = wash.opacity;
+  unsigned a =
+      static_cast<unsigned>(wash.opacity * 255.0f + 0.5f);
+  if (a < 1u) a = 1u;
+  if (a > 255u) a = 255u;
+  const std::uint32_t alphaBits = static_cast<std::uint32_t>(a) << 24;
+  const std::uint32_t rgbMask =
+      ~(static_cast<std::uint32_t>(255u) << 24);
+  if (out.kind == PrimitiveKind::Ripple) {
+    out.payload.rippleProgress = wash.opacity;
+    const std::uint32_t rgb =
+        out.payload.rippleColor & rgbMask;
+    out.payload.rippleColor = rgb | alphaBits;
+  } else {
+    out.payload.stateOpacity = wash.opacity;
+    const std::uint32_t rgb =
+        out.payload.stateColor & rgbMask;
+    out.payload.stateColor = rgb | alphaBits;
+  }
+  return out;
+}
+
+}  // namespace
+
+// Raster/retained path (T62 detail 2): src-over state-layer fill driven by
+// `StateLayerOpacity`, primary-role wash for StateLayer families,
+// ripple-bounded for Ripple kind, theme-matched via token resolution (D4).
+DrawCmd PaintStateWash(const DrawCmd& base, const std::string& kind,
+                       const std::string& state) {
+  try {
+    return ApplyWash(base, ResolveWash(kind, state));
+  } catch (...) {
+    return base;
+  }
+}
+
+// CPU-oracle path (T62 detail 3): mirrors the raster wash 1:1 so raster and
+// retained commands agree. Same resolver, same src-over application, same
+// fail-closed shape.
+DrawCmd CpuOraclePaintStateWash(const DrawCmd& base, const std::string& kind,
+                                const std::string& state) {
+  try {
+    return ApplyWash(base, ResolveWash(kind, state));
+  } catch (...) {
+    return base;
+  }
+}
+
+bool IsPropKeyWhitelisted(const std::string& key) {
+  try {
+    for (std::size_t i = 0; i < kPropKeyCount; ++i) {
+      if (key == kPropKeys[i]) {
+        return true;
+      }
+    }
+    return false;
   } catch (...) {
     return false;
   }

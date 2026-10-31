@@ -206,17 +206,74 @@ test('library component defaults contain no literal colour/dimension', () => {
   );
 });
 
+// BUG-M3-FIDELITY-001 T2: withStateLayer numeric output asserted with
+// INDEPENDENT literals (never driveState output — the old deepEqual against
+// driveState() was self-referential and passed with symbolic strings).
+// withStateLayer is internal (not exported); it is exercised through the
+// public component boundary, which is its only caller surface.
+const T2_NUMERIC_OPACITY: Record<string, number> = {
+  hover: 0.08,
+  focus: 0.12,
+  pressed: 0.16,
+};
+
 for (const name of T4_INTERACTIVE) {
-  test(`${name} routes hover/focus/pressed/disabled output through the shared state layer`, () => {
-    const { components: tier1Components, driveState } = require('../index.js');
-    for (const state of T4_STATES) {
+  test(`${name} routes hover/focus/pressed output through the shared state layer with numeric M3 opacity`, () => {
+    const { components: tier1Components } = require('../index.js');
+    for (const state of ['hover', 'focus', 'pressed'] as const) {
       const descriptor = tier1Components[name]({ state });
+      // Independent literal — not driveState(name, state).
       assert.deepEqual(
         descriptor.props.stateLayer,
-        driveState(name, state),
-        `${name} output for state "${state}" must go through driveState (shared Ripple/state layer)`,
+        {
+          target: name,
+          state,
+          layer: {
+            type: 'Ripple',
+            props: { color: 'primary', opacity: T2_NUMERIC_OPACITY[state] },
+          },
+        },
+        `${name} output for state "${state}" must carry the numeric M3 opacity`,
+      );
+      assert.equal(typeof descriptor.props.stateLayer.layer.props.opacity, 'number');
+    }
+  });
+
+  test(`${name} yields a numeric (baseline-defined) disabled opacity`, () => {
+    // ASSUMPTION D1 (shared with T1): the exact disabled numeric lives in the
+    // conformance baseline; this pins numeric-type + finite range only.
+    const { components: tier1Components } = require('../index.js');
+    const descriptor = tier1Components[name]({ state: 'disabled' });
+    const opacity = descriptor.props.stateLayer.layer.props.opacity;
+    assert.equal(typeof opacity, 'number');
+    assert.ok(Number.isFinite(opacity));
+    assert.ok(opacity >= 0 && opacity <= 1);
+  });
+
+  test(`${name} stateLayer output carries no literal colour/dimension`, () => {
+    const { components: tier1Components } = require('../index.js');
+    for (const state of T4_STATES) {
+      const descriptor = tier1Components[name]({ state });
+      assert.ok(
+        !t4HasLiteral(JSON.stringify(descriptor.props.stateLayer)),
+        `${name} stateLayer for "${state}" must be token-role only`,
       );
     }
+  });
+
+  test(`${name} returns props untouched when state is absent or undefined`, () => {
+    // withStateLayer absent/undefined-state path via the public boundary.
+    const { components: tier1Components } = require('../index.js');
+    for (const props of [{ tone: 'surface' }, { state: undefined }, undefined]) {
+      const descriptor = tier1Components[name](props);
+      assert.ok(descriptor.props && !('stateLayer' in descriptor.props));
+    }
+  });
+
+  test(`${name} propagates driveState errors with no new error type`, () => {
+    const { components: tier1Components } = require('../index.js');
+    assert.throws(() => tier1Components[name]({ state: 42 }), TypeError);
+    assert.throws(() => tier1Components[name]({ state: 'giant' }), RangeError);
   });
 }
 
