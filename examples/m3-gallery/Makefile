@@ -19,7 +19,13 @@ ASSET_DST = assets/tree.mui.bin
 ANDROID_JAR = $(ANDROID_PLATFORM)/android.jar
 ENGINE_LIBS = $(MUSE_NATIVE_HOME)/android-arm64-v8a/libRuntime.so $(MUSE_NATIVE_HOME)/android-armeabi-v7a/libRuntime.so $(MUSE_NATIVE_HOME)/android-x86_64/libRuntime.so $(MUSE_NATIVE_HOME)/android-x86/libRuntime.so
 
-.PHONY: apk sign verify install clean
+.PHONY: apk sign verify install clean parity
+
+# TC-GRAPHICS-041 (AC-GRAPHICS-039 T4): cpu-vs-skia pixel parity via the AC-035
+# harness shape — same gallery tree on both paths, md5 compare. Exits 0 iff
+# md5(cpu_frame) == md5(skia_frame); prints both md5s either way.
+parity:
+	muse-native gallery-parity --cpu-vs-skia --assert-md5
 
 apk:
 	@if [ -z "$(MUSE_NATIVE_HOME)" ]; then echo "error: MUSE_NATIVE_HOME is not set. Example: export MUSE_NATIVE_HOME=<sdk-install>/build" >&2; exit 1; fi

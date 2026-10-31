@@ -44,7 +44,7 @@
   const present = require('../lib/gallery-present.js');
   if (argv.includes('--help') || argv.includes('-h')) {
     process.stdout.write(
-      'Usage: muse-native gallery-present [--path egl|cpu] [--dump-frame <png>]\n',
+      'Usage: muse-native gallery-present [--path egl|cpu|skia] [--dump-frame <png>]\n',
     );
     return;
   }
@@ -52,7 +52,7 @@
   try {
     opts = present.parseGalleryPresentArgs(argv);
   } catch (err) {
-    process.stderr.write(`${(err && err.message) || String(err)}\nUsage: muse-native gallery-present [--path egl|cpu] [--dump-frame <png>]\n`);
+    process.stderr.write(`${(err && err.message) || String(err)}\nUsage: muse-native gallery-present [--path egl|cpu|skia] [--dump-frame <png>]\n`);
     process.exitCode = 2;
     return;
   }
@@ -81,7 +81,7 @@
   const parity = require('../lib/gallery-parity.js');
   if (argv.includes('--help') || argv.includes('-h')) {
     process.stdout.write(
-      'Usage: muse-native gallery-parity --cpu-vs-egl --assert-md5\n',
+      'Usage: muse-native gallery-parity (--cpu-vs-egl|--cpu-vs-skia) --assert-md5\n',
     );
     return;
   }
@@ -89,23 +89,28 @@
   try {
     opts = parity.parseGalleryParityArgs(argv);
   } catch (err) {
-    process.stderr.write(`${(err && err.message) || String(err)}\nUsage: muse-native gallery-parity --cpu-vs-egl --assert-md5\n`);
+    process.stderr.write(`${(err && err.message) || String(err)}\nUsage: muse-native gallery-parity (--cpu-vs-egl|--cpu-vs-skia) --assert-md5\n`);
     process.exitCode = 2;
     return;
   }
-  if (!opts.cpuVsEgl || !opts.assertMd5) {
-    const missing = !opts.cpuVsEgl ? '--cpu-vs-egl' : '--assert-md5';
-    process.stderr.write(`Error: missing required flag ${missing}\nUsage: muse-native gallery-parity --cpu-vs-egl --assert-md5\n`);
+  if ((!opts.cpuVsEgl && !opts.cpuVsSkia) || !opts.assertMd5) {
+    const missing = (!opts.cpuVsEgl && !opts.cpuVsSkia) ? '--cpu-vs-egl|--cpu-vs-skia' : '--assert-md5';
+    process.stderr.write(`Error: missing required flag ${missing}\nUsage: muse-native gallery-parity (--cpu-vs-egl|--cpu-vs-skia) --assert-md5\n`);
     process.exitCode = 2;
     return;
   }
   parity.runGalleryParity({
     serial: opts.serial || process.env.ANDROID_SERIAL,
     assertMd5: true,
+    cpuVsSkia: Boolean(opts.cpuVsSkia),
   }).then(
     (result) => {
-      process.stdout.write(`gallery-parity ok: cpuMd5=${result.cpuMd5} eglMd5=${result.eglMd5} equal=${result.equal}\n`);
-      if (result.cpuMd5 !== result.eglMd5 || !result.equal) {
+      if (result.skiaMd5 !== undefined) {
+        process.stdout.write(`gallery-parity ok: cpuMd5=${result.cpuMd5} skiaMd5=${result.skiaMd5} equal=${result.equal}\n`);
+      } else {
+        process.stdout.write(`gallery-parity ok: cpuMd5=${result.cpuMd5} eglMd5=${result.eglMd5} equal=${result.equal}\n`);
+      }
+      if (!result.equal) {
         process.exitCode = 1;
       }
     },

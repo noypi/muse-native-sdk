@@ -124,6 +124,22 @@ describe('T4 — parseGalleryPresentArgs hermetic (no device)', () => {
     assert.equal(parsed.dumpFrame, null);
   });
 
+  it('parses --path skia with no dump frame', () => {
+    assert.ok(galleryPresent, 'lib/gallery-present.js must load');
+    assert.deepEqual(
+      galleryPresent.parseGalleryPresentArgs(['gallery-present', '--path', 'skia']),
+      { path: 'skia', dumpFrame: null },
+    );
+  });
+
+  it('parses --path skia --dump-frame <png>', () => {
+    assert.ok(galleryPresent, 'lib/gallery-present.js must load');
+    assert.deepEqual(
+      galleryPresent.parseGalleryPresentArgs(['gallery-present', '--path', 'skia', '--dump-frame', '/tmp/s.png']),
+      { path: 'skia', dumpFrame: '/tmp/s.png' },
+    );
+  });
+
   it('rejects an unknown --path value (usage failure, never silent)', () => {
     assert.ok(galleryPresent, 'lib/gallery-present.js must load');
     assert.throws(() => galleryPresent.parseGalleryPresentArgs(['--path', 'vulkan']), /path|egl|cpu|Usage/i);
@@ -176,6 +192,54 @@ describe('T4 — runGalleryPresent hermetic, device runner stubbed (no device)',
       assert.equal(result.frame, png);
       assert.ok(fs.existsSync(png), 'frame PNG must be written');
     } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('skia path writes the dumped frame and resolves { path, frame }', async () => {
+    assert.ok(galleryPresent, 'lib/gallery-present.js must load');
+    const { dir, png } = tmpPng('muse-gpresent-skia-');
+    try {
+      const bytes = fakePngBytes();
+      const result = await galleryPresent.runGalleryPresent({
+        serial: 'stubbed-no-device',
+        path: 'skia',
+        dumpFrame: png,
+        deps: { dumpSkiaFrame: async () => bytes },
+      });
+      assert.equal(result.path, 'skia');
+      assert.equal(result.frame, png);
+      assert.ok(fs.existsSync(png), 'frame PNG must be written');
+      assert.deepEqual(fs.readFileSync(png), bytes);
+      assert.equal(fs.readFileSync(png).subarray(0, 4).toString('hex'), '89504e47');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('skia failure rejects with GFX-BLIT-FALLBACK trigger on stderr', async () => {
+    assert.ok(galleryPresent, 'lib/gallery-present.js must load');
+    const { dir, png } = tmpPng('muse-gpresent-skiafail-');
+    const errChunks = [];
+    const origWrite = process.stderr.write.bind(process.stderr);
+    process.stderr.write = (chunk, ...rest) => { errChunks.push(String(chunk)); return origWrite(chunk, ...rest); };
+    try {
+      const skiaErr = new Error('skia render failed');
+      skiaErr.trigger = 'skia-swap-fail';
+      await assert.rejects(
+        galleryPresent.runGalleryPresent({
+          serial: 'stubbed-no-device',
+          path: 'skia',
+          dumpFrame: png,
+          deps: { dumpSkiaFrame: async () => { throw skiaErr; } },
+        }),
+        /skia|no frame dumped/i,
+      );
+      const stderr = errChunks.join('');
+      assert.ok(/GFX-BLIT-FALLBACK: \S+/.test(stderr),
+        `stderr must carry GFX-BLIT-FALLBACK: <trigger>, got: ${stderr.slice(0, 300)}`);
+    } finally {
+      process.stderr.write = origWrite;
       fs.rmSync(dir, { recursive: true, force: true });
     }
   });
@@ -243,6 +307,26 @@ describe('T4 — gallery-present CLI exit contract (AC-GRAPHICS-033, TC-GRAPHICS
     const res = runCli(['gallery-present', '--path', 'egl', '--dump-frame']);
     assert.equal(res.status, 2, `missing value must exit 2, got ${res.status}`);
     assert.ok(/Usage/i.test(`${res.stdout}\n${res.stderr}`), 'missing-value failure must print usage');
+  });
+
+  it('--path bogus exits 2 with usage (never a silent pass)', () => {
+    const res = runCli(['gallery-present', '--path', 'bogus']);
+    assert.equal(res.status, 2, `unknown path must exit 2, got ${res.status}`);
+    assert.ok(/Usage|path|egl|cpu|skia/i.test(`${res.stdout}\n${res.stderr}`),
+      'unknown-path failure must print usage');
+  });
+
+  it('--path skia --dump-frame exits 0 with a PNG-magic frame (hermetic, no device)', () => {
+    const { dir, png } = tmpPng('muse-gpresent-skia-cli-');
+    try {
+      const res = runCli(['gallery-present', '--path', 'skia', '--dump-frame', png]);
+      assert.equal(res.status, 0,
+        `expected exit 0, got ${res.status}; stderr: ${(res.stderr || '').slice(0, 500)}`);
+      assert.ok(fs.existsSync(png), 'frame PNG must be written');
+      assert.equal(fs.readFileSync(png).subarray(0, 4).toString('hex'), '89504e47');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it('DEVICE LEG: --path egl --dump-frame exits 0 on 127.0.0.1:6562 with the frame PNG written', { skip: !DEVICE_LEG }, () => {
