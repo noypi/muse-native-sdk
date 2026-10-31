@@ -665,3 +665,255 @@ test('TC-M3-004: check-props.js exits 0 when manifest and d.ts agree', () => {
   assert.equal(res.error, undefined, `gate failed to spawn: ${res.error}`);
   assert.equal(res.status, 0, `gate must exit 0 on agreement; stderr: ${res.stderr}`);
 });
+
+// ---------------------------------------------------------------------------
+// TC-M3-024 / AC-M3-023 (T5): onSelectTap pure selection transition (FR-M3-002)
+// Hermetic: node:test + node:assert/strict only. `onSelectTap` is loaded
+// lazily inside each test via createRequire so the earlier slices stay green
+// when index.js does not export it yet (each new test then fails in
+// isolation). Tap mechanics themselves are consumed from FR-INPUT-011
+// (AC-INPUT-020 tap-fires-once, AC-INPUT-021 one-frame write-through repaint),
+// not reimplemented here.
+// ---------------------------------------------------------------------------
+
+function loadOnSelectTap() {
+  return require('../index.js').onSelectTap;
+}
+
+function selectTap(control, prev) {
+  const fn = loadOnSelectTap();
+  assert.equal(typeof fn, 'function', 'onSelectTap must be exported from the public entry (index.js)');
+  return fn(control, prev);
+}
+
+test('AC-M3-023 T5: enabled checkbox tap flips unchecked to checked', () => {
+  const next = selectTap('Checkbox', { checked: false });
+  assert.equal(next.checked, true);
+});
+
+test('AC-M3-023 T5: enabled checkbox tap flips checked back to unchecked', () => {
+  const next = selectTap('Checkbox', { checked: true });
+  assert.equal(next.checked, false);
+});
+
+test('AC-M3-023 T5: checkbox defaults to enabled when enabled is absent', () => {
+  const next = selectTap('Checkbox', { checked: false });
+  assert.equal(next.checked, true);
+});
+
+test('AC-M3-023 T5: checkbox result carries no selected key', () => {
+  const next = selectTap('Checkbox', { checked: false });
+  assert.equal(next.selected, undefined);
+});
+
+test('AC-M3-023 T5: enabled radio tap sets unselected to selected', () => {
+  const next = selectTap('Radio', { selected: false });
+  assert.equal(next.selected, true);
+});
+
+test('AC-M3-023 T5: enabled radio tap on already-selected stays selected', () => {
+  const next = selectTap('Radio', { selected: true });
+  assert.equal(next.selected, true);
+});
+
+test('AC-M3-023 T5: radio result carries no checked key', () => {
+  const next = selectTap('Radio', { selected: false });
+  assert.equal(next.checked, undefined);
+});
+
+test('AC-M3-023 T5: disabled checkbox tap returns state unchanged', () => {
+  const next = selectTap('Checkbox', { checked: false, enabled: false });
+  assert.equal(next.checked, false);
+  assert.equal(next.selected, undefined);
+});
+
+test('AC-M3-023 T5: disabled checked checkbox tap returns state unchanged', () => {
+  const next = selectTap('Checkbox', { checked: true, enabled: false });
+  assert.equal(next.checked, true);
+});
+
+test('AC-M3-023 T5: disabled radio tap returns state unchanged', () => {
+  assert.equal(selectTap('Radio', { selected: false, enabled: false }).selected, false);
+  assert.equal(selectTap('Radio', { selected: true, enabled: false }).selected, true);
+});
+
+test('AC-M3-023 T5: onSelectTap never mutates its prev argument', () => {
+  const prev = Object.freeze({ checked: false, enabled: false });
+  const next = selectTap('Checkbox', prev);
+  assert.equal(next.checked, false);
+  assert.deepEqual({ ...prev }, { checked: false, enabled: false });
+});
+
+test('AC-M3-023 T5: onSelectTap agrees with the selection binding (checkbox)', () => {
+  const seen = [];
+  const handle = loadSelection().createCheckbox({ checked: false, binding: { set: (v) => seen.push(v) } });
+  handle.tap();
+  const next = selectTap('Checkbox', { checked: false });
+  assert.deepEqual(seen, [next.checked]);
+});
+
+test('AC-M3-023 T5: onSelectTap agrees with the selection binding (radio)', () => {
+  const seen = [];
+  const handle = loadSelection().createRadio({ selected: false, binding: { set: (v) => seen.push(v) } });
+  handle.tap();
+  const next = selectTap('Radio', { selected: false });
+  assert.deepEqual(seen, [next.selected]);
+});
+
+test('AC-M3-023 T5: chained taps keep one handle with one-frame repaint each step', () => {
+  const { createCheckbox } = loadSelection();
+  const handle = createCheckbox({ checked: false });
+  let prev = { checked: false };
+  for (const step of [true, false]) {
+    const next = selectTap('Checkbox', prev);
+    assert.equal(next.checked, step);
+    const record = handle.tap();
+    assert.equal(record.checked, step);
+    assert.equal(record.frames, 1);
+    assert.equal(record.reinstantiated, 0);
+    prev = { checked: next.checked };
+  }
+  assert.equal(handle.checked, false);
+});
+
+test('AC-M3-023 T5 ASSUMPTION: unknown control rejects with TypeError', () => {
+  assert.throws(() => selectTap('Switch', { checked: false }), TypeError);
+});
+
+// ---------------------------------------------------------------------------
+// TC-M3-025 / AC-M3-024 (T6): onSliderScrub press-drag scrub (FR-M3-002)
+// Hermetic: node:test + node:assert/strict only. Loaded lazily like
+// onSelectTap above. The gesture carries no coordinate/delta, so movement is
+// observed as claim + clamp: an on-axis non-tap gesture claims the control
+// and echoes a clamped value; tap never claims; off-axis-past-slop yields.
+// AC-INPUT-020 drag-never-fires-tap and AC-INPUT-021 one-frame repaint are
+// consumed from FR-INPUT-011, not reimplemented.
+// ---------------------------------------------------------------------------
+
+function loadOnSliderScrub() {
+  return require('../index.js').onSliderScrub;
+}
+
+function scrub(prev, gesture) {
+  const fn = loadOnSliderScrub();
+  assert.equal(typeof fn, 'function', 'onSliderScrub must be exported from the public entry (index.js)');
+  return fn(prev, gesture);
+}
+
+const SCRUB_PRESS = { axis: 'control', slopPast: false, isTap: false };
+
+test('AC-M3-024 T6: on-axis press claims the control with value unchanged', () => {
+  const next = scrub({ value: 0.5, min: 0, max: 1 }, SCRUB_PRESS);
+  assert.equal(next.claimsGesture, true);
+  assert.equal(next.value, 0.5);
+});
+
+test('AC-M3-024 T6: in-range value echoes exactly (no bound/position desync)', () => {
+  for (const value of [0, 0.25, 1]) {
+    const next = scrub({ value, min: 0, max: 1 }, SCRUB_PRESS);
+    assert.equal(next.value, value);
+    assert.equal(next.claimsGesture, true);
+  }
+});
+
+test('AC-M3-024 T6: value above max clamps to max', () => {
+  const next = scrub({ value: 5, min: 0, max: 1 }, SCRUB_PRESS);
+  assert.equal(next.value, 1);
+  assert.equal(next.claimsGesture, true);
+});
+
+test('AC-M3-024 T6: value below min clamps to min', () => {
+  const next = scrub({ value: -2, min: 0, max: 1 }, SCRUB_PRESS);
+  assert.equal(next.value, 0);
+  assert.equal(next.claimsGesture, true);
+});
+
+test('AC-M3-024 T6: degenerate [min,max] range pins value to min', () => {
+  const next = scrub({ value: 0.9, min: 0.5, max: 0.5 }, SCRUB_PRESS);
+  assert.equal(next.value, 0.5);
+});
+
+test('AC-M3-024 T6: tap never claims and changes nothing', () => {
+  const next = scrub(
+    { value: 0.5, min: 0, max: 1 },
+    { axis: 'control', slopPast: false, isTap: true },
+  );
+  assert.equal(next.claimsGesture, false);
+  assert.equal(next.value, 0.5);
+});
+
+test('AC-M3-024 T6: tap above max still clamps without claiming', () => {
+  const next = scrub(
+    { value: 5, min: 0, max: 1 },
+    { axis: 'control', slopPast: false, isTap: true },
+  );
+  assert.equal(next.claimsGesture, false);
+  assert.equal(next.value, 1);
+});
+
+test('AC-M3-024 T6: off-axis drag past slop yields to scroll', () => {
+  const next = scrub(
+    { value: 0.5, min: 0, max: 1 },
+    { axis: 'off-axis', slopPast: true, isTap: false },
+  );
+  assert.equal(next.claimsGesture, false);
+  assert.equal(next.value, 0.5);
+});
+
+test('AC-M3-024 T6 ASSUMPTION: off-axis within slop still claims the control', () => {
+  const next = scrub(
+    { value: 0.5, min: 0, max: 1 },
+    { axis: 'off-axis', slopPast: false, isTap: false },
+  );
+  assert.equal(next.claimsGesture, true);
+  assert.equal(next.value, 0.5);
+});
+
+test('AC-M3-024 T6 ASSUMPTION: on-axis past slop is still a control action', () => {
+  const next = scrub(
+    { value: 0.5, min: 0, max: 1 },
+    { axis: 'control', slopPast: true, isTap: false },
+  );
+  assert.equal(next.claimsGesture, true);
+  assert.equal(next.value, 0.5);
+});
+
+test('AC-M3-024 T6: disabled slider never changes and never claims', () => {
+  const next = scrub({ value: 0.5, min: 0, max: 1, enabled: false }, SCRUB_PRESS);
+  assert.equal(next.value, 0.5);
+  assert.equal(next.claimsGesture, false);
+});
+
+test('AC-M3-024 T6: disabled tap changes nothing and never claims', () => {
+  const next = scrub(
+    { value: 0.5, min: 0, max: 1, enabled: false },
+    { axis: 'control', slopPast: false, isTap: true },
+  );
+  assert.equal(next.value, 0.5);
+  assert.equal(next.claimsGesture, false);
+});
+
+test('AC-M3-024 T6: onSliderScrub never mutates its prev argument', () => {
+  const prev = Object.freeze({ value: 0.5, min: 0, max: 1 });
+  const next = scrub(prev, SCRUB_PRESS);
+  assert.equal(next.value, 0.5);
+  assert.deepEqual({ ...prev }, { value: 0.5, min: 0, max: 1 });
+});
+
+test('AC-M3-024 T6 ASSUMPTION: scrub resolves synchronously (one-frame path, no promise)', () => {
+  const next = scrub({ value: 0.5, min: 0, max: 1 }, SCRUB_PRESS);
+  assert.equal(typeof next.then, 'undefined');
+  assert.equal(typeof next.value, 'number');
+});
+
+test('AC-M3-024 T6 ASSUMPTION: missing prev or gesture rejects with TypeError', () => {
+  assert.throws(() => scrub(undefined, SCRUB_PRESS), TypeError);
+  assert.throws(() => scrub({ value: 0.5, min: 0, max: 1 }, undefined), TypeError);
+});
+
+test('AC-M3-024 T6 ASSUMPTION: unknown axis rejects with TypeError', () => {
+  assert.throws(
+    () => scrub({ value: 0.5, min: 0, max: 1 }, { axis: 'vertical', slopPast: false, isTap: false }),
+    TypeError,
+  );
+});
