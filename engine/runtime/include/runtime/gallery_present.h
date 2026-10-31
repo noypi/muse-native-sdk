@@ -258,19 +258,17 @@ bool liveKindOverrideActive();
 // (step + dumpsys + screencap PNG path). Never throws.
 int RunCompositionLeg(const char* serial);
 
-// ---- T5 inset device leg (BUG-M3-FIDELITY-003 / FR-M3-006 / AC-M3-013)
+// ---- T4 selection device leg (BUG-M3-FIDELITY-003 / FR-M3-006 / AC-M3-012)
 // ----
 //
-// Global-scope gate for the animated inset lockstep leg on the single
-// instrumented probe page ("m3-text-probe", API-29-only gate serial
-// "127.0.0.1:6569"). Defined in `engine/runtime/src/js_runtime.cpp`
+// Global-scope gate for the caret/selection leg by touch, keyboard, and API
+// on the single instrumented probe page ("m3-text-probe", API-29-only gate
+// serial "127.0.0.1:6569"). Defined in `engine/runtime/src/js_runtime.cpp`
 // (self-contained TU: links hermetic). Fail-fast null/empty/non-gate serial
 // yields distinct nonzero codes, never throws, no adb on bad serials; the
-// gate serial animates `imeBottom` via `onInsetsFrame`/`SetPresentImeBottom`
-// on the `m3-text-probe` gate with per-frame asserts (field above keyboard,
-// no jump, no full-tree relayout), with any failure appending
-// `evidence/T5/failure.log` (step + dumpsys + screencap PNG path). Never
-// throws.
+// gate serial drives touch/keyboard/API selection -> caret/selection asserts
+// + binding report, with any failure appending `evidence/T4/failure.log`
+// (step + dumpsys + screencap PNG path). Never throws.
 int RunSelectionLeg(const char* serial);
 
 // ---- T5 inset device leg (BUG-M3-FIDELITY-003 / FR-M3-006 / AC-M3-013)
