@@ -21,69 +21,76 @@ const GOLDENS_DIR = join(__dirname, '..', 'goldens');
 
 const TOLERANCES_PATH = join(GOLDENS_DIR, 'm3-tolerances.json');
 
+const { buildStories } = require('./stories.js');
+
 const THEMES = ['light', 'dark'];
 
+// STATES is SUPERSEDED (BUG-SAMPLE-003 T5): hover/focus/pressed/disabled are
+// driveState concerns exercised via driveState, never gallery proof pages.
+// Only TextFieldEditCore wires a boolean state prop (`enabled`); Surface and
+// Ripple declare none. Kept exported so existing importers keep loading, but
+// buildProofPlan no longer consumes it — the plan is re-emitted from
+// buildStories(manifest), the single source of truth (SPEC-SAMPLE-PROJECT
+// v2.37 AC-SAMPLE-041; AC-M3-015/016), so the two can never diverge again.
 const STATES = ['hover', 'focus', 'pressed', 'disabled'];
+
+// Interaction states owned by driveState — never gallery proof pages. Named
+// in count-mismatch diagnostics because the dominant historical failure mode
+// is a stale plan carrying these states.
+const NON_PROOF_STATES = ['hover', 'focus', 'pressed', 'disabled'];
 
 function proofCommand(page) {
   const name = typeof page === 'string' && page.length > 0 ? page : 'gallery';
   return `adb -s ${DEVICE_SERIAL} exec-out screencap -p > ${name}.png`;
 }
 
-function variantsFor(entry) {
-  const props = (entry && entry.props) || {};
-  for (const key of Object.keys(props)) {
-    const spec = props[key];
-    if (spec && Array.isArray(spec.values) && spec.values.length > 0) {
-      return spec.values.map((value) => String(value));
-    }
-  }
-  return ['default'];
+// Re-baselined emission (BUG-SAMPLE-003 T5, probed 2026-10-31 against the
+// cleaned tree via `node -e` requiring src/stories.js +
+// packages/native/muse.manifest.json): 232 unique
+// component|variant|state|theme pages; Surface 2 (states ['default']),
+// Ripple 2 (states ['default']), TextFieldEditCore 4 (states
+// ['default','enabled']). Re-probe — never hand-edit — if manifest props
+// change. Zero hover/focus/pressed/disabled pages by construction.
+function buildProofPlan(manifest) {
+  return buildStories(manifest).map((story) => ({
+    component: story.component,
+    tier: story.tier,
+    variant: story.variant,
+    state: story.state,
+    theme: story.theme,
+    page: `tier${story.tier}/${story.component}/${story.variant}/${story.state}/${story.theme}`,
+  }));
 }
 
-function buildProofPlan(manifest) {
-  const components = (manifest && manifest.components) || [];
-  const plan = [];
-  for (const entry of components) {
-    const tier = entry.tier;
-    const variants = variantsFor(entry);
-    for (const variant of variants) {
-      for (const state of STATES) {
-        for (const theme of THEMES) {
-          plan.push({
-            component: entry.name,
-            tier,
-            variant,
-            state,
-            theme,
-            page: `tier${tier}/${entry.name}/${variant}/${state}/${theme}`,
-          });
-        }
-      }
-    }
-  }
-  return plan;
+function proofKey(entry) {
+  return `${entry.component}|${entry.variant}|${entry.state}|${entry.theme}`;
 }
 
 function assertCounts(plan, manifest) {
   const expected = buildProofPlan(manifest);
-  const seen = new Set(
-    (Array.isArray(plan) ? plan : []).map(
-      (entry) => `${entry.component}|${entry.variant}|${entry.state}|${entry.theme}`,
-    ),
-  );
+  const list = Array.isArray(plan) ? plan : [];
+  const seen = new Set(list.map(proofKey));
+  const wanted = new Set(expected.map(proofKey));
   for (const entry of expected) {
-    const key = `${entry.component}|${entry.variant}|${entry.state}|${entry.theme}`;
-    if (!seen.has(key)) {
+    if (!seen.has(proofKey(entry))) {
       throw new Error(
-        `gallery-proof count mismatch: missing page ${entry.page} for component ${entry.component}`,
+        `gallery-proof count mismatch: missing page ${entry.page} for component ${entry.component} ` +
+          `(state "${entry.state}"; driveState-only states ${NON_PROOF_STATES.join('/')} are never gallery proof pages)`,
       );
     }
   }
-  if (Array.isArray(plan) && plan.length !== expected.length) {
+  for (const entry of list) {
+    if (!wanted.has(proofKey(entry))) {
+      throw new Error(
+        `gallery-proof count mismatch: extra page ${entry.page || proofKey(entry)} for component ${entry.component} ` +
+          `(state "${entry.state}"; driveState-only states ${NON_PROOF_STATES.join('/')} are never gallery proof pages)`,
+      );
+    }
+  }
+  if (list.length !== expected.length) {
     const first = expected[0];
     throw new Error(
-      `gallery-proof count mismatch: expected ${expected.length} pages, saw ${plan.length} (page ${first.page} component ${first.component})`,
+      `gallery-proof count mismatch: expected ${expected.length} pages, saw ${list.length} (page ${first.page} component ${first.component})`,
     );
   }
 }
