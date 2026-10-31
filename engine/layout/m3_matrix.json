@@ -2458,6 +2458,30 @@
       "goldenTest": "engine/layout/tests/goldens/Divider.png",
       "status": "present",
       "ledgers": {},
+      "tokenTable": {
+        "container": "md.comp.divider.container",
+        "label": "md.comp.divider.label",
+        "state": [
+          "md.comp.divider.state.enabled",
+          "md.comp.divider.state.hovered",
+          "md.comp.divider.state.focused",
+          "md.comp.divider.state.pressed",
+          "md.comp.divider.state.dragged",
+          "md.comp.divider.state.disabled",
+          "md.comp.divider.state.error"
+        ],
+        "shape": "md.sys.shape.corner.medium",
+        "elevation": "md.sys.state.elevation.level-1",
+        "typescale": "md.sys.typescale.label-large",
+        "sources": {
+          "container": "component",
+          "label": "component",
+          "state": "role",
+          "shape": "role",
+          "elevation": "theme",
+          "typescale": "role"
+        }
+      },
       "containerToken": "md.comp.divider.container",
       "labelToken": "md.comp.divider.label",
       "stateOpacities": {
@@ -2501,6 +2525,30 @@
         "clone": "manual-context.local/specs-clone-capability.md#FABMenu",
         "competitive": "manual-context.local/specs-competitive-positioning.md#FABMenu"
       },
+      "tokenTable": {
+        "container": "md.comp.fabmenu.container",
+        "label": "md.comp.fabmenu.label",
+        "state": [
+          "md.comp.fabmenu.state.enabled",
+          "md.comp.fabmenu.state.hovered",
+          "md.comp.fabmenu.state.focused",
+          "md.comp.fabmenu.state.pressed",
+          "md.comp.fabmenu.state.dragged",
+          "md.comp.fabmenu.state.disabled",
+          "md.comp.fabmenu.state.error"
+        ],
+        "shape": "md.comp.fabmenu.shape",
+        "elevation": "md.comp.fabmenu.elevation",
+        "typescale": "md.comp.fabmenu.typescale",
+        "sources": {
+          "container": "component",
+          "label": "component",
+          "state": "role",
+          "shape": "role",
+          "elevation": "theme",
+          "typescale": "role"
+        }
+      },
       "baseline": "2026-10-28"
     },
     {
@@ -2524,6 +2572,30 @@
       "goldenTest": "engine/layout/tests/goldens/Icon.png",
       "status": "present",
       "ledgers": {},
+      "tokenTable": {
+        "container": "md.comp.icon.container",
+        "label": "md.comp.icon.label",
+        "state": [
+          "md.comp.icon.state.enabled",
+          "md.comp.icon.state.hovered",
+          "md.comp.icon.state.focused",
+          "md.comp.icon.state.pressed",
+          "md.comp.icon.state.dragged",
+          "md.comp.icon.state.disabled",
+          "md.comp.icon.state.error"
+        ],
+        "shape": "md.sys.shape.corner.medium",
+        "elevation": "md.sys.state.elevation.level-1",
+        "typescale": "md.sys.typescale.label-large",
+        "sources": {
+          "container": "component",
+          "label": "component",
+          "state": "role",
+          "shape": "role",
+          "elevation": "theme",
+          "typescale": "role"
+        }
+      },
       "containerToken": "md.comp.icon.container",
       "labelToken": "md.comp.icon.label",
       "stateOpacities": {
@@ -2565,6 +2637,30 @@
       "ledgers": {
         "clone": "manual-context.local/specs-clone-capability.md#Image",
         "competitive": "manual-context.local/specs-competitive-positioning.md#Image"
+      },
+      "tokenTable": {
+        "container": "md.comp.image.container",
+        "label": "md.comp.image.label",
+        "state": [
+          "md.comp.image.state.enabled",
+          "md.comp.image.state.hovered",
+          "md.comp.image.state.focused",
+          "md.comp.image.state.pressed",
+          "md.comp.image.state.dragged",
+          "md.comp.image.state.disabled",
+          "md.comp.image.state.error"
+        ],
+        "shape": "md.sys.shape.corner.medium",
+        "elevation": "md.sys.state.elevation.level-1",
+        "typescale": "md.sys.typescale.label-large",
+        "sources": {
+          "container": "component",
+          "label": "component",
+          "state": "role",
+          "shape": "role",
+          "elevation": "theme",
+          "typescale": "role"
+        }
       },
       "containerToken": "md.comp.image.container",
       "labelToken": "md.comp.image.label",
@@ -2608,6 +2704,30 @@
         "clone": "manual-context.local/specs-clone-capability.md#List",
         "competitive": "manual-context.local/specs-competitive-positioning.md#List"
       },
+      "tokenTable": {
+        "container": "md.comp.list.container",
+        "label": "md.comp.list.label",
+        "state": [
+          "md.comp.list.state.enabled",
+          "md.comp.list.state.hovered",
+          "md.comp.list.state.focused",
+          "md.comp.list.state.pressed",
+          "md.comp.list.state.dragged",
+          "md.comp.list.state.disabled",
+          "md.comp.list.state.error"
+        ],
+        "shape": "md.comp.list.shape",
+        "elevation": "md.comp.list.elevation",
+        "typescale": "md.comp.list.typescale",
+        "sources": {
+          "container": "component",
+          "label": "component",
+          "state": "role",
+          "shape": "role",
+          "elevation": "theme",
+          "typescale": "role"
+        }
+      },
       "baseline": "2026-10-28"
     },
     {
@@ -2635,6 +2755,30 @@
         "clone": "manual-context.local/specs-clone-capability.md#LoadingIndicator",
         "competitive": "manual-context.local/specs-competitive-positioning.md#LoadingIndicator"
       },
+      "tokenTable": {
+        "container": "md.comp.loadingindicator.container",
+        "label": "md.comp.loadingindicator.label",
+        "state": [
+          "md.comp.loadingindicator.state.enabled",
+          "md.comp.loadingindicator.state.hovered",
+          "md.comp.loadingindicator.state.focused",
+          "md.comp.loadingindicator.state.pressed",
+          "md.comp.loadingindicator.state.dragged",
+          "md.comp.loadingindicator.state.disabled",
+          "md.comp.loadingindicator.state.error"
+        ],
+        "shape": "md.comp.loadingindicator.shape",
+        "elevation": "md.comp.loadingindicator.elevation",
+        "typescale": "md.comp.loadingindicator.typescale",
+        "sources": {
+          "container": "component",
+          "label": "component",
+          "state": "role",
+          "shape": "role",
+          "elevation": "theme",
+          "typescale": "role"
+        }
+      },
       "baseline": "2026-10-28"
     },
     {
@@ -2658,6 +2802,30 @@
       "goldenTest": "engine/layout/tests/goldens/OverlayHost.png",
       "status": "present",
       "ledgers": {},
+      "tokenTable": {
+        "container": "md.comp.overlayhost.container",
+        "label": "md.comp.overlayhost.label",
+        "state": [
+          "md.comp.overlayhost.state.enabled",
+          "md.comp.overlayhost.state.hovered",
+          "md.comp.overlayhost.state.focused",
+          "md.comp.overlayhost.state.pressed",
+          "md.comp.overlayhost.state.dragged",
+          "md.comp.overlayhost.state.disabled",
+          "md.comp.overlayhost.state.error"
+        ],
+        "shape": "md.sys.shape.corner.medium",
+        "elevation": "md.sys.state.elevation.level-1",
+        "typescale": "md.sys.typescale.label-large",
+        "sources": {
+          "container": "component",
+          "label": "component",
+          "state": "role",
+          "shape": "role",
+          "elevation": "theme",
+          "typescale": "role"
+        }
+      },
       "containerToken": "md.comp.overlayhost.container",
       "labelToken": "md.comp.overlayhost.label",
       "stateOpacities": {
@@ -2695,6 +2863,30 @@
       "goldenTest": "engine/layout/tests/goldens/Ripple.png",
       "status": "present",
       "ledgers": {},
+      "tokenTable": {
+        "container": "md.comp.ripple.container",
+        "label": "md.comp.ripple.label",
+        "state": [
+          "md.comp.ripple.state.enabled",
+          "md.comp.ripple.state.hovered",
+          "md.comp.ripple.state.focused",
+          "md.comp.ripple.state.pressed",
+          "md.comp.ripple.state.dragged",
+          "md.comp.ripple.state.disabled",
+          "md.comp.ripple.state.error"
+        ],
+        "shape": "md.sys.shape.corner.medium",
+        "elevation": "md.sys.state.elevation.level-1",
+        "typescale": "md.sys.typescale.label-large",
+        "sources": {
+          "container": "component",
+          "label": "component",
+          "state": "role",
+          "shape": "role",
+          "elevation": "theme",
+          "typescale": "role"
+        }
+      },
       "containerToken": "md.comp.ripple.container",
       "labelToken": "md.comp.ripple.label",
       "stateOpacities": {
@@ -2732,6 +2924,30 @@
       "goldenTest": "engine/layout/tests/goldens/Scroll.png",
       "status": "present",
       "ledgers": {},
+      "tokenTable": {
+        "container": "md.comp.scroll.container",
+        "label": "md.comp.scroll.label",
+        "state": [
+          "md.comp.scroll.state.enabled",
+          "md.comp.scroll.state.hovered",
+          "md.comp.scroll.state.focused",
+          "md.comp.scroll.state.pressed",
+          "md.comp.scroll.state.dragged",
+          "md.comp.scroll.state.disabled",
+          "md.comp.scroll.state.error"
+        ],
+        "shape": "md.sys.shape.corner.medium",
+        "elevation": "md.sys.state.elevation.level-1",
+        "typescale": "md.sys.typescale.label-large",
+        "sources": {
+          "container": "component",
+          "label": "component",
+          "state": "role",
+          "shape": "role",
+          "elevation": "theme",
+          "typescale": "role"
+        }
+      },
       "containerToken": "md.comp.scroll.container",
       "labelToken": "md.comp.scroll.label",
       "stateOpacities": {
@@ -2774,6 +2990,30 @@
         "clone": "manual-context.local/specs-clone-capability.md#ScrollView",
         "competitive": "manual-context.local/specs-competitive-positioning.md#ScrollView"
       },
+      "tokenTable": {
+        "container": "md.comp.scrollview.container",
+        "label": "md.comp.scrollview.label",
+        "state": [
+          "md.comp.scrollview.state.enabled",
+          "md.comp.scrollview.state.hovered",
+          "md.comp.scrollview.state.focused",
+          "md.comp.scrollview.state.pressed",
+          "md.comp.scrollview.state.dragged",
+          "md.comp.scrollview.state.disabled",
+          "md.comp.scrollview.state.error"
+        ],
+        "shape": "md.comp.scrollview.shape",
+        "elevation": "md.comp.scrollview.elevation",
+        "typescale": "md.comp.scrollview.typescale",
+        "sources": {
+          "container": "component",
+          "label": "component",
+          "state": "role",
+          "shape": "role",
+          "elevation": "theme",
+          "typescale": "role"
+        }
+      },
       "baseline": "2026-10-28"
     },
     {
@@ -2802,6 +3042,30 @@
         "clone": "manual-context.local/specs-clone-capability.md#Snackbar",
         "competitive": "manual-context.local/specs-competitive-positioning.md#Snackbar"
       },
+      "tokenTable": {
+        "container": "md.comp.snackbar.container",
+        "label": "md.comp.snackbar.label",
+        "state": [
+          "md.comp.snackbar.state.enabled",
+          "md.comp.snackbar.state.hovered",
+          "md.comp.snackbar.state.focused",
+          "md.comp.snackbar.state.pressed",
+          "md.comp.snackbar.state.dragged",
+          "md.comp.snackbar.state.disabled",
+          "md.comp.snackbar.state.error"
+        ],
+        "shape": "md.comp.snackbar.shape",
+        "elevation": "md.comp.snackbar.elevation",
+        "typescale": "md.comp.snackbar.typescale",
+        "sources": {
+          "container": "component",
+          "label": "component",
+          "state": "role",
+          "shape": "role",
+          "elevation": "theme",
+          "typescale": "role"
+        }
+      },
       "baseline": "2026-10-28"
     },
     {
@@ -2825,6 +3089,30 @@
       "goldenTest": "engine/layout/tests/goldens/Stack.png",
       "status": "present",
       "ledgers": {},
+      "tokenTable": {
+        "container": "md.comp.stack.container",
+        "label": "md.comp.stack.label",
+        "state": [
+          "md.comp.stack.state.enabled",
+          "md.comp.stack.state.hovered",
+          "md.comp.stack.state.focused",
+          "md.comp.stack.state.pressed",
+          "md.comp.stack.state.dragged",
+          "md.comp.stack.state.disabled",
+          "md.comp.stack.state.error"
+        ],
+        "shape": "md.sys.shape.corner.medium",
+        "elevation": "md.sys.state.elevation.level-1",
+        "typescale": "md.sys.typescale.label-large",
+        "sources": {
+          "container": "component",
+          "label": "component",
+          "state": "role",
+          "shape": "role",
+          "elevation": "theme",
+          "typescale": "role"
+        }
+      },
       "containerToken": "md.comp.stack.container",
       "labelToken": "md.comp.stack.label",
       "stateOpacities": {
@@ -2862,6 +3150,30 @@
       "goldenTest": "engine/layout/tests/goldens/Surface.png",
       "status": "present",
       "ledgers": {},
+      "tokenTable": {
+        "container": "md.comp.surface.container",
+        "label": "md.comp.surface.label",
+        "state": [
+          "md.comp.surface.state.enabled",
+          "md.comp.surface.state.hovered",
+          "md.comp.surface.state.focused",
+          "md.comp.surface.state.pressed",
+          "md.comp.surface.state.dragged",
+          "md.comp.surface.state.disabled",
+          "md.comp.surface.state.error"
+        ],
+        "shape": "md.sys.shape.corner.medium",
+        "elevation": "md.sys.state.elevation.level-1",
+        "typescale": "md.sys.typescale.label-large",
+        "sources": {
+          "container": "component",
+          "label": "component",
+          "state": "role",
+          "shape": "role",
+          "elevation": "theme",
+          "typescale": "role"
+        }
+      },
       "containerToken": "md.comp.surface.container",
       "labelToken": "md.comp.surface.label",
       "stateOpacities": {
@@ -2906,6 +3218,30 @@
         "clone": "manual-context.local/specs-clone-capability.md#TextField",
         "competitive": "manual-context.local/specs-competitive-positioning.md#TextField"
       },
+      "tokenTable": {
+        "container": "md.comp.textfield.container",
+        "label": "md.comp.textfield.label",
+        "state": [
+          "md.comp.textfield.state.enabled",
+          "md.comp.textfield.state.hovered",
+          "md.comp.textfield.state.focused",
+          "md.comp.textfield.state.pressed",
+          "md.comp.textfield.state.dragged",
+          "md.comp.textfield.state.disabled",
+          "md.comp.textfield.state.error"
+        ],
+        "shape": "md.comp.textfield.shape",
+        "elevation": "md.comp.textfield.elevation",
+        "typescale": "md.comp.textfield.typescale",
+        "sources": {
+          "container": "component",
+          "label": "component",
+          "state": "role",
+          "shape": "role",
+          "elevation": "theme",
+          "typescale": "role"
+        }
+      },
       "baseline": "2026-10-28"
     },
     {
@@ -2929,6 +3265,30 @@
       "goldenTest": "engine/layout/tests/goldens/TextFieldEditCore.png",
       "status": "present",
       "ledgers": {},
+      "tokenTable": {
+        "container": "md.comp.textfieldeditcore.container",
+        "label": "md.comp.textfieldeditcore.label",
+        "state": [
+          "md.comp.textfieldeditcore.state.enabled",
+          "md.comp.textfieldeditcore.state.hovered",
+          "md.comp.textfieldeditcore.state.focused",
+          "md.comp.textfieldeditcore.state.pressed",
+          "md.comp.textfieldeditcore.state.dragged",
+          "md.comp.textfieldeditcore.state.disabled",
+          "md.comp.textfieldeditcore.state.error"
+        ],
+        "shape": "md.sys.shape.corner.medium",
+        "elevation": "md.sys.state.elevation.level-1",
+        "typescale": "md.sys.typescale.label-large",
+        "sources": {
+          "container": "component",
+          "label": "component",
+          "state": "role",
+          "shape": "role",
+          "elevation": "theme",
+          "typescale": "role"
+        }
+      },
       "containerToken": "md.comp.textfieldeditcore.container",
       "labelToken": "md.comp.textfieldeditcore.label",
       "stateOpacities": {
@@ -2971,6 +3331,30 @@
         "clone": "manual-context.local/specs-clone-capability.md#Toolbar",
         "competitive": "manual-context.local/specs-competitive-positioning.md#Toolbar"
       },
+      "tokenTable": {
+        "container": "md.comp.toolbar.container",
+        "label": "md.comp.toolbar.label",
+        "state": [
+          "md.comp.toolbar.state.enabled",
+          "md.comp.toolbar.state.hovered",
+          "md.comp.toolbar.state.focused",
+          "md.comp.toolbar.state.pressed",
+          "md.comp.toolbar.state.dragged",
+          "md.comp.toolbar.state.disabled",
+          "md.comp.toolbar.state.error"
+        ],
+        "shape": "md.comp.toolbar.shape",
+        "elevation": "md.comp.toolbar.elevation",
+        "typescale": "md.comp.toolbar.typescale",
+        "sources": {
+          "container": "component",
+          "label": "component",
+          "state": "role",
+          "shape": "role",
+          "elevation": "theme",
+          "typescale": "role"
+        }
+      },
       "baseline": "2026-10-28"
     },
     {
@@ -2999,6 +3383,30 @@
         "clone": "manual-context.local/specs-clone-capability.md#Touchable",
         "competitive": "manual-context.local/specs-competitive-positioning.md#Touchable"
       },
+      "tokenTable": {
+        "container": "md.comp.touchable.container",
+        "label": "md.comp.touchable.label",
+        "state": [
+          "md.comp.touchable.state.enabled",
+          "md.comp.touchable.state.hovered",
+          "md.comp.touchable.state.focused",
+          "md.comp.touchable.state.pressed",
+          "md.comp.touchable.state.dragged",
+          "md.comp.touchable.state.disabled",
+          "md.comp.touchable.state.error"
+        ],
+        "shape": "md.comp.touchable.shape",
+        "elevation": "md.comp.touchable.elevation",
+        "typescale": "md.comp.touchable.typescale",
+        "sources": {
+          "container": "component",
+          "label": "component",
+          "state": "role",
+          "shape": "role",
+          "elevation": "theme",
+          "typescale": "role"
+        }
+      },
       "baseline": "2026-10-28"
     },
     {
@@ -3026,6 +3434,30 @@
       "ledgers": {
         "clone": "manual-context.local/specs-clone-capability.md#View",
         "competitive": "manual-context.local/specs-competitive-positioning.md#View"
+      },
+      "tokenTable": {
+        "container": "md.comp.view.container",
+        "label": "md.comp.view.label",
+        "state": [
+          "md.comp.view.state.enabled",
+          "md.comp.view.state.hovered",
+          "md.comp.view.state.focused",
+          "md.comp.view.state.pressed",
+          "md.comp.view.state.dragged",
+          "md.comp.view.state.disabled",
+          "md.comp.view.state.error"
+        ],
+        "shape": "md.comp.view.shape",
+        "elevation": "md.comp.view.elevation",
+        "typescale": "md.comp.view.typescale",
+        "sources": {
+          "container": "component",
+          "label": "component",
+          "state": "role",
+          "shape": "role",
+          "elevation": "theme",
+          "typescale": "role"
+        }
       },
       "baseline": "2026-10-28"
     }

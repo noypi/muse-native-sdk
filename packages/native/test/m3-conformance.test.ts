@@ -91,7 +91,7 @@ const TIER_2 = [
   'Button',
   'IconButton',
   'FAB',
-  'ExtendedFAB',
+  'ExtendedFab',
   'Card',
   'Chip',
   'Checkbox',
