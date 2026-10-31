@@ -16,7 +16,7 @@ export function SplitButton(props?: SplitButtonProps) {
     type: 'SplitButton',
     props: next,
     content: [
-      { type: 'Button', props: { tone: 'primary' } },
+      { type: 'Button', props: { tone: 'primary', label: next.label } },
       { type: 'IconButton', props: { tone: 'primary' } },
       { type: 'Icon', props: { name: 'expand', color: 'on-primary' } },
       { type: 'Divider', props: { orientation: 'vertical', color: 'on-primary' } },

@@ -16,7 +16,7 @@ export function SearchBar(props?: SearchBarProps) {
     type: 'SearchBar',
     props: next,
     content: [
-      { type: 'TextInput', props: { tone: 'surface-container-high' } },
+      { type: 'TextInput', props: { tone: 'surface-container-high', value: next.value } },
       { type: 'Surface', props: { tone: 'surface-container-high' } },
       { type: 'Icon', props: { name: 'search', color: 'on-surface' } },
     ],

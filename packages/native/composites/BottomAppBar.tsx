@@ -18,7 +18,7 @@ export function BottomAppBar(props?: BottomAppBarProps) {
       { type: 'Surface', props: { tone: 'surface-container' } },
       { type: 'IconButton', props: { tone: 'surface-container' } },
       { type: 'Icon', props: { name: 'menu', color: 'on-surface' } },
-      { type: 'Text', props: { variant: 'title-medium', color: 'on-surface' } },
+      { type: 'Text', props: { variant: 'title-medium', color: 'on-surface', text: next.title } },
     ],
   };
 }

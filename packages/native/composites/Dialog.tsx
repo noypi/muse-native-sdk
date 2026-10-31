@@ -29,7 +29,7 @@ export function Dialog(props?: DialogProps) {
     },
     content: [
       { type: 'Surface', props: { tone: 'surface-container-high' } },
-      { type: 'Text', props: { variant: 'headline-small', color: 'on-surface' } },
+      { type: 'Text', props: { variant: 'headline-small', color: 'on-surface', text: next.title } },
       { type: 'Button', props: { tone: 'primary' } },
     ],
   };

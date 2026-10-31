@@ -2074,6 +2074,149 @@
         "durationMs": 200
       },
       "role": "group"
+    },
+    {
+      "name": "Text",
+      "primitive": "M3NativeText",
+      "tokens": [
+        "md.comp.text.container",
+        "md.comp.text.label",
+        "md.sys.color.on-surface",
+        "md.sys.typescale.body-large",
+        "md.sys.motion.easing.standard",
+        "motion.durations.short-2",
+        "motion.expressive.easing.standard"
+      ],
+      "states": [
+        "enabled",
+        "hovered",
+        "focused",
+        "pressed",
+        "dragged",
+        "disabled",
+        "error"
+      ],
+      "adaptive": false,
+      "semantics": "manual-context.local/specs-accessibility.md#Text (Clone: manual-context.local/specs-clone-capability.md#Text; Competitive: manual-context.local/specs-competitive-positioning.md#Text)",
+      "goldenTest": "engine/layout/tests/goldens/Text.png",
+      "status": "present",
+      "ledgers": {
+        "clone": "manual-context.local/specs-clone-capability.md#Text",
+        "competitive": "manual-context.local/specs-competitive-positioning.md#Text"
+      },
+      "tokenTable": {
+        "container": "md.comp.text.container",
+        "label": "md.comp.text.label",
+        "state": [
+          "md.comp.text.state.enabled",
+          "md.comp.text.state.hovered",
+          "md.comp.text.state.focused",
+          "md.comp.text.state.pressed",
+          "md.comp.text.state.dragged",
+          "md.comp.text.state.disabled",
+          "md.comp.text.state.error"
+        ],
+        "shape": "md.comp.text.shape",
+        "elevation": "md.comp.text.elevation",
+        "typescale": "md.comp.text.typescale",
+        "sources": {
+          "container": "component",
+          "label": "component",
+          "state": "role",
+          "shape": "role",
+          "elevation": "theme",
+          "typescale": "role"
+        }
+      },
+      "container": "md.comp.text.container",
+      "label": "md.comp.text.label",
+      "opacity": {
+        "hover": 0.08,
+        "focus": 0.12,
+        "press": 0.16
+      },
+      "shape": "md.sys.shape.corner.none",
+      "elevation": "md.sys.state.elevation.level-0",
+      "typescale": "md.sys.typescale.body-large",
+      "keyboard": "Not focusable; screen reader reads content",
+      "focus": "md.sys.focus.none",
+      "motion": {
+        "token": "motion.expressive.easing.standard",
+        "durationMs": 200
+      },
+      "role": "text"
+    },
+    {
+      "name": "FAB",
+      "primitive": "M3NativeFAB",
+      "tokens": [
+        "md.comp.fab.container",
+        "md.comp.fab.label",
+        "md.sys.color.primary",
+        "md.sys.color.on-primary",
+        "md.sys.shape.corner.full",
+        "md.sys.motion.duration.short-2",
+        "motion.durations.short-2",
+        "motion.expressive.easing.standard"
+      ],
+      "states": [
+        "enabled",
+        "hovered",
+        "focused",
+        "pressed",
+        "dragged",
+        "disabled",
+        "error"
+      ],
+      "adaptive": false,
+      "semantics": "manual-context.local/specs-accessibility.md#FAB (Clone: manual-context.local/specs-clone-capability.md#FAB; Competitive: manual-context.local/specs-competitive-positioning.md#FAB)",
+      "goldenTest": "engine/layout/tests/goldens/FAB.png",
+      "status": "present",
+      "ledgers": {
+        "clone": "manual-context.local/specs-clone-capability.md#FAB",
+        "competitive": "manual-context.local/specs-competitive-positioning.md#FAB"
+      },
+      "tokenTable": {
+        "container": "md.comp.fab.container",
+        "label": "md.comp.fab.label",
+        "state": [
+          "md.comp.fab.state.enabled",
+          "md.comp.fab.state.hovered",
+          "md.comp.fab.state.focused",
+          "md.comp.fab.state.pressed",
+          "md.comp.fab.state.dragged",
+          "md.comp.fab.state.disabled",
+          "md.comp.fab.state.error"
+        ],
+        "shape": "md.comp.fab.shape",
+        "elevation": "md.comp.fab.elevation",
+        "typescale": "md.comp.fab.typescale",
+        "sources": {
+          "container": "component",
+          "label": "component",
+          "state": "role",
+          "shape": "role",
+          "elevation": "theme",
+          "typescale": "role"
+        }
+      },
+      "container": "md.comp.fab.container",
+      "label": "md.comp.fab.label",
+      "opacity": {
+        "hover": 0.08,
+        "focus": 0.12,
+        "press": 0.16
+      },
+      "shape": "md.sys.shape.corner.large",
+      "elevation": "md.sys.state.elevation.level-3",
+      "typescale": "md.sys.typescale.label-large",
+      "keyboard": "Enter or Space activates; Tab moves focus",
+      "focus": "md.sys.focus.ring.fab",
+      "motion": {
+        "token": "motion.expressive.easing.emphasized",
+        "durationMs": 400
+      },
+      "role": "button"
     }
   ]
 }

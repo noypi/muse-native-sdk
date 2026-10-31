@@ -324,7 +324,7 @@ function TopAppBar(props) {
     props: next,
     content: [
       Surface({ tone: 'surface' }),
-      Text({ variant: Object.prototype.hasOwnProperty.call(TOP_APP_BAR_TITLE_VARIANT, size) ? TOP_APP_BAR_TITLE_VARIANT[size] : TOP_APP_BAR_TITLE_VARIANT.small, color: 'on-surface' }),
+      Text({ variant: Object.prototype.hasOwnProperty.call(TOP_APP_BAR_TITLE_VARIANT, size) ? TOP_APP_BAR_TITLE_VARIANT[size] : TOP_APP_BAR_TITLE_VARIANT.small, color: 'on-surface', text: next.title }),
       Icon({ name: 'menu', color: 'on-surface' }),
       Divider({ orientation: 'horizontal', color: 'outline' }),
     ],
@@ -339,7 +339,7 @@ function NavigationBar(props) {
       Surface({ tone: 'surface-container' }),
       Stack({ direction: 'row' }),
       Icon({ name: 'home', color: 'on-surface' }),
-      Text({ variant: 'label-medium', color: 'on-surface' }),
+      Text({ variant: 'label-medium', color: 'on-surface', selected: next.selected }),
       Ripple({ color: 'primary' }),
     ],
   };
@@ -353,7 +353,7 @@ function NavigationRail(props) {
       Surface({ tone: 'surface-container' }),
       Stack({ direction: 'column' }),
       Icon({ name: 'home', color: 'on-surface' }),
-      Text({ variant: 'label-medium', color: 'on-surface' }),
+      Text({ variant: 'label-medium', color: 'on-surface', selected: next.selected }),
       Ripple({ color: 'primary' }),
     ],
   };
@@ -365,7 +365,7 @@ function NavigationDrawer(props) {
     props: next,
     content: [
       Surface({ tone: 'surface-container-low' }),
-      ListItem({ tone: 'surface-container-low' }),
+      ListItem({ tone: 'surface-container-low', selected: next.selected }),
       Icon({ name: 'home', color: 'on-surface' }),
       Text({ variant: 'label-large', color: 'on-surface' }),
       Divider({ orientation: 'horizontal', color: 'outline' }),
@@ -378,7 +378,7 @@ function SegmentedButton(props) {
     type: 'SegmentedButton',
     props: next,
     content: [
-      Chip({ tone: 'surface' }),
+      Chip({ tone: 'surface', selected: next.selected }),
       Surface({ tone: 'surface' }),
       Text({ variant: 'label-large', color: 'on-surface' }),
       Ripple({ color: 'primary' }),
@@ -393,7 +393,7 @@ function Dialog(props) {
     layer: OverlayHost({ content: Surface({ tone: 'surface-container-high' }) }),
     content: [
       Surface({ tone: 'surface-container-high' }),
-      Text({ variant: 'headline-small', color: 'on-surface' }),
+      Text({ variant: 'headline-small', color: 'on-surface', text: next.title }),
       Button({ tone: 'primary' }),
     ],
   };
@@ -405,7 +405,7 @@ function BottomSheet(props) {
     props: next,
     layer: OverlayHost({ content: Surface({ tone: 'surface-container-low' }) }),
     content: [
-      Surface({ tone: 'surface-container-low' }),
+      Surface({ tone: 'surface-container-low', open: next.open }),
       Divider({ orientation: 'horizontal', color: 'outline' }),
       Text({ variant: 'body-medium', color: 'on-surface' }),
     ],
@@ -420,7 +420,7 @@ function Menu(props) {
     anchor: Text({ variant: 'body-medium', color: 'on-surface' }),
     content: [
       Surface({ tone: 'surface-container' }),
-      ListItem({ tone: 'surface-container' }),
+      ListItem({ tone: 'surface-container', open: next.open }),
       Text({ variant: 'body-large', color: 'on-surface' }),
     ],
   };
@@ -433,7 +433,7 @@ function SnackbarHost(props) {
     layer: OverlayHost({ content: Surface({ tone: 'inverse-surface' }) }),
     content: [
       Surface({ tone: 'inverse-surface' }),
-      Text({ variant: 'body-medium', color: 'inverse-on-surface' }),
+      Text({ variant: 'body-medium', color: 'inverse-on-surface', text: next.message }),
       Button({ tone: 'inverse-surface' }),
     ],
   };
@@ -444,7 +444,7 @@ function SearchBar(props) {
     type: 'SearchBar',
     props: next,
     content: [
-      TextInput({ tone: 'surface-container-high' }),
+      TextInput({ tone: 'surface-container-high', value: next.value }),
       Surface({ tone: 'surface-container-high' }),
       Icon({ name: 'search', color: 'on-surface' }),
     ],
@@ -456,7 +456,7 @@ function Carousel(props) {
     type: 'Carousel',
     props: next,
     content: [
-      Scroll({ orientation: 'horizontal' }),
+      Scroll({ orientation: 'horizontal', index: next.index }),
       Stack({ direction: 'row' }),
       Image({ contentFit: 'cover' }),
       Surface({ tone: 'surface' }),
@@ -472,7 +472,7 @@ function BottomAppBar(props) {
       Surface({ tone: 'surface-container' }),
       IconButton({ tone: 'surface-container' }),
       Icon({ name: 'menu', color: 'on-surface' }),
-      Text({ variant: 'title-medium', color: 'on-surface' }),
+      Text({ variant: 'title-medium', color: 'on-surface', text: next.title }),
     ],
   };
 }
@@ -482,7 +482,7 @@ function ButtonGroup(props) {
     type: 'ButtonGroup',
     props: next,
     content: [
-      Button({ tone: 'surface' }),
+      Button({ tone: 'surface', selected: next.selected }),
       Surface({ tone: 'surface' }),
       Text({ variant: 'label-large', color: 'on-surface' }),
     ],
@@ -494,7 +494,7 @@ function SplitButton(props) {
     type: 'SplitButton',
     props: next,
     content: [
-      Button({ tone: 'primary' }),
+      Button({ tone: 'primary', label: next.label }),
       IconButton({ tone: 'primary' }),
       Icon({ name: 'expand', color: 'on-primary' }),
       Divider({ orientation: 'vertical', color: 'on-primary' }),

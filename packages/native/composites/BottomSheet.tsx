@@ -26,7 +26,7 @@ export function BottomSheet(props?: BottomSheetProps) {
       props: { content: { type: 'Surface', props: { tone: 'surface-container-low' } } },
     },
     content: [
-      { type: 'Surface', props: { tone: 'surface-container-low' } },
+      { type: 'Surface', props: { tone: 'surface-container-low', open: next.open } },
       { type: 'Divider', props: { orientation: 'horizontal', color: 'outline' } },
       { type: 'Text', props: { variant: 'body-medium', color: 'on-surface' } },
     ],

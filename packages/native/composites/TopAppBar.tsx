@@ -31,7 +31,7 @@ export function TopAppBar(props?: TopAppBarProps) {
     props: next,
     content: [
       { type: 'Surface', props: { tone: 'surface' } },
-      { type: 'Text', props: { variant: Object.prototype.hasOwnProperty.call(TITLE_VARIANT, size) ? TITLE_VARIANT[size] : TITLE_VARIANT.small, color: 'on-surface' } },
+      { type: 'Text', props: { variant: Object.prototype.hasOwnProperty.call(TITLE_VARIANT, size) ? TITLE_VARIANT[size] : TITLE_VARIANT.small, color: 'on-surface', text: next.title } },
       { type: 'Icon', props: { name: 'menu', color: 'on-surface' } },
       { type: 'Divider', props: { orientation: 'horizontal', color: 'outline' } },
     ],

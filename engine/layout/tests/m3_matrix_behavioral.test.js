@@ -12,9 +12,13 @@
 // throws Error("matrix: <name> missing <field>") when any tier-2/3 row lacks
 // a measured field; returns rows keyed by spec-canonical names.
 //
-// ASSUMPTION (canonical key): the spec-canonical key for the FAB entry is
-// `Fab` (matching the `components` export in packages/native/index.js); a
-// separate all-caps `FAB` row is non-canonical and must not exist.
+// ASSUMPTION (canonical key): the spec-canonical key for the tier-2 FAB entry
+// is `Fab` (matching the `components` export in packages/native/index.js); the
+// all-caps `FAB` row is a registry-required tier-1 name (FR-M3-001-owned),
+// retained as-is alongside `Text` per the D1 exemption (2026-10-31) because the
+// shared `check-tokens.js` gate builds its universe as matrix names +
+// `engine/layout/m3_registry.js` NATIVE_COMPONENTS and reads tables by exact
+// name — not a tier-2 duplicate.
 
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
@@ -60,20 +64,25 @@ const SPEC_TIER_3 = [
 ];
 
 // D1: rows with no spec counterpart — must be dropped or remapped, never kept.
+// Exemption (2026-10-31): registry-required tier-1 names 'Text' and 'FAB' are
+// retained as-is (original token tables + the same 10 measured fields
+// backfilled) and are asserted separately below.
 const NON_SPEC_ROWS = [
-  'FAB',
   'FABMenu',
   'Image',
   'List',
   'LoadingIndicator',
   'ScrollView',
   'Snackbar',
-  'Text',
   'TextField',
   'Toolbar',
   'Touchable',
   'View',
 ];
+
+// D1 exemption: registry-required tier-1 names retained as-is with the same
+// 10-measured-field bar as tier-2/3 rows (FR-M3-001 owns their naming).
+const RETAINED_TIER_1_ROWS = ['Text', 'FAB'];
 
 const MEASURED_FIELDS = [
   'container',
@@ -198,6 +207,26 @@ describe('BUG-M3-FIDELITY-010 T1 — matrix rows are spec-canonical with measure
     }
   });
 
+  it('retains registry-required tier-1 Text and FAB rows with all ten measured fields', () => {
+    const rows = readRaw().components;
+    for (const name of RETAINED_TIER_1_ROWS) {
+      const matches = rows.filter((row) => row && row.name === name);
+      assert.equal(matches.length, 1, `expected exactly one retained tier-1 row for ${name}`);
+      const row = matches[0];
+      for (const field of MEASURED_FIELDS) {
+        assert.ok(row[field] !== undefined, `${name}: missing measured field ${field}`);
+      }
+      assert.deepEqual(
+        row.opacity,
+        { hover: 0.08, focus: 0.12, press: 0.16 },
+        `${name}: opacity must be the measured 8/12/16 state opacities`,
+      );
+      assert.equal(typeof row.motion.token, 'string', `${name}: motion.token missing`);
+      assert.ok(row.motion.token.length > 0, `${name}: motion.token must resolve`);
+      assert.equal(typeof row.motion.durationMs, 'number', `${name}: motion.durationMs missing`);
+    }
+  });
+
   it('shares no identical full token set between two tier-2/3 rows', () => {
     const rows = readRaw().components.filter(
       (row) => row && (SPEC_TIER_2.includes(row.name) || SPEC_TIER_3.includes(row.name)),
@@ -211,4 +240,4 @@ describe('BUG-M3-FIDELITY-010 T1 — matrix rows are spec-canonical with measure
   });
 });
 
-module.exports = { loadMatrix, SPEC_TIER_2, SPEC_TIER_3 };
+module.exports = { loadMatrix, SPEC_TIER_2, SPEC_TIER_3, RETAINED_TIER_1_ROWS };

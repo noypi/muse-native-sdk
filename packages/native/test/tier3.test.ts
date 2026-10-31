@@ -814,3 +814,270 @@ test('TopAppBar prototype lookups leave Object.prototype unpolluted', () => {
   assert.equal({}.titleLarge, undefined);
   assert.equal(Object.prototype.variant, undefined);
 });
+
+// ---------------------------------------------------------------------------
+// BUG-M3-FIDELITY-010 T3 — behavioral proof over the T1 matrix (AC-M3-005/006).
+// Hermetic: node:test + node:assert/strict only. Imports the components
+// through the package public entry (index.js); reads the T1 matrix
+// (engine/layout/m3_matrix.json) from disk. No network, no secrets, no
+// services.
+//
+// Public helper per the T3 Interface line:
+//   compositeBehavior(name, props):
+//     { sizeOk, configOk, forwardedOk, layeredOk }
+// `forwardedOk` is false when a variant/state prop does not reach the
+// underlying primitive descriptor; `layeredOk` requires
+// `layer.type === 'OverlayHost'` for Dialog/BottomSheet/Menu/SnackbarHost
+// and absence elsewhere except Tooltip.
+//
+// ASSUMPTION F1 (forwarding is structural): a variant/state prop counts as
+// forwarded only when its value appears (strict equality) in the props of a
+// DIRECT nested member — a descriptor found under a sibling key beside
+// `props`, without descending into that member's own expansion. Echoing the
+// prop on the outer descriptor alone leaves forwardedOk false.
+// ASSUMPTION F2 (matrix facet fields): sizeOk/configOk require the T1 row to
+// carry string container/label/shape/typescale fields; opacity/motion/role
+// are asserted structurally through the nested token-role props, not
+// re-asserted here (T1 owns the measured values).
+// ASSUMPTION F3 (Tooltip carve-out): Tooltip is tier-2, so no tier-3
+// composite may carry a layer; only the four overlay members layer.
+// ---------------------------------------------------------------------------
+
+const T3_MATRIX_URL = new URL('../../../engine/layout/m3_matrix.json', import.meta.url);
+
+function t3MatrixRows() {
+  return JSON.parse(readFileSync(T3_MATRIX_URL, 'utf8')).components;
+}
+
+function t3MatrixRow(name) {
+  const row = t3MatrixRows().find((entry) => entry && entry.name === name);
+  if (row === undefined) {
+    throw new Error(`matrix: ${name} missing row`);
+  }
+  return row;
+}
+
+function t3RequireRow(name) {
+  const row = t3MatrixRow(name);
+  for (const field of ['container', 'label', 'shape', 'typescale']) {
+    if (row[field] === undefined) {
+      throw new Error(`matrix: ${name} missing ${field}`);
+    }
+  }
+  return row;
+}
+
+// Direct nested members only: the `type` of each descriptor found under
+// sibling keys beside `props`/`type`, without descending into a composed
+// member's own expansion. Tightens the anywhere-`type` collectTypes walk
+// above into structural direct-member matching (no new native primitive can
+// hide in a transitively-scanned subtree, and a nested literal cannot be
+// mistaken for a composed member).
+function t3DirectMembers(descriptor) {
+  const out = [];
+  const visit = (node) => {
+    if (Array.isArray(node)) {
+      for (const item of node) visit(item);
+      return;
+    }
+    if (node !== null && typeof node === 'object') {
+      if (typeof node.type === 'string') {
+        out.push(node);
+        return;
+      }
+      for (const value of Object.values(node)) visit(value);
+    }
+  };
+  for (const [key, value] of Object.entries(descriptor)) {
+    if (key === 'props' || key === 'type') continue;
+    visit(value);
+  }
+  return out;
+}
+
+// Strict-equality probe values held by direct nested members' props.
+function t3NestedPropValues(descriptor) {
+  const out = [];
+  for (const member of t3DirectMembers(descriptor)) {
+    if (member.props !== null && typeof member.props === 'object') {
+      for (const value of Object.values(member.props)) out.push(value);
+    }
+  }
+  return out;
+}
+
+// Documented variant/state probe per composite (keys exist in the manifest
+// schemas). The probe value must reach an underlying primitive for
+// forwardedOk to hold.
+const T3_FORWARD_PROBES = {
+  TopAppBar: { title: 'Hello' },
+  NavigationBar: { selected: 'search' },
+  NavigationRail: { selected: 'search' },
+  NavigationDrawer: { selected: 'inbox' },
+  SegmentedButton: { selected: 'two' },
+  Dialog: { title: 'Confirm delete' },
+  BottomSheet: { open: true },
+  Menu: { open: true },
+  SnackbarHost: { message: 'Saved' },
+  SearchBar: { value: 'hello' },
+  Carousel: { index: 1 },
+  BottomAppBar: { title: 'Bar' },
+  ButtonGroup: { selected: 'two' },
+  SplitButton: { label: 'Save' },
+};
+
+// Documented configuration pairs per composite (keys exist in the manifest
+// schemas). Each pair must render distinctly for configOk to hold.
+const T3_CONFIG_PAIRS = {
+  TopAppBar: [{ size: 'small', title: 'Title' }, { size: 'large', title: 'Title' }],
+  NavigationBar: [{ selected: 'home' }, { selected: 'search' }],
+  NavigationRail: [{ selected: 'home' }, { selected: 'search' }],
+  NavigationDrawer: [{ selected: 'home' }, { selected: 'inbox' }],
+  SegmentedButton: [{ selected: 'one' }, { selected: 'two' }],
+  Dialog: [{ open: true, title: 'Confirm' }, { open: false, title: 'Confirm' }],
+  BottomSheet: [{ open: true }, { open: false }],
+  Menu: [{ open: true, anchor: 'target' }, { open: false, anchor: 'target' }],
+  SnackbarHost: [{ message: 'Saved' }, { message: 'Deleted' }],
+  SearchBar: [{ value: 'query' }, { value: '' }],
+  Carousel: [{ index: 0 }, { index: 1 }],
+  BottomAppBar: [{ title: 'Bar' }, { title: 'Other' }],
+  ButtonGroup: [{ selected: 'one' }, { selected: 'two' }],
+  SplitButton: [{ label: 'Save' }, { label: 'Send' }],
+};
+
+const T3_TOP_APP_BAR_VARIANTS = {
+  small: 'title-large',
+  medium: 'headline-small',
+  large: 'headline-medium',
+};
+
+function compositeBehavior(name, props) {
+  const row = t3RequireRow(name);
+  const input = props === undefined ? REPRESENTATIVE_PROPS[name] : props;
+  const descriptor = components[name](input);
+  let sizeOk;
+  if (name === 'TopAppBar') {
+    const variants = ['small', 'medium', 'large'].map((size) =>
+      topAppBarTitleVariant(components.TopAppBar({ size, title: 'Title' })),
+    );
+    sizeOk =
+      variants[0] === T3_TOP_APP_BAR_VARIANTS.small &&
+      variants[1] === T3_TOP_APP_BAR_VARIANTS.medium &&
+      variants[2] === T3_TOP_APP_BAR_VARIANTS.large &&
+      new Set(variants).size === 3;
+  } else {
+    sizeOk = typeof row.shape === 'string' && typeof row.typescale === 'string';
+  }
+  const [firstConfig, secondConfig] = T3_CONFIG_PAIRS[name];
+  const configOk =
+    typeof row.container === 'string' &&
+    typeof row.label === 'string' &&
+    JSON.stringify(components[name](firstConfig)) !== JSON.stringify(components[name](secondConfig));
+  const probeEntry = Object.entries(T3_FORWARD_PROBES[name])[0];
+  const probeProps = { ...REPRESENTATIVE_PROPS[name], [probeEntry[0]]: probeEntry[1] };
+  const forwardedOk = t3NestedPropValues(components[name](probeProps)).some(
+    (value) => value === probeEntry[1],
+  );
+  const layeredOk =
+    (descriptor.layer !== undefined &&
+      descriptor.layer !== null &&
+      descriptor.layer.type === 'OverlayHost') ===
+    OVERLAY_MEMBERS.includes(name);
+  return { sizeOk, configOk, forwardedOk, layeredOk };
+}
+
+for (const name of TIER_3) {
+  test(`${name} compositeBehavior is all-true (matrix + configs + forwarding + layering)`, () => {
+    assert.deepEqual(compositeBehavior(name, REPRESENTATIVE_PROPS[name]), {
+      sizeOk: true,
+      configOk: true,
+      forwardedOk: true,
+      layeredOk: true,
+    });
+  });
+}
+
+test('TopAppBar renders all three documented sizes as distinct structural Text configs', () => {
+  const variants = ['small', 'medium', 'large'].map((size) =>
+    topAppBarTitleVariant(components.TopAppBar({ size, title: 'Title' })),
+  );
+  assert.deepEqual(variants, ['title-large', 'headline-small', 'headline-medium']);
+  assert.equal(new Set(variants).size, 3);
+});
+
+test('TopAppBar undocumented size falls back to the documented default and fails the distinct-config check if collapsed', () => {
+  const fallback = topAppBarTitleVariant(components.TopAppBar({ size: 'giant', title: 'Title' }));
+  const small = topAppBarTitleVariant(components.TopAppBar({ size: 'small', title: 'Title' }));
+  assert.equal(fallback, small);
+  assert.equal(fallback, 'title-large');
+  const collapsed = ['small', 'giant'].map((size) =>
+    topAppBarTitleVariant(components.TopAppBar({ size, title: 'Title' })),
+  );
+  assert.equal(
+    new Set(collapsed).size,
+    1,
+    'a collapsed fallback renders one config, failing the distinct-config check',
+  );
+});
+
+for (const name of OVERLAY_MEMBERS) {
+  test(`${name} layers structurally via layer.type === 'OverlayHost'`, () => {
+    const descriptor = components[name](REPRESENTATIVE_PROPS[name]);
+    assert.ok(descriptor.layer !== undefined && descriptor.layer !== null);
+    assert.equal(descriptor.layer.type, 'OverlayHost');
+  });
+}
+
+for (const name of TIER_3.filter((entry) => !OVERLAY_MEMBERS.includes(entry))) {
+  test(`${name} carries no OverlayHost layer (non-overlay composite)`, () => {
+    const descriptor = components[name](REPRESENTATIVE_PROPS[name]);
+    const hasOverlayLayer =
+      descriptor.layer !== undefined &&
+      descriptor.layer !== null &&
+      descriptor.layer.type === 'OverlayHost';
+    assert.equal(hasOverlayLayer, false);
+  });
+}
+
+for (const name of TIER_3) {
+  test(`${name} composes tier-1/2 direct members only (structural, no new native primitive)`, () => {
+    const descriptor = components[name](REPRESENTATIVE_PROPS[name]);
+    const members = t3DirectMembers(descriptor);
+    assert.ok(members.length > 0, `${name} must compose at least one direct member`);
+    for (const member of members) {
+      assert.ok(
+        TIER_1.has(member.type) || TIER_2.has(member.type),
+        `${name} directly composes "${member.type}", which is not a tier-1/2 name`,
+      );
+    }
+  });
+}
+
+test('stripping OverlayHost from an overlay composite fails the structural layering check', () => {
+  for (const name of OVERLAY_MEMBERS) {
+    const descriptor = components[name](REPRESENTATIVE_PROPS[name]);
+    assert.equal(descriptor.layer.type, 'OverlayHost');
+    const stripped = { ...descriptor };
+    delete stripped.layer;
+    assert.notEqual(
+      stripped.layer !== undefined && stripped.layer !== null && stripped.layer.type === 'OverlayHost',
+      true,
+      `${name} without its layer must fail the structural OverlayHost check`,
+    );
+  }
+});
+
+test('structural composition rejects a hardcoded literal with no tier-1 member', () => {
+  const literal = { type: 'Dialog', props: REPRESENTATIVE_PROPS.Dialog };
+  assert.equal(t3DirectMembers(literal).length, 0);
+  assert.ok(t3DirectMembers(components.Dialog(REPRESENTATIVE_PROPS.Dialog)).length > 0);
+});
+
+test('compositeBehavior throws matrix: <name> missing <field> when the T1 row is absent', () => {
+  assert.throws(() => {
+    t3MatrixRow('NotAComponent');
+  }, /matrix: NotAComponent missing row/);
+  assert.throws(() => {
+    compositeBehavior('NotAComponent', {});
+  }, /matrix: NotAComponent missing row/);
+});

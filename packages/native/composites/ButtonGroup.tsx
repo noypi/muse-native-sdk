@@ -16,7 +16,7 @@ export function ButtonGroup(props?: ButtonGroupProps) {
     type: 'ButtonGroup',
     props: next,
     content: [
-      { type: 'Button', props: { tone: 'surface' } },
+      { type: 'Button', props: { tone: 'surface', selected: next.selected } },
       { type: 'Surface', props: { tone: 'surface' } },
       { type: 'Text', props: { variant: 'label-large', color: 'on-surface' } },
     ],
