@@ -7,6 +7,10 @@
 namespace {
 
 constexpr std::uint32_t kBaseExtent = 16;
+// Explicit replay-extent cap: bounds the w*h allocation spike (Residual Risk)
+// and keeps the double->uint32_t conversion below overflow. 1024*1024 floats
+// (~4 MiB transient) is the largest raster the host path will build.
+constexpr double kMaxExtent = 1024.0;
 
 ReplayResult denied(ReplayErrorCode code, float delta) noexcept {
   ReplayResult r;
@@ -41,8 +45,15 @@ float referencePixel(const Picture& pic, std::uint32_t x,
 
 }  // namespace
 
-RecordStatus Picture::drawRect(RectF /*r*/, const Paint& p) noexcept {
+RecordStatus Picture::drawRect(RectF r, const Paint& p) noexcept {
   RecordStatus s;
+  // Non-finite rect is an ok no-op (never recorded); mirrors Canvas::drawRect.
+  if (!std::isfinite(r.left) || !std::isfinite(r.top) ||
+      !std::isfinite(r.right) || !std::isfinite(r.bottom)) {
+    s.ok = true;
+    s.error = CanvasErrorCode::NONE;
+    return s;
+  }
   if (!p.valid) {
     s.ok = false;
     s.error = CanvasErrorCode::BAD_PAINT;
@@ -93,13 +104,17 @@ ReplayResult replayPicture(const Picture& pic, float scale,
     // Covers scale <= 0, NaN, and +inf. Never throws, never touches graph.
     return denied(ReplayErrorCode::BAD_SCALE, 0.0f);
   }
-  const std::uint32_t w =
-      static_cast<std::uint32_t>(static_cast<double>(kBaseExtent) * scale);
-  const std::uint32_t h =
-      static_cast<std::uint32_t>(static_cast<double>(kBaseExtent) * scale);
-  if (w == 0 || h == 0) {
+  // Range-gate BEFORE conversion: a huge finite scale (e.g. 1e20f) passes
+  // the isfinite/>0 check but 16.0*scale is not representable in uint32_t,
+  // and static_cast on an out-of-range floating value is UB ([conv.fpint]).
+  // Compute in double and deny BAD_SCALE when outside [1, kMaxExtent].
+  const double extent = static_cast<double>(kBaseExtent) *
+                        static_cast<double>(scale);
+  if (!(extent >= 1.0) || !(extent <= kMaxExtent)) {
     return denied(ReplayErrorCode::BAD_SCALE, 0.0f);
   }
+  const std::uint32_t w = static_cast<std::uint32_t>(extent);
+  const std::uint32_t h = static_cast<std::uint32_t>(extent);
   try {
     std::vector<float> pixels;
     pixels.reserve(static_cast<std::size_t>(w) * h);

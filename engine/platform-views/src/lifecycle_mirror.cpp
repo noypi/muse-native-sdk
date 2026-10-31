@@ -39,14 +39,18 @@ bool hasTerminal(std::uint64_t view) noexcept {
   return false;
 }
 
-void addRecord(std::uint64_t view, LifecycleEvent event,
+// Single-thread scope: g_records/g_count assume single-threaded host use;
+// concurrent callers would race the ledger (see Residual Risk). No locks.
+// Returns false when the 256-record ledger is full (record dropped).
+bool addRecord(std::uint64_t view, LifecycleEvent event,
                FocusEvent focus) noexcept {
-  if (g_count >= kMaxRecords) return;
+  if (g_count >= kMaxRecords) return false;
   g_records[g_count].view = view;
   g_records[g_count].event = event;
   g_records[g_count].focus = focus;
   g_records[g_count].occupied = true;
   ++g_count;
+  return true;
 }
 
 }  // namespace
@@ -86,7 +90,12 @@ MirrorResult mirrorLifecycleFocusA11y(ViewHandle view, LifecycleEvent event,
     return denied;
   }
 
-  addRecord(view.value, event, focus);
+  // Ledger saturation is a denial, not ok=true: post-saturation duplicate
+  // detection is lost, so no further step may report success.
+  if (!addRecord(view.value, event, focus)) {
+    denied.error = MirrorErrorCode::SEMANTICS_MIRROR_FAILED;
+    return denied;
+  }
 
   MirrorResult ok;
   ok.ok = true;

@@ -133,6 +133,58 @@ static bool check_destroy_no_focus_ok() {
   }
 }
 
+// Case: ledger-full returns a typed SEMANTICS_MIRROR_FAILED denial, never
+// ok=true. Drives 256 distinct (view,event,focus) triples to saturate the
+// process-lifetime ledger, then asserts the next distinct step is denied.
+// WARNING: saturation is permanent process-lifetime state — this case MUST
+// run LAST in main (and in isolation from every other case) so it cannot
+// poison the cases above.
+static bool check_ledger_full_denied_not_ok() {
+  try {
+    // Fresh view range far from the handles used above; non-terminal events
+    // only (DESTROY is terminal per view and would change routing).
+    const LifecycleEvent events[5] = {
+        LifecycleEvent::CREATE, LifecycleEvent::START, LifecycleEvent::RESUME,
+        LifecycleEvent::PAUSE, LifecycleEvent::STOP};
+    const FocusEvent focuses[3] = {FocusEvent::NONE, FocusEvent::GAIN,
+                                   FocusEvent::LOSS};
+    int distinct = 0;
+    bool sawDenial = false;
+    MirrorResult last;
+    last.ok = true;
+    for (uint64_t v = 1000; v < 1000 + 600 && distinct < 300; ++v) {
+      for (int e = 0; e < 5 && distinct < 300; ++e) {
+        for (int f = 0; f < 3 && distinct < 300; ++f) {
+          // Skip DESTROY+GAIN (FOCUS_NOT_REACHABLE by design, not ledger).
+          ViewHandle view{v};
+          try {
+            const MirrorResult r =
+                mirrorLifecycleFocusA11y(view, events[e], focuses[f]);
+            ++distinct;
+            last = r;
+            if (!r.ok) {
+              if (r.error != MirrorErrorCode::SEMANTICS_MIRROR_FAILED) {
+                return false;
+              }
+              sawDenial = true;
+            } else if (sawDenial) {
+              // No ok=true once the ledger has denied for capacity.
+              return false;
+            }
+          } catch (...) {
+            return false;
+          }
+        }
+      }
+    }
+    // Must have saturated (256 slots) and ended in denial, never ok post-cap.
+    return sawDenial && !last.ok &&
+           last.error == MirrorErrorCode::SEMANTICS_MIRROR_FAILED;
+  } catch (...) {
+    return false;
+  }
+}
+
 #define RUN_CASE(name)                 \
   do {                                 \
     if (!(name)()) {                   \
@@ -152,6 +204,8 @@ int main() {
   RUN_CASE(check_duplicate_talkback_node_denied);
   RUN_CASE(check_exactly_one_dispatch);
   RUN_CASE(check_destroy_no_focus_ok);
+  // Saturation is permanent process-lifetime state: keep this case LAST.
+  RUN_CASE(check_ledger_full_denied_not_ok);
   if (failures > 0) {
     std::printf("lifecycle_focus_a11y_test: %d failing\n", failures);
     return 1;

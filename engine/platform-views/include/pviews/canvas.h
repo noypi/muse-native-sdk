@@ -56,7 +56,13 @@ class Canvas {
   RecordStatus clipRect(RectF r) noexcept;
 
   std::size_t recordedOpCount() const noexcept { return ops_.size(); }
+  // Bounds-guarded: out-of-range index returns the kDrawRect sentinel
+  // instead of unchecked-subscript UB (noexcept must never terminate).
+  // In-range behavior is unchanged.
   OpKind recordedOpAt(std::size_t i) const noexcept {
+    if (i >= ops_.size()) {
+      return OpKind::kDrawRect;
+    }
     return ops_[i].kind;
   }
 

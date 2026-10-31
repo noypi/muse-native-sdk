@@ -36,8 +36,10 @@
 // ASSUMED Canvas cooperation: recordCanvas observes the T2 Canvas op list
 // (friend or accessor — coder's choice); empty canvas == zero recorded ops;
 // Canvas enforces its kMaxOps capacity with RECORD_FULL (T2 enum).
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <limits>
 
 #include "pviews/canvas.h"
 #include "pviews/canvas_record.h"
@@ -319,6 +321,105 @@ static bool check_record_full_overflow() {
   }
 }
 
+// Case: non-finite drawRect is an ok no-op that records nothing (NaN must
+// not propagate toward the render-graph consumer; draw has no rect-denial
+// code, so the empty-rect ok-no-op precedent applies).
+static bool check_nonfinite_draw_rect_noop_unrecorded() {
+  try {
+    Canvas canvas;
+    const std::size_t before = canvas.recordedOpCount();
+    const float nan = std::numeric_limits<float>::quiet_NaN();
+    const RecordStatus r =
+        canvas.drawRect(RectF{nan, 0.0f, 10.0f, 10.0f}, validPaint());
+    if (!(r.ok && r.error == CanvasErrorCode::NONE)) return false;
+    if (canvas.recordedOpCount() != before) return false;
+    const float inf = std::numeric_limits<float>::infinity();
+    const RecordStatus r2 =
+        canvas.drawRect(RectF{0.0f, 0.0f, inf, 10.0f}, validPaint());
+    if (!(r2.ok && r2.error == CanvasErrorCode::NONE)) return false;
+    return canvas.recordedOpCount() == before;
+  } catch (...) {
+    return false;
+  }
+}
+
+// Case: non-finite clipRect is a typed CLIP_EMPTY denial (NaN comparisons
+// defeat isEmptyRect, so finiteness is gated first at the boundary).
+static bool check_nonfinite_clip_rect_denied() {
+  try {
+    Canvas canvas;
+    const float nan = std::numeric_limits<float>::quiet_NaN();
+    const float inf = std::numeric_limits<float>::infinity();
+    const RecordStatus r1 =
+        canvas.clipRect(RectF{nan, 0.0f, 10.0f, 10.0f});
+    if (r1.ok || r1.error != CanvasErrorCode::CLIP_EMPTY) return false;
+    const RecordStatus r2 = canvas.clipRect(RectF{0.0f, 0.0f, inf, inf});
+    if (r2.ok || r2.error != CanvasErrorCode::CLIP_EMPTY) return false;
+    return canvas.recordedOpCount() == 0;
+  } catch (...) {
+    return false;
+  }
+}
+
+// Case: out-of-range recordedOpAt has defined behavior — returns the
+// kDrawRect sentinel, never UB, never throws (noexcept boundary).
+static bool check_recorded_op_at_oob_sentinel() {
+  try {
+    Canvas canvas;  // empty: any index is out of range
+    if (canvas.recordedOpAt(0) != Canvas::OpKind::kDrawRect) return false;
+    if (canvas.recordedOpAt(999999) != Canvas::OpKind::kDrawRect)
+      return false;
+    canvas.drawRect(validRect(), validPaint());  // one op recorded
+    if (canvas.recordedOpAt(0) != Canvas::OpKind::kDrawRect) return false;
+    if (canvas.recordedOpAt(1) != Canvas::OpKind::kDrawRect) return false;
+    if (canvas.recordedOpAt(canvas.recordedOpCount()) !=
+        Canvas::OpKind::kDrawRect)
+      return false;
+    return true;
+  } catch (...) {
+    return false;
+  }
+}
+
+// Case: save() depth saturates at the cap instead of overflowing int on
+// adversarial repetition (cap is 1024 per the implementation).
+static bool check_save_depth_saturates() {
+  try {
+    Canvas canvas;
+    int depth = 0;
+    for (int i = 0; i < 3000; ++i) {
+      depth = canvas.save();
+      if (depth > 1024) return false;
+    }
+    if (depth != 1024) return false;
+    // Further saves stay pinned at the cap.
+    for (int i = 0; i < 10; ++i) {
+      if (canvas.save() != 1024) return false;
+    }
+    return true;
+  } catch (...) {
+    return false;
+  }
+}
+
+// Case: over-budget deferral with currentFrame=UINT32_MAX saturates at
+// UINT32_MAX instead of wrapping to 0.
+static bool check_deferral_uint32max_saturates() {
+  try {
+    Canvas canvas = makeTwoOpCanvas();  // 2 ops
+    RenderGraph graph;
+    FrameBudget b{};
+    b.maxOps = 1;
+    b.currentFrame = std::numeric_limits<std::uint32_t>::max();
+    const RecordResult r = recordCanvas(canvas, graph, b);
+    return !r.ok && r.error == RecordErrorCode::BUDGET_EXCEEDED &&
+           r.scheduledFrame == std::numeric_limits<std::uint32_t>::max() &&
+           graph.opCount() == 0 && graph.flushCount() == 0;
+  } catch (...) {
+    return false;
+  }
+}
+
 #define RUN_CASE(name)                 \
   do {                                 \
     if (!(name)()) {                   \
@@ -347,6 +448,11 @@ int main() {
   RUN_CASE(check_record_op_list_ordering);
   RUN_CASE(check_record_never_flushes);
   RUN_CASE(check_record_full_overflow);
+  RUN_CASE(check_nonfinite_draw_rect_noop_unrecorded);
+  RUN_CASE(check_nonfinite_clip_rect_denied);
+  RUN_CASE(check_recorded_op_at_oob_sentinel);
+  RUN_CASE(check_save_depth_saturates);
+  RUN_CASE(check_deferral_uint32max_saturates);
   if (failures > 0) {
     std::printf("canvas_record_test: %d failing\n", failures);
     return 1;

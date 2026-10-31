@@ -159,6 +159,84 @@ static bool check_replay_nan_scale_denied() {
   }
 }
 
+// Case: huge finite scale is a typed BAD_SCALE denial with no UB and the
+// graph untouched (conversion-overflow path: 1e20f passes isfinite/>0 but
+// 16.0*scale is not representable in uint32_t; the range gate denies first).
+static bool check_replay_huge_finite_scale_denied() {
+  try {
+    Picture pic = makeSamplePicture();
+    RenderGraph graph;
+    const ReplayResult r = replayPicture(pic, 1e20f, graph);
+    if (r.ok || r.error != ReplayErrorCode::BAD_SCALE) return false;
+    return graph.replayWidth() == 0 && graph.replayHeight() == 0 &&
+           graph.opCount() == 0;
+  } catch (...) {
+    return false;
+  }
+}
+
+// Case: FLT_MAX scale is a typed BAD_SCALE denial, graph untouched.
+static bool check_replay_flt_max_scale_denied() {
+  try {
+    Picture pic = makeSamplePicture();
+    RenderGraph graph;
+    const ReplayResult r =
+        replayPicture(pic, std::numeric_limits<float>::max(), graph);
+    if (r.ok || r.error != ReplayErrorCode::BAD_SCALE) return false;
+    return graph.replayWidth() == 0 && graph.replayHeight() == 0 &&
+           graph.opCount() == 0;
+  } catch (...) {
+    return false;
+  }
+}
+
+// Case: +Inf scale is a typed BAD_SCALE denial, graph untouched.
+static bool check_replay_inf_scale_denied() {
+  try {
+    Picture pic = makeSamplePicture();
+    RenderGraph graph;
+    const float inf = std::numeric_limits<float>::infinity();
+    const ReplayResult r = replayPicture(pic, inf, graph);
+    if (r.ok || r.error != ReplayErrorCode::BAD_SCALE) return false;
+    return graph.replayWidth() == 0 && graph.replayHeight() == 0 &&
+           graph.opCount() == 0;
+  } catch (...) {
+    return false;
+  }
+}
+
+// Case: scale at the extent cap still replays — 16*64 == 1024 == kMaxExtent,
+// the largest in-range extent, must succeed (no over-eager gate).
+// NOTE: the task brief suggested scale=1000 replays; the implementation caps
+// extents at 1024 (16*1000 = 16000 > cap), so 1000 is correctly denied and 64
+// is the true largest in-cap scale. A scale-1000-denied probe is in the next
+// case.
+static bool check_replay_cap_boundary_scale_replays() {
+  try {
+    Picture pic = makeSamplePicture();
+    RenderGraph graph;
+    const ReplayResult r = replayPicture(pic, 64.0f, graph);
+    return r.ok && r.error == ReplayErrorCode::NONE &&
+           graph.replayWidth() == 1024 && graph.replayHeight() == 1024;
+  } catch (...) {
+    return false;
+  }
+}
+
+// Case: scale just above the cap is denied — 16*65 = 1040 > 1024.
+static bool check_replay_above_cap_scale_denied() {
+  try {
+    Picture pic = makeSamplePicture();
+    RenderGraph graph;
+    const ReplayResult r = replayPicture(pic, 1000.0f, graph);
+    if (r.ok || r.error != ReplayErrorCode::BAD_SCALE) return false;
+    return graph.replayWidth() == 0 && graph.replayHeight() == 0 &&
+           graph.opCount() == 0;
+  } catch (...) {
+    return false;
+  }
+}
+
 // Case: tolerance-exceeded shape — a replay denial carries a
 // TOLERANCE_EXCEEDED code with maxPixelDelta above tolerance, while a pass
 // carries NONE with maxPixelDelta at or below tolerance (consistency of
@@ -214,6 +292,11 @@ int main() {
   RUN_CASE(check_replay_zero_scale_denied);
   RUN_CASE(check_replay_negative_scale_denied);
   RUN_CASE(check_replay_nan_scale_denied);
+  RUN_CASE(check_replay_huge_finite_scale_denied);
+  RUN_CASE(check_replay_flt_max_scale_denied);
+  RUN_CASE(check_replay_inf_scale_denied);
+  RUN_CASE(check_replay_cap_boundary_scale_replays);
+  RUN_CASE(check_replay_above_cap_scale_denied);
   RUN_CASE(check_replay_tolerance_contract_consistent);
   RUN_CASE(check_replay_deterministic);
   if (failures > 0) {

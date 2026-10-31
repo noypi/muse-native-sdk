@@ -35,9 +35,13 @@ RecordResult recordCanvas(const Canvas& canvas, RenderGraph& graph,
     return denied(RecordErrorCode::EMPTY_CANVAS, budget.currentFrame);
   }
   // Op-count budget unit: work that does not fit defers to the next frame
-  // with nothing appended; never blocks the caller.
+  // with nothing appended; never blocks the caller. The deferral saturates
+  // at UINT32_MAX instead of wrapping to 0.
   if (count > static_cast<std::size_t>(budget.maxOps)) {
-    return denied(RecordErrorCode::BUDGET_EXCEEDED, budget.currentFrame + 1);
+    const std::uint32_t deferred =
+        (budget.currentFrame == UINT32_MAX) ? UINT32_MAX
+                                            : budget.currentFrame + 1;
+    return denied(RecordErrorCode::BUDGET_EXCEEDED, deferred);
   }
   if (graph.rejectNext) {
     graph.rejectNext = false;
