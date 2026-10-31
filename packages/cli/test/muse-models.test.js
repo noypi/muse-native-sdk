@@ -226,7 +226,7 @@ describe('BUG-TSX-010 T1 — muse: subtree bypasses flat ConfigError gate', () =
     const template = fs.readFileSync(path.join(__dirname, '..', 'templates', 'muse-native.yaml'), 'utf8');
     const dir = mkApp(template);
     const { config, winningLayer } = resolveIn(dir);
-    assert.deepEqual(config, { name: 'hello-app', version: '0.0.1', withSample: false, abi: undefined, release: false, modules: undefined, output: undefined, strict: false, diagnostics: undefined, archs: ['arm64-v8a', 'armeabi-v7a', 'x86_64', 'x86'], packaging: 'fat', keystore: path.join(__dirname, '..', 'templates', 'android', 'debug.keystore'), keyAlias: 'androiddebugkey', storepass: undefined });
+    assert.deepEqual(config, { name: 'hello-app', version: '0.0.1', withSample: false, abi: undefined, release: false, modules: undefined, output: undefined, strict: false, diagnostics: undefined, archs: ['arm64-v8a', 'armeabi-v7a', 'x86_64', 'x86'], packaging: 'fat', renderer: 'cpu', keystore: path.join(__dirname, '..', 'templates', 'android', 'debug.keystore'), keyAlias: 'androiddebugkey', storepass: undefined });
     assert.equal(winningLayer.name, 'file');
     assert.equal(winningLayer.version, 'file');
   });
@@ -235,14 +235,14 @@ describe('BUG-TSX-010 T1 — muse: subtree bypasses flat ConfigError gate', () =
     const template = fs.readFileSync(path.join(__dirname, '..', 'templates', 'muse-native.yaml'), 'utf8');
     const dir = mkApp(template);
     const { config } = resolveIn(dir);
-    assert.deepEqual(Object.keys(config).sort(), ['abi', 'archs', 'diagnostics', 'keyAlias', 'keystore', 'modules', 'name', 'output', 'packaging', 'release', 'storepass', 'strict', 'version', 'withSample']);
+    assert.deepEqual(Object.keys(config).sort(), ['abi', 'archs', 'diagnostics', 'keyAlias', 'keystore', 'modules', 'name', 'output', 'packaging', 'release', 'renderer', 'storepass', 'strict', 'version', 'withSample']);
   });
 
   it('hand-written name/version-only file resolves identically to the template scalars', () => {
     const dir = mkApp('name: hello-app\nversion: 0.0.1\n');
     const { config, winningLayer } = resolveIn(dir);
-    assert.deepEqual(config, { name: 'hello-app', version: '0.0.1', withSample: false, abi: undefined, release: false, modules: undefined, output: undefined, strict: false, diagnostics: undefined, archs: ['arm64-v8a', 'armeabi-v7a', 'x86_64', 'x86'], packaging: 'fat', keystore: path.join(__dirname, '..', 'templates', 'android', 'debug.keystore'), keyAlias: 'androiddebugkey', storepass: undefined });
-    assert.deepEqual(winningLayer, { name: 'file', version: 'file', withSample: 'default', abi: 'default', release: 'default', modules: 'default', output: 'default', strict: 'default', diagnostics: 'default', archs: 'default', packaging: 'default', keystore: 'default', keyAlias: 'default', storepass: 'default' });
+    assert.deepEqual(config, { name: 'hello-app', version: '0.0.1', withSample: false, abi: undefined, release: false, modules: undefined, output: undefined, strict: false, diagnostics: undefined, archs: ['arm64-v8a', 'armeabi-v7a', 'x86_64', 'x86'], packaging: 'fat', renderer: 'cpu', keystore: path.join(__dirname, '..', 'templates', 'android', 'debug.keystore'), keyAlias: 'androiddebugkey', storepass: undefined });
+    assert.deepEqual(winningLayer, { name: 'file', version: 'file', withSample: 'default', abi: 'default', release: 'default', modules: 'default', output: 'default', strict: 'default', diagnostics: 'default', archs: 'default', packaging: 'default', renderer: 'default', keystore: 'default', keyAlias: 'default', storepass: 'default' });
   });
 
   it('unknown scalar key still throws ConfigError fail-closed (never partial)', () => {
@@ -277,7 +277,7 @@ describe('BUG-TSX-010 T1 — muse: subtree bypasses flat ConfigError gate', () =
   it('MUSE_NATIVE_MUSE env stays ignored: never becomes a config key (ASSUMPTION: env layer is scalar-only)', () => {
     const dir = mkApp('name: hi\nversion: 0.0.1\n');
     const { config } = resolveIn(dir, ['build'], { MUSE_NATIVE_MUSE: 'x' });
-    assert.deepEqual(config, { name: 'hi', version: '0.0.1', withSample: false, abi: undefined, release: false, modules: undefined, output: undefined, strict: false, diagnostics: undefined, archs: ['arm64-v8a', 'armeabi-v7a', 'x86_64', 'x86'], packaging: 'fat', keystore: path.join(__dirname, '..', 'templates', 'android', 'debug.keystore'), keyAlias: 'androiddebugkey', storepass: undefined });
+    assert.deepEqual(config, { name: 'hi', version: '0.0.1', withSample: false, abi: undefined, release: false, modules: undefined, output: undefined, strict: false, diagnostics: undefined, archs: ['arm64-v8a', 'armeabi-v7a', 'x86_64', 'x86'], packaging: 'fat', renderer: 'cpu', keystore: path.join(__dirname, '..', 'templates', 'android', 'debug.keystore'), keyAlias: 'androiddebugkey', storepass: undefined });
   });
 });
 
