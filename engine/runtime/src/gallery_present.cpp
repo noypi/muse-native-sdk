@@ -14,6 +14,7 @@
 
 #include "runtime/gallery_present.h"
 
+#include <atomic>
 #include <cctype>
 #include <cmath>
 #include <cstdio>
@@ -2229,6 +2230,49 @@ void SetPresentError(std::string* error, const char* msg) {
 
 }  // namespace
 
+// ---- T4 live inset feed (BUG-RUNTIME-004 / FR-LAYOUT-012) ----
+//
+// Process-wide mirror of the typed inset bus field `deps.insets.imeBottom`
+// (px). The T3 feed (`MainActivity.onInsetsFrame` -> `nativeSetImeBottom`)
+// writes each animated ime() frame here via SetPresentImeBottom; the
+// layering present path reads the same field every frame before paint, so
+// the anchor always binds the live value, never a constant. In-place float
+// store only; fullRelayouts is never touched here (no full-tree relayout).
+namespace {
+// Single live inset holder shaped like the bus slice the anchor consumes:
+// `deps.insets.imeBottom` in px.
+//
+// F5 hardening (BUG-RUNTIME-004 review MINOR): the store is
+// `std::atomic<float>` with relaxed load/store — the JNI/UI thread writes via
+// SetPresentImeBottom while the render path reads every frame before paint,
+// so a plain float is formally a data race (UB). Relaxed ordering suffices:
+// a single float needs atomicity only, no happens-before edge.
+struct PresentImeDeps {
+  struct Insets {
+    std::atomic<float> imeBottom{0.0f};
+  };
+  Insets insets;
+};
+
+PresentImeDeps& PresentDeps() {
+  static PresentImeDeps deps;
+  return deps;
+}
+}  // namespace
+
+// T3 feed entry: record one animated IME frame height (px) into the live
+// `deps.insets.imeBottom` field the layering present path reads. Non-finite
+// and negative heights resolve to zero (hidden keyboard). Never throws.
+void SetPresentImeBottom(float imeBottomPx) noexcept {
+  try {
+    float value = imeBottomPx;
+    if (!std::isfinite(value) || value < 0.0f) value = 0.0f;
+    PresentDeps().insets.imeBottom.store(value, std::memory_order_relaxed);
+  } catch (...) {
+    // Keep the last good inset on failure; never throws across the boundary.
+  }
+}
+
 // T11 coverage seam: resolve a ShapeGalleryLabel handle to the shaped glyph
 // data cached at assignment. Unknown/0 handles (or null outputs) fail
 // closed with false; the shaped data is never re-derived or synthesized.
@@ -2400,6 +2444,13 @@ bool PresentDeviceGalleryPage(const std::vector<GalleryRow>& rows, int page,
     if (IsLayeringPageSlice(rows, window.firstVisible, window.lastVisible)) {
       LayeringScene scene;
       scene.valid = true;
+      // T4 (BUG-RUNTIME-004 / AC-M3-022 sink leg, AC-LAYOUT-035): bind the
+      // sheet to the live FR-LAYOUT-012 inset (`deps.insets.imeBottom`) every
+      // frame before paint. In-place sheet-Y mutation only, no full-tree
+      // relayout; a zero inset is a no-op via the anchor's own clamp.
+      const float live_inset_px =
+          PresentDeps().insets.imeBottom.load(std::memory_order_relaxed);
+      anchorSheetToImeInset(scene, live_inset_px);
       paintLayeringPage(scene, renderer, target, error);
       if (error != nullptr && !error->empty()) return false;
       // L8b dispatch confirm: names the routed page and shape count,
@@ -2555,8 +2606,7 @@ void paintLayeringPage(const LayeringScene& scene, Renderer& renderer,
 void anchorSheetToImeInset(LayeringScene& scene, float insetPx) {
   try {
     if (!std::isfinite(insetPx)) {
-      scene.sheetY = 0.0f;
-      return;
+      insetPx = 0.0f;
     }
     if (insetPx < 0.0f) insetPx = 0.0f;
     // Per-frame bind of the animated layout inset: sheet tracks the value

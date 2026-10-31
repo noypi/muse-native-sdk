@@ -5,11 +5,22 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.graphics.Rect;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.view.MotionEvent;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
+import android.view.View;
+import android.view.ViewTreeObserver;
+import android.view.WindowInsets;
+import android.view.WindowInsetsAnimation;
+import android.view.inputmethod.InputMethodManager;
+import android.widget.EditText;
+import android.widget.FrameLayout;
+import java.util.List;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -28,6 +39,9 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
 
     private long engineHandle = 0;
 
+    /** Last forwarded inset height; throttles the paced present (F1). */
+    private float lastImeBottomPx = -1f;
+
     /**
      * Touch-slop mirror for the page-flip fallback gate below. Sole source
      * of truth is {@code runtime::touch_detail::kTouchSlopPx} (plan A2,
@@ -41,6 +55,28 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     private float downX = 0f;
     private float downY = 0f;
     private int downPointerId = -1;
+
+    /**
+     * Focusable input view backing the TextInput widget (tier-2 native
+     * component, {@code packages/native/textinput.js}). Visible 1x1
+     * {@link EditText} host (D1 amended, T5-retry, T2 focus fix) —
+     * composition, not an editor subclass — so the InputMethodManager gains an
+     * onCheckIsTextEditor/onCreateInputConnection path and a showable
+     * {@code com.muse.host} target. Sized 1x1 and parked at the container
+     * corner, never touch-consuming, so the native tap chain stays first
+     * (A3). Stays {@link View#VISIBLE}: INVISIBLE views cannot take focus,
+     * so requestFocus() would no-op and the IME would never bind.
+     */
+    private View inputViewTextInput;
+
+    /**
+     * Focusable input view backing the MuseField field surface
+     * ({@code packages/intelligence/lib/field.js}). Same host form as the
+     * TextInput view above: a visible 1x1 {@link EditText} by composition,
+     * not an editor subclass. Both views share one 1x1 host parent and are
+     * focused together on the L7 probe tap path.
+     */
+    private View inputViewMuseField;
 
     /** Broadcast action the proof pages through (same entry as the tap path). */
     static final String ACTION_NATIVE_ADVANCE_PAGE = "muse.native.NATIVE_ADVANCE_PAGE";
@@ -81,6 +117,9 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
 
     /** Release the attached surface without destroying the handle. */
     private static native void nativeDetachSurface(long handle);
+
+    /** Feed one animated IME frame into the typed inset bus (deps.insets.imeBottom px). */
+    private static native void nativeSetImeBottom(long handle, float imeBottomPx);
 
     /** Destroy the engine handle. */
     private static native void nativeDestroy(long handle);
@@ -146,6 +185,13 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                 downPointerId = -1;
                 if (claimed < 0 && !dragged) {
                     nativeAdvancePage(engineHandle);
+                } else if (claimed >= 0) {
+                    // L7 probe tap path (T2): the native chain already ran
+                    // first and claimed a node (e.g. the Layering IME probe
+                    // row) — focus the TextInput + MuseField-backed input
+                    // view and hand InputMethodManager a showable target.
+                    // Page-flip fallback above is untouched.
+                    requestImeForProbeTap();
                 }
                 nativeRenderFrame(engineHandle);
             } else if (action == MotionEvent.ACTION_CANCEL) {
@@ -153,7 +199,36 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             }
             return true;
         });
-        setContentView(surfaceView);
+        FrameLayout root = new FrameLayout(this);
+        root.addView(surfaceView);
+        // D1 input-view host (T2, D1 amended / T5-retry / T2 focus fix):
+        // TextInput + MuseField-backed focusable input view. A 1x1 VISIBLE
+        // EditText pair parked at the origin — EditText by composition (never a
+        // SurfaceView/EditText subclass) so the IME gets an
+        // onCheckIsTextEditor/onCreateInputConnection path; VISIBLE (never
+        // INVISIBLE — invisible views cannot take focus) and
+        // never clickable/touch-consuming so every touch still enters the
+        // native tap chain first (A3) and the outside-tap page-flip
+        // fallback above is untouched.
+        inputViewTextInput = new EditText(this);
+        inputViewTextInput.setFocusable(true);
+        inputViewTextInput.setFocusableInTouchMode(true);
+        inputViewTextInput.setClickable(false);
+        inputViewTextInput.setVisibility(View.VISIBLE);
+        inputViewTextInput.setContentDescription("TextInput IME probe input view");
+        inputViewTextInput.setTag("TextInput");
+        inputViewMuseField = new EditText(this);
+        inputViewMuseField.setFocusable(true);
+        inputViewMuseField.setFocusableInTouchMode(true);
+        inputViewMuseField.setClickable(false);
+        inputViewMuseField.setVisibility(View.VISIBLE);
+        inputViewMuseField.setContentDescription("MuseField IME probe input view");
+        inputViewMuseField.setTag("MuseField");
+        FrameLayout.LayoutParams imeParams = new FrameLayout.LayoutParams(1, 1);
+        root.addView(inputViewTextInput, imeParams);
+        root.addView(inputViewMuseField, imeParams);
+        setContentView(root);
+        attachImeInsetListener(root);
         byte[] treeBytes = readTreeAsset();
         if (treeBytes != null) {
             engineHandle = nativeLoadTree(treeBytes);
@@ -193,8 +268,153 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         super.onDestroy();
     }
 
-    /** Reads the bundled tree asset (assets/tree.mui.bin). Returns null on failure. */
-    private byte[] readTreeAsset() {
+    /**
+     * Focus the TextInput + MuseField-backed input view after a claimed tap
+     * (L7 probe row) and ask InputMethodManager to show — the IME summon
+     * leg (AC-RUNTIME-009). Runs strictly after nativeDispatchTouch claimed
+     * the gesture, so native-first routing is preserved.
+     */
+    private void requestImeForProbeTap() {
+        if (inputViewTextInput != null) {
+            inputViewTextInput.requestFocus();
+        }
+        if (inputViewMuseField != null) {
+            inputViewMuseField.requestFocus();
+        }
+        View anchor = inputViewTextInput != null ? inputViewTextInput : inputViewMuseField;
+        if (anchor != null) {
+            InputMethodManager imm =
+                    (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
+            if (imm != null) {
+                imm.showSoftInput(anchor, 0);
+            }
+        }
+    }
+
+    /**
+     * Register the animated IME inset listener (T3, FR-LAYOUT-012 typed
+     * inset bus). Each animation frame reads the animated ime() height
+     * and forwards it through the single feed below into
+     * deps.insets.imeBottom px — no parallel channel.
+     */
+    private void attachImeInsetListener(View root) {
+        if (Build.VERSION.SDK_INT >= 30) {
+            // Decor-level registration (bug-runtime-004 F2 scope): the
+            // content-root FrameLayout never receives animation dispatches
+            // under adjustUnspecified (decor consumes first), so register
+            // the same callback on the decor view where IME transitions
+            // dispatch. Single feed preserved — forwards to onInsetsFrame.
+            getWindow().getDecorView().setWindowInsetsAnimationCallback(
+                    new WindowInsetsAnimation.Callback(
+                            WindowInsetsAnimation.Callback.DISPATCH_MODE_CONTINUE_ON_SUBTREE) {
+                        @Override
+                        public WindowInsets onProgress(
+                                WindowInsets insets,
+                                List<WindowInsetsAnimation> runningAnimations) {
+                            onInsetsFrame(
+                                    (float) insets.getInsets(WindowInsets.Type.ime()).bottom);
+                            return insets;
+                        }
+                    });
+            // F2 sampler fallback (bug-runtime-004 t5r6): on API 30+ the
+            // onProgress path above never delivers nonzero heights on
+            // 127.0.0.1:6562, so register the same visible-display-frame
+            // sampler shape as the pre-30 fallback alongside it and feed
+            // the SAME onInsetsFrame entry (no parallel feed).
+            root.getViewTreeObserver().addOnGlobalLayoutListener(
+                    new ViewTreeObserver.OnGlobalLayoutListener() {
+                        @Override
+                        public void onGlobalLayout() {
+                            Rect visible = new Rect();
+                            root.getWindowVisibleDisplayFrame(visible);
+                            int keyboardHeight = Math.max(
+                                    0, root.getRootView().getHeight() - visible.bottom);
+                            onInsetsFrame((float) keyboardHeight);
+                        }
+                    });
+        } else {
+            root.setOnApplyWindowInsetsListener((v, insets) -> {
+                onInsetsFrame((float) insets.getSystemWindowInsetBottom());
+                return insets;
+            });
+            // Poll-based visible-display-frame sampler (t5r3, API 29): under
+            // ADJUST_PAN getSystemWindowInsetBottom() above reads 0, so sample
+            // the keyboard height per layout pass from the visible display
+            // frame and feed the SAME onInsetsFrame entry (no parallel feed,
+            // no window-behavior change).
+            // Time-based per-frame sampler (F3, t5r5 root cause on API 29):
+            // the app-window resize is a discrete jump — zero onGlobalLayout
+            // passes fire mid-animation — so the layout-pass sampler above
+            // can never observe transition frames. Poll the visible display
+            // frame per frame during the transition window via a
+            // handler-paced Runnable (started on the show/hide layout
+            // trigger, stopped at steady state) and forward through the SAME
+            // single onInsetsFrame entry. The layout-pass sampler stays for
+            // steady states; this complements, never replaces, it.
+            final Handler imeTransitionHandler = new Handler(Looper.getMainLooper());
+            final int[] imeTransitionLastHeight = new int[] { -1 };
+            final int[] imeTransitionStableFrames = new int[] { 0 };
+            final boolean[] imeTransitionPolling = new boolean[] { false };
+            final Runnable[] imeTransitionPoll = new Runnable[1];
+            imeTransitionPoll[0] = new Runnable() {
+                @Override
+                public void run() {
+                    Rect frame = new Rect();
+                    root.getWindowVisibleDisplayFrame(frame);
+                    int keyboardHeight = Math.max(
+                            0, root.getRootView().getHeight() - frame.bottom);
+                    onInsetsFrame((float) keyboardHeight);
+                    if (keyboardHeight != imeTransitionLastHeight[0]) {
+                        imeTransitionLastHeight[0] = keyboardHeight;
+                        imeTransitionStableFrames[0] = 0;
+                        imeTransitionHandler.postDelayed(imeTransitionPoll[0], 16);
+                    } else if (imeTransitionStableFrames[0] < 3) {
+                        imeTransitionStableFrames[0]++;
+                        imeTransitionHandler.postDelayed(imeTransitionPoll[0], 16);
+                    } else {
+                        imeTransitionPolling[0] = false;
+                    }
+                }
+            };
+            root.getViewTreeObserver().addOnGlobalLayoutListener(
+                    new ViewTreeObserver.OnGlobalLayoutListener() {
+                        @Override
+                        public void onGlobalLayout() {
+                            Rect visible = new Rect();
+                            root.getWindowVisibleDisplayFrame(visible);
+                            int keyboardHeight = Math.max(
+                                    0, root.getRootView().getHeight() - visible.bottom);
+                            onInsetsFrame((float) keyboardHeight);
+                            if (!imeTransitionPolling[0]) {
+                                imeTransitionPolling[0] = true;
+                                imeTransitionStableFrames[0] = 0;
+                                imeTransitionHandler.post(imeTransitionPoll[0]);
+                            }
+                        }
+                    });
+        }
+    }
+
+    /**
+     * Single inset feed: carry one animated frame height into the JNI
+     * setter backing deps.insets.imeBottom (same px field the T1 anchor
+     * consumes). Sole entry point — keep exactly one definition.
+     * Paces one layering present per changed frame (F1): forwards the
+     * value then renders, throttled by a last-value guard so an
+     * unchanged frame is a no-op.
+     */
+    void onInsetsFrame(float imeBottomPx) {
+        if (engineHandle != 0) {
+            if (imeBottomPx == lastImeBottomPx) {
+                return;
+            }
+            lastImeBottomPx = imeBottomPx;
+            nativeSetImeBottom(engineHandle, imeBottomPx);
+            nativeRenderFrame(engineHandle);
+        }
+    }
+
+    /** Reads the bundled tree asset (assets/tree.mui.bin). Returns null on failure. */    private byte[] readTreeAsset() {
         try (InputStream in = getAssets().open("tree.mui.bin");
                 ByteArrayOutputStream out = new ByteArrayOutputStream()) {
             byte[] buf = new byte[8192];

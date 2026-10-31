@@ -153,6 +153,12 @@ void paintLayeringPage(const LayeringScene& scene, Renderer& renderer,
 // Never throws.
 void anchorSheetToImeInset(LayeringScene& scene, float insetPx);
 
+// T3 feed entry (BUG-RUNTIME-004 / FR-LAYOUT-012): record one animated IME
+// frame height (px) into the live `deps.insets.imeBottom` field the layering
+// present path reads. Non-finite and negative heights resolve to zero
+// (hidden keyboard). Never throws.
+void SetPresentImeBottom(float imeBottomPx) noexcept;
+
 // ---- Scrim-tap-dismiss (L3: BUG-M3-FIDELITY-008 / FR-M3-010 / AC-M3-022,
 // AC-INPUT-020) ----
 //

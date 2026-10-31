@@ -925,6 +925,33 @@ extern "C" MUSE_JNI_EXPORT jint Java_com_muse_host_MainActivity_nativeDispatchTo
   }
 }
 
+// JNI IME inset feed (BUG-RUNTIME-004 T3 / FR-LAYOUT-012 typed inset bus).
+// Java: com.muse.host.MainActivity.nativeSetImeBottom(long, float), fed per
+// animation frame by onInsetsFrame(imeBottomPx). Forwards the frame height
+// into runtime::SetPresentImeBottom so PresentDeps().insets.imeBottom (the
+// same px field the T1 anchor consumes via the T4 call site) follows the
+// keyboard within one frame. Fail-closed mirror of the sibling entries:
+// null env, pending exception, or an unregistered (zero, forged, stale)
+// handle yields a no-op with no exception crossing into the VM and no
+// dereference. Clamping (non-finite/negative -> 0) lives in
+// SetPresentImeBottom; this entry never throws.
+extern "C" MUSE_JNI_EXPORT void Java_com_muse_host_MainActivity_nativeSetImeBottom(
+    JNIEnv* env, jclass clazz, jlong handle, jfloat imeBottomPx) {
+  (void)clazz;
+  if (env == nullptr || env->ExceptionCheck() == JNI_TRUE) {
+    return;
+  }
+  std::shared_ptr<GalleryHandle> g = ToGallery(handle);
+  if (g == nullptr) return;
+  try {
+    ::runtime::SetPresentImeBottom(static_cast<float>(imeBottomPx));
+  } catch (...) {
+    if (env->ExceptionCheck() == JNI_TRUE) {
+      env->ExceptionClear();
+    }
+  }
+}
+
 extern "C" MUSE_JNI_EXPORT void Java_com_muse_host_MainActivity_nativeDetachSurface(
     JNIEnv* env, jobject thiz, jlong handle) {
   (void)thiz;

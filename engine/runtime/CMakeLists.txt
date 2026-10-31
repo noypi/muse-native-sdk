@@ -443,6 +443,13 @@ target_link_libraries(gallery_layering_test PRIVATE runtime)
 target_compile_options(gallery_layering_test PRIVATE -Wall -Wextra -Wpedantic)
 add_test(NAME gallery_layering_test COMMAND gallery_layering_test)
 
+# BUG-RUNTIME-004 T1: anchorSheetToImeInset hermetic contract (ported from
+# run/bug-m3-fidelity-008). Coder-wired: the tester owns test files only.
+add_executable(layering_anchor_test tests/layering_anchor_test.cpp)
+target_link_libraries(layering_anchor_test PRIVATE runtime)
+target_compile_options(layering_anchor_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME layering_anchor_test COMMAND layering_anchor_test)
+
 # T3 hermetic dual-ABI gate (permanent wiring; no NDK required).
 # Real Android configure (ANDROID_ABI defined via T1 -C lane) skips this;
 # plain host configure defines both <root>-<abi>/libRuntime.so outputs plus
