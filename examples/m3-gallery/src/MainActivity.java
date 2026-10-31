@@ -47,6 +47,9 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
 
     private long engineHandle = 0;
 
+    /** TTFD exactly-once guard: reportFullyDrawn() is signalled at most once. */
+    private boolean fullyDrawnReported = false;
+
     /** Last forwarded inset height; throttles the paced present (F1). */
     private float lastImeBottomPx = -1f;
 
@@ -696,12 +699,29 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         }
     }
 
+    /**
+     * Signals first content present (TTFD) exactly once. Guarded so a
+     * reporting failure never throws and never breaks the frame path.
+     */
+    private void maybeReportFullyDrawn() {
+        if (fullyDrawnReported) {
+            return;
+        }
+        fullyDrawnReported = true;
+        try {
+            reportFullyDrawn();
+        } catch (Throwable ignored) {
+            // Fail-closed: reporting must never break the frame path.
+        }
+    }
+
     @Override
     public void surfaceCreated(SurfaceHolder holder) {
         // Attach the native window, then drive one frame through the bridge.
         if (engineHandle != 0) {
             nativeAttachSurface(engineHandle, holder.getSurface());
             nativeRenderFrame(engineHandle);
+            maybeReportFullyDrawn();
         }
     }
 
@@ -710,6 +730,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         if (engineHandle != 0) {
             nativeAttachSurface(engineHandle, holder.getSurface());
             nativeRenderFrame(engineHandle);
+            maybeReportFullyDrawn();
         }
     }
 
