@@ -42,6 +42,9 @@ android {
 //   ./gradlew :pviews:webviewPersistence — webview persistence (TC-PVIEWS-017)
 //   ./gradlew :pviews:webviewHosting     — webview hosting (TC-PVIEWS-018)
 //   ./gradlew :pviews:mapsHosting        — maps hosting (TC-PVIEWS-019)
+//   ./gradlew :pviews:lifecycleFocusA11y — lifecycle/focus/a11y mirror (FR-PVIEWS-002)
+//   ./gradlew :pviews:canvasRecord       — canvas recording (FR-PVIEWS-007)
+//   ./gradlew :pviews:canvasConformance  — canvas conformance (FR-PVIEWS-014)
 // Each lane compiles its hermetic binary (test + production source,
 // -I engine/platform-views/include) and executes it; the build fails on
 // any nonzero exit.
@@ -113,4 +116,19 @@ tasks.register('webviewHosting', Exec) {
 tasks.register('mapsHosting', Exec) {
     description = 'Run maps hosting checks (TC-PVIEWS-019).'
     commandLine 'sh', '-c', 'g++ -std=c++17 ../engine/platform-views/tests/maps_hosting_test.cpp ../engine/platform-views/src/maps_hosting.cpp -I../engine/platform-views/include -o /tmp/pviews_maps_hosting && /tmp/pviews_maps_hosting'
+}
+
+tasks.register('lifecycleFocusA11y', Exec) {
+    description = 'Run lifecycle/focus/a11y mirror checks (FR-PVIEWS-002).'
+    commandLine 'sh', '-c', 'g++ -std=c++17 ../engine/platform-views/tests/lifecycle_focus_a11y_test.cpp ../engine/platform-views/src/lifecycle_mirror.cpp -I../engine/platform-views/include -o /tmp/pviews_lifecycle_focus_a11y && /tmp/pviews_lifecycle_focus_a11y'
+}
+
+tasks.register('canvasRecord', Exec) {
+    description = 'Run canvas recording checks (FR-PVIEWS-007).'
+    commandLine 'sh', '-c', 'g++ -std=c++17 ../engine/platform-views/tests/canvas_record_test.cpp ../engine/platform-views/src/canvas.cpp ../engine/platform-views/src/canvas_record.cpp -I../engine/platform-views/include -o /tmp/pviews_canvas_record && /tmp/pviews_canvas_record'
+}
+
+tasks.register('canvasConformance', Exec) {
+    description = 'Run canvas conformance checks (FR-PVIEWS-014).'
+    commandLine 'sh', '-c', 'g++ -std=c++17 ../engine/platform-views/tests/canvas_conformance_test.cpp ../engine/platform-views/src/canvas.cpp ../engine/platform-views/src/canvas_record.cpp ../engine/platform-views/src/picture.cpp -I../engine/platform-views/include -o /tmp/pviews_canvas_conformance && /tmp/pviews_canvas_conformance'
 }
