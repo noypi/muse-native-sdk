@@ -503,7 +503,74 @@ const components = { ...tier1, ...tier2, ...tier3 };
 
 const primitives = manifest.components.map((entry) => entry.name);
 
-module.exports = { primitives, components, manifest, driveState, createTextInput, TextInput };
+// FR-M3-002 / AC-M3-023 — selection-control tap (T5).
+// Pure transition over the FR-INPUT-011 tap chain (tap fires once per
+// AC-INPUT-020, write-through repaints within one frame per AC-INPUT-021 —
+// consumed, not reimplemented: this function carries no coordinates and
+// performs no repaint itself). Enabled Checkbox flips `checked` strictly
+// (only `=== true` counts as checked, mirroring selection.js
+// `createCheckbox`); enabled Radio sets `selected: true` idempotently
+// (mirroring `createRadio`); `enabled: false` means disabled and absent
+// `enabled` means enabled. Disabled controls return state unchanged with the
+// same strict-boolean read. The result carries only its own key and `prev`
+// is never mutated. Values agree by construction with what the existing
+// selection binding (`selection.js` handle `tap()` + `binding.set`)
+// delivers for the same input (binding parity, no re-instantiation here).
+function onSelectTap(control, prev) {
+  if (control !== 'Checkbox' && control !== 'Radio') {
+    throw new TypeError(`Unknown control: ${String(control)}`);
+  }
+  const safe = prev === undefined || prev === null ? {} : prev;
+  const enabled = safe.enabled !== false;
+  if (control === 'Checkbox') {
+    const current = safe.checked === true;
+    return { checked: enabled ? !current : current };
+  }
+  const current = safe.selected === true;
+  return { selected: enabled ? true : current };
+}
+
+// FR-M3-002 / AC-M3-024 — slider press-drag scrub (T6).
+// Pure transition over the FR-INPUT-011 gesture chain (AC-INPUT-020
+// drag-never-fires-tap, AC-INPUT-021 one-frame write-through — consumed, not
+// reimplemented: this function carries no coordinate/delta and performs no
+// repaint itself; it resolves synchronously). The gesture carries no
+// coordinate/delta, so movement is observed as claim + clamp + echo: an
+// on-axis non-tap gesture claims the control (`claimsGesture: true`) and
+// echoes `prev.value` clamped to `[min, max]` (in-range echoes exactly, so
+// bound value and visible position never desynchronize; degenerate
+// `[min, max]` pins to `min`); `isTap` never claims and never fires a tap
+// handler, though an out-of-range bound value is still reported clamped so
+// sync holds even when the gesture is not claimed; off-axis past slop yields
+// to scroll (`claimsGesture: false`, value unchanged); within-slop off-axis
+// still claims and on-axis past slop still claims (slop disambiguates only
+// the off-axis yield). `enabled: false` means disabled and absent `enabled`
+// means enabled; disabled echoes `prev.value` and never claims. `prev` is
+// never mutated. Missing `prev`/`gesture` or an unknown `axis` rejects with
+// `TypeError`.
+function onSliderScrub(prev, gesture) {
+  if (prev === undefined || prev === null) {
+    throw new TypeError(`Missing prev: ${String(prev)}`);
+  }
+  if (gesture === undefined || gesture === null) {
+    throw new TypeError(`Missing gesture: ${String(gesture)}`);
+  }
+  if (gesture.axis !== 'control' && gesture.axis !== 'off-axis') {
+    throw new TypeError(`Unknown axis: ${String(gesture && gesture.axis)}`);
+  }
+  if (prev.enabled === false) {
+    return { value: prev.value, claimsGesture: false };
+  }
+  if (gesture.isTap === true) {
+    return { value: Math.min(Math.max(prev.value, prev.min), prev.max), claimsGesture: false };
+  }
+  if (gesture.axis === 'off-axis' && gesture.slopPast === true) {
+    return { value: prev.value, claimsGesture: false };
+  }
+  return { value: Math.min(Math.max(prev.value, prev.min), prev.max), claimsGesture: true };
+}
+
+module.exports = { primitives, components, manifest, driveState, createTextInput, TextInput, onSelectTap, onSliderScrub };
 // FR-MUSE-013 — connector re-export (T4, additive; existing surface untouched).
 // MuseMcpHandle is `{ registry, tools, call, dispose }` from ./muse-mcp.js.
 const { createMuseMcp } = require('./muse-mcp.js');

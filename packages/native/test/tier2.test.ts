@@ -25,8 +25,12 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { createRequire } from 'node:module';
+import { fileURLToPath } from 'node:url';
 
 const require = createRequire(import.meta.url);
 const { components } = require('../index.js');
@@ -532,4 +536,384 @@ test('structural composition rejects a hardcoded literal with no tier-1 member',
     const types = collectTypes(directMembers(literal));
     assert.ok(types.length > 0, 'Button documented slot must nest at least one tier-1 descriptor');
   });
+});
+
+// ---------------------------------------------------------------------------
+// TC-M3-004 / AC-M3-004: typed tier-2 props with build-time rejection of
+// unsupported variants (FR-M3-002).
+//
+// Hermetic: node:test + node:assert/strict only. Reads muse.manifest.json and
+// index.d.ts from disk, drives scripts/check-props.js as a child process
+// against tmp-dir fixtures (ASSUMPTION P3: MANIFEST_PATH / DTS_PATH env
+// overrides). No network, no secrets, no services, no tsc shell-out here —
+// the tsc reject half lives in test-d/negative-variant.ts (@ts-expect-error)
+// executed via `npm run check:types -w @muse/native`.
+//
+// ASSUMPTION A1 (runtime echo vs typed rejection): the JS descriptor
+// factories echo props without validation, so "unsupported variant/prop
+// fails" is asserted at the contract layer — the manifest `values` lists and
+// the index.d.ts literal unions never admit the value, and check-props.js
+// exits 1 naming `component.prop` on any drift.
+// ---------------------------------------------------------------------------
+
+const CHECK_PROPS_SCRIPT = fileURLToPath(new URL('../scripts/check-props.js', import.meta.url));
+const INDEX_DTS_URL = new URL('../index.d.ts', import.meta.url);
+
+function runCheckProps(env = {}) {
+  return spawnSync(process.execPath, [CHECK_PROPS_SCRIPT], {
+    encoding: 'utf8',
+    env: { ...process.env, ...env },
+  });
+}
+
+function fixtureManifestPath(mutatedManifest) {
+  const dir = mkdtempSync(join(tmpdir(), 'muse-tc-m3-004-'));
+  const fixtureManifest = join(dir, 'manifest.json');
+  writeFileSync(fixtureManifest, JSON.stringify(mutatedManifest));
+  return fixtureManifest;
+}
+
+test('TC-M3-004: every manifest variant value constructs and echoes (Button/Card/Chip)', () => {
+  const manifest = loadManifest();
+  const byName = new Map(manifest.components.map((c) => [c.name, c]));
+  for (const name of ['Button', 'Card', 'Chip']) {
+    const values = byName.get(name).props.variant.values;
+    assert.ok(Array.isArray(values) && values.length > 0, `${name}.variant must list values`);
+    for (const variant of values) {
+      const descriptor = components[name]({ variant, label: 'x' });
+      assert.equal(descriptor.type, name);
+      assert.equal(descriptor.props.variant, variant);
+    }
+  }
+});
+
+test('TC-M3-004: accepted shared keys construct (enabled/selected/error/icon)', () => {
+  assert.equal(components.Button({ variant: 'filled', enabled: true }).props.enabled, true);
+  assert.equal(components.Chip({ variant: 'assist', selected: true }).props.selected, true);
+  assert.equal(components.Checkbox({ checked: true, error: 'bad' }).props.error, 'bad');
+  assert.equal(components.Button({ variant: 'filled', icon: 'star' }).props.icon, 'star');
+});
+
+test('TC-M3-004: unsupported variant "giant" is absent from every manifest values list', () => {
+  const manifest = loadManifest();
+  for (const entry of manifest.components) {
+    for (const [prop, schema] of Object.entries(entry.props ?? {})) {
+      if (schema && Array.isArray(schema.values)) {
+        assert.ok(!schema.values.includes('giant'), `${entry.name}.${prop} must not admit "giant"`);
+      }
+    }
+  }
+});
+
+test('TC-M3-004: index.d.ts literal unions never admit "giant"', () => {
+  const dts = readFileSync(INDEX_DTS_URL, 'utf8');
+  assert.ok(!dts.includes("'giant'") && !dts.includes('"giant"'),
+    'no d.ts union may admit a "giant" variant');
+  const buttonProps = dts.slice(dts.indexOf('ButtonProps'));
+  assert.ok(!/variant\?:\s*string\s*[;}]/.test(buttonProps),
+    'ButtonProps.variant must be a literal union, never plain string');
+});
+
+test('TC-M3-004: unsupported prop key is absent from the manifest schema (Button.giantProp)', () => {
+  const manifest = loadManifest();
+  const button = manifest.components.find((c) => c.name === 'Button');
+  assert.ok(button.props.giantProp === undefined, 'Button.giantProp must not exist in the schema');
+});
+
+test('TC-M3-004: check-props.js exits 1 naming Button.variant on variant drift', () => {
+  const manifest = loadManifest();
+  const drifted = {
+    ...manifest,
+    components: manifest.components.map((c) =>
+      c.name === 'Button'
+        ? { ...c, props: { ...c.props, variant: { ...c.props.variant, values: [...c.props.variant.values, 'giant'] } } }
+        : c,
+    ),
+  };
+  const res = runCheckProps({
+    MANIFEST_PATH: fixtureManifestPath(drifted),
+    DTS_PATH: fileURLToPath(INDEX_DTS_URL),
+  });
+  assert.equal(res.error, undefined, `gate failed to spawn: ${res.error}`);
+  assert.equal(res.status, 1, `gate must exit 1 on variant drift; stderr: ${res.stderr}`);
+  assert.ok(`${res.stdout ?? ''}${res.stderr ?? ''}`.includes('Button.variant'),
+    'gate output must name the drifting component.prop');
+});
+
+test('TC-M3-004: check-props.js exits 1 naming Button.giantProp on added-prop drift', () => {
+  const manifest = loadManifest();
+  const drifted = {
+    ...manifest,
+    components: manifest.components.map((c) =>
+      c.name === 'Button'
+        ? { ...c, props: { ...c.props, giantProp: { type: 'string' } } }
+        : c,
+    ),
+  };
+  const res = runCheckProps({
+    MANIFEST_PATH: fixtureManifestPath(drifted),
+    DTS_PATH: fileURLToPath(INDEX_DTS_URL),
+  });
+  assert.equal(res.error, undefined, `gate failed to spawn: ${res.error}`);
+  assert.notEqual(res.status, 0, 'gate must fail when a schema prop drifts from the typed surface');
+  assert.ok(`${res.stdout ?? ''}${res.stderr ?? ''}`.includes('Button.giantProp'),
+    'gate output must name the added component.prop');
+});
+
+test('TC-M3-004: check-props.js exits 0 when manifest and d.ts agree', () => {
+  const res = runCheckProps();
+  assert.equal(res.error, undefined, `gate failed to spawn: ${res.error}`);
+  assert.equal(res.status, 0, `gate must exit 0 on agreement; stderr: ${res.stderr}`);
+});
+
+// ---------------------------------------------------------------------------
+// TC-M3-024 / AC-M3-023 (T5): onSelectTap pure selection transition (FR-M3-002)
+// Hermetic: node:test + node:assert/strict only. `onSelectTap` is loaded
+// lazily inside each test via createRequire so the earlier slices stay green
+// when index.js does not export it yet (each new test then fails in
+// isolation). Tap mechanics themselves are consumed from FR-INPUT-011
+// (AC-INPUT-020 tap-fires-once, AC-INPUT-021 one-frame write-through repaint),
+// not reimplemented here.
+// ---------------------------------------------------------------------------
+
+function loadOnSelectTap() {
+  return require('../index.js').onSelectTap;
+}
+
+function selectTap(control, prev) {
+  const fn = loadOnSelectTap();
+  assert.equal(typeof fn, 'function', 'onSelectTap must be exported from the public entry (index.js)');
+  return fn(control, prev);
+}
+
+test('AC-M3-023 T5: enabled checkbox tap flips unchecked to checked', () => {
+  const next = selectTap('Checkbox', { checked: false });
+  assert.equal(next.checked, true);
+});
+
+test('AC-M3-023 T5: enabled checkbox tap flips checked back to unchecked', () => {
+  const next = selectTap('Checkbox', { checked: true });
+  assert.equal(next.checked, false);
+});
+
+test('AC-M3-023 T5: checkbox defaults to enabled when enabled is absent', () => {
+  const next = selectTap('Checkbox', { checked: false });
+  assert.equal(next.checked, true);
+});
+
+test('AC-M3-023 T5: checkbox result carries no selected key', () => {
+  const next = selectTap('Checkbox', { checked: false });
+  assert.equal(next.selected, undefined);
+});
+
+test('AC-M3-023 T5: enabled radio tap sets unselected to selected', () => {
+  const next = selectTap('Radio', { selected: false });
+  assert.equal(next.selected, true);
+});
+
+test('AC-M3-023 T5: enabled radio tap on already-selected stays selected', () => {
+  const next = selectTap('Radio', { selected: true });
+  assert.equal(next.selected, true);
+});
+
+test('AC-M3-023 T5: radio result carries no checked key', () => {
+  const next = selectTap('Radio', { selected: false });
+  assert.equal(next.checked, undefined);
+});
+
+test('AC-M3-023 T5: disabled checkbox tap returns state unchanged', () => {
+  const next = selectTap('Checkbox', { checked: false, enabled: false });
+  assert.equal(next.checked, false);
+  assert.equal(next.selected, undefined);
+});
+
+test('AC-M3-023 T5: disabled checked checkbox tap returns state unchanged', () => {
+  const next = selectTap('Checkbox', { checked: true, enabled: false });
+  assert.equal(next.checked, true);
+});
+
+test('AC-M3-023 T5: disabled radio tap returns state unchanged', () => {
+  assert.equal(selectTap('Radio', { selected: false, enabled: false }).selected, false);
+  assert.equal(selectTap('Radio', { selected: true, enabled: false }).selected, true);
+});
+
+test('AC-M3-023 T5: onSelectTap never mutates its prev argument', () => {
+  const prev = Object.freeze({ checked: false, enabled: false });
+  const next = selectTap('Checkbox', prev);
+  assert.equal(next.checked, false);
+  assert.deepEqual({ ...prev }, { checked: false, enabled: false });
+});
+
+test('AC-M3-023 T5: onSelectTap agrees with the selection binding (checkbox)', () => {
+  const seen = [];
+  const handle = loadSelection().createCheckbox({ checked: false, binding: { set: (v) => seen.push(v) } });
+  handle.tap();
+  const next = selectTap('Checkbox', { checked: false });
+  assert.deepEqual(seen, [next.checked]);
+});
+
+test('AC-M3-023 T5: onSelectTap agrees with the selection binding (radio)', () => {
+  const seen = [];
+  const handle = loadSelection().createRadio({ selected: false, binding: { set: (v) => seen.push(v) } });
+  handle.tap();
+  const next = selectTap('Radio', { selected: false });
+  assert.deepEqual(seen, [next.selected]);
+});
+
+test('AC-M3-023 T5: chained taps keep one handle with one-frame repaint each step', () => {
+  const { createCheckbox } = loadSelection();
+  const handle = createCheckbox({ checked: false });
+  let prev = { checked: false };
+  for (const step of [true, false]) {
+    const next = selectTap('Checkbox', prev);
+    assert.equal(next.checked, step);
+    const record = handle.tap();
+    assert.equal(record.checked, step);
+    assert.equal(record.frames, 1);
+    assert.equal(record.reinstantiated, 0);
+    prev = { checked: next.checked };
+  }
+  assert.equal(handle.checked, false);
+});
+
+test('AC-M3-023 T5 ASSUMPTION: unknown control rejects with TypeError', () => {
+  assert.throws(() => selectTap('Switch', { checked: false }), TypeError);
+});
+
+// ---------------------------------------------------------------------------
+// TC-M3-025 / AC-M3-024 (T6): onSliderScrub press-drag scrub (FR-M3-002)
+// Hermetic: node:test + node:assert/strict only. Loaded lazily like
+// onSelectTap above. The gesture carries no coordinate/delta, so movement is
+// observed as claim + clamp: an on-axis non-tap gesture claims the control
+// and echoes a clamped value; tap never claims; off-axis-past-slop yields.
+// AC-INPUT-020 drag-never-fires-tap and AC-INPUT-021 one-frame repaint are
+// consumed from FR-INPUT-011, not reimplemented.
+// ---------------------------------------------------------------------------
+
+function loadOnSliderScrub() {
+  return require('../index.js').onSliderScrub;
+}
+
+function scrub(prev, gesture) {
+  const fn = loadOnSliderScrub();
+  assert.equal(typeof fn, 'function', 'onSliderScrub must be exported from the public entry (index.js)');
+  return fn(prev, gesture);
+}
+
+const SCRUB_PRESS = { axis: 'control', slopPast: false, isTap: false };
+
+test('AC-M3-024 T6: on-axis press claims the control with value unchanged', () => {
+  const next = scrub({ value: 0.5, min: 0, max: 1 }, SCRUB_PRESS);
+  assert.equal(next.claimsGesture, true);
+  assert.equal(next.value, 0.5);
+});
+
+test('AC-M3-024 T6: in-range value echoes exactly (no bound/position desync)', () => {
+  for (const value of [0, 0.25, 1]) {
+    const next = scrub({ value, min: 0, max: 1 }, SCRUB_PRESS);
+    assert.equal(next.value, value);
+    assert.equal(next.claimsGesture, true);
+  }
+});
+
+test('AC-M3-024 T6: value above max clamps to max', () => {
+  const next = scrub({ value: 5, min: 0, max: 1 }, SCRUB_PRESS);
+  assert.equal(next.value, 1);
+  assert.equal(next.claimsGesture, true);
+});
+
+test('AC-M3-024 T6: value below min clamps to min', () => {
+  const next = scrub({ value: -2, min: 0, max: 1 }, SCRUB_PRESS);
+  assert.equal(next.value, 0);
+  assert.equal(next.claimsGesture, true);
+});
+
+test('AC-M3-024 T6: degenerate [min,max] range pins value to min', () => {
+  const next = scrub({ value: 0.9, min: 0.5, max: 0.5 }, SCRUB_PRESS);
+  assert.equal(next.value, 0.5);
+});
+
+test('AC-M3-024 T6: tap never claims and changes nothing', () => {
+  const next = scrub(
+    { value: 0.5, min: 0, max: 1 },
+    { axis: 'control', slopPast: false, isTap: true },
+  );
+  assert.equal(next.claimsGesture, false);
+  assert.equal(next.value, 0.5);
+});
+
+test('AC-M3-024 T6: tap above max still clamps without claiming', () => {
+  const next = scrub(
+    { value: 5, min: 0, max: 1 },
+    { axis: 'control', slopPast: false, isTap: true },
+  );
+  assert.equal(next.claimsGesture, false);
+  assert.equal(next.value, 1);
+});
+
+test('AC-M3-024 T6: off-axis drag past slop yields to scroll', () => {
+  const next = scrub(
+    { value: 0.5, min: 0, max: 1 },
+    { axis: 'off-axis', slopPast: true, isTap: false },
+  );
+  assert.equal(next.claimsGesture, false);
+  assert.equal(next.value, 0.5);
+});
+
+test('AC-M3-024 T6 ASSUMPTION: off-axis within slop still claims the control', () => {
+  const next = scrub(
+    { value: 0.5, min: 0, max: 1 },
+    { axis: 'off-axis', slopPast: false, isTap: false },
+  );
+  assert.equal(next.claimsGesture, true);
+  assert.equal(next.value, 0.5);
+});
+
+test('AC-M3-024 T6 ASSUMPTION: on-axis past slop is still a control action', () => {
+  const next = scrub(
+    { value: 0.5, min: 0, max: 1 },
+    { axis: 'control', slopPast: true, isTap: false },
+  );
+  assert.equal(next.claimsGesture, true);
+  assert.equal(next.value, 0.5);
+});
+
+test('AC-M3-024 T6: disabled slider never changes and never claims', () => {
+  const next = scrub({ value: 0.5, min: 0, max: 1, enabled: false }, SCRUB_PRESS);
+  assert.equal(next.value, 0.5);
+  assert.equal(next.claimsGesture, false);
+});
+
+test('AC-M3-024 T6: disabled tap changes nothing and never claims', () => {
+  const next = scrub(
+    { value: 0.5, min: 0, max: 1, enabled: false },
+    { axis: 'control', slopPast: false, isTap: true },
+  );
+  assert.equal(next.value, 0.5);
+  assert.equal(next.claimsGesture, false);
+});
+
+test('AC-M3-024 T6: onSliderScrub never mutates its prev argument', () => {
+  const prev = Object.freeze({ value: 0.5, min: 0, max: 1 });
+  const next = scrub(prev, SCRUB_PRESS);
+  assert.equal(next.value, 0.5);
+  assert.deepEqual({ ...prev }, { value: 0.5, min: 0, max: 1 });
+});
+
+test('AC-M3-024 T6 ASSUMPTION: scrub resolves synchronously (one-frame path, no promise)', () => {
+  const next = scrub({ value: 0.5, min: 0, max: 1 }, SCRUB_PRESS);
+  assert.equal(typeof next.then, 'undefined');
+  assert.equal(typeof next.value, 'number');
+});
+
+test('AC-M3-024 T6 ASSUMPTION: missing prev or gesture rejects with TypeError', () => {
+  assert.throws(() => scrub(undefined, SCRUB_PRESS), TypeError);
+  assert.throws(() => scrub({ value: 0.5, min: 0, max: 1 }, undefined), TypeError);
+});
+
+test('AC-M3-024 T6 ASSUMPTION: unknown axis rejects with TypeError', () => {
+  assert.throws(
+    () => scrub({ value: 0.5, min: 0, max: 1 }, { axis: 'vertical', slopPast: false, isTap: false }),
+    TypeError,
+  );
 });

@@ -381,3 +381,154 @@ test('removing a prop from a schema fails the gate naming component.prop (TC-M3-
   );
 });
 
+// ---------------------------------------------------------------------------
+// TC-M3-008 (gallery half) — every manifest entry maps to stories whose
+// props cover the schema; an entry with no story fails the coverage test
+// (FR-M3-004, AC-M3-008).
+//
+// Hermetic: node:test + node:assert/strict only. Reads muse.manifest.json
+// from disk, imports the pure `buildStories(manifest)` from
+// examples/m3-gallery/src/stories.js via createRequire (CJS module, no
+// side effects). Coverage is computed by the local `findUncovered` helper
+// below — the test's own oracle, not production code. No network, no
+// secrets, no services, no device.
+//
+// ASSUMPTION S1 (story shape): each story carries `{ component, variant,
+// state, theme, render }` where `render()` returns a descriptor whose
+// `type` names the component and whose `props` carry the story's variant
+// prop value. Stories are generated per (component x documented
+// variant/state x light/dark), so entries without a `values` union still
+// yield one story per theme.
+// ---------------------------------------------------------------------------
+
+import { createRequire } from 'node:module';
+
+const galleryRequire = createRequire(import.meta.url);
+const { buildStories } = galleryRequire(
+  '../../../examples/m3-gallery/src/stories.js',
+);
+
+// Manifest names minus story components. Non-empty means the gallery is
+// missing coverage for those entries.
+function findUncovered(manifest, stories) {
+  const covered = new Set((stories ?? []).map((s) => s && s.component));
+  return (manifest.components ?? [])
+    .map((c) => c && c.name)
+    .filter((name) => typeof name === 'string' && !covered.has(name));
+}
+
+function loadRealManifest() {
+  return JSON.parse(readFileSync(MANIFEST_PATH, 'utf8'));
+}
+
+test('TC-M3-008: buildStories is a pure function of the manifest (no hand-listed names)', () => {
+  const manifest = loadRealManifest();
+  const first = buildStories(manifest);
+  const second = buildStories(manifest);
+  assert.deepEqual(
+    second.map((s) => [s.component, s.variant, s.state, s.theme]),
+    first.map((s) => [s.component, s.variant, s.state, s.theme]),
+    'same manifest must yield the same stories on every call',
+  );
+  const snapshot = JSON.stringify(manifest);
+  buildStories(manifest);
+  assert.equal(JSON.stringify(manifest), snapshot, 'buildStories must never mutate its input');
+  assert.deepEqual(buildStories(null), []);
+  assert.deepEqual(buildStories({}), []);
+});
+
+test('TC-M3-008: buildStories is manifest-driven (add/remove entry changes stories)', () => {
+  const manifest = loadRealManifest();
+  const base = new Set(buildStories(manifest).map((s) => s.component));
+  const added = {
+    ...manifest,
+    components: [
+      ...manifest.components,
+      { name: 'GhostWidget', tier: 2, native: 'MuseGhost', props: { label: { type: 'string' } } },
+    ],
+  };
+  const withGhost = buildStories(added).map((s) => s.component);
+  assert.ok(withGhost.includes('GhostWidget'), 'a manifest addition must appear with no gallery edit');
+  assert.ok(!base.has('GhostWidget'), 'control: the ghost is not in the base stories');
+  const dropped = {
+    ...manifest,
+    components: manifest.components.filter((c) => c.name !== manifest.components[0].name),
+  };
+  const withoutFirst = new Set(buildStories(dropped).map((s) => s.component));
+  assert.ok(!withoutFirst.has(manifest.components[0].name), 'removing an entry must drop its stories');
+});
+
+test('TC-M3-008: every manifest entry maps to at least one story (no missing coverage)', () => {
+  const manifest = loadRealManifest();
+  const stories = buildStories(manifest);
+  assert.ok(stories.length > 0, 'the gallery must yield stories for the real manifest');
+  assert.deepEqual(findUncovered(manifest, stories), [],
+    'every manifest entry must map to at least one story');
+});
+
+test('TC-M3-008: story props cover the entry schema (entry-to-story prop mapping)', () => {
+  const manifest = loadRealManifest();
+  const stories = buildStories(manifest);
+  const byComponent = new Map();
+  for (const story of stories) {
+    if (!byComponent.has(story.component)) byComponent.set(story.component, []);
+    byComponent.get(story.component).push(story);
+  }
+  for (const entry of manifest.components) {
+    const entryStories = byComponent.get(entry.name) ?? [];
+    assert.ok(entryStories.length > 0, `${entry.name} must have stories`);
+    const valuesProps = Object.entries(entry.props ?? {}).filter(
+      ([, schema]) => schema && Array.isArray(schema.values),
+    );
+    for (const [prop, schema] of valuesProps) {
+      for (const value of schema.values) {
+        assert.ok(
+          entryStories.some((s) => s.variant === String(value)),
+          `${entry.name}: schema value ${prop}="${value}" must appear in a story variant`,
+        );
+      }
+    }
+    const rendered = entryStories[0].render();
+    assert.equal(rendered.type, entry.name, 'rendered descriptor type must name the entry');
+    if (valuesProps.length > 0) {
+      const [prop] = valuesProps[0];
+      assert.ok(
+        entryStories.some((s) => s.render().props[prop] === s.variant),
+        `${entry.name}: rendered props must carry the schema variant prop "${prop}"`,
+      );
+    }
+    for (const story of entryStories) {
+      assert.ok(
+        story.theme === 'light' || story.theme === 'dark',
+        `${entry.name} stories must expand across light and dark themes`,
+      );
+    }
+  }
+});
+
+test('TC-M3-008: an entry with no story fails the coverage test', () => {
+  const manifest = loadRealManifest();
+  const victim = manifest.components[0].name;
+  const storiesWithoutVictim = buildStories({
+    ...manifest,
+    components: manifest.components.filter((c) => c.name !== victim),
+  });
+  assert.deepEqual(
+    findUncovered(manifest, storiesWithoutVictim),
+    [victim],
+    'an entry with no story must be reported as uncovered',
+  );
+  const orphanManifest = {
+    ...manifest,
+    components: [
+      ...manifest.components,
+      { name: 'GhostWidget', tier: 2, native: 'MuseGhost', props: {} },
+    ],
+  };
+  assert.deepEqual(
+    findUncovered(orphanManifest, buildStories(manifest)),
+    ['GhostWidget'],
+    'an orphan entry must fail coverage until it gains a story',
+  );
+});
+
