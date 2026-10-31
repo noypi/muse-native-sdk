@@ -224,6 +224,92 @@ static void check_cancelled_skips_upload() {
   pool.shutdown();  // clean join proves no leak/hang
 }
 
+// MAJOR-1 race regression (review 2026-10-31): N concurrent
+// queued-then-cancelled decodes must return every VRAM reservation through
+// the serialized budget seam — budget.used() returns to the pre-dispatch
+// baseline instead of tearing under concurrent release/acquire traffic.
+static void check_concurrent_cancelled_returns_budget() {
+  core::thread::WorkerPool pool(2);
+  std::promise<void> gate = OccupyWorkers(pool);
+  core::budget::Manager budget(
+      core::budget::Manager::Config{8ULL << 30, 1ULL << 20});
+  const std::size_t baseline = budget.used();
+  constexpr int kN = 8;
+  std::vector<media::DecodedImage> outs(kN);
+  std::vector<media::DecodeRequest> reqs;
+  for (int i = 0; i < kN; ++i) reqs.push_back(MakeReq(&budget, 64));
+
+  int accepted = 0;
+  for (int i = 0; i < kN; ++i) {
+    media::MediaDecodeOutcome o = media::dispatchDecode(
+        pool, &outs[i], kFakeJpeg, kFakeJpegLen, reqs[i]);
+    if (o.accepted) ++accepted;
+  }
+  CHECK("all N gated decodes accepted", accepted == kN);
+  // Token copies share state (core::thread::task.h), so cancelling the
+  // caller's copy is observable through the worker's copy while queued.
+  for (int i = 0; i < kN; ++i) reqs[i].tok.cancel();
+  gate.set_value();
+  CHECK("concurrent cancelled decodes return budget to baseline",
+        wait_for([&budget, baseline] { return budget.used() == baseline; }));
+  bool none_uploaded = true;
+  for (const auto& o : outs) none_uploaded = none_uploaded && !o.uploaded;
+  CHECK("no concurrently cancelled decode uploaded", none_uploaded);
+  pool.shutdown();
+}
+
+// MAJOR-2 leak regression (review 2026-10-31): accepted decodes release the
+// in-flight budget reservation after upload (residency transfers to the
+// texture pool per the ownership policy in decode_dispatch.cc) —
+// budget.used() returns to baseline instead of growing by K*vramBytes.
+static void check_accepted_decodes_release_budget() {
+  core::thread::WorkerPool pool(2);
+  core::budget::Manager budget(
+      core::budget::Manager::Config{8ULL << 30, 1ULL << 20});
+  const std::size_t baseline = budget.used();
+  constexpr int kK = 4;
+  constexpr std::size_t kVram = 64;
+  std::vector<media::DecodedImage> outs(kK);
+  std::vector<media::DecodeRequest> reqs;
+  for (int i = 0; i < kK; ++i) reqs.push_back(MakeReq(&budget, kVram));
+
+  int accepted = 0;
+  for (int i = 0; i < kK; ++i) {
+    media::MediaDecodeOutcome o = media::dispatchDecode(
+        pool, &outs[i], kFakeJpeg, kFakeJpegLen, reqs[i]);
+    if (o.accepted) ++accepted;
+  }
+  CHECK("all K decodes accepted (release check)", accepted == kK);
+  CHECK("every accepted decode completes (release check)",
+        wait_for([&outs] {
+          for (const auto& o : outs)
+            if (!o.uploaded) return false;
+          return true;
+        }));
+  // The release precedes the uploaded flip on the worker, so once every
+  // decode has completed, used() must already be back at baseline.
+  CHECK("budget does not grow monotonically after uploads",
+        wait_for([&budget, baseline] { return budget.used() == baseline; }));
+  pool.shutdown();
+}
+
+// MINOR null-budget branch (review 2026-10-31): a null budget is a
+// synchronous kInvalidArg reject that never touches *out and never enqueues.
+static void check_null_budget_rejected() {
+  core::thread::WorkerPool pool(1);
+  media::DecodeRequest req;
+  req.budget = nullptr;
+  req.vramBytes = 64;
+  media::DecodedImage out;
+  media::MediaDecodeOutcome o =
+      media::dispatchDecode(pool, &out, kFakeJpeg, kFakeJpegLen, req);
+  CHECK("null budget rejected", o.accepted == false);
+  CHECK("null budget status kInvalidArg",
+        o.status == media::Status::kInvalidArg);
+  CHECK("null budget leaves out untouched", out.uploaded == false);
+  pool.shutdown();
+}
+
 // Input validation (security): malformed bytes never throw and never crash;
 // the outcome is a well-formed shape (accepted or a rejection).
 static void check_malformed_bytes_never_throw() {
@@ -255,6 +341,9 @@ int main() {
   check_dispatch_returns_while_gated();
   check_accepted_decodes_complete();
   check_cancelled_skips_upload();
+  check_concurrent_cancelled_returns_budget();
+  check_accepted_decodes_release_budget();
+  check_null_budget_rejected();
   check_malformed_bytes_never_throw();
   if (s_failures == 0) {
     std::printf("ALL GREEN worker_pool_test\n");

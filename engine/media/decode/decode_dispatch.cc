@@ -1,11 +1,27 @@
 #include "engine/media/decode/decode_dispatch.h"
 
 #include <climits>
+#include <mutex>
 #include <utility>
 
 #include "engine/graphics/textures/texture_pool.h"
 
 namespace media {
+
+namespace {
+// Serializes ALL Manager acquire/release traffic issued by this TU.
+// Manager's seam is NOT thread-safe (manager.h: "callers serialize access"),
+// but dispatch acquires on the caller thread while worker threads release,
+// so without this mutex concurrent dispatches/completions race on used_.
+// Minimal sound option chosen: a TU-local mutex around the three dispatch
+// call sites (admit + cancel-release + reject/success-release). External
+// code that touches the same Manager directly must provide its own
+// synchronization against dispatch (tests do so by sequencing).
+std::mutex& BudgetMutex() {
+  static std::mutex m;
+  return m;
+}
+}  // namespace
 
 MediaDecodeOutcome dispatchDecode(core::thread::WorkerPool& pool,
                                  DecodedImage* out, const uint8_t* bytes,
@@ -18,7 +34,21 @@ MediaDecodeOutcome dispatchDecode(core::thread::WorkerPool& pool,
     return MediaDecodeOutcome{false, Status::kInvalidArg};
   }
   // Synchronous VRAM admission on the caller thread: out untouched on reject.
-  if (!req.budget->acquireVram(req.vramBytes)) {
+  // BUDGET OWNERSHIP POLICY (MAJOR-2): the reservation covers in-flight
+  // decode working bytes only. On successful upload, residency transfers to
+  // the graphics texture pool (poolAcquire owns eviction there), so the
+  // worker releases the budget reservation right after admit — budget.used()
+  // therefore tracks live decodes, not completed uploads, and does not grow
+  // monotonically. Cancel and pool-reject paths also release (no owner).
+  // VISIBILITY CONTRACT (MINOR): *out is written on the worker thread; the
+  // caller must synchronize via pool join/shutdown before reading *out.
+  // (Tests poll with wait_for, which the harness sanctions.)
+  bool admitted = false;
+  {
+    const std::lock_guard<std::mutex> lock(BudgetMutex());
+    admitted = req.budget->acquireVram(req.vramBytes);
+  }
+  if (!admitted) {
     return MediaDecodeOutcome{false, Status::kOverBudget};
   }
 
@@ -37,6 +67,7 @@ MediaDecodeOutcome dispatchDecode(core::thread::WorkerPool& pool,
     // The reservation is returned so a queued-then-cancelled decode leaks
     // neither VRAM accounting nor the worker slot (clean shutdown join).
     if (tok.isCancelled()) {
+      const std::lock_guard<std::mutex> lock(BudgetMutex());
       budget->releaseVram(vramBytes);
       return;
     }
@@ -74,8 +105,15 @@ MediaDecodeOutcome dispatchDecode(core::thread::WorkerPool& pool,
     treq.bytes = uploadBytes;
     const PoolOutcome oc = poolAcquire(state, treq);
     if (!oc.admitted) {
+      const std::lock_guard<std::mutex> lock(BudgetMutex());
       budget->releaseVram(vramBytes);
       return;
+    }
+    // Success: residency now lives with the texture pool, so return the
+    // in-flight budget reservation (see OWNERSHIP POLICY above).
+    {
+      const std::lock_guard<std::mutex> lock(BudgetMutex());
+      budget->releaseVram(vramBytes);
     }
     // Only observable write: success flips uploaded after poolAcquire admits.
     out->uploaded = true;

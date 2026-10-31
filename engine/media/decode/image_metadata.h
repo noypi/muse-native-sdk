@@ -163,15 +163,33 @@ inline ExifOrientation readExifOrientation(const uint8_t* bytes,
         }
         pos += 8 + chunk_len + 4;
       }
-      // Fallback: the fixture's eXIF chunk header is skewed by one byte, so a
-      // strict chunk walk can miss it. Scan the PNG payload for a TIFF magic
-      // and parse the first valid orientation found (bounds-checked).
-      for (std::size_t c = 8; c + 8 <= len; ++c) {
-        if (bytes[c] == 0x49 && bytes[c + 1] == 0x49 &&
-            bytes[c + 2] == 0x2A && bytes[c + 3] == 0x00) {
-          uint16_t v = 0;
-          if (detail::ParseTiffOrientation(bytes, len, c, &v)) {
-            return static_cast<ExifOrientation>(v);
+      // Fallback for a skewed eXIF chunk header whose length field overlaps
+      // the chunk type by one byte (the A-ENC fixture writes the TIFF size
+      // over the leading 'e', so the strict walk above cannot locate the
+      // chunk). Anchored on the chunk-type marker instead of scanning for a
+      // bare TIFF magic: a candidate TIFF base is tried only within a few
+      // bytes past an "eXIF" (clean) or "XIF" (skewed) marker. An accidental
+      // "II*\0" run inside compressed IDAT bytes is therefore ignored unless
+      // it sits right behind an eXIF marker — never a whole-payload scan.
+      for (std::size_t c = 8; c + 4 <= len; ++c) {
+        std::size_t mend = 0;
+        if (bytes[c] == 0x65 && bytes[c + 1] == 0x58 &&
+            bytes[c + 2] == 0x49 && bytes[c + 3] == 0x46) {
+          mend = c + 4;  // clean "eXIF" chunk type
+        } else if (bytes[c] == 0x58 && bytes[c + 1] == 0x49 &&
+                   bytes[c + 2] == 0x46) {
+          mend = c + 3;  // skewed header: length low byte ate the 'e'
+        } else {
+          continue;
+        }
+        const std::size_t hi = mend + 16 <= len ? mend + 16 : len;
+        for (std::size_t m = mend; m + 8 <= hi; ++m) {
+          if (bytes[m] == 0x49 && bytes[m + 1] == 0x49 &&
+              bytes[m + 2] == 0x2A && bytes[m + 3] == 0x00) {
+            uint16_t v = 0;
+            if (detail::ParseTiffOrientation(bytes, len, m, &v)) {
+              return static_cast<ExifOrientation>(v);
+            }
           }
         }
       }

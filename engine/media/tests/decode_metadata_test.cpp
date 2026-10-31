@@ -158,6 +158,44 @@ static void check_exif_png_exif_chunk() {
   CHECK("png eXIF orientation 6 detected", static_cast<uint16_t>(o) == 6);
 }
 
+// MINOR PNG fallback regression (review 2026-10-31): an IDAT payload that
+// happens to contain a TIFF magic ("II*\0") + plausible IFD0 with tag
+// 0x0112, but with NO eXIF chunk anywhere, must yield kNormal — the fallback
+// is anchored on eXIF chunk-type markers and never scans the whole payload.
+static void check_exif_png_idat_magic_ignored() {
+  const std::vector<uint8_t> tiff = MakeTiffOrientation(6);
+  std::vector<uint8_t> idat = {0x00, 0x01, 0x02, 0x03};
+  idat.insert(idat.end(), tiff.begin(), tiff.end());
+  idat.insert(idat.end(), {0x04, 0x05});
+  // PNG: signature + IHDR + IDAT (holding the TIFF look-alike) + IEND.
+  // No eXIF chunk present.
+  std::vector<uint8_t> b = {0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A,
+                            0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,
+                            0x00, 0x00, 0x00, 0x03, 0x00, 0x00, 0x00, 0x02,
+                            0x08, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                            0x00, 0x00, 0x00, 0x00, 0x49, 0x44, 0x41, 0x54};
+  const uint32_t n = static_cast<uint32_t>(idat.size());
+  b[33] = static_cast<uint8_t>((n >> 24) & 0xFF);
+  b[34] = static_cast<uint8_t>((n >> 16) & 0xFF);
+  b[35] = static_cast<uint8_t>((n >> 8) & 0xFF);
+  b[36] = static_cast<uint8_t>(n & 0xFF);
+  b.insert(b.end(), idat.begin(), idat.end());
+  b.insert(b.end(), {0x00, 0x00, 0x00, 0x00});
+  b.insert(b.end(),
+           {0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4E, 0x44,
+            0x00, 0x00, 0x00, 0x00});
+  bool threw = false;
+  media::ExifOrientation o = media::ExifOrientation::kNormal;
+  try {
+    o = media::readExifOrientation(b.data(), b.size());
+  } catch (...) {
+    threw = true;
+  }
+  CHECK("png IDAT magic without eXIF never throws", !threw);
+  CHECK("png IDAT magic without eXIF yields kNormal",
+        o == media::ExifOrientation::kNormal);
+}
+
 static void check_exif_missing_and_corrupt_identity() {
   static const uint8_t kNoExif[] = {0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10,
                                     0x4A, 0x46, 0x49, 0x46, 0x00, 0x01};
@@ -387,6 +425,7 @@ int main() {
   check_exif_all_orientations_tiff();
   check_exif_all_orientations_jpeg_app1();
   check_exif_png_exif_chunk();
+  check_exif_png_idat_magic_ignored();
   check_exif_missing_and_corrupt_identity();
   check_orientation_identity_normal();
   check_orientation_remaps();
