@@ -14,13 +14,16 @@
 #include "egl_blit.cpp"
 
 #include <atomic>
+#include <condition_variable>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
 #include <ctime>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
+#include <thread>
 #include <unordered_map>
 #include <vector>
 
@@ -310,6 +313,47 @@ struct GalleryHandle {
   GestureArena tapArena;
 #ifdef __ANDROID__
   ANativeWindow* window = nullptr;
+  // FR-STARTUP-003 T1 (RULE-STARTUP-002): single-owner render-thread frame
+  // resources. Owned solely by the render thread, touched only with g->mu
+  // held. `staged` is resized only when stride*h outgrows capacity;
+  // `renderer` is constructed once from DeviceCaps{1,1}. Never touched from
+  // any other thread (the T2 enqueue-and-return lane never renders inline).
+  std::vector<std::uint32_t> staged;
+  std::optional<::runtime::Renderer> renderer;
+  // FR-STARTUP-003 T2 (AC-STARTUP-005): one render thread + single-pending
+  // frame queue (coalesce, not backlog). The render_thread owns every
+  // ANativeWindow lock/raster (RenderLocked runs only there); JNI entries on
+  // the UI thread only EnqueueFrame under the short qmu critical section and
+  // return immediately. `pendingFrame` coalesces rapid calls to at most one
+  // extra present (no unbounded queue growth). Guarded by qmu, never by
+  // g->mu, so the enqueue never waits on a frame in flight.
+  std::thread render_thread;
+  std::mutex qmu;
+  std::condition_variable qcv;
+  bool pendingFrame = false;
+  bool renderShutdown = false;
+  bool renderStarted = false;
+  ~GalleryHandle() {
+    // Teardown drain: cancel the pending frame and stop the render thread
+    // before member teardown, so no draw runs on a dead window (RULE-004).
+    // Never throws (destructor path, JNI never observes it).
+    try {
+      {
+        std::lock_guard<std::mutex> ql(qmu);
+        renderShutdown = true;
+        pendingFrame = false;
+      }
+      qcv.notify_all();
+      if (render_thread.joinable()) {
+        if (render_thread.get_id() != std::this_thread::get_id()) {
+          render_thread.join();
+        } else {
+          render_thread.detach();
+        }
+      }
+    } catch (...) {
+    }
+  }
 #endif
   std::mutex mu;
 };
@@ -674,15 +718,56 @@ class WindowSwapchain : public ::runtime::Swapchain {
   float sy_;
 };
 
+// FR-STARTUP-003 T1 (RULE-STARTUP-002): render-thread-only frame resource
+// gate. Callers must hold g->mu on the render thread. Ensures the reused
+// `g->renderer` (constructed once from DeviceCaps{1,1}) exists and the reused
+// `g->staged` buffer covers stride*h, resizing only when the need outgrows
+// capacity. Returns false = geometry invalid or allocation failed: the frame
+// is skipped and the last good frame is kept. Never throws.
+bool EnsureFrameResourcesLocked(GalleryHandle* g, int stride, int h) noexcept {
+  try {
+    if (g == nullptr || stride <= 0 || h <= 0) {
+      return false;
+    }
+    if (!g->renderer.has_value()) {
+      ::runtime::DeviceCaps baselineCaps;
+      baselineCaps.apiMajor = 1;
+      baselineCaps.apiMinor = 1;
+      g->renderer.emplace(baselineCaps);
+    }
+    const std::size_t need = static_cast<std::size_t>(stride) *
+                             static_cast<std::size_t>(h);
+    if (need == 0) {
+      return false;
+    }
+    if (g->staged.size() < need) {
+      g->staged.resize(need);
+    }
+    return true;
+  } catch (...) {
+    return false;
+  }
+}
+
 // Renders the current page into the attached window. Callers must hold
 // g->mu: attach state, page, and rows are all mutated under that lock.
+// FR-STARTUP-003 T3 (AC-STARTUP-006, RULE-STARTUP-001/002) drop-beats-tear:
+// every drop path leaves the locked bits untouched and keeps the previous
+// posted frame standing — null/detached window returns silent (no draw, no
+// crash); lock-fail / null-bits logs one
+// "nativeRenderFrame: window lock failed; frame skipped" line and returns
+// without unlockAndPost of partial bits; presented==false skips the
+// staged->locked copy (bits untouched) and unlockAndPost reposts the previous
+// frame; markers still emit from the live row model on every locked present.
 void RenderLocked(GalleryHandle* g) {
   ANativeWindow* win = g->window;
   if (win == nullptr) {
     return;  // No surface yet (or already detached): fail closed, no log
              // spam — surface callbacks re-render once attached.
   }
-  ANativeWindow_Buffer buf;
+  // Value-init so the lock-fail path sees null bits even if the platform
+  // leaves buf untouched on failure (never read indeterminate bits).
+  ANativeWindow_Buffer buf{};
   if (ANativeWindow_lock(win, &buf, nullptr) != 0 || buf.bits == nullptr) {
     MuseLogInfo("nativeRenderFrame: window lock failed; frame skipped");
     return;
@@ -699,41 +784,50 @@ void RenderLocked(GalleryHandle* g) {
   // text output, not the CPU oracle. Present the device gallery page
   // through Renderer draw into the window-attached Swapchain; the CPU
   // RasterGalleryPage oracle is no longer the presented-window sink.
-  // Baseline caps match the Vulkan 1.1 probe every hermetic consumer uses;
-  // real device caps arrive via the Vulkan probe lane, which this CPU
-  // window mirror predates.
-  ::runtime::DeviceCaps baselineCaps;
-  baselineCaps.apiMajor = 1;
-  baselineCaps.apiMinor = 1;
-  ::runtime::Renderer renderer(baselineCaps);
+  // FR-STARTUP-003 T1: reuse the single-owner render-thread resources —
+  // `g->renderer` constructed once from the DeviceCaps{1,1} baseline (the
+  // same Vulkan 1.1 probe baseline every hermetic consumer uses; real
+  // device caps arrive via the Vulkan probe lane, which this CPU window
+  // mirror predates) and `g->staged` resized only on geometry change.
+  // Geometry invalid -> skip the frame, keep the last good frame: the
+  // locked bits stay untouched and unlockAndPost reposts the previous
+  // frame instead of a torn copy.
+  if (w <= 0 || !EnsureFrameResourcesLocked(g, stride, h)) {
+    ANativeWindow_unlockAndPost(win);
+    // T3: geometry drop still emits live markers so the proof pair stays
+    // visible on every locked present; bits were never copied (last good
+    // frame reposted above).
+    EmitGalleryMarkersLocked(g, pages, w, h);
+    return;
+  }
   // T11 fix 2 (clear-then-post ordering): present into a staged buffer
   // first and copy into the locked window only on success, so a failed
   // present never posts the pre-cleared white buffer — the locked bits
   // stay untouched (previous frame reposted) instead.
-  std::vector<std::uint32_t> staged(
-      static_cast<std::size_t>(stride) * static_cast<std::size_t>(h), 0u);
-  WindowSwapchain window(staged.data(), stride, w, h);
+  WindowSwapchain window(g->staged.data(), stride, w, h);
   // T3a: page wash follows the same-activity theme override (light surface
   // vs dark surface) so no black gutters leak through either mode.
   window.clear(ThemeInk(WindowRGBA(0xFE, 0xF7, 0xFF, 0xFF)));
   std::string error = g->parseError;
   const bool presented = ::runtime::PresentDeviceGalleryPage(
-      g->rows, g->page, renderer, window, h, &error);
+      g->rows, g->page, *g->renderer, window, h, &error);
   // FR-GRAPHICS-012 T3: EGL blit-present attempt with automatic in-process
   // CPU fallback. Observational until T4 proves EGL pixels: the proven CPU
   // copy below always posts, so a failed (or dormant — EGL never initialized
   // yet) EGL lane can never blank the device frame. Every EGL failure is
   // logged inside as `GFX-BLIT-FALLBACK: <trigger>`; lock/unlockAndPost below
   // are reused unchanged.
-  if (presented && w > 0 && h > 0 && !staged.empty()) {
+  if (presented && w > 0 && h > 0 && !g->staged.empty()) {
     std::string eglFallback;
-    PresentFrameWithFallback(staged.data(), w, h, &eglFallback);
+    PresentFrameWithFallback(g->staged.data(), w, h, &eglFallback);
   }
+  // T3: staged->locked copy gated on presented — when false the locked bits
+  // stay untouched and the unlockAndPost below reposts the previous frame.
   if (presented) {
     std::uint32_t* bits = static_cast<std::uint32_t*>(buf.bits);
     for (int y = 0; y < h; ++y) {
       for (int x = 0; x < w; ++x) {
-        bits[y * stride + x] = staged[static_cast<std::size_t>(y) *
+        bits[y * stride + x] = g->staged[static_cast<std::size_t>(y) *
                                           static_cast<std::size_t>(stride) +
                                       static_cast<std::size_t>(x)];
       }
@@ -752,6 +846,116 @@ void RenderLocked(GalleryHandle* g) {
                   g->page + 1, pages, static_cast<int>(g->rows.size()),
                   drawn, w, h, error.c_str());
     MuseLogInfo(msg);
+  }
+}
+
+// FR-STARTUP-003 T2 (AC-STARTUP-005, RULE-STARTUP-002): single-owner render
+// thread + single-pending-frame queue. All ANativeWindow lock/raster runs on
+// the one render_thread via RenderLocked; UI-thread JNI entries only enqueue
+// (EnqueueFrame) under the short qmu critical section and return immediately,
+// never waiting on ANativeWindow_lock/raster. Rapid calls coalesce: at most
+// one pendingFrame is ever queued (no backlog, no unbounded growth). The
+// queued work holds a counted ToGallery ref (shared_ptr captured at enqueue
+// time via weak_ptr promotion per wakeup), and teardown (detach/destroy)
+// drains/cancels the pending frame before releasing the window, so the thread
+// never draws unowned (RULE-RUNTIME-004). Exact drain-vs-cancel primitive:
+// flag + queue clear under mu/qmu. Never throws across JNI.
+void RenderThreadMain(std::weak_ptr<GalleryHandle> weak) {
+  try {
+    while (true) {
+      std::shared_ptr<GalleryHandle> g = weak.lock();
+      if (g == nullptr) return;
+      // Wait for work or shutdown under the queue lock only (never holds
+      // g->mu here, so the UI-thread enqueue critical section stays short).
+      std::unique_lock<std::mutex> ql(g->qmu);
+      g->qcv.wait(ql, [&] { return g->pendingFrame || g->renderShutdown; });
+      if (g->renderShutdown) {
+        g->pendingFrame = false;
+        return;
+      }
+      // Consume the single pending slot (coalesce point: N rapid enqueues
+      // collapse to one extra present).
+      g->pendingFrame = false;
+      ql.unlock();
+      // Re-promote under the render thread: teardown (ClaimForDestroy) may
+      // have unregistered the handle; a null promotion means destroyed.
+      std::shared_ptr<GalleryHandle> live = weak.lock();
+      if (live == nullptr) return;
+      {
+        std::lock_guard<std::mutex> lock(live->mu);
+        // Shutdown/detach may have landed between wakeup and here: re-check
+        // under mu and skip the draw (drain, keep last good frame).
+        bool cancelled = false;
+        {
+          std::lock_guard<std::mutex> ql2(live->qmu);
+          cancelled = live->renderShutdown;
+        }
+        if (cancelled) return;
+        RenderLocked(live.get());
+      }
+    }
+  } catch (...) {
+    // Render thread never propagates: frame skipped, thread exits quietly.
+  }
+}
+
+// Starts the single render thread once per handle. Caller holds no locks;
+// takes the counted ref so the thread's weak owner stays valid at spawn.
+void EnsureRenderThread(const std::shared_ptr<GalleryHandle>& g) {
+  if (g == nullptr) return;
+  std::lock_guard<std::mutex> ql(g->qmu);
+  if (g->renderStarted) return;
+  g->renderStarted = true;
+  g->renderShutdown = false;
+  std::weak_ptr<GalleryHandle> weak = g;
+  try {
+    g->render_thread = std::thread([weak] { RenderThreadMain(weak); });
+  } catch (...) {
+    g->renderStarted = false;
+  }
+}
+
+// EnqueueFrame: the only UI-thread frame path. Sets at most one pendingFrame
+// (coalesce) and wakes the render_thread; returns without any
+// ANativeWindow_lock/raster. Never blocks on a frame in flight.
+void EnqueueFrame(const std::shared_ptr<GalleryHandle>& g) {
+  if (g == nullptr) return;
+  EnsureRenderThread(g);
+  {
+    std::lock_guard<std::mutex> ql(g->qmu);
+    if (g->renderShutdown) return;
+    g->pendingFrame = true;  // coalesce: overwrite, never append.
+  }
+  g->qcv.notify_one();
+}
+
+// Teardown drain (RULE-RUNTIME-004): cancel the pending frame so a racing
+// queued frame never draws after detach/destroy. Window release still happens
+// under g->mu by the caller.
+void CancelPendingFrame(const std::shared_ptr<GalleryHandle>& g) {
+  if (g == nullptr) return;
+  {
+    std::lock_guard<std::mutex> ql(g->qmu);
+    g->pendingFrame = false;
+  }
+}
+
+// Exclusive teardown stop: drain the queue, signal shutdown, join the single
+// render thread. Caller must NOT hold g->mu (the render thread locks g->mu
+// per frame); caller holds the ClaimForDestroy ref so the join is safe.
+void ShutdownRenderThread(const std::shared_ptr<GalleryHandle>& g) {
+  if (g == nullptr) return;
+  {
+    std::lock_guard<std::mutex> ql(g->qmu);
+    g->renderShutdown = true;
+    g->pendingFrame = false;
+  }
+  g->qcv.notify_all();
+  try {
+    if (g->render_thread.joinable()) {
+      g->render_thread.join();
+    }
+  } catch (...) {
   }
 }
 #endif
@@ -890,8 +1094,10 @@ extern "C" MUSE_JNI_EXPORT void Java_com_muse_host_MainActivity_nativeRenderFram
   if (g == nullptr) return;
   try {
 #ifdef __ANDROID__
-    std::lock_guard<std::mutex> lock(g->mu);
-    RenderLocked(g.get());
+    // FR-STARTUP-003 T2: enqueue-and-return — no ANativeWindow_lock/raster on
+    // the calling (UI) thread. RenderLocked runs only on the single render
+    // thread; rapid calls coalesce to at most one pending frame.
+    EnqueueFrame(g);
 #endif
   } catch (...) {
     if (env->ExceptionCheck() == JNI_TRUE) {
@@ -910,17 +1116,23 @@ extern "C" MUSE_JNI_EXPORT jint Java_com_muse_host_MainActivity_nativeAdvancePag
   if (g == nullptr) return 0;
   try {
 #ifdef __ANDROID__
-    std::lock_guard<std::mutex> lock(g->mu);
-    g->page += 1;
-    RenderLocked(g.get());
+    int pageOut = 0;
+    {
+      std::lock_guard<std::mutex> lock(g->mu);
+      g->page += 1;
+      pageOut = g->page;
+    }
+    // FR-STARTUP-003 T2: state mutation above returns immediately; the frame
+    // itself posts to the same single-owner queue (no inline RenderLocked).
+    EnqueueFrame(g);
     {
       // A page turn is a deliberate user action: always worth one line.
       char msg[64];
       std::snprintf(msg, sizeof(msg), "nativeAdvancePage: page %d",
-                    g->page + 1);
+                    pageOut + 1);
       MuseLogInfo(msg);
     }
-    return static_cast<jint>(g->page);
+    return static_cast<jint>(pageOut);
 #else
     return 0;
 #endif
@@ -963,9 +1175,11 @@ extern "C" MUSE_JNI_EXPORT jint Java_com_muse_host_MainActivity_nativeSetTheme(
     {
       std::lock_guard<std::mutex> lock(g->mu);
       g_nightMode.store(nightMode != 0 ? 1 : 0, std::memory_order_relaxed);
-      RenderLocked(g.get());
       page1 = g->page + 1;
     }
+    // FR-STARTUP-003 T2: no inline RenderLocked on the calling thread — the
+    // repaint posts to the same single-owner queue and returns immediately.
+    EnqueueFrame(g);
     clock_gettime(CLOCK_MONOTONIC, &t1);
     const double elapsedMs =
         static_cast<double>(t1.tv_sec - t0.tv_sec) * 1000.0 +
@@ -1041,49 +1255,62 @@ extern "C" MUSE_JNI_EXPORT jint Java_com_muse_host_MainActivity_nativeDispatchTo
     const input::NormalizedEvent ev = input::NormalizeMotion(
         pointerId, input::ToolType::Touch, 0u, axes, 0u,
         input::SourceClass::Touch);
-    std::lock_guard<std::mutex> lock(g->mu);
-    if (action == kActionDown) {
+    // FR-STARTUP-003 T2: gather tap verdict under g->mu, then enqueue the
+    // repaint outside the mu critical section (no inline RenderLocked on the
+    // calling thread; the single render thread locks mu per frame).
+    int firedTarget = -1;
+    bool firedPosted = false;
+    {
+      std::lock_guard<std::mutex> lock(g->mu);
+      if (action == kActionDown) {
 #ifdef __ANDROID__
-      char msg[128];
-      std::snprintf(msg, sizeof(msg),
-                    "nativeDispatchTouch: action=%d x=%.1f y=%.1f pointer=%d",
-                    static_cast<int>(action), static_cast<double>(x),
-                    static_cast<double>(y), static_cast<int>(pointerId));
-      MuseLogInfo(msg);
+        char msg[128];
+        std::snprintf(msg, sizeof(msg),
+                      "nativeDispatchTouch: action=%d x=%.1f y=%.1f pointer=%d",
+                      static_cast<int>(action), static_cast<double>(x),
+                      static_cast<double>(y), static_cast<int>(pointerId));
+        MuseLogInfo(msg);
 #endif
-      RecordTapDown(pointerId, x, y);
-      g->tapArena.AddPointer(ev, g->tapTree);
-      return -1;
+        RecordTapDown(pointerId, x, y);
+        g->tapArena.AddPointer(ev, g->tapTree);
+        return -1;
+      }
+      if (action == kActionUp) {
+        const int32_t target = ResolveTapTarget(g->tapTree, x, y);
+        if (target < 0) {
+          return -1;
+        }
+        const ArenaAction claim = ClaimTap(g->tapArena, pointerId, target);
+        if (!claim.claimed) {
+          return -1;
+        }
+        if (!FireTapHandler(target)) {
+          return -1;
+        }
+        const bool posted = RepaintWithinOneFrame(target);
+        firedTarget = static_cast<int>(target);
+        firedPosted = posted;
+      } else {
+        // MOVE and other actions: keep the arena displacement current so the
+        // UP slop verdict measures the full gesture; never fires.
+        g->tapArena.AddPointer(ev, g->tapTree);
+        return -1;
+      }
     }
-    if (action == kActionUp) {
-      const int32_t target = ResolveTapTarget(g->tapTree, x, y);
-      if (target < 0) {
-        return -1;
-      }
-      const ArenaAction claim = ClaimTap(g->tapArena, pointerId, target);
-      if (!claim.claimed) {
-        return -1;
-      }
-      if (!FireTapHandler(target)) {
-        return -1;
-      }
-      const bool posted = RepaintWithinOneFrame(target);
-      (void)posted;
+    if (action == kActionUp && firedTarget >= 0) {
 #ifdef __ANDROID__
-      RenderLocked(g.get());
+      // Same single-owner queue as nativeRenderFrame (coalesce, not backlog).
+      EnqueueFrame(g);
       {
         char msg[128];
         std::snprintf(msg, sizeof(msg),
                       "nativeDispatchTouch: tap fired node=%d repaint=%d",
-                      static_cast<int>(target), posted ? 1 : 0);
+                      firedTarget, firedPosted ? 1 : 0);
         MuseLogInfo(msg);
       }
 #endif
-      return static_cast<jint>(target);
+      return static_cast<jint>(firedTarget);
     }
-    // MOVE and other actions: keep the arena displacement current so the
-    // UP slop verdict measures the full gesture; never fires.
-    g->tapArena.AddPointer(ev, g->tapTree);
     return -1;
   } catch (...) {
     if (env->ExceptionCheck() == JNI_TRUE) {
@@ -1130,6 +1357,10 @@ extern "C" MUSE_JNI_EXPORT void Java_com_muse_host_MainActivity_nativeDetachSurf
   if (g == nullptr) return;
   try {
 #ifdef __ANDROID__
+    // FR-STARTUP-003 T2 teardown drain (RULE-RUNTIME-004): cancel the pending
+    // frame first so a racing queued frame never draws after detach, then
+    // release the window and null it under g->mu.
+    CancelPendingFrame(g);
     std::lock_guard<std::mutex> lock(g->mu);
     if (g->window != nullptr) {
       ANativeWindow_release(g->window);
@@ -1166,6 +1397,11 @@ extern "C" MUSE_JNI_EXPORT void Java_com_muse_host_MainActivity_nativeDestroy(
   if (claimed == nullptr) return;
   try {
 #ifdef __ANDROID__
+    // FR-STARTUP-003 T2 exclusive teardown (RULE-RUNTIME-004): stop the single
+    // render thread and drain/cancel the pending frame BEFORE releasing the
+    // window, so no queued frame ever draws unowned. ShutdownRenderThread
+    // joins without holding mu (the render thread locks mu per frame).
+    ShutdownRenderThread(claimed);
     std::lock_guard<std::mutex> lock(claimed->mu);
     if (claimed->window != nullptr) {
       ANativeWindow_release(claimed->window);
