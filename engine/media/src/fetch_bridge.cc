@@ -92,6 +92,9 @@ FetchResult fetchImageBytes(std::string url) {
     cache.emplace(url, body);
     return FetchResult{body, true, Status::kOk};
   } catch (...) {
+    // Fail-safe refusal: the never-throws contract must still report a
+    // refusal, never an over-admission, so unexpected faults surface as
+    // kOverBudget (a denial) rather than kOk with empty data.
     return FetchResult{{}, false, Status::kOverBudget};
   }
 }

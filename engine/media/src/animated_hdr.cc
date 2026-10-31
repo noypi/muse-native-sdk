@@ -46,10 +46,9 @@ void OrientedDims(uint32_t w, uint32_t h, uint16_t v, uint32_t* dw,
 }
 
 // Map an upright output pixel (dx,dy) back to its stored source pixel.
-// NOTE: values 6/8 are intentionally the transpose of
-// image_metadata.h::applyOrientation so that kRotate90CW on a 2x1
-// [red,green] row yields the 1x2 [green,red] column the TC-MEDIA-012
-// contract pins. All other values match applyOrientation.
+// Matches image_metadata.h::applyOrientation sense (seam-correct, EXIF
+// standard CW): case 6 (rotate-90-CW) is sx = dy; sy = h - 1 - dx, and
+// case 8 (rotate-90-CCW) is sx = w - 1 - dy; sy = dx.
 void MapSource(uint32_t w, uint32_t h, uint16_t v, uint32_t dx, uint32_t dy,
                uint32_t* sx, uint32_t* sy) {
   switch (v) {
@@ -69,17 +68,17 @@ void MapSource(uint32_t w, uint32_t h, uint16_t v, uint32_t dx, uint32_t dy,
       *sx = dy;
       *sy = dx;
       break;
-    case 6:  // rotate-90-CW per TC-MEDIA-012 (CCW in applyOrientation terms)
-      *sx = w - 1 - dy;
-      *sy = dx;
+    case 6:  // rotate-90-CW (applyOrientation sense)
+      *sx = dy;
+      *sy = h - 1 - dx;
       break;
     case 7:  // transverse
       *sx = w - 1 - dy;
       *sy = h - 1 - dx;
       break;
-    case 8:  // rotate-90-CCW per TC-MEDIA-012 (CW in applyOrientation terms)
-      *sx = dy;
-      *sy = h - 1 - dx;
+    case 8:  // rotate-90-CCW (applyOrientation sense)
+      *sx = w - 1 - dy;
+      *sy = dx;
       break;
     default:
       *sx = dx;

@@ -157,12 +157,47 @@ static void check_exif_upright() {
   media::AnimFrame f;
   f.width = 2;
   f.height = 1;
-  // Row: [red, green] stored left-to-right; rotate-90-CW => 1x2 column
-  // [green, red] top-to-bottom... decoded upright expectation below.
+  // Row: [red, green] stored left-to-right; rotate-90-CW (case 6:
+  // sx = dy; sy = h - 1 - dx per image_metadata.h::applyOrientation) puts
+  // the leftmost pixel (red) on top => 1x2 column [red, green]
+  // top-to-bottom... decoded upright expectation below.
   f.pixels = {255, 0, 0, 255, 0, 255, 0, 255};
   f.delayMs = 100;
   f.readyMs = 0;
   f.orientation = media::ExifOrientation::kRotate90CW;
+  f.color = media::ColorSpace::kSrgb;
+  seq.frames.push_back(f);
+  media::ReferenceFrames ref;
+  ref.width = 1;
+  ref.height = 2;
+  ref.pixels.push_back({255, 0, 0, 255, 0, 255, 0, 255});
+  media::HdrCheck r{0.0, false, false, media::Status::kOk};
+  bool threw = false;
+  try {
+    r = media::verifyAnimatedHdr(seq, ref);
+  } catch (...) {
+    threw = true;
+  }
+  CHECK("exif path never throws", !threw);
+  CHECK("exif status kOk", r.status == media::Status::kOk);
+  CHECK("exif-rotated upright", r.upright == true);
+  CHECK("exif-rotated pixels exact", r.maxDelta == 0.0);
+}
+
+// EXIF case-8 pin (locks the pair with case 6): the same stored 2x1
+// [red, green] row under kRotate90CCW (case 8: sx = w - 1 - dy; sy = dx
+// per image_metadata.h::applyOrientation) renders as the 1x2 column
+// [green, red] top-to-bottom.
+static void check_exif_ccw_upright() {
+  media::AnimSequence seq;
+  seq.loopCount = 1;
+  media::AnimFrame f;
+  f.width = 2;
+  f.height = 1;
+  f.pixels = {255, 0, 0, 255, 0, 255, 0, 255};
+  f.delayMs = 100;
+  f.readyMs = 0;
+  f.orientation = media::ExifOrientation::kRotate90CCW;
   f.color = media::ColorSpace::kSrgb;
   seq.frames.push_back(f);
   media::ReferenceFrames ref;
@@ -176,9 +211,10 @@ static void check_exif_upright() {
   } catch (...) {
     threw = true;
   }
-  CHECK("exif path never throws", !threw);
-  CHECK("exif status kOk", r.status == media::Status::kOk);
-  CHECK("exif-rotated upright", r.upright == true);
+  CHECK("exif-ccw path never throws", !threw);
+  CHECK("exif-ccw status kOk", r.status == media::Status::kOk);
+  CHECK("exif-ccw-rotated upright", r.upright == true);
+  CHECK("exif-ccw-rotated pixels exact", r.maxDelta == 0.0);
 }
 
 // P3 fixtures match the reference conversion within kHdrDelta.
@@ -221,6 +257,7 @@ int main() {
   check_late_frame_jank();
   check_upright_normal();
   check_exif_upright();
+  check_exif_ccw_upright();
   check_hdr_within_delta();
   check_divergent_reference_exceeds_delta();
   check_corrupt_frame_never_throws();

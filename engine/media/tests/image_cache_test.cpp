@@ -124,6 +124,39 @@ static void check_over_budget_refused() {
         r.status == media::Status::kOverBudget);
 }
 
+// T1 MINOR follow-up: disk-hit repromotion is best-effort under a refused
+// budget — the disk hit itself succeeds (kDisk/kOk, no re-decode) but the
+// entry is NOT repromoted, so the next load is still kDisk (not kMemory).
+static void check_disk_hit_refused_budget_skips_repromotion() {
+  media::ImageCache c;
+  media::CacheResult r1 =
+      media::imageCacheLoad(c, "https://img.test/f.png");
+  CHECK("refused-budget setup first load kOk",
+        r1.status == media::Status::kOk);
+  const std::size_t after_first = c.decodeCount;
+  c.setBudgetBytes(0);
+  c.evictMemory();
+  media::CacheResult r2 =
+      media::imageCacheLoad(c, "https://img.test/f.png");
+  CHECK("refused-budget disk hit tier kDisk",
+        r2.tier == media::HitTier::kDisk);
+  CHECK("refused-budget disk hit does not re-decode",
+        r2.decoded == false);
+  CHECK("refused-budget disk hit status kOk",
+        r2.status == media::Status::kOk);
+  CHECK("decode counter unchanged on refused-budget disk hit",
+        c.decodeCount == after_first);
+  // No repromotion happened: one more load is still a disk hit.
+  media::CacheResult r3 =
+      media::imageCacheLoad(c, "https://img.test/f.png");
+  CHECK("refused-budget second load still kDisk (no repromotion)",
+        r3.tier == media::HitTier::kDisk);
+  CHECK("refused-budget second load does not re-decode",
+        r3.decoded == false);
+  CHECK("refused-budget second load status kOk",
+        r3.status == media::Status::kOk);
+}
+
 // Security: malicious/oversized URLs never throw; the result is a
 // well-formed shape (kOk hit/miss or a clean rejection).
 static void check_hostile_url_never_throws() {
@@ -152,6 +185,7 @@ int main() {
   check_disk_hit_after_memory_eviction();
   check_distinct_urls_miss_independently();
   check_over_budget_refused();
+  check_disk_hit_refused_budget_skips_repromotion();
   check_hostile_url_never_throws();
   if (s_failures == 0) {
     std::printf("ALL GREEN image_cache_test\n");
