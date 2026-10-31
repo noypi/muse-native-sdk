@@ -10,6 +10,24 @@
 namespace media {
 namespace {
 
+// Sane per-axis dimension cap (security-review MEDIUM fix note).
+constexpr uint32_t kMaxDimension = 16384;
+
+// Checked w*h*4 in size_t arithmetic; false on overflow.
+bool CheckedPixelBytes(uint32_t w, uint32_t h, std::size_t* out) {
+  std::size_t wh = 0;
+  if (__builtin_mul_overflow(static_cast<std::size_t>(w),
+                             static_cast<std::size_t>(h), &wh)) {
+    return false;
+  }
+  std::size_t bytes = 0;
+  if (__builtin_mul_overflow(wh, static_cast<std::size_t>(4u), &bytes)) {
+    return false;
+  }
+  *out = bytes;
+  return true;
+}
+
 // Gamma-2.2 linearize / re-encode (T2 A-REF family).
 float ToLinear(uint8_t c) {
   return std::pow(static_cast<float>(c) / 255.0f, 2.2f);
@@ -127,8 +145,19 @@ HdrCheck verifyAnimatedHdr(AnimSequence seq, ReferenceFrames ref) {
         out.status = Status::kInvalidArg;
         return out;
       }
-      const std::size_t expect = static_cast<std::size_t>(f.width) *
-                                 static_cast<std::size_t>(f.height) * 4u;
+      if (f.width > kMaxDimension || f.height > kMaxDimension) {
+        out.maxDelta = kHdrDelta + 1.0;
+        out.upright = false;
+        out.status = Status::kInvalidArg;
+        return out;
+      }
+      std::size_t expect = 0;
+      if (!CheckedPixelBytes(f.width, f.height, &expect)) {
+        out.maxDelta = kHdrDelta + 1.0;
+        out.upright = false;
+        out.status = Status::kInvalidArg;
+        return out;
+      }
       if (f.pixels.size() != expect) {
         out.maxDelta = kHdrDelta + 1.0;
         out.upright = false;
@@ -153,8 +182,15 @@ HdrCheck verifyAnimatedHdr(AnimSequence seq, ReferenceFrames ref) {
       OrientedDims(f.width, f.height, v, &dw, &dh);
       if (dw != ref.width || dh != ref.height) upright = false;
 
-      std::vector<uint8_t> decoded(static_cast<std::size_t>(dw) *
-                                   static_cast<std::size_t>(dh) * 4u);
+      std::size_t decoded_bytes = 0;
+      if (dw > kMaxDimension || dh > kMaxDimension ||
+          !CheckedPixelBytes(dw, dh, &decoded_bytes)) {
+        out.maxDelta = kHdrDelta + 1.0;
+        out.upright = false;
+        out.status = Status::kInvalidArg;
+        return out;
+      }
+      std::vector<uint8_t> decoded(decoded_bytes);
       for (uint32_t dy = 0; dy < dh; ++dy) {
         for (uint32_t dx = 0; dx < dw; ++dx) {
           uint32_t sx = 0, sy = 0;

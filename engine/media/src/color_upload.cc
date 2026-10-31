@@ -9,6 +9,24 @@
 namespace media {
 namespace {
 
+// Sane per-axis dimension cap (security-review MEDIUM fix note).
+constexpr uint32_t kMaxDimension = 16384;
+
+// Checked w*h*4 in size_t arithmetic; false on overflow.
+bool CheckedPixelBytes(uint32_t w, uint32_t h, std::size_t* out) {
+  std::size_t wh = 0;
+  if (__builtin_mul_overflow(static_cast<std::size_t>(w),
+                             static_cast<std::size_t>(h), &wh)) {
+    return false;
+  }
+  std::size_t bytes = 0;
+  if (__builtin_mul_overflow(wh, static_cast<std::size_t>(4u), &bytes)) {
+    return false;
+  }
+  *out = bytes;
+  return true;
+}
+
 bool IsValidDstGamut(Gamut g) {
   return g == Gamut::kSrgb || g == Gamut::kP3 || g == Gamut::kHdr10;
 }
@@ -64,8 +82,9 @@ UploadResult convertForUpload(DecodedImage img, NegotiatedSurface dst) {
       return invalid;
     }
     if (img.width == 0 || img.height == 0) return invalid;
-    const std::size_t expect = static_cast<std::size_t>(img.width) *
-                               static_cast<std::size_t>(img.height) * 4u;
+    if (img.width > kMaxDimension || img.height > kMaxDimension) return invalid;
+    std::size_t expect = 0;
+    if (!CheckedPixelBytes(img.width, img.height, &expect)) return invalid;
     if (img.pixels.size() != expect) return invalid;
 
     const bool src_is_p3 = (img.colorSpace == ColorSpace::kDisplayP3);

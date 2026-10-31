@@ -26,6 +26,7 @@
 //   A-REF:  P3->sRGB reference is the in-test linear matrix below;
 //           per-channel delta <= 8. A naive channel copy must fail the
 //           "not a naive copy" assertions by construction.
+#include <chrono>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -185,6 +186,84 @@ static void check_corrupt_pixels_never_throw() {
         r.status == media::Status::kInvalidArg);
 }
 
+// Security MEDIUM consistency (security-review.md, color_upload.cc:67):
+// astronomic w/h vs a short buffer must refuse kInvalidArg — never throw,
+// fast, no allocation sized by the raw product. Small payloads only. The
+// over-cap case (32768x1 with a MATCHING 128KiB payload) pins the required
+// dimension-cap refusal: it passes today's size check as kOk, so it is the
+// RED lock for the one-line checked-multiply/cap fix.
+static long ElapsedMs(std::chrono::steady_clock::time_point t0) {
+  return static_cast<long>(std::chrono::duration_cast<std::chrono::milliseconds>(
+                               std::chrono::steady_clock::now() - t0)
+                               .count());
+}
+
+static void check_hostile_max_dims_short_buffer_rejected() {
+  const auto t0 = std::chrono::steady_clock::now();
+  bool threw = false;
+  media::UploadResult r{{0}, Gamut::kSrgb, Transfer::kSrgbGamma,
+                         media::Status::kOk};
+  try {
+    media::DecodedImage img;
+    img.width = 0xFFFFFFFFu;
+    img.height = 0xFFFFFFFFu;
+    img.colorSpace = media::ColorSpace::kSrgb;
+    img.pixels = {1, 2, 3, 4};
+    r = media::convertForUpload(img, MakeSrgbDst());
+  } catch (...) {
+    threw = true;
+  }
+  const long ms = ElapsedMs(t0);
+  CHECK("hostile max dims never throws", !threw);
+  CHECK("hostile max dims status kInvalidArg",
+        r.status == media::Status::kInvalidArg);
+  CHECK("hostile max dims fast return", ms < 5000);
+}
+
+static void check_hostile_overflow32_dims_rejected() {
+  const auto t0 = std::chrono::steady_clock::now();
+  bool threw = false;
+  media::UploadResult r{{0}, Gamut::kSrgb, Transfer::kSrgbGamma,
+                         media::Status::kOk};
+  try {
+    media::DecodedImage img;
+    img.width = 70000u;  // 70000*70000*4 overflows 32-bit
+    img.height = 70000u;
+    img.colorSpace = media::ColorSpace::kSrgb;
+    img.pixels = {9, 9, 9, 255};
+    r = media::convertForUpload(img, MakeSrgbDst());
+  } catch (...) {
+    threw = true;
+  }
+  const long ms = ElapsedMs(t0);
+  CHECK("hostile overflow32 dims never throws", !threw);
+  CHECK("hostile overflow32 dims status kInvalidArg",
+        r.status == media::Status::kInvalidArg);
+  CHECK("hostile overflow32 dims fast return", ms < 5000);
+}
+
+static void check_hostile_over_cap_matching_payload_rejected() {
+  const auto t0 = std::chrono::steady_clock::now();
+  bool threw = false;
+  media::UploadResult r{{0}, Gamut::kSrgb, Transfer::kSrgbGamma,
+                         media::Status::kOk};
+  try {
+    media::DecodedImage img;
+    img.width = 32768u;  // > sane 16384 cap, matching 128KiB payload
+    img.height = 1u;
+    img.colorSpace = media::ColorSpace::kSrgb;
+    img.pixels.assign(32768u * 4u, 7);
+    r = media::convertForUpload(img, MakeSrgbDst());
+  } catch (...) {
+    threw = true;
+  }
+  const long ms = ElapsedMs(t0);
+  CHECK("hostile over-cap dims never throws", !threw);
+  CHECK("hostile over-cap dims status kInvalidArg",
+        r.status == media::Status::kInvalidArg);
+  CHECK("hostile over-cap dims fast return", ms < 5000);
+}
+
 int main() {
   check_empty_pixels_rejected();
   check_unknown_gamut_rejected();
@@ -192,6 +271,9 @@ int main() {
   check_p3_converts_within_delta();
   check_p3_destination_carries_transfer();
   check_corrupt_pixels_never_throw();
+  check_hostile_max_dims_short_buffer_rejected();
+  check_hostile_overflow32_dims_rejected();
+  check_hostile_over_cap_matching_payload_rejected();
   if (s_failures == 0) {
     std::printf("ALL GREEN color_space_upload_test\n");
     return 0;
