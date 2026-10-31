@@ -221,7 +221,13 @@ int RunShellCapture(const std::string& cmd, std::string* out) noexcept {
 // to cwd, with no writes outside /tmp by default. F3: each leg emits
 // start/step/finish markers to the device log (`log -t muse_text`),
 // best-effort and never-throw, so `logcat -s muse_text` shows the leg.
+// F4: the focus-check step dumps to the fixed kLegFocusDumpPath file first
+// and greps the file content (via `adb shell cat`), never the
+// `uiautomator dump /dev/stdout` banner (stdout-only on the gate, so the
+// piped grep always failed). The path is a fixed /sdcard constant — no
+// caller input ever enters it.
 
+constexpr const char* kLegFocusDumpPath = "/sdcard/leg-focus.xml";
 // True iff s is a safe `adb -s` serial (non-empty, no shell metacharacters).
 // Guards every shell interpolation below. Never throws.
 bool IsSafeSerial(const char* s) noexcept {
@@ -427,7 +433,9 @@ int RunCompositionLeg(const char* serial) {
         {"tap-focus", adb + " shell input tap 1 110 >/dev/null 2>&1"},
         {"commit-text", adb + " shell input text nihao >/dev/null 2>&1"},
         {"focus-check",
-         adb + " shell uiautomator dump /dev/stdout 2>/dev/null | grep -q " +
+         adb + " shell uiautomator dump " + kLegFocusDumpPath +
+             " >/dev/null 2>&1 && " + adb + " shell cat " +
+             kLegFocusDumpPath + " 2>/dev/null | grep -q " +
              std::string("'focused=\"true\"'")},
         {"binding-check",
          adb + " shell dumpsys input_method 2>/dev/null | grep -q " +
@@ -527,7 +535,9 @@ int RunSelectionLeg(const char* serial) {
         {"tap", adb + " shell input tap 1 110 >/dev/null 2>&1"},
         {"keyboard-type", adb + " shell input text hello >/dev/null 2>&1"},
         {"focus-check",
-         adb + " shell uiautomator dump /dev/stdout 2>/dev/null | grep -q " +
+         adb + " shell uiautomator dump " + kLegFocusDumpPath +
+             " >/dev/null 2>&1 && " + adb + " shell cat " +
+             kLegFocusDumpPath + " 2>/dev/null | grep -q " +
              std::string("'focused=\"true\"'")},
         {"binding-check",
          adb + " shell dumpsys input_method 2>/dev/null | grep -q " +
@@ -743,7 +753,9 @@ int RunClipboardLeg(const char* serial) {
         {"type-plain",
          adb + " shell input text plaincopy >/dev/null 2>&1"},
         {"focus-check",
-         adb + " shell uiautomator dump /dev/stdout 2>/dev/null | grep -q " +
+         adb + " shell uiautomator dump " + kLegFocusDumpPath +
+             " >/dev/null 2>&1 && " + adb + " shell cat " +
+             kLegFocusDumpPath + " 2>/dev/null | grep -q " +
              std::string("'focused=\"true\"'")},
         {"binding-check",
          adb + " shell dumpsys input_method 2>/dev/null | grep -q " +
