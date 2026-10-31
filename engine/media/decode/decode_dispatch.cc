@@ -1,6 +1,7 @@
 #include "engine/media/decode/decode_dispatch.h"
 
 #include <climits>
+#include <utility>
 
 #include "engine/graphics/textures/texture_pool.h"
 
@@ -31,7 +32,7 @@ MediaDecodeOutcome dispatchDecode(core::thread::WorkerPool& pool,
   core::thread::Task task;
   task.pri = core::thread::Priority::Decode;
   task.tok = tok;
-  task.fn = [tok, budget, vramBytes, out] {
+  task.fn = [tok, budget, vramBytes, out, bytes, len] {
     // Cooperative cancellation: skip the upload entirely on cancel.
     // The reservation is returned so a queued-then-cancelled decode leaks
     // neither VRAM accounting nor the worker slot (clean shutdown join).
@@ -39,9 +40,23 @@ MediaDecodeOutcome dispatchDecode(core::thread::WorkerPool& pool,
       budget->releaseVram(vramBytes);
       return;
     }
-    // Decode body: applyMetadata placeholder (Batch 2 T3/T4 EXIF, color
-    // profile, and target-size correction lands here; identity until then —
-    // no codec linkage per plan A3, never throws on malformed bytes).
+    // Decode body: applyMetadata (T3 EXIF orientation + T4 color/size) then
+    // poolAcquire upload on the shared DecodedImage. Identity on malformed
+    // bytes (never throws).
+    try {
+      const ExifOrientation o = readExifOrientation(bytes, len);
+      DecodedImage cur = *out;
+      cur.uploaded = false;
+      cur = applyOrientation(std::move(cur), o);
+      cur.uploaded = false;
+      const ColorTransform ct = readColorProfile(bytes, len);
+      const TargetSize keep{cur.width, cur.height, 1.0f};
+      cur = applyColorAndSize(std::move(cur), ct, keep);
+      *out = std::move(cur);
+      (*out).uploaded = false;
+    } catch (...) {
+      (*out).uploaded = false;
+    }
     // Upload via poolAcquire accounting (mirrors texture_pool.h admit path).
     int uploadBytes =
         vramBytes > static_cast<std::size_t>(INT_MAX)

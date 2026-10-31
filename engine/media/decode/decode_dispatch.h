@@ -6,6 +6,7 @@
 #include "core/budget/manager.h"
 #include "core/thread/task.h"
 #include "core/thread/worker_pool.h"
+#include "engine/media/decode/image_metadata.h"
 
 namespace media {
 
@@ -25,9 +26,8 @@ struct DecodeRequest {
   std::size_t vramBytes = 0;
 };
 
-struct DecodedImage {
-  bool uploaded = false;
-};
+// DecodedImage is the shared rich type owned by image_metadata.h
+// (Interface ruling); T2 uploaded semantics unchanged.
 
 MediaDecodeOutcome dispatchDecode(core::thread::WorkerPool& pool,
                                  DecodedImage* out, const uint8_t* bytes,
