@@ -299,7 +299,12 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
      */
     private void attachImeInsetListener(View root) {
         if (Build.VERSION.SDK_INT >= 30) {
-            root.setWindowInsetsAnimationCallback(
+            // Decor-level registration (bug-runtime-004 F2 scope): the
+            // content-root FrameLayout never receives animation dispatches
+            // under adjustUnspecified (decor consumes first), so register
+            // the same callback on the decor view where IME transitions
+            // dispatch. Single feed preserved — forwards to onInsetsFrame.
+            getWindow().getDecorView().setWindowInsetsAnimationCallback(
                     new WindowInsetsAnimation.Callback(
                             WindowInsetsAnimation.Callback.DISPATCH_MODE_CONTINUE_ON_SUBTREE) {
                         @Override
