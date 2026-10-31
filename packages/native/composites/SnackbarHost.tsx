@@ -21,7 +21,7 @@ export function SnackbarHost(props?: SnackbarHostProps) {
     },
     content: [
       { type: 'Surface', props: { tone: 'inverse-surface' } },
-      { type: 'Text', props: { variant: 'body-medium', color: 'inverse-on-surface' } },
+      { type: 'Text', props: { variant: 'body-medium', color: 'inverse-on-surface', text: next.message } },
       { type: 'Button', props: { tone: 'inverse-surface' } },
     ],
   };

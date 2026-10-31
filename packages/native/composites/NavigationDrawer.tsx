@@ -17,7 +17,7 @@ export function NavigationDrawer(props?: NavigationDrawerProps) {
     props: next,
     content: [
       { type: 'Surface', props: { tone: 'surface-container-low' } },
-      { type: 'ListItem', props: { tone: 'surface-container-low' } },
+      { type: 'ListItem', props: { tone: 'surface-container-low', selected: next.selected } },
       { type: 'Icon', props: { name: 'home', color: 'on-surface' } },
       { type: 'Text', props: { variant: 'label-large', color: 'on-surface' } },
       { type: 'Divider', props: { orientation: 'horizontal', color: 'outline' } },

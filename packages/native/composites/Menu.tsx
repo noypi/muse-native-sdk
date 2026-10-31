@@ -23,7 +23,7 @@ export function Menu(props?: MenuProps) {
     anchor: { type: 'Text', props: { variant: 'body-medium', color: 'on-surface' } },
     content: [
       { type: 'Surface', props: { tone: 'surface-container' } },
-      { type: 'ListItem', props: { tone: 'surface-container' } },
+      { type: 'ListItem', props: { tone: 'surface-container', open: next.open } },
       { type: 'Text', props: { variant: 'body-large', color: 'on-surface' } },
     ],
   };

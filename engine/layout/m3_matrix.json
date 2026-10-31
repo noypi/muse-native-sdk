@@ -3,173 +3,6 @@
   "tokenSnapshot": "2026-10-28",
   "components": [
     {
-      "name": "Badge",
-      "primitive": "M3NativeBadge",
-      "tokens": [
-        "md.comp.badge.container",
-        "md.comp.badge.label",
-        "md.sys.color.surface",
-        "md.sys.color.on-surface",
-        "md.sys.shape.corner.medium",
-        "md.sys.state.elevation.level-1",
-        "motion.durations.short-2",
-        "motion.expressive.easing.standard"
-      ],
-      "states": [
-        "enabled",
-        "hovered",
-        "focused",
-        "pressed",
-        "dragged",
-        "disabled",
-        "error"
-      ],
-      "adaptive": false,
-      "semantics": "manual-context.local/specs-accessibility.md#Badge (Clone: manual-context.local/specs-clone-capability.md#Badge; Competitive: manual-context.local/specs-competitive-positioning.md#Badge)",
-      "goldenTest": "engine/layout/tests/goldens/Badge.png",
-      "status": "present",
-      "ledgers": {
-        "clone": "manual-context.local/specs-clone-capability.md#Badge",
-        "competitive": "manual-context.local/specs-competitive-positioning.md#Badge"
-      },
-      "tokenTable": {
-        "container": "md.comp.badge.container",
-        "label": "md.comp.badge.label",
-        "state": [
-          "md.comp.badge.state.enabled",
-          "md.comp.badge.state.hovered",
-          "md.comp.badge.state.focused",
-          "md.comp.badge.state.pressed",
-          "md.comp.badge.state.dragged",
-          "md.comp.badge.state.disabled",
-          "md.comp.badge.state.error"
-        ],
-        "shape": "md.comp.badge.shape",
-        "elevation": "md.comp.badge.elevation",
-        "typescale": "md.comp.badge.typescale",
-        "sources": {
-          "container": "component",
-          "label": "component",
-          "state": "role",
-          "shape": "role",
-          "elevation": "theme",
-          "typescale": "role"
-        }
-      }
-    },
-    {
-      "name": "BottomAppBar",
-      "primitive": "M3NativeBottomAppBar",
-      "tokens": [
-        "md.comp.bottom-app-bar.container",
-        "md.comp.bottom-app-bar.label",
-        "md.sys.color.surface",
-        "md.sys.color.on-surface",
-        "md.sys.shape.corner.medium",
-        "md.sys.state.elevation.level-1",
-        "motion.durations.short-2",
-        "motion.expressive.easing.standard"
-      ],
-      "states": [
-        "enabled",
-        "hovered",
-        "focused",
-        "pressed",
-        "dragged",
-        "disabled",
-        "error"
-      ],
-      "adaptive": false,
-      "semantics": "manual-context.local/specs-accessibility.md#BottomAppBar (Clone: manual-context.local/specs-clone-capability.md#BottomAppBar; Competitive: manual-context.local/specs-competitive-positioning.md#BottomAppBar; Composite: engine/components/BottomAppBar.tsx)",
-      "goldenTest": "engine/layout/tests/goldens/BottomAppBar.png",
-      "status": "present",
-      "ledgers": {
-        "clone": "manual-context.local/specs-clone-capability.md#BottomAppBar",
-        "competitive": "manual-context.local/specs-competitive-positioning.md#BottomAppBar"
-      },
-      "composite": "engine/components/BottomAppBar.tsx",
-      "tokenTable": {
-        "container": "md.comp.bottom-app-bar.container",
-        "label": "md.comp.bottom-app-bar.label",
-        "state": [
-          "md.comp.bottom-app-bar.state.enabled",
-          "md.comp.bottom-app-bar.state.hovered",
-          "md.comp.bottom-app-bar.state.focused",
-          "md.comp.bottom-app-bar.state.pressed",
-          "md.comp.bottom-app-bar.state.dragged",
-          "md.comp.bottom-app-bar.state.disabled",
-          "md.comp.bottom-app-bar.state.error"
-        ],
-        "shape": "md.comp.bottom-app-bar.shape",
-        "elevation": "md.comp.bottom-app-bar.elevation",
-        "typescale": "md.comp.bottom-app-bar.typescale",
-        "sources": {
-          "container": "component",
-          "label": "component",
-          "state": "role",
-          "shape": "role",
-          "elevation": "theme",
-          "typescale": "role"
-        }
-      }
-    },
-    {
-      "name": "BottomSheet",
-      "primitive": "M3NativeBottomSheet",
-      "tokens": [
-        "md.comp.bottom-sheet.container",
-        "md.comp.bottom-sheet.label",
-        "md.sys.color.surface",
-        "md.sys.color.on-surface",
-        "md.sys.shape.corner.medium",
-        "md.sys.state.elevation.level-1",
-        "motion.durations.short-2",
-        "motion.expressive.easing.standard"
-      ],
-      "states": [
-        "enabled",
-        "hovered",
-        "focused",
-        "pressed",
-        "dragged",
-        "disabled",
-        "error"
-      ],
-      "adaptive": false,
-      "semantics": "manual-context.local/specs-accessibility.md#BottomSheet (Clone: manual-context.local/specs-clone-capability.md#BottomSheet; Competitive: manual-context.local/specs-competitive-positioning.md#BottomSheet; Composite: engine/components/BottomSheet.tsx)",
-      "goldenTest": "engine/layout/tests/goldens/BottomSheet.png",
-      "status": "present",
-      "ledgers": {
-        "clone": "manual-context.local/specs-clone-capability.md#BottomSheet",
-        "competitive": "manual-context.local/specs-competitive-positioning.md#BottomSheet"
-      },
-      "composite": "engine/components/BottomSheet.tsx",
-      "tokenTable": {
-        "container": "md.comp.bottom-sheet.container",
-        "label": "md.comp.bottom-sheet.label",
-        "state": [
-          "md.comp.bottom-sheet.state.enabled",
-          "md.comp.bottom-sheet.state.hovered",
-          "md.comp.bottom-sheet.state.focused",
-          "md.comp.bottom-sheet.state.pressed",
-          "md.comp.bottom-sheet.state.dragged",
-          "md.comp.bottom-sheet.state.disabled",
-          "md.comp.bottom-sheet.state.error"
-        ],
-        "shape": "md.comp.bottom-sheet.shape",
-        "elevation": "md.comp.bottom-sheet.elevation",
-        "typescale": "md.comp.bottom-sheet.typescale",
-        "sources": {
-          "container": "component",
-          "label": "component",
-          "state": "role",
-          "shape": "role",
-          "elevation": "theme",
-          "typescale": "role"
-        }
-      }
-    },
-    {
       "name": "Button",
       "primitive": "M3NativeButton",
       "tokens": [
@@ -222,18 +55,97 @@
           "elevation": "theme",
           "typescale": "role"
         }
-      }
+      },
+      "container": "md.comp.button.container",
+      "label": "md.comp.button.label",
+      "opacity": {
+        "hover": 0.08,
+        "focus": 0.12,
+        "press": 0.16
+      },
+      "shape": "md.sys.shape.corner.full",
+      "elevation": "md.sys.state.elevation.level-0",
+      "typescale": "md.sys.typescale.label-large",
+      "keyboard": "Enter or Space activates; Tab moves focus",
+      "focus": "md.sys.focus.ring.button",
+      "motion": {
+        "token": "motion.expressive.easing.standard",
+        "durationMs": 200
+      },
+      "role": "button"
     },
     {
-      "name": "ButtonGroup",
-      "primitive": "M3NativeButtonGroup",
+      "name": "IconButton",
+      "primitive": "M3NativeIconButton",
       "tokens": [
-        "md.comp.button-group.container",
-        "md.comp.button-group.label",
-        "md.sys.color.surface",
-        "md.sys.color.on-surface",
-        "md.sys.shape.corner.medium",
-        "md.sys.state.elevation.level-1",
+        "md.comp.icon-button.container",
+        "md.comp.icon-button.label",
+        "md.sys.shape.corner.full",
+        "md.sys.state.elevation.level-0",
+        "md.sys.typescale.label-large",
+        "motion.expressive.easing.standard",
+        "motion.durations.short-1"
+      ],
+      "states": [
+        "enabled",
+        "hovered",
+        "focused",
+        "pressed",
+        "dragged",
+        "disabled",
+        "error"
+      ],
+      "adaptive": false,
+      "semantics": "manual-context.local/specs-accessibility.md#IconButton",
+      "goldenTest": "engine/layout/tests/goldens/IconButton.png",
+      "status": "present",
+      "ledgers": {},
+      "tokenTable": {
+        "container": "md.comp.icon-button.container",
+        "label": "md.comp.icon-button.label",
+        "state": [
+          "md.comp.icon-button.state.enabled"
+        ],
+        "shape": "md.sys.shape.corner.full",
+        "elevation": "md.sys.state.elevation.level-0",
+        "typescale": "md.sys.typescale.label-large",
+        "sources": {
+          "container": "component",
+          "label": "component",
+          "state": "role",
+          "shape": "role",
+          "elevation": "theme",
+          "typescale": "role"
+        }
+      },
+      "container": "md.comp.icon-button.container",
+      "label": "md.comp.icon-button.label",
+      "opacity": {
+        "hover": 0.08,
+        "focus": 0.12,
+        "press": 0.16
+      },
+      "shape": "md.sys.shape.corner.full",
+      "elevation": "md.sys.state.elevation.level-0",
+      "typescale": "md.sys.typescale.label-large",
+      "keyboard": "Enter or Space activates; Tab moves focus",
+      "focus": "md.sys.focus.ring.icon-button",
+      "motion": {
+        "token": "motion.expressive.easing.standard",
+        "durationMs": 200
+      },
+      "role": "button"
+    },
+    {
+      "name": "Fab",
+      "primitive": "M3NativeFab",
+      "tokens": [
+        "md.comp.fab.container",
+        "md.comp.fab.label",
+        "md.sys.color.primary",
+        "md.sys.color.on-primary",
+        "md.sys.shape.corner.full",
+        "md.sys.motion.duration.short-2",
         "motion.durations.short-2",
         "motion.expressive.easing.standard"
       ],
@@ -247,29 +159,28 @@
         "error"
       ],
       "adaptive": false,
-      "semantics": "manual-context.local/specs-accessibility.md#ButtonGroup (Clone: manual-context.local/specs-clone-capability.md#ButtonGroup; Competitive: manual-context.local/specs-competitive-positioning.md#ButtonGroup; Composite: engine/components/ButtonGroup.tsx)",
-      "goldenTest": "engine/layout/tests/goldens/ButtonGroup.png",
+      "semantics": "manual-context.local/specs-accessibility.md#FAB (Clone: manual-context.local/specs-clone-capability.md#FAB; Competitive: manual-context.local/specs-competitive-positioning.md#FAB)",
+      "goldenTest": "engine/layout/tests/goldens/FAB.png",
       "status": "present",
       "ledgers": {
-        "clone": "manual-context.local/specs-clone-capability.md#ButtonGroup",
-        "competitive": "manual-context.local/specs-competitive-positioning.md#ButtonGroup"
+        "clone": "manual-context.local/specs-clone-capability.md#FAB",
+        "competitive": "manual-context.local/specs-competitive-positioning.md#FAB"
       },
-      "composite": "engine/components/ButtonGroup.tsx",
       "tokenTable": {
-        "container": "md.comp.button-group.container",
-        "label": "md.comp.button-group.label",
+        "container": "md.comp.fab.container",
+        "label": "md.comp.fab.label",
         "state": [
-          "md.comp.button-group.state.enabled",
-          "md.comp.button-group.state.hovered",
-          "md.comp.button-group.state.focused",
-          "md.comp.button-group.state.pressed",
-          "md.comp.button-group.state.dragged",
-          "md.comp.button-group.state.disabled",
-          "md.comp.button-group.state.error"
+          "md.comp.fab.state.enabled",
+          "md.comp.fab.state.hovered",
+          "md.comp.fab.state.focused",
+          "md.comp.fab.state.pressed",
+          "md.comp.fab.state.dragged",
+          "md.comp.fab.state.disabled",
+          "md.comp.fab.state.error"
         ],
-        "shape": "md.comp.button-group.shape",
-        "elevation": "md.comp.button-group.elevation",
-        "typescale": "md.comp.button-group.typescale",
+        "shape": "md.comp.fab.shape",
+        "elevation": "md.comp.fab.elevation",
+        "typescale": "md.comp.fab.typescale",
         "sources": {
           "container": "component",
           "label": "component",
@@ -278,7 +189,86 @@
           "elevation": "theme",
           "typescale": "role"
         }
-      }
+      },
+      "container": "md.comp.fab.container",
+      "label": "md.comp.fab.label",
+      "opacity": {
+        "hover": 0.08,
+        "focus": 0.12,
+        "press": 0.16
+      },
+      "shape": "md.sys.shape.corner.large",
+      "elevation": "md.sys.state.elevation.level-3",
+      "typescale": "md.sys.typescale.label-large",
+      "keyboard": "Enter or Space activates; Tab moves focus",
+      "focus": "md.sys.focus.ring.fab",
+      "motion": {
+        "token": "motion.expressive.easing.emphasized",
+        "durationMs": 400
+      },
+      "role": "button"
+    },
+    {
+      "name": "ExtendedFab",
+      "primitive": "M3NativeExtendedFab",
+      "tokens": [
+        "md.comp.extended-fab.container",
+        "md.comp.extended-fab.label",
+        "md.sys.shape.corner.large",
+        "md.sys.state.elevation.level-3",
+        "md.sys.typescale.label-large",
+        "motion.expressive.easing.emphasized",
+        "motion.durations.short-1"
+      ],
+      "states": [
+        "enabled",
+        "hovered",
+        "focused",
+        "pressed",
+        "dragged",
+        "disabled",
+        "error"
+      ],
+      "adaptive": false,
+      "semantics": "manual-context.local/specs-accessibility.md#ExtendedFab",
+      "goldenTest": "engine/layout/tests/goldens/ExtendedFab.png",
+      "status": "present",
+      "ledgers": {},
+      "tokenTable": {
+        "container": "md.comp.extended-fab.container",
+        "label": "md.comp.extended-fab.label",
+        "state": [
+          "md.comp.extended-fab.state.enabled"
+        ],
+        "shape": "md.sys.shape.corner.large",
+        "elevation": "md.sys.state.elevation.level-3",
+        "typescale": "md.sys.typescale.label-large",
+        "sources": {
+          "container": "component",
+          "label": "component",
+          "state": "role",
+          "shape": "role",
+          "elevation": "theme",
+          "typescale": "role"
+        }
+      },
+      "container": "md.comp.extended-fab.container",
+      "label": "md.comp.extended-fab.label",
+      "opacity": {
+        "hover": 0.08,
+        "focus": 0.12,
+        "press": 0.16
+      },
+      "shape": "md.sys.shape.corner.large",
+      "elevation": "md.sys.state.elevation.level-3",
+      "typescale": "md.sys.typescale.label-large",
+      "keyboard": "Enter or Space activates; Tab moves focus",
+      "focus": "md.sys.focus.ring.extended-fab",
+      "motion": {
+        "token": "motion.expressive.easing.emphasized",
+        "durationMs": 400
+      },
+      "role": "button"
     },
     {
       "name": "Card",
@@ -333,63 +323,24 @@
           "elevation": "theme",
           "typescale": "role"
         }
-      }
-    },
-    {
-      "name": "Carousel",
-      "primitive": "M3NativeCarousel",
-      "tokens": [
-        "md.comp.carousel.container",
-        "md.comp.carousel.label",
-        "md.sys.color.surface",
-        "md.sys.color.on-surface",
-        "md.sys.shape.corner.medium",
-        "md.sys.state.elevation.level-1",
-        "motion.durations.short-2",
-        "motion.expressive.easing.standard"
-      ],
-      "states": [
-        "enabled",
-        "hovered",
-        "focused",
-        "pressed",
-        "dragged",
-        "disabled",
-        "error"
-      ],
-      "adaptive": true,
-      "semantics": "manual-context.local/specs-accessibility.md#Carousel (Clone: manual-context.local/specs-clone-capability.md#Carousel; Competitive: manual-context.local/specs-competitive-positioning.md#Carousel; Composite: engine/components/Carousel.tsx)",
-      "goldenTest": "engine/layout/tests/goldens/Carousel.png",
-      "status": "present",
-      "ledgers": {
-        "clone": "manual-context.local/specs-clone-capability.md#Carousel",
-        "competitive": "manual-context.local/specs-competitive-positioning.md#Carousel"
       },
-      "composite": "engine/components/Carousel.tsx",
-      "tokenTable": {
-        "container": "md.comp.carousel.container",
-        "label": "md.comp.carousel.label",
-        "state": [
-          "md.comp.carousel.state.enabled",
-          "md.comp.carousel.state.hovered",
-          "md.comp.carousel.state.focused",
-          "md.comp.carousel.state.pressed",
-          "md.comp.carousel.state.dragged",
-          "md.comp.carousel.state.disabled",
-          "md.comp.carousel.state.error"
-        ],
-        "shape": "md.comp.carousel.shape",
-        "elevation": "md.comp.carousel.elevation",
-        "typescale": "md.comp.carousel.typescale",
-        "sources": {
-          "container": "component",
-          "label": "component",
-          "state": "role",
-          "shape": "role",
-          "elevation": "theme",
-          "typescale": "role"
-        }
-      }
+      "container": "md.comp.card.container",
+      "label": "md.comp.card.label",
+      "opacity": {
+        "hover": 0.08,
+        "focus": 0.12,
+        "press": 0.16
+      },
+      "shape": "md.sys.shape.corner.medium",
+      "elevation": "md.sys.state.elevation.level-1",
+      "typescale": "md.sys.typescale.body-large",
+      "keyboard": "Enter activates when actionable; Tab moves focus",
+      "focus": "md.sys.focus.ring.card",
+      "motion": {
+        "token": "motion.expressive.easing.standard",
+        "durationMs": 300
+      },
+      "role": "group"
     },
     {
       "name": "Chip",
@@ -444,609 +395,36 @@
           "elevation": "theme",
           "typescale": "role"
         }
-      }
-    },
-    {
-      "name": "Dialog",
-      "primitive": "M3NativeDialog",
-      "tokens": [
-        "md.comp.dialog.container",
-        "md.comp.dialog.label",
-        "md.sys.color.surface",
-        "md.sys.color.on-surface",
-        "md.sys.shape.corner.medium",
-        "md.sys.state.elevation.level-1",
-        "motion.durations.short-2",
-        "motion.expressive.easing.standard"
-      ],
-      "states": [
-        "enabled",
-        "hovered",
-        "focused",
-        "pressed",
-        "dragged",
-        "disabled",
-        "error"
-      ],
-      "adaptive": false,
-      "semantics": "manual-context.local/specs-accessibility.md#Dialog (Clone: manual-context.local/specs-clone-capability.md#Dialog; Competitive: manual-context.local/specs-competitive-positioning.md#Dialog; Composite: engine/components/Dialog.tsx)",
-      "goldenTest": "engine/layout/tests/goldens/Dialog.png",
-      "status": "present",
-      "ledgers": {
-        "clone": "manual-context.local/specs-clone-capability.md#Dialog",
-        "competitive": "manual-context.local/specs-competitive-positioning.md#Dialog"
       },
-      "composite": "engine/components/Dialog.tsx",
-      "tokenTable": {
-        "container": "md.comp.dialog.container",
-        "label": "md.comp.dialog.label",
-        "state": [
-          "md.comp.dialog.state.enabled",
-          "md.comp.dialog.state.hovered",
-          "md.comp.dialog.state.focused",
-          "md.comp.dialog.state.pressed",
-          "md.comp.dialog.state.dragged",
-          "md.comp.dialog.state.disabled",
-          "md.comp.dialog.state.error"
-        ],
-        "shape": "md.comp.dialog.shape",
-        "elevation": "md.comp.dialog.elevation",
-        "typescale": "md.comp.dialog.typescale",
-        "sources": {
-          "container": "component",
-          "label": "component",
-          "state": "role",
-          "shape": "role",
-          "elevation": "theme",
-          "typescale": "role"
-        }
-      }
-    },
-    {
-      "name": "FAB",
-      "primitive": "M3NativeFAB",
-      "tokens": [
-        "md.comp.fab.container",
-        "md.comp.fab.label",
-        "md.sys.color.primary",
-        "md.sys.color.on-primary",
-        "md.sys.shape.corner.full",
-        "md.sys.motion.duration.short-2",
-        "motion.durations.short-2",
-        "motion.expressive.easing.standard"
-      ],
-      "states": [
-        "enabled",
-        "hovered",
-        "focused",
-        "pressed",
-        "dragged",
-        "disabled",
-        "error"
-      ],
-      "adaptive": false,
-      "semantics": "manual-context.local/specs-accessibility.md#FAB (Clone: manual-context.local/specs-clone-capability.md#FAB; Competitive: manual-context.local/specs-competitive-positioning.md#FAB)",
-      "goldenTest": "engine/layout/tests/goldens/FAB.png",
-      "status": "present",
-      "ledgers": {
-        "clone": "manual-context.local/specs-clone-capability.md#FAB",
-        "competitive": "manual-context.local/specs-competitive-positioning.md#FAB"
+      "container": "md.comp.chip.container",
+      "label": "md.comp.chip.label",
+      "opacity": {
+        "hover": 0.08,
+        "focus": 0.12,
+        "press": 0.16
       },
-      "tokenTable": {
-        "container": "md.comp.fab.container",
-        "label": "md.comp.fab.label",
-        "state": [
-          "md.comp.fab.state.enabled",
-          "md.comp.fab.state.hovered",
-          "md.comp.fab.state.focused",
-          "md.comp.fab.state.pressed",
-          "md.comp.fab.state.dragged",
-          "md.comp.fab.state.disabled",
-          "md.comp.fab.state.error"
-        ],
-        "shape": "md.comp.fab.shape",
-        "elevation": "md.comp.fab.elevation",
-        "typescale": "md.comp.fab.typescale",
-        "sources": {
-          "container": "component",
-          "label": "component",
-          "state": "role",
-          "shape": "role",
-          "elevation": "theme",
-          "typescale": "role"
-        }
-      }
-    },
-    {
-      "name": "FABMenu",
-      "primitive": "MuseFabMenu",
-      "tokens": [
-        "color.primary-container",
-        "color.on-primary-container",
-        "shape.corner.large",
-        "motion.expressive.spring.standard",
-        "motion.expressive.easing.emphasized"
-      ],
-      "states": [
-        "enabled",
-        "hovered",
-        "focused",
-        "pressed",
-        "dragged",
-        "disabled",
-        "error"
-      ],
-      "adaptive": false,
-      "semantics": "Expandable FAB menu; expanded state and actions exposed. (Clone: manual-context.local/specs-clone-capability.md#FABMenu; Competitive: manual-context.local/specs-competitive-positioning.md#FABMenu)",
-      "goldenTest": "m3_fab_menu_golden",
-      "status": "present",
-      "ledgers": {
-        "clone": "manual-context.local/specs-clone-capability.md#FABMenu",
-        "competitive": "manual-context.local/specs-competitive-positioning.md#FABMenu"
+      "shape": "md.sys.shape.corner.small",
+      "elevation": "md.sys.state.elevation.level-0",
+      "typescale": "md.sys.typescale.label-large",
+      "keyboard": "Enter or Space toggles; arrows move between chips",
+      "focus": "md.sys.focus.ring.chip",
+      "motion": {
+        "token": "motion.expressive.easing.standard",
+        "durationMs": 200
       },
-      "tokenTable": {
-        "container": "md.comp.fabmenu.container",
-        "label": "md.comp.fabmenu.label",
-        "state": [
-          "md.comp.fabmenu.state.enabled",
-          "md.comp.fabmenu.state.hovered",
-          "md.comp.fabmenu.state.focused",
-          "md.comp.fabmenu.state.pressed",
-          "md.comp.fabmenu.state.dragged",
-          "md.comp.fabmenu.state.disabled",
-          "md.comp.fabmenu.state.error"
-        ],
-        "shape": "md.comp.fabmenu.shape",
-        "elevation": "md.comp.fabmenu.elevation",
-        "typescale": "md.comp.fabmenu.typescale",
-        "sources": {
-          "container": "component",
-          "label": "component",
-          "state": "role",
-          "shape": "role",
-          "elevation": "theme",
-          "typescale": "role"
-        }
-      }
+      "role": "button"
     },
     {
-      "name": "Image",
-      "primitive": "MuseImage",
+      "name": "Checkbox",
+      "primitive": "M3NativeCheckbox",
       "tokens": [
-        "color.surface-container",
-        "shape.corner.medium",
-        "state-layer.opacity.hover",
-        "motion.expressive.easing.standard"
-      ],
-      "states": [
-        "enabled",
-        "hovered",
-        "focused",
-        "pressed",
-        "dragged",
-        "disabled",
-        "error"
-      ],
-      "adaptive": false,
-      "semantics": "Image with content description for screen readers. (Clone: manual-context.local/specs-clone-capability.md#Image; Competitive: manual-context.local/specs-competitive-positioning.md#Image)",
-      "goldenTest": "m3_image_golden",
-      "status": "present",
-      "ledgers": {
-        "clone": "manual-context.local/specs-clone-capability.md#Image",
-        "competitive": "manual-context.local/specs-competitive-positioning.md#Image"
-      },
-      "tokenTable": {
-        "container": "md.comp.image.container",
-        "label": "md.comp.image.label",
-        "state": [
-          "md.comp.image.state.enabled",
-          "md.comp.image.state.hovered",
-          "md.comp.image.state.focused",
-          "md.comp.image.state.pressed",
-          "md.comp.image.state.dragged",
-          "md.comp.image.state.disabled",
-          "md.comp.image.state.error"
-        ],
-        "shape": "md.comp.image.shape",
-        "elevation": "md.comp.image.elevation",
-        "typescale": "md.comp.image.typescale",
-        "sources": {
-          "container": "component",
-          "label": "component",
-          "state": "role",
-          "shape": "role",
-          "elevation": "theme",
-          "typescale": "role"
-        }
-      }
-    },
-    {
-      "name": "List",
-      "primitive": "MuseList",
-      "tokens": [
-        "color.surface",
-        "color.on-surface-variant",
-        "state-layer.opacity.hover",
-        "motion.expressive.easing.emphasized"
-      ],
-      "states": [
-        "enabled",
-        "hovered",
-        "focused",
-        "pressed",
-        "dragged",
-        "disabled",
-        "error"
-      ],
-      "adaptive": true,
-      "semantics": "Virtualized list; row count, scroll position, and item semantics exposed. (Clone: manual-context.local/specs-clone-capability.md#List; Competitive: manual-context.local/specs-competitive-positioning.md#List)",
-      "goldenTest": "m3_list_golden",
-      "status": "present",
-      "ledgers": {
-        "clone": "manual-context.local/specs-clone-capability.md#List",
-        "competitive": "manual-context.local/specs-competitive-positioning.md#List"
-      },
-      "tokenTable": {
-        "container": "md.comp.list.container",
-        "label": "md.comp.list.label",
-        "state": [
-          "md.comp.list.state.enabled",
-          "md.comp.list.state.hovered",
-          "md.comp.list.state.focused",
-          "md.comp.list.state.pressed",
-          "md.comp.list.state.dragged",
-          "md.comp.list.state.disabled",
-          "md.comp.list.state.error"
-        ],
-        "shape": "md.comp.list.shape",
-        "elevation": "md.comp.list.elevation",
-        "typescale": "md.comp.list.typescale",
-        "sources": {
-          "container": "component",
-          "label": "component",
-          "state": "role",
-          "shape": "role",
-          "elevation": "theme",
-          "typescale": "role"
-        }
-      }
-    },
-    {
-      "name": "LoadingIndicator",
-      "primitive": "MuseLoadingIndicator",
-      "tokens": [
-        "color.primary",
-        "motion.expressive.easing.standard",
-        "motion.durations.medium"
-      ],
-      "states": [
-        "enabled",
-        "hovered",
-        "focused",
-        "pressed",
-        "dragged",
-        "disabled",
-        "error"
-      ],
-      "adaptive": false,
-      "semantics": "Progress indicator; indeterminate or determinate progress announced. (Clone: manual-context.local/specs-clone-capability.md#LoadingIndicator; Competitive: manual-context.local/specs-competitive-positioning.md#LoadingIndicator)",
-      "goldenTest": "m3_loading_indicator_golden",
-      "status": "present",
-      "ledgers": {
-        "clone": "manual-context.local/specs-clone-capability.md#LoadingIndicator",
-        "competitive": "manual-context.local/specs-competitive-positioning.md#LoadingIndicator"
-      },
-      "tokenTable": {
-        "container": "md.comp.loading-indicator.container",
-        "label": "md.comp.loading-indicator.label",
-        "state": [
-          "md.comp.loading-indicator.state.enabled",
-          "md.comp.loading-indicator.state.hovered",
-          "md.comp.loading-indicator.state.focused",
-          "md.comp.loading-indicator.state.pressed",
-          "md.comp.loading-indicator.state.dragged",
-          "md.comp.loading-indicator.state.disabled",
-          "md.comp.loading-indicator.state.error"
-        ],
-        "shape": "md.comp.loading-indicator.shape",
-        "elevation": "md.comp.loading-indicator.elevation",
-        "typescale": "md.comp.loading-indicator.typescale",
-        "sources": {
-          "container": "component",
-          "label": "component",
-          "state": "role",
-          "shape": "role",
-          "elevation": "theme",
-          "typescale": "role"
-        }
-      }
-    },
-    {
-      "name": "Menu",
-      "primitive": "M3NativeMenu",
-      "tokens": [
-        "md.comp.menu.container",
-        "md.comp.menu.label",
-        "md.sys.color.surface",
-        "md.sys.color.on-surface",
-        "md.sys.shape.corner.medium",
-        "md.sys.state.elevation.level-1",
-        "motion.durations.short-2",
-        "motion.expressive.easing.standard"
-      ],
-      "states": [
-        "enabled",
-        "hovered",
-        "focused",
-        "pressed",
-        "dragged",
-        "disabled",
-        "error"
-      ],
-      "adaptive": false,
-      "semantics": "manual-context.local/specs-accessibility.md#Menu (Clone: manual-context.local/specs-clone-capability.md#Menu; Competitive: manual-context.local/specs-competitive-positioning.md#Menu; Composite: engine/components/Menu.tsx)",
-      "goldenTest": "engine/layout/tests/goldens/Menu.png",
-      "status": "present",
-      "ledgers": {
-        "clone": "manual-context.local/specs-clone-capability.md#Menu",
-        "competitive": "manual-context.local/specs-competitive-positioning.md#Menu"
-      },
-      "composite": "engine/components/Menu.tsx",
-      "tokenTable": {
-        "container": "md.comp.menu.container",
-        "label": "md.comp.menu.label",
-        "state": [
-          "md.comp.menu.state.enabled",
-          "md.comp.menu.state.hovered",
-          "md.comp.menu.state.focused",
-          "md.comp.menu.state.pressed",
-          "md.comp.menu.state.dragged",
-          "md.comp.menu.state.disabled",
-          "md.comp.menu.state.error"
-        ],
-        "shape": "md.comp.menu.shape",
-        "elevation": "md.comp.menu.elevation",
-        "typescale": "md.comp.menu.typescale",
-        "sources": {
-          "container": "component",
-          "label": "component",
-          "state": "role",
-          "shape": "role",
-          "elevation": "theme",
-          "typescale": "role"
-        }
-      }
-    },
-    {
-      "name": "NavigationBar",
-      "primitive": "M3NativeNavigationBar",
-      "tokens": [
-        "md.comp.navigation-bar.container",
-        "md.comp.navigation-bar.label",
-        "md.sys.color.surface",
-        "md.sys.color.on-surface",
-        "md.sys.shape.corner.medium",
-        "md.sys.state.elevation.level-1",
-        "motion.durations.short-2",
-        "motion.expressive.easing.standard"
-      ],
-      "states": [
-        "enabled",
-        "hovered",
-        "focused",
-        "pressed",
-        "dragged",
-        "disabled",
-        "error"
-      ],
-      "adaptive": true,
-      "semantics": "manual-context.local/specs-accessibility.md#NavigationBar (Clone: manual-context.local/specs-clone-capability.md#NavigationBar; Competitive: manual-context.local/specs-competitive-positioning.md#NavigationBar; Composite: engine/components/NavigationBar.tsx)",
-      "goldenTest": "engine/layout/tests/goldens/NavigationBar.png",
-      "status": "present",
-      "ledgers": {
-        "clone": "manual-context.local/specs-clone-capability.md#NavigationBar",
-        "competitive": "manual-context.local/specs-competitive-positioning.md#NavigationBar"
-      },
-      "composite": "engine/components/NavigationBar.tsx",
-      "tokenTable": {
-        "container": "md.comp.navigation-bar.container",
-        "label": "md.comp.navigation-bar.label",
-        "state": [
-          "md.comp.navigation-bar.state.enabled",
-          "md.comp.navigation-bar.state.hovered",
-          "md.comp.navigation-bar.state.focused",
-          "md.comp.navigation-bar.state.pressed",
-          "md.comp.navigation-bar.state.dragged",
-          "md.comp.navigation-bar.state.disabled",
-          "md.comp.navigation-bar.state.error"
-        ],
-        "shape": "md.comp.navigation-bar.shape",
-        "elevation": "md.comp.navigation-bar.elevation",
-        "typescale": "md.comp.navigation-bar.typescale",
-        "sources": {
-          "container": "component",
-          "label": "component",
-          "state": "role",
-          "shape": "role",
-          "elevation": "theme",
-          "typescale": "role"
-        }
-      }
-    },
-    {
-      "name": "NavigationDrawer",
-      "primitive": "M3NativeNavigationDrawer",
-      "tokens": [
-        "md.comp.navigation-drawer.container",
-        "md.comp.navigation-drawer.label",
-        "md.sys.color.surface",
-        "md.sys.color.on-surface",
-        "md.sys.shape.corner.medium",
-        "md.sys.state.elevation.level-1",
-        "motion.durations.short-2",
-        "motion.expressive.easing.standard"
-      ],
-      "states": [
-        "enabled",
-        "hovered",
-        "focused",
-        "pressed",
-        "dragged",
-        "disabled",
-        "error"
-      ],
-      "adaptive": true,
-      "semantics": "manual-context.local/specs-accessibility.md#NavigationDrawer (Clone: manual-context.local/specs-clone-capability.md#NavigationDrawer; Competitive: manual-context.local/specs-competitive-positioning.md#NavigationDrawer; Composite: engine/components/NavigationDrawer.tsx)",
-      "goldenTest": "engine/layout/tests/goldens/NavigationDrawer.png",
-      "status": "present",
-      "ledgers": {
-        "clone": "manual-context.local/specs-clone-capability.md#NavigationDrawer",
-        "competitive": "manual-context.local/specs-competitive-positioning.md#NavigationDrawer"
-      },
-      "composite": "engine/components/NavigationDrawer.tsx",
-      "tokenTable": {
-        "container": "md.comp.navigation-drawer.container",
-        "label": "md.comp.navigation-drawer.label",
-        "state": [
-          "md.comp.navigation-drawer.state.enabled",
-          "md.comp.navigation-drawer.state.hovered",
-          "md.comp.navigation-drawer.state.focused",
-          "md.comp.navigation-drawer.state.pressed",
-          "md.comp.navigation-drawer.state.dragged",
-          "md.comp.navigation-drawer.state.disabled",
-          "md.comp.navigation-drawer.state.error"
-        ],
-        "shape": "md.comp.navigation-drawer.shape",
-        "elevation": "md.comp.navigation-drawer.elevation",
-        "typescale": "md.comp.navigation-drawer.typescale",
-        "sources": {
-          "container": "component",
-          "label": "component",
-          "state": "role",
-          "shape": "role",
-          "elevation": "theme",
-          "typescale": "role"
-        }
-      }
-    },
-    {
-      "name": "NavigationRail",
-      "primitive": "M3NativeNavigationRail",
-      "tokens": [
-        "md.comp.navigation-rail.container",
-        "md.comp.navigation-rail.label",
-        "md.sys.color.surface",
-        "md.sys.color.on-surface",
-        "md.sys.shape.corner.medium",
-        "md.sys.state.elevation.level-1",
-        "motion.durations.short-2",
-        "motion.expressive.easing.standard"
-      ],
-      "states": [
-        "enabled",
-        "hovered",
-        "focused",
-        "pressed",
-        "dragged",
-        "disabled",
-        "error"
-      ],
-      "adaptive": true,
-      "semantics": "manual-context.local/specs-accessibility.md#NavigationRail (Clone: manual-context.local/specs-clone-capability.md#NavigationRail; Competitive: manual-context.local/specs-competitive-positioning.md#NavigationRail; Composite: engine/components/NavigationRail.tsx)",
-      "goldenTest": "engine/layout/tests/goldens/NavigationRail.png",
-      "status": "present",
-      "ledgers": {
-        "clone": "manual-context.local/specs-clone-capability.md#NavigationRail",
-        "competitive": "manual-context.local/specs-competitive-positioning.md#NavigationRail"
-      },
-      "composite": "engine/components/NavigationRail.tsx",
-      "tokenTable": {
-        "container": "md.comp.navigation-rail.container",
-        "label": "md.comp.navigation-rail.label",
-        "state": [
-          "md.comp.navigation-rail.state.enabled",
-          "md.comp.navigation-rail.state.hovered",
-          "md.comp.navigation-rail.state.focused",
-          "md.comp.navigation-rail.state.pressed",
-          "md.comp.navigation-rail.state.dragged",
-          "md.comp.navigation-rail.state.disabled",
-          "md.comp.navigation-rail.state.error"
-        ],
-        "shape": "md.comp.navigation-rail.shape",
-        "elevation": "md.comp.navigation-rail.elevation",
-        "typescale": "md.comp.navigation-rail.typescale",
-        "sources": {
-          "container": "component",
-          "label": "component",
-          "state": "role",
-          "shape": "role",
-          "elevation": "theme",
-          "typescale": "role"
-        }
-      }
-    },
-    {
-      "name": "ScrollView",
-      "primitive": "MuseScrollView",
-      "tokens": [
-        "color.surface",
-        "motion.expressive.spring.standard",
-        "motion.expressive.easing.emphasized",
-        "state-layer.opacity.pressed"
-      ],
-      "states": [
-        "enabled",
-        "hovered",
-        "focused",
-        "pressed",
-        "dragged",
-        "disabled",
-        "error"
-      ],
-      "adaptive": true,
-      "semantics": "Scrollable container; scroll position and bounds exposed to accessibility. (Clone: manual-context.local/specs-clone-capability.md#ScrollView; Competitive: manual-context.local/specs-competitive-positioning.md#ScrollView)",
-      "goldenTest": "m3_scroll_view_golden",
-      "status": "present",
-      "ledgers": {
-        "clone": "manual-context.local/specs-clone-capability.md#ScrollView",
-        "competitive": "manual-context.local/specs-competitive-positioning.md#ScrollView"
-      },
-      "tokenTable": {
-        "container": "md.comp.scroll-view.container",
-        "label": "md.comp.scroll-view.label",
-        "state": [
-          "md.comp.scroll-view.state.enabled",
-          "md.comp.scroll-view.state.hovered",
-          "md.comp.scroll-view.state.focused",
-          "md.comp.scroll-view.state.pressed",
-          "md.comp.scroll-view.state.dragged",
-          "md.comp.scroll-view.state.disabled",
-          "md.comp.scroll-view.state.error"
-        ],
-        "shape": "md.comp.scroll-view.shape",
-        "elevation": "md.comp.scroll-view.elevation",
-        "typescale": "md.comp.scroll-view.typescale",
-        "sources": {
-          "container": "component",
-          "label": "component",
-          "state": "role",
-          "shape": "role",
-          "elevation": "theme",
-          "typescale": "role"
-        }
-      }
-    },
-    {
-      "name": "SearchBar",
-      "primitive": "M3NativeSearchBar",
-      "tokens": [
-        "md.comp.search-bar.container",
-        "md.comp.search-bar.label",
-        "md.sys.color.on-surface",
+        "md.comp.checkbox.container",
+        "md.comp.checkbox.label",
+        "md.sys.shape.corner.extra-small",
+        "md.sys.state.elevation.level-0",
         "md.sys.typescale.body-large",
-        "md.sys.motion.easing.standard",
-        "motion.durations.short-2",
-        "motion.expressive.easing.standard"
+        "motion.expressive.easing.standard",
+        "motion.durations.short-1"
       ],
       "states": [
         "enabled",
@@ -1058,29 +436,19 @@
         "error"
       ],
       "adaptive": false,
-      "semantics": "manual-context.local/specs-accessibility.md#SearchBar (Clone: manual-context.local/specs-clone-capability.md#SearchBar; Competitive: manual-context.local/specs-competitive-positioning.md#SearchBar; Composite: engine/components/SearchBar.tsx)",
-      "goldenTest": "engine/layout/tests/goldens/SearchBar.png",
+      "semantics": "manual-context.local/specs-accessibility.md#Checkbox",
+      "goldenTest": "engine/layout/tests/goldens/Checkbox.png",
       "status": "present",
-      "ledgers": {
-        "clone": "manual-context.local/specs-clone-capability.md#SearchBar",
-        "competitive": "manual-context.local/specs-competitive-positioning.md#SearchBar"
-      },
-      "composite": "engine/components/SearchBar.tsx",
+      "ledgers": {},
       "tokenTable": {
-        "container": "md.comp.search-bar.container",
-        "label": "md.comp.search-bar.label",
+        "container": "md.comp.checkbox.container",
+        "label": "md.comp.checkbox.label",
         "state": [
-          "md.comp.search-bar.state.enabled",
-          "md.comp.search-bar.state.hovered",
-          "md.comp.search-bar.state.focused",
-          "md.comp.search-bar.state.pressed",
-          "md.comp.search-bar.state.dragged",
-          "md.comp.search-bar.state.disabled",
-          "md.comp.search-bar.state.error"
+          "md.comp.checkbox.state.enabled"
         ],
-        "shape": "md.comp.search-bar.shape",
-        "elevation": "md.comp.search-bar.elevation",
-        "typescale": "md.comp.search-bar.typescale",
+        "shape": "md.sys.shape.corner.extra-small",
+        "elevation": "md.sys.state.elevation.level-0",
+        "typescale": "md.sys.typescale.body-large",
         "sources": {
           "container": "component",
           "label": "component",
@@ -1089,20 +457,36 @@
           "elevation": "theme",
           "typescale": "role"
         }
-      }
+      },
+      "container": "md.comp.checkbox.container",
+      "label": "md.comp.checkbox.label",
+      "opacity": {
+        "hover": 0.08,
+        "focus": 0.12,
+        "press": 0.16
+      },
+      "shape": "md.sys.shape.corner.extra-small",
+      "elevation": "md.sys.state.elevation.level-0",
+      "typescale": "md.sys.typescale.body-large",
+      "keyboard": "Space toggles; Tab moves focus",
+      "focus": "md.sys.focus.ring.checkbox",
+      "motion": {
+        "token": "motion.expressive.easing.standard",
+        "durationMs": 150
+      },
+      "role": "checkbox"
     },
     {
-      "name": "SegmentedButton",
-      "primitive": "M3NativeSegmentedButton",
+      "name": "Radio",
+      "primitive": "M3NativeRadio",
       "tokens": [
-        "md.comp.segmented-button.container",
-        "md.comp.segmented-button.label",
-        "md.sys.color.surface",
-        "md.sys.color.on-surface",
-        "md.sys.shape.corner.medium",
-        "md.sys.state.elevation.level-1",
-        "motion.durations.short-2",
-        "motion.expressive.easing.standard"
+        "md.comp.radio.container",
+        "md.comp.radio.label",
+        "md.sys.shape.corner.full",
+        "md.sys.state.elevation.level-0",
+        "md.sys.typescale.body-large",
+        "motion.expressive.easing.standard",
+        "motion.durations.short-1"
       ],
       "states": [
         "enabled",
@@ -1114,29 +498,19 @@
         "error"
       ],
       "adaptive": false,
-      "semantics": "manual-context.local/specs-accessibility.md#SegmentedButton (Clone: manual-context.local/specs-clone-capability.md#SegmentedButton; Competitive: manual-context.local/specs-competitive-positioning.md#SegmentedButton; Composite: engine/components/SegmentedButton.tsx)",
-      "goldenTest": "engine/layout/tests/goldens/SegmentedButton.png",
+      "semantics": "manual-context.local/specs-accessibility.md#Radio",
+      "goldenTest": "engine/layout/tests/goldens/Radio.png",
       "status": "present",
-      "ledgers": {
-        "clone": "manual-context.local/specs-clone-capability.md#SegmentedButton",
-        "competitive": "manual-context.local/specs-competitive-positioning.md#SegmentedButton"
-      },
-      "composite": "engine/components/SegmentedButton.tsx",
+      "ledgers": {},
       "tokenTable": {
-        "container": "md.comp.segmented-button.container",
-        "label": "md.comp.segmented-button.label",
+        "container": "md.comp.radio.container",
+        "label": "md.comp.radio.label",
         "state": [
-          "md.comp.segmented-button.state.enabled",
-          "md.comp.segmented-button.state.hovered",
-          "md.comp.segmented-button.state.focused",
-          "md.comp.segmented-button.state.pressed",
-          "md.comp.segmented-button.state.dragged",
-          "md.comp.segmented-button.state.disabled",
-          "md.comp.segmented-button.state.error"
+          "md.comp.radio.state.enabled"
         ],
-        "shape": "md.comp.segmented-button.shape",
-        "elevation": "md.comp.segmented-button.elevation",
-        "typescale": "md.comp.segmented-button.typescale",
+        "shape": "md.sys.shape.corner.full",
+        "elevation": "md.sys.state.elevation.level-0",
+        "typescale": "md.sys.typescale.body-large",
         "sources": {
           "container": "component",
           "label": "component",
@@ -1145,7 +519,86 @@
           "elevation": "theme",
           "typescale": "role"
         }
-      }
+      },
+      "container": "md.comp.radio.container",
+      "label": "md.comp.radio.label",
+      "opacity": {
+        "hover": 0.08,
+        "focus": 0.12,
+        "press": 0.16
+      },
+      "shape": "md.sys.shape.corner.full",
+      "elevation": "md.sys.state.elevation.level-0",
+      "typescale": "md.sys.typescale.body-large",
+      "keyboard": "Arrows move within group; Space selects",
+      "focus": "md.sys.focus.ring.radio",
+      "motion": {
+        "token": "motion.expressive.easing.standard",
+        "durationMs": 150
+      },
+      "role": "radio"
+    },
+    {
+      "name": "Switch",
+      "primitive": "M3NativeSwitch",
+      "tokens": [
+        "md.comp.switch.container",
+        "md.comp.switch.label",
+        "md.sys.shape.corner.full",
+        "md.sys.state.elevation.level-0",
+        "md.sys.typescale.body-large",
+        "motion.expressive.easing.emphasized",
+        "motion.durations.short-1"
+      ],
+      "states": [
+        "enabled",
+        "hovered",
+        "focused",
+        "pressed",
+        "dragged",
+        "disabled",
+        "error"
+      ],
+      "adaptive": false,
+      "semantics": "manual-context.local/specs-accessibility.md#Switch",
+      "goldenTest": "engine/layout/tests/goldens/Switch.png",
+      "status": "present",
+      "ledgers": {},
+      "tokenTable": {
+        "container": "md.comp.switch.container",
+        "label": "md.comp.switch.label",
+        "state": [
+          "md.comp.switch.state.enabled"
+        ],
+        "shape": "md.sys.shape.corner.full",
+        "elevation": "md.sys.state.elevation.level-0",
+        "typescale": "md.sys.typescale.body-large",
+        "sources": {
+          "container": "component",
+          "label": "component",
+          "state": "role",
+          "shape": "role",
+          "elevation": "theme",
+          "typescale": "role"
+        }
+      },
+      "container": "md.comp.switch.container",
+      "label": "md.comp.switch.label",
+      "opacity": {
+        "hover": 0.08,
+        "focus": 0.12,
+        "press": 0.16
+      },
+      "shape": "md.sys.shape.corner.full",
+      "elevation": "md.sys.state.elevation.level-0",
+      "typescale": "md.sys.typescale.body-large",
+      "keyboard": "Space toggles; Tab moves focus",
+      "focus": "md.sys.focus.ring.switch",
+      "motion": {
+        "token": "motion.expressive.easing.emphasized",
+        "durationMs": 300
+      },
+      "role": "switch"
     },
     {
       "name": "Slider",
@@ -1200,65 +653,31 @@
           "elevation": "theme",
           "typescale": "role"
         }
-      }
-    },
-    {
-      "name": "Snackbar",
-      "primitive": "MuseSnackbar",
-      "tokens": [
-        "color.inverse-surface",
-        "color.inverse-on-surface",
-        "shape.corner.extra-small",
-        "motion.expressive.easing.emphasized"
-      ],
-      "states": [
-        "enabled",
-        "hovered",
-        "focused",
-        "pressed",
-        "dragged",
-        "disabled",
-        "error"
-      ],
-      "adaptive": false,
-      "semantics": "Transient message with optional action; announced via live region. (Clone: manual-context.local/specs-clone-capability.md#Snackbar; Competitive: manual-context.local/specs-competitive-positioning.md#Snackbar)",
-      "goldenTest": "m3_snackbar_golden",
-      "status": "present",
-      "ledgers": {
-        "clone": "manual-context.local/specs-clone-capability.md#Snackbar",
-        "competitive": "manual-context.local/specs-competitive-positioning.md#Snackbar"
       },
-      "tokenTable": {
-        "container": "md.comp.snackbar.container",
-        "label": "md.comp.snackbar.label",
-        "state": [
-          "md.comp.snackbar.state.enabled",
-          "md.comp.snackbar.state.hovered",
-          "md.comp.snackbar.state.focused",
-          "md.comp.snackbar.state.pressed",
-          "md.comp.snackbar.state.dragged",
-          "md.comp.snackbar.state.disabled",
-          "md.comp.snackbar.state.error"
-        ],
-        "shape": "md.comp.snackbar.shape",
-        "elevation": "md.comp.snackbar.elevation",
-        "typescale": "md.comp.snackbar.typescale",
-        "sources": {
-          "container": "component",
-          "label": "component",
-          "state": "role",
-          "shape": "role",
-          "elevation": "theme",
-          "typescale": "role"
-        }
-      }
+      "container": "md.comp.slider.container",
+      "label": "md.comp.slider.label",
+      "opacity": {
+        "hover": 0.08,
+        "focus": 0.12,
+        "press": 0.16
+      },
+      "shape": "md.sys.shape.corner.full",
+      "elevation": "md.sys.state.elevation.level-0",
+      "typescale": "md.sys.typescale.body-large",
+      "keyboard": "Arrows adjust value; Home/End jump to ends",
+      "focus": "md.sys.focus.ring.slider",
+      "motion": {
+        "token": "motion.expressive.easing.standard",
+        "durationMs": 100
+      },
+      "role": "slider"
     },
     {
-      "name": "SnackbarHost",
-      "primitive": "M3NativeSnackbarHost",
+      "name": "Badge",
+      "primitive": "M3NativeBadge",
       "tokens": [
-        "md.comp.snackbar-host.container",
-        "md.comp.snackbar-host.label",
+        "md.comp.badge.container",
+        "md.comp.badge.label",
         "md.sys.color.surface",
         "md.sys.color.on-surface",
         "md.sys.shape.corner.medium",
@@ -1276,29 +695,28 @@
         "error"
       ],
       "adaptive": false,
-      "semantics": "manual-context.local/specs-accessibility.md#SnackbarHost (Clone: manual-context.local/specs-clone-capability.md#SnackbarHost; Competitive: manual-context.local/specs-competitive-positioning.md#SnackbarHost; Composite: engine/components/SnackbarHost.tsx)",
-      "goldenTest": "engine/layout/tests/goldens/SnackbarHost.png",
+      "semantics": "manual-context.local/specs-accessibility.md#Badge (Clone: manual-context.local/specs-clone-capability.md#Badge; Competitive: manual-context.local/specs-competitive-positioning.md#Badge)",
+      "goldenTest": "engine/layout/tests/goldens/Badge.png",
       "status": "present",
       "ledgers": {
-        "clone": "manual-context.local/specs-clone-capability.md#SnackbarHost",
-        "competitive": "manual-context.local/specs-competitive-positioning.md#SnackbarHost"
+        "clone": "manual-context.local/specs-clone-capability.md#Badge",
+        "competitive": "manual-context.local/specs-competitive-positioning.md#Badge"
       },
-      "composite": "engine/components/SnackbarHost.tsx",
       "tokenTable": {
-        "container": "md.comp.snackbar-host.container",
-        "label": "md.comp.snackbar-host.label",
+        "container": "md.comp.badge.container",
+        "label": "md.comp.badge.label",
         "state": [
-          "md.comp.snackbar-host.state.enabled",
-          "md.comp.snackbar-host.state.hovered",
-          "md.comp.snackbar-host.state.focused",
-          "md.comp.snackbar-host.state.pressed",
-          "md.comp.snackbar-host.state.dragged",
-          "md.comp.snackbar-host.state.disabled",
-          "md.comp.snackbar-host.state.error"
+          "md.comp.badge.state.enabled",
+          "md.comp.badge.state.hovered",
+          "md.comp.badge.state.focused",
+          "md.comp.badge.state.pressed",
+          "md.comp.badge.state.dragged",
+          "md.comp.badge.state.disabled",
+          "md.comp.badge.state.error"
         ],
-        "shape": "md.comp.snackbar-host.shape",
-        "elevation": "md.comp.snackbar-host.elevation",
-        "typescale": "md.comp.snackbar-host.typescale",
+        "shape": "md.comp.badge.shape",
+        "elevation": "md.comp.badge.elevation",
+        "typescale": "md.comp.badge.typescale",
         "sources": {
           "container": "component",
           "label": "component",
@@ -1307,20 +725,36 @@
           "elevation": "theme",
           "typescale": "role"
         }
-      }
+      },
+      "container": "md.comp.badge.container",
+      "label": "md.comp.badge.label",
+      "opacity": {
+        "hover": 0.08,
+        "focus": 0.12,
+        "press": 0.16
+      },
+      "shape": "md.sys.shape.corner.small",
+      "elevation": "md.sys.state.elevation.level-0",
+      "typescale": "md.sys.typescale.label-small",
+      "keyboard": "Not focusable; announced with its anchor",
+      "focus": "md.sys.focus.ring.badge",
+      "motion": {
+        "token": "motion.expressive.easing.standard",
+        "durationMs": 200
+      },
+      "role": "status"
     },
     {
-      "name": "SplitButton",
-      "primitive": "M3NativeSplitButton",
+      "name": "LinearProgress",
+      "primitive": "M3NativeLinearProgress",
       "tokens": [
-        "md.comp.split-button.container",
-        "md.comp.split-button.label",
-        "md.sys.color.surface",
-        "md.sys.color.on-surface",
-        "md.sys.shape.corner.medium",
-        "md.sys.state.elevation.level-1",
-        "motion.durations.short-2",
-        "motion.expressive.easing.standard"
+        "md.comp.linear-progress.container",
+        "md.comp.linear-progress.label",
+        "md.sys.shape.corner.full",
+        "md.sys.state.elevation.level-0",
+        "md.sys.typescale.body-small",
+        "motion.expressive.easing.standard",
+        "motion.durations.short-1"
       ],
       "states": [
         "enabled",
@@ -1332,29 +766,19 @@
         "error"
       ],
       "adaptive": false,
-      "semantics": "manual-context.local/specs-accessibility.md#SplitButton (Clone: manual-context.local/specs-clone-capability.md#SplitButton; Competitive: manual-context.local/specs-competitive-positioning.md#SplitButton; Composite: engine/components/SplitButton.tsx)",
-      "goldenTest": "engine/layout/tests/goldens/SplitButton.png",
+      "semantics": "manual-context.local/specs-accessibility.md#LinearProgress",
+      "goldenTest": "engine/layout/tests/goldens/LinearProgress.png",
       "status": "present",
-      "ledgers": {
-        "clone": "manual-context.local/specs-clone-capability.md#SplitButton",
-        "competitive": "manual-context.local/specs-competitive-positioning.md#SplitButton"
-      },
-      "composite": "engine/components/SplitButton.tsx",
+      "ledgers": {},
       "tokenTable": {
-        "container": "md.comp.split-button.container",
-        "label": "md.comp.split-button.label",
+        "container": "md.comp.linear-progress.container",
+        "label": "md.comp.linear-progress.label",
         "state": [
-          "md.comp.split-button.state.enabled",
-          "md.comp.split-button.state.hovered",
-          "md.comp.split-button.state.focused",
-          "md.comp.split-button.state.pressed",
-          "md.comp.split-button.state.dragged",
-          "md.comp.split-button.state.disabled",
-          "md.comp.split-button.state.error"
+          "md.comp.linear-progress.state.enabled"
         ],
-        "shape": "md.comp.split-button.shape",
-        "elevation": "md.comp.split-button.elevation",
-        "typescale": "md.comp.split-button.typescale",
+        "shape": "md.sys.shape.corner.full",
+        "elevation": "md.sys.state.elevation.level-0",
+        "typescale": "md.sys.typescale.body-small",
         "sources": {
           "container": "component",
           "label": "component",
@@ -1363,19 +787,160 @@
           "elevation": "theme",
           "typescale": "role"
         }
-      }
+      },
+      "container": "md.comp.linear-progress.container",
+      "label": "md.comp.linear-progress.label",
+      "opacity": {
+        "hover": 0.08,
+        "focus": 0.12,
+        "press": 0.16
+      },
+      "shape": "md.sys.shape.corner.full",
+      "elevation": "md.sys.state.elevation.level-0",
+      "typescale": "md.sys.typescale.body-small",
+      "keyboard": "Not focusable; progress announced via live region",
+      "focus": "md.sys.focus.ring.linear-progress",
+      "motion": {
+        "token": "motion.expressive.easing.standard",
+        "durationMs": 500
+      },
+      "role": "progressbar"
     },
     {
-      "name": "Text",
-      "primitive": "M3NativeText",
+      "name": "CircularProgress",
+      "primitive": "M3NativeCircularProgress",
       "tokens": [
-        "md.comp.text.container",
-        "md.comp.text.label",
-        "md.sys.color.on-surface",
+        "md.comp.circular-progress.container",
+        "md.comp.circular-progress.label",
+        "md.sys.shape.corner.full",
+        "md.sys.state.elevation.level-0",
+        "md.sys.typescale.body-small",
+        "motion.expressive.easing.standard",
+        "motion.durations.short-4"
+      ],
+      "states": [
+        "enabled",
+        "hovered",
+        "focused",
+        "pressed",
+        "dragged",
+        "disabled",
+        "error"
+      ],
+      "adaptive": false,
+      "semantics": "manual-context.local/specs-accessibility.md#CircularProgress",
+      "goldenTest": "engine/layout/tests/goldens/CircularProgress.png",
+      "status": "present",
+      "ledgers": {},
+      "tokenTable": {
+        "container": "md.comp.circular-progress.container",
+        "label": "md.comp.circular-progress.label",
+        "state": [
+          "md.comp.circular-progress.state.enabled"
+        ],
+        "shape": "md.sys.shape.corner.full",
+        "elevation": "md.sys.state.elevation.level-0",
+        "typescale": "md.sys.typescale.body-small",
+        "sources": {
+          "container": "component",
+          "label": "component",
+          "state": "role",
+          "shape": "role",
+          "elevation": "theme",
+          "typescale": "role"
+        }
+      },
+      "container": "md.comp.circular-progress.container",
+      "label": "md.comp.circular-progress.label",
+      "opacity": {
+        "hover": 0.08,
+        "focus": 0.12,
+        "press": 0.16
+      },
+      "shape": "md.sys.shape.corner.full",
+      "elevation": "md.sys.state.elevation.level-0",
+      "typescale": "md.sys.typescale.body-small",
+      "keyboard": "Not focusable; progress announced via live region",
+      "focus": "md.sys.focus.ring.circular-progress",
+      "motion": {
+        "token": "motion.expressive.easing.standard",
+        "durationMs": 1333
+      },
+      "role": "progressbar"
+    },
+    {
+      "name": "ListItem",
+      "primitive": "M3NativeListItem",
+      "tokens": [
+        "md.comp.list-item.container",
+        "md.comp.list-item.label",
+        "md.sys.shape.corner.extra-small",
+        "md.sys.state.elevation.level-0",
         "md.sys.typescale.body-large",
-        "md.sys.motion.easing.standard",
-        "motion.durations.short-2",
-        "motion.expressive.easing.standard"
+        "motion.expressive.easing.standard",
+        "motion.durations.short-1"
+      ],
+      "states": [
+        "enabled",
+        "hovered",
+        "focused",
+        "pressed",
+        "dragged",
+        "disabled",
+        "error"
+      ],
+      "adaptive": true,
+      "semantics": "manual-context.local/specs-accessibility.md#ListItem",
+      "goldenTest": "engine/layout/tests/goldens/ListItem.png",
+      "status": "present",
+      "ledgers": {},
+      "tokenTable": {
+        "container": "md.comp.list-item.container",
+        "label": "md.comp.list-item.label",
+        "state": [
+          "md.comp.list-item.state.enabled"
+        ],
+        "shape": "md.sys.shape.corner.extra-small",
+        "elevation": "md.sys.state.elevation.level-0",
+        "typescale": "md.sys.typescale.body-large",
+        "sources": {
+          "container": "component",
+          "label": "component",
+          "state": "role",
+          "shape": "role",
+          "elevation": "theme",
+          "typescale": "role"
+        }
+      },
+      "container": "md.comp.list-item.container",
+      "label": "md.comp.list-item.label",
+      "opacity": {
+        "hover": 0.08,
+        "focus": 0.12,
+        "press": 0.16
+      },
+      "shape": "md.sys.shape.corner.extra-small",
+      "elevation": "md.sys.state.elevation.level-0",
+      "typescale": "md.sys.typescale.body-large",
+      "keyboard": "Enter activates; arrows move between items",
+      "focus": "md.sys.focus.ring.list-item",
+      "motion": {
+        "token": "motion.expressive.easing.standard",
+        "durationMs": 200
+      },
+      "role": "listitem"
+    },
+    {
+      "name": "Avatar",
+      "primitive": "M3NativeAvatar",
+      "tokens": [
+        "md.comp.avatar.container",
+        "md.comp.avatar.label",
+        "md.sys.shape.corner.full",
+        "md.sys.state.elevation.level-0",
+        "md.sys.typescale.title-medium",
+        "motion.expressive.easing.standard",
+        "motion.durations.short-1"
       ],
       "states": [
         "enabled",
@@ -1387,28 +952,19 @@
         "error"
       ],
       "adaptive": false,
-      "semantics": "manual-context.local/specs-accessibility.md#Text (Clone: manual-context.local/specs-clone-capability.md#Text; Competitive: manual-context.local/specs-competitive-positioning.md#Text)",
-      "goldenTest": "engine/layout/tests/goldens/Text.png",
+      "semantics": "manual-context.local/specs-accessibility.md#Avatar",
+      "goldenTest": "engine/layout/tests/goldens/Avatar.png",
       "status": "present",
-      "ledgers": {
-        "clone": "manual-context.local/specs-clone-capability.md#Text",
-        "competitive": "manual-context.local/specs-competitive-positioning.md#Text"
-      },
+      "ledgers": {},
       "tokenTable": {
-        "container": "md.comp.text.container",
-        "label": "md.comp.text.label",
+        "container": "md.comp.avatar.container",
+        "label": "md.comp.avatar.label",
         "state": [
-          "md.comp.text.state.enabled",
-          "md.comp.text.state.hovered",
-          "md.comp.text.state.focused",
-          "md.comp.text.state.pressed",
-          "md.comp.text.state.dragged",
-          "md.comp.text.state.disabled",
-          "md.comp.text.state.error"
+          "md.comp.avatar.state.enabled"
         ],
-        "shape": "md.comp.text.shape",
-        "elevation": "md.comp.text.elevation",
-        "typescale": "md.comp.text.typescale",
+        "shape": "md.sys.shape.corner.full",
+        "elevation": "md.sys.state.elevation.level-0",
+        "typescale": "md.sys.typescale.title-medium",
         "sources": {
           "container": "component",
           "label": "component",
@@ -1417,18 +973,36 @@
           "elevation": "theme",
           "typescale": "role"
         }
-      }
+      },
+      "container": "md.comp.avatar.container",
+      "label": "md.comp.avatar.label",
+      "opacity": {
+        "hover": 0.08,
+        "focus": 0.12,
+        "press": 0.16
+      },
+      "shape": "md.sys.shape.corner.full",
+      "elevation": "md.sys.state.elevation.level-0",
+      "typescale": "md.sys.typescale.title-medium",
+      "keyboard": "Not focusable; decorative or labelled image",
+      "focus": "md.sys.focus.ring.avatar",
+      "motion": {
+        "token": "motion.expressive.easing.standard",
+        "durationMs": 200
+      },
+      "role": "img"
     },
     {
-      "name": "TextField",
-      "primitive": "MuseTextField",
+      "name": "Tooltip",
+      "primitive": "M3NativeTooltip",
       "tokens": [
-        "color.surface-container-highest",
-        "color.primary",
-        "color.error",
-        "shape.corner.extra-small",
-        "state-layer.opacity.hover",
-        "motion.expressive.spring.standard"
+        "md.comp.tooltip.container",
+        "md.comp.tooltip.label",
+        "md.sys.shape.corner.extra-small",
+        "md.sys.state.elevation.level-2",
+        "md.sys.typescale.body-small",
+        "motion.expressive.easing.standard",
+        "motion.durations.short-1"
       ],
       "states": [
         "enabled",
@@ -1439,29 +1013,20 @@
         "disabled",
         "error"
       ],
-      "adaptive": true,
-      "semantics": "Editable text field; value, label, and error text exposed to accessibility. (Clone: manual-context.local/specs-clone-capability.md#TextField; Competitive: manual-context.local/specs-competitive-positioning.md#TextField)",
-      "goldenTest": "m3_text_field_golden",
+      "adaptive": false,
+      "semantics": "manual-context.local/specs-accessibility.md#Tooltip",
+      "goldenTest": "engine/layout/tests/goldens/Tooltip.png",
       "status": "present",
-      "ledgers": {
-        "clone": "manual-context.local/specs-clone-capability.md#TextField",
-        "competitive": "manual-context.local/specs-competitive-positioning.md#TextField"
-      },
+      "ledgers": {},
       "tokenTable": {
-        "container": "md.comp.text-field.container",
-        "label": "md.comp.text-field.label",
+        "container": "md.comp.tooltip.container",
+        "label": "md.comp.tooltip.label",
         "state": [
-          "md.comp.text-field.state.enabled",
-          "md.comp.text-field.state.hovered",
-          "md.comp.text-field.state.focused",
-          "md.comp.text-field.state.pressed",
-          "md.comp.text-field.state.dragged",
-          "md.comp.text-field.state.disabled",
-          "md.comp.text-field.state.error"
+          "md.comp.tooltip.state.enabled"
         ],
-        "shape": "md.comp.text-field.shape",
-        "elevation": "md.comp.text-field.elevation",
-        "typescale": "md.comp.text-field.typescale",
+        "shape": "md.sys.shape.corner.extra-small",
+        "elevation": "md.sys.state.elevation.level-2",
+        "typescale": "md.sys.typescale.body-small",
         "sources": {
           "container": "component",
           "label": "component",
@@ -1470,58 +1035,24 @@
           "elevation": "theme",
           "typescale": "role"
         }
-      }
-    },
-    {
-      "name": "Toolbar",
-      "primitive": "MuseToolbar",
-      "tokens": [
-        "color.surface",
-        "color.on-surface",
-        "state-layer.opacity.hover",
-        "motion.expressive.easing.standard"
-      ],
-      "states": [
-        "enabled",
-        "hovered",
-        "focused",
-        "pressed",
-        "dragged",
-        "disabled",
-        "error"
-      ],
-      "adaptive": true,
-      "semantics": "Contextual toolbar; actions exposed with overflow menu semantics. (Clone: manual-context.local/specs-clone-capability.md#Toolbar; Competitive: manual-context.local/specs-competitive-positioning.md#Toolbar)",
-      "goldenTest": "m3_toolbar_golden",
-      "status": "present",
-      "ledgers": {
-        "clone": "manual-context.local/specs-clone-capability.md#Toolbar",
-        "competitive": "manual-context.local/specs-competitive-positioning.md#Toolbar"
       },
-      "tokenTable": {
-        "container": "md.comp.toolbar.container",
-        "label": "md.comp.toolbar.label",
-        "state": [
-          "md.comp.toolbar.state.enabled",
-          "md.comp.toolbar.state.hovered",
-          "md.comp.toolbar.state.focused",
-          "md.comp.toolbar.state.pressed",
-          "md.comp.toolbar.state.dragged",
-          "md.comp.toolbar.state.disabled",
-          "md.comp.toolbar.state.error"
-        ],
-        "shape": "md.comp.toolbar.shape",
-        "elevation": "md.comp.toolbar.elevation",
-        "typescale": "md.comp.toolbar.typescale",
-        "sources": {
-          "container": "component",
-          "label": "component",
-          "state": "role",
-          "shape": "role",
-          "elevation": "theme",
-          "typescale": "role"
-        }
-      }
+      "container": "md.comp.tooltip.container",
+      "label": "md.comp.tooltip.label",
+      "opacity": {
+        "hover": 0.08,
+        "focus": 0.12,
+        "press": 0.16
+      },
+      "shape": "md.sys.shape.corner.extra-small",
+      "elevation": "md.sys.state.elevation.level-2",
+      "typescale": "md.sys.typescale.body-small",
+      "keyboard": "Esc dismisses; anchored to its trigger",
+      "focus": "md.sys.focus.ring.tooltip",
+      "motion": {
+        "token": "motion.expressive.easing.standard",
+        "durationMs": 150
+      },
+      "role": "tooltip"
     },
     {
       "name": "TopAppBar",
@@ -1577,16 +1108,37 @@
           "elevation": "theme",
           "typescale": "role"
         }
-      }
+      },
+      "container": "md.comp.top-app-bar.container",
+      "label": "md.comp.top-app-bar.label",
+      "opacity": {
+        "hover": 0.08,
+        "focus": 0.12,
+        "press": 0.16
+      },
+      "shape": "md.sys.shape.corner.none",
+      "elevation": "md.sys.state.elevation.level-2",
+      "typescale": "md.sys.typescale.title-large",
+      "keyboard": "Tab moves through actions; Esc closes menus",
+      "focus": "md.sys.focus.ring.top-app-bar",
+      "motion": {
+        "token": "motion.expressive.easing.standard",
+        "durationMs": 300
+      },
+      "role": "banner"
     },
     {
-      "name": "Touchable",
-      "primitive": "MuseTouchable",
+      "name": "NavigationBar",
+      "primitive": "M3NativeNavigationBar",
       "tokens": [
-        "state-layer.opacity.pressed",
-        "color.primary",
-        "shape.corner.medium",
-        "motion.expressive.spring.standard"
+        "md.comp.navigation-bar.container",
+        "md.comp.navigation-bar.label",
+        "md.sys.color.surface",
+        "md.sys.color.on-surface",
+        "md.sys.shape.corner.medium",
+        "md.sys.state.elevation.level-1",
+        "motion.durations.short-2",
+        "motion.expressive.easing.standard"
       ],
       "states": [
         "enabled",
@@ -1597,29 +1149,30 @@
         "disabled",
         "error"
       ],
-      "adaptive": false,
-      "semantics": "Pressable region; ripple feedback with accessible press action. (Clone: manual-context.local/specs-clone-capability.md#Touchable; Competitive: manual-context.local/specs-competitive-positioning.md#Touchable)",
-      "goldenTest": "m3_touchable_golden",
+      "adaptive": true,
+      "semantics": "manual-context.local/specs-accessibility.md#NavigationBar (Clone: manual-context.local/specs-clone-capability.md#NavigationBar; Competitive: manual-context.local/specs-competitive-positioning.md#NavigationBar; Composite: engine/components/NavigationBar.tsx)",
+      "goldenTest": "engine/layout/tests/goldens/NavigationBar.png",
       "status": "present",
       "ledgers": {
-        "clone": "manual-context.local/specs-clone-capability.md#Touchable",
-        "competitive": "manual-context.local/specs-competitive-positioning.md#Touchable"
+        "clone": "manual-context.local/specs-clone-capability.md#NavigationBar",
+        "competitive": "manual-context.local/specs-competitive-positioning.md#NavigationBar"
       },
+      "composite": "engine/components/NavigationBar.tsx",
       "tokenTable": {
-        "container": "md.comp.touchable.container",
-        "label": "md.comp.touchable.label",
+        "container": "md.comp.navigation-bar.container",
+        "label": "md.comp.navigation-bar.label",
         "state": [
-          "md.comp.touchable.state.enabled",
-          "md.comp.touchable.state.hovered",
-          "md.comp.touchable.state.focused",
-          "md.comp.touchable.state.pressed",
-          "md.comp.touchable.state.dragged",
-          "md.comp.touchable.state.disabled",
-          "md.comp.touchable.state.error"
+          "md.comp.navigation-bar.state.enabled",
+          "md.comp.navigation-bar.state.hovered",
+          "md.comp.navigation-bar.state.focused",
+          "md.comp.navigation-bar.state.pressed",
+          "md.comp.navigation-bar.state.dragged",
+          "md.comp.navigation-bar.state.disabled",
+          "md.comp.navigation-bar.state.error"
         ],
-        "shape": "md.comp.touchable.shape",
-        "elevation": "md.comp.touchable.elevation",
-        "typescale": "md.comp.touchable.typescale",
+        "shape": "md.comp.navigation-bar.shape",
+        "elevation": "md.comp.navigation-bar.elevation",
+        "typescale": "md.comp.navigation-bar.typescale",
         "sources": {
           "container": "component",
           "label": "component",
@@ -1628,15 +1181,182 @@
           "elevation": "theme",
           "typescale": "role"
         }
-      }
+      },
+      "container": "md.comp.navigation-bar.container",
+      "label": "md.comp.navigation-bar.label",
+      "opacity": {
+        "hover": 0.08,
+        "focus": 0.12,
+        "press": 0.16
+      },
+      "shape": "md.sys.shape.corner.none",
+      "elevation": "md.sys.state.elevation.level-2",
+      "typescale": "md.sys.typescale.label-medium",
+      "keyboard": "Arrows move between destinations; Enter selects",
+      "focus": "md.sys.focus.ring.navigation-bar",
+      "motion": {
+        "token": "motion.expressive.easing.standard",
+        "durationMs": 300
+      },
+      "role": "navigation"
     },
     {
-      "name": "View",
-      "primitive": "MuseView",
+      "name": "NavigationRail",
+      "primitive": "M3NativeNavigationRail",
       "tokens": [
-        "color.surface",
-        "shape.corner.medium",
-        "state-layer.opacity.hover",
+        "md.comp.navigation-rail.container",
+        "md.comp.navigation-rail.label",
+        "md.sys.color.surface",
+        "md.sys.color.on-surface",
+        "md.sys.shape.corner.medium",
+        "md.sys.state.elevation.level-1",
+        "motion.durations.short-2",
+        "motion.expressive.easing.standard"
+      ],
+      "states": [
+        "enabled",
+        "hovered",
+        "focused",
+        "pressed",
+        "dragged",
+        "disabled",
+        "error"
+      ],
+      "adaptive": true,
+      "semantics": "manual-context.local/specs-accessibility.md#NavigationRail (Clone: manual-context.local/specs-clone-capability.md#NavigationRail; Competitive: manual-context.local/specs-competitive-positioning.md#NavigationRail; Composite: engine/components/NavigationRail.tsx)",
+      "goldenTest": "engine/layout/tests/goldens/NavigationRail.png",
+      "status": "present",
+      "ledgers": {
+        "clone": "manual-context.local/specs-clone-capability.md#NavigationRail",
+        "competitive": "manual-context.local/specs-competitive-positioning.md#NavigationRail"
+      },
+      "composite": "engine/components/NavigationRail.tsx",
+      "tokenTable": {
+        "container": "md.comp.navigation-rail.container",
+        "label": "md.comp.navigation-rail.label",
+        "state": [
+          "md.comp.navigation-rail.state.enabled",
+          "md.comp.navigation-rail.state.hovered",
+          "md.comp.navigation-rail.state.focused",
+          "md.comp.navigation-rail.state.pressed",
+          "md.comp.navigation-rail.state.dragged",
+          "md.comp.navigation-rail.state.disabled",
+          "md.comp.navigation-rail.state.error"
+        ],
+        "shape": "md.comp.navigation-rail.shape",
+        "elevation": "md.comp.navigation-rail.elevation",
+        "typescale": "md.comp.navigation-rail.typescale",
+        "sources": {
+          "container": "component",
+          "label": "component",
+          "state": "role",
+          "shape": "role",
+          "elevation": "theme",
+          "typescale": "role"
+        }
+      },
+      "container": "md.comp.navigation-rail.container",
+      "label": "md.comp.navigation-rail.label",
+      "opacity": {
+        "hover": 0.08,
+        "focus": 0.12,
+        "press": 0.16
+      },
+      "shape": "md.sys.shape.corner.none",
+      "elevation": "md.sys.state.elevation.level-0",
+      "typescale": "md.sys.typescale.label-medium",
+      "keyboard": "Arrows move between destinations; Enter selects",
+      "focus": "md.sys.focus.ring.navigation-rail",
+      "motion": {
+        "token": "motion.expressive.easing.standard",
+        "durationMs": 300
+      },
+      "role": "navigation"
+    },
+    {
+      "name": "NavigationDrawer",
+      "primitive": "M3NativeNavigationDrawer",
+      "tokens": [
+        "md.comp.navigation-drawer.container",
+        "md.comp.navigation-drawer.label",
+        "md.sys.color.surface",
+        "md.sys.color.on-surface",
+        "md.sys.shape.corner.medium",
+        "md.sys.state.elevation.level-1",
+        "motion.durations.short-2",
+        "motion.expressive.easing.standard"
+      ],
+      "states": [
+        "enabled",
+        "hovered",
+        "focused",
+        "pressed",
+        "dragged",
+        "disabled",
+        "error"
+      ],
+      "adaptive": true,
+      "semantics": "manual-context.local/specs-accessibility.md#NavigationDrawer (Clone: manual-context.local/specs-clone-capability.md#NavigationDrawer; Competitive: manual-context.local/specs-competitive-positioning.md#NavigationDrawer; Composite: engine/components/NavigationDrawer.tsx)",
+      "goldenTest": "engine/layout/tests/goldens/NavigationDrawer.png",
+      "status": "present",
+      "ledgers": {
+        "clone": "manual-context.local/specs-clone-capability.md#NavigationDrawer",
+        "competitive": "manual-context.local/specs-competitive-positioning.md#NavigationDrawer"
+      },
+      "composite": "engine/components/NavigationDrawer.tsx",
+      "tokenTable": {
+        "container": "md.comp.navigation-drawer.container",
+        "label": "md.comp.navigation-drawer.label",
+        "state": [
+          "md.comp.navigation-drawer.state.enabled",
+          "md.comp.navigation-drawer.state.hovered",
+          "md.comp.navigation-drawer.state.focused",
+          "md.comp.navigation-drawer.state.pressed",
+          "md.comp.navigation-drawer.state.dragged",
+          "md.comp.navigation-drawer.state.disabled",
+          "md.comp.navigation-drawer.state.error"
+        ],
+        "shape": "md.comp.navigation-drawer.shape",
+        "elevation": "md.comp.navigation-drawer.elevation",
+        "typescale": "md.comp.navigation-drawer.typescale",
+        "sources": {
+          "container": "component",
+          "label": "component",
+          "state": "role",
+          "shape": "role",
+          "elevation": "theme",
+          "typescale": "role"
+        }
+      },
+      "container": "md.comp.navigation-drawer.container",
+      "label": "md.comp.navigation-drawer.label",
+      "opacity": {
+        "hover": 0.08,
+        "focus": 0.12,
+        "press": 0.16
+      },
+      "shape": "md.sys.shape.corner.large",
+      "elevation": "md.sys.state.elevation.level-1",
+      "typescale": "md.sys.typescale.label-large",
+      "keyboard": "Arrows move between items; Esc closes",
+      "focus": "md.sys.focus.ring.navigation-drawer",
+      "motion": {
+        "token": "motion.expressive.easing.emphasized",
+        "durationMs": 400
+      },
+      "role": "navigation"
+    },
+    {
+      "name": "SegmentedButton",
+      "primitive": "M3NativeSegmentedButton",
+      "tokens": [
+        "md.comp.segmented-button.container",
+        "md.comp.segmented-button.label",
+        "md.sys.color.surface",
+        "md.sys.color.on-surface",
+        "md.sys.shape.corner.medium",
+        "md.sys.state.elevation.level-1",
+        "motion.durations.short-2",
         "motion.expressive.easing.standard"
       ],
       "states": [
@@ -1649,28 +1369,29 @@
         "error"
       ],
       "adaptive": false,
-      "semantics": "Generic container; groups children for accessibility traversal. (Clone: manual-context.local/specs-clone-capability.md#View; Competitive: manual-context.local/specs-competitive-positioning.md#View)",
-      "goldenTest": "m3_view_golden",
+      "semantics": "manual-context.local/specs-accessibility.md#SegmentedButton (Clone: manual-context.local/specs-clone-capability.md#SegmentedButton; Competitive: manual-context.local/specs-competitive-positioning.md#SegmentedButton; Composite: engine/components/SegmentedButton.tsx)",
+      "goldenTest": "engine/layout/tests/goldens/SegmentedButton.png",
       "status": "present",
       "ledgers": {
-        "clone": "manual-context.local/specs-clone-capability.md#View",
-        "competitive": "manual-context.local/specs-competitive-positioning.md#View"
+        "clone": "manual-context.local/specs-clone-capability.md#SegmentedButton",
+        "competitive": "manual-context.local/specs-competitive-positioning.md#SegmentedButton"
       },
+      "composite": "engine/components/SegmentedButton.tsx",
       "tokenTable": {
-        "container": "md.comp.view.container",
-        "label": "md.comp.view.label",
+        "container": "md.comp.segmented-button.container",
+        "label": "md.comp.segmented-button.label",
         "state": [
-          "md.comp.view.state.enabled",
-          "md.comp.view.state.hovered",
-          "md.comp.view.state.focused",
-          "md.comp.view.state.pressed",
-          "md.comp.view.state.dragged",
-          "md.comp.view.state.disabled",
-          "md.comp.view.state.error"
+          "md.comp.segmented-button.state.enabled",
+          "md.comp.segmented-button.state.hovered",
+          "md.comp.segmented-button.state.focused",
+          "md.comp.segmented-button.state.pressed",
+          "md.comp.segmented-button.state.dragged",
+          "md.comp.segmented-button.state.disabled",
+          "md.comp.segmented-button.state.error"
         ],
-        "shape": "md.comp.view.shape",
-        "elevation": "md.comp.view.elevation",
-        "typescale": "md.comp.view.typescale",
+        "shape": "md.comp.segmented-button.shape",
+        "elevation": "md.comp.segmented-button.elevation",
+        "typescale": "md.comp.segmented-button.typescale",
         "sources": {
           "container": "component",
           "label": "component",
@@ -1679,7 +1400,823 @@
           "elevation": "theme",
           "typescale": "role"
         }
-      }
+      },
+      "container": "md.comp.segmented-button.container",
+      "label": "md.comp.segmented-button.label",
+      "opacity": {
+        "hover": 0.08,
+        "focus": 0.12,
+        "press": 0.16
+      },
+      "shape": "md.sys.shape.corner.full",
+      "elevation": "md.sys.state.elevation.level-0",
+      "typescale": "md.sys.typescale.label-large",
+      "keyboard": "Arrows move between segments; Space selects",
+      "focus": "md.sys.focus.ring.segmented-button",
+      "motion": {
+        "token": "motion.expressive.easing.standard",
+        "durationMs": 200
+      },
+      "role": "group"
+    },
+    {
+      "name": "Dialog",
+      "primitive": "M3NativeDialog",
+      "tokens": [
+        "md.comp.dialog.container",
+        "md.comp.dialog.label",
+        "md.sys.color.surface",
+        "md.sys.color.on-surface",
+        "md.sys.shape.corner.medium",
+        "md.sys.state.elevation.level-1",
+        "motion.durations.short-2",
+        "motion.expressive.easing.standard"
+      ],
+      "states": [
+        "enabled",
+        "hovered",
+        "focused",
+        "pressed",
+        "dragged",
+        "disabled",
+        "error"
+      ],
+      "adaptive": false,
+      "semantics": "manual-context.local/specs-accessibility.md#Dialog (Clone: manual-context.local/specs-clone-capability.md#Dialog; Competitive: manual-context.local/specs-competitive-positioning.md#Dialog; Composite: engine/components/Dialog.tsx)",
+      "goldenTest": "engine/layout/tests/goldens/Dialog.png",
+      "status": "present",
+      "ledgers": {
+        "clone": "manual-context.local/specs-clone-capability.md#Dialog",
+        "competitive": "manual-context.local/specs-competitive-positioning.md#Dialog"
+      },
+      "composite": "engine/components/Dialog.tsx",
+      "tokenTable": {
+        "container": "md.comp.dialog.container",
+        "label": "md.comp.dialog.label",
+        "state": [
+          "md.comp.dialog.state.enabled",
+          "md.comp.dialog.state.hovered",
+          "md.comp.dialog.state.focused",
+          "md.comp.dialog.state.pressed",
+          "md.comp.dialog.state.dragged",
+          "md.comp.dialog.state.disabled",
+          "md.comp.dialog.state.error"
+        ],
+        "shape": "md.comp.dialog.shape",
+        "elevation": "md.comp.dialog.elevation",
+        "typescale": "md.comp.dialog.typescale",
+        "sources": {
+          "container": "component",
+          "label": "component",
+          "state": "role",
+          "shape": "role",
+          "elevation": "theme",
+          "typescale": "role"
+        }
+      },
+      "container": "md.comp.dialog.container",
+      "label": "md.comp.dialog.label",
+      "opacity": {
+        "hover": 0.08,
+        "focus": 0.12,
+        "press": 0.16
+      },
+      "shape": "md.sys.shape.corner.extra-large",
+      "elevation": "md.sys.state.elevation.level-3",
+      "typescale": "md.sys.typescale.headline-small",
+      "keyboard": "Tab traps focus; Esc dismisses",
+      "focus": "md.sys.focus.ring.dialog",
+      "motion": {
+        "token": "motion.expressive.easing.emphasized",
+        "durationMs": 400
+      },
+      "role": "dialog"
+    },
+    {
+      "name": "BottomSheet",
+      "primitive": "M3NativeBottomSheet",
+      "tokens": [
+        "md.comp.bottom-sheet.container",
+        "md.comp.bottom-sheet.label",
+        "md.sys.color.surface",
+        "md.sys.color.on-surface",
+        "md.sys.shape.corner.medium",
+        "md.sys.state.elevation.level-1",
+        "motion.durations.short-2",
+        "motion.expressive.easing.standard"
+      ],
+      "states": [
+        "enabled",
+        "hovered",
+        "focused",
+        "pressed",
+        "dragged",
+        "disabled",
+        "error"
+      ],
+      "adaptive": false,
+      "semantics": "manual-context.local/specs-accessibility.md#BottomSheet (Clone: manual-context.local/specs-clone-capability.md#BottomSheet; Competitive: manual-context.local/specs-competitive-positioning.md#BottomSheet; Composite: engine/components/BottomSheet.tsx)",
+      "goldenTest": "engine/layout/tests/goldens/BottomSheet.png",
+      "status": "present",
+      "ledgers": {
+        "clone": "manual-context.local/specs-clone-capability.md#BottomSheet",
+        "competitive": "manual-context.local/specs-competitive-positioning.md#BottomSheet"
+      },
+      "composite": "engine/components/BottomSheet.tsx",
+      "tokenTable": {
+        "container": "md.comp.bottom-sheet.container",
+        "label": "md.comp.bottom-sheet.label",
+        "state": [
+          "md.comp.bottom-sheet.state.enabled",
+          "md.comp.bottom-sheet.state.hovered",
+          "md.comp.bottom-sheet.state.focused",
+          "md.comp.bottom-sheet.state.pressed",
+          "md.comp.bottom-sheet.state.dragged",
+          "md.comp.bottom-sheet.state.disabled",
+          "md.comp.bottom-sheet.state.error"
+        ],
+        "shape": "md.comp.bottom-sheet.shape",
+        "elevation": "md.comp.bottom-sheet.elevation",
+        "typescale": "md.comp.bottom-sheet.typescale",
+        "sources": {
+          "container": "component",
+          "label": "component",
+          "state": "role",
+          "shape": "role",
+          "elevation": "theme",
+          "typescale": "role"
+        }
+      },
+      "container": "md.comp.bottom-sheet.container",
+      "label": "md.comp.bottom-sheet.label",
+      "opacity": {
+        "hover": 0.08,
+        "focus": 0.12,
+        "press": 0.16
+      },
+      "shape": "md.sys.shape.corner.extra-large-top",
+      "elevation": "md.sys.state.elevation.level-1",
+      "typescale": "md.sys.typescale.title-large",
+      "keyboard": "Swipe or Esc dismisses; Tab moves focus",
+      "focus": "md.sys.focus.ring.bottom-sheet",
+      "motion": {
+        "token": "motion.expressive.easing.emphasized",
+        "durationMs": 500
+      },
+      "role": "dialog"
+    },
+    {
+      "name": "Menu",
+      "primitive": "M3NativeMenu",
+      "tokens": [
+        "md.comp.menu.container",
+        "md.comp.menu.label",
+        "md.sys.color.surface",
+        "md.sys.color.on-surface",
+        "md.sys.shape.corner.medium",
+        "md.sys.state.elevation.level-1",
+        "motion.durations.short-2",
+        "motion.expressive.easing.standard"
+      ],
+      "states": [
+        "enabled",
+        "hovered",
+        "focused",
+        "pressed",
+        "dragged",
+        "disabled",
+        "error"
+      ],
+      "adaptive": false,
+      "semantics": "manual-context.local/specs-accessibility.md#Menu (Clone: manual-context.local/specs-clone-capability.md#Menu; Competitive: manual-context.local/specs-competitive-positioning.md#Menu; Composite: engine/components/Menu.tsx)",
+      "goldenTest": "engine/layout/tests/goldens/Menu.png",
+      "status": "present",
+      "ledgers": {
+        "clone": "manual-context.local/specs-clone-capability.md#Menu",
+        "competitive": "manual-context.local/specs-competitive-positioning.md#Menu"
+      },
+      "composite": "engine/components/Menu.tsx",
+      "tokenTable": {
+        "container": "md.comp.menu.container",
+        "label": "md.comp.menu.label",
+        "state": [
+          "md.comp.menu.state.enabled",
+          "md.comp.menu.state.hovered",
+          "md.comp.menu.state.focused",
+          "md.comp.menu.state.pressed",
+          "md.comp.menu.state.dragged",
+          "md.comp.menu.state.disabled",
+          "md.comp.menu.state.error"
+        ],
+        "shape": "md.comp.menu.shape",
+        "elevation": "md.comp.menu.elevation",
+        "typescale": "md.comp.menu.typescale",
+        "sources": {
+          "container": "component",
+          "label": "component",
+          "state": "role",
+          "shape": "role",
+          "elevation": "theme",
+          "typescale": "role"
+        }
+      },
+      "container": "md.comp.menu.container",
+      "label": "md.comp.menu.label",
+      "opacity": {
+        "hover": 0.08,
+        "focus": 0.12,
+        "press": 0.16
+      },
+      "shape": "md.sys.shape.corner.extra-small",
+      "elevation": "md.sys.state.elevation.level-2",
+      "typescale": "md.sys.typescale.body-large",
+      "keyboard": "Arrows move between items; Esc closes",
+      "focus": "md.sys.focus.ring.menu",
+      "motion": {
+        "token": "motion.expressive.easing.standard",
+        "durationMs": 200
+      },
+      "role": "menu"
+    },
+    {
+      "name": "SnackbarHost",
+      "primitive": "M3NativeSnackbarHost",
+      "tokens": [
+        "md.comp.snackbar-host.container",
+        "md.comp.snackbar-host.label",
+        "md.sys.color.surface",
+        "md.sys.color.on-surface",
+        "md.sys.shape.corner.medium",
+        "md.sys.state.elevation.level-1",
+        "motion.durations.short-2",
+        "motion.expressive.easing.standard"
+      ],
+      "states": [
+        "enabled",
+        "hovered",
+        "focused",
+        "pressed",
+        "dragged",
+        "disabled",
+        "error"
+      ],
+      "adaptive": false,
+      "semantics": "manual-context.local/specs-accessibility.md#SnackbarHost (Clone: manual-context.local/specs-clone-capability.md#SnackbarHost; Competitive: manual-context.local/specs-competitive-positioning.md#SnackbarHost; Composite: engine/components/SnackbarHost.tsx)",
+      "goldenTest": "engine/layout/tests/goldens/SnackbarHost.png",
+      "status": "present",
+      "ledgers": {
+        "clone": "manual-context.local/specs-clone-capability.md#SnackbarHost",
+        "competitive": "manual-context.local/specs-competitive-positioning.md#SnackbarHost"
+      },
+      "composite": "engine/components/SnackbarHost.tsx",
+      "tokenTable": {
+        "container": "md.comp.snackbar-host.container",
+        "label": "md.comp.snackbar-host.label",
+        "state": [
+          "md.comp.snackbar-host.state.enabled",
+          "md.comp.snackbar-host.state.hovered",
+          "md.comp.snackbar-host.state.focused",
+          "md.comp.snackbar-host.state.pressed",
+          "md.comp.snackbar-host.state.dragged",
+          "md.comp.snackbar-host.state.disabled",
+          "md.comp.snackbar-host.state.error"
+        ],
+        "shape": "md.comp.snackbar-host.shape",
+        "elevation": "md.comp.snackbar-host.elevation",
+        "typescale": "md.comp.snackbar-host.typescale",
+        "sources": {
+          "container": "component",
+          "label": "component",
+          "state": "role",
+          "shape": "role",
+          "elevation": "theme",
+          "typescale": "role"
+        }
+      },
+      "container": "md.comp.snackbar-host.container",
+      "label": "md.comp.snackbar-host.label",
+      "opacity": {
+        "hover": 0.08,
+        "focus": 0.12,
+        "press": 0.16
+      },
+      "shape": "md.sys.shape.corner.extra-small",
+      "elevation": "md.sys.state.elevation.level-3",
+      "typescale": "md.sys.typescale.body-medium",
+      "keyboard": "Action activatable via Enter; auto-dismisses",
+      "focus": "md.sys.focus.ring.snackbar-host",
+      "motion": {
+        "token": "motion.expressive.easing.emphasized",
+        "durationMs": 300
+      },
+      "role": "status"
+    },
+    {
+      "name": "SearchBar",
+      "primitive": "M3NativeSearchBar",
+      "tokens": [
+        "md.comp.search-bar.container",
+        "md.comp.search-bar.label",
+        "md.sys.color.on-surface",
+        "md.sys.typescale.body-large",
+        "md.sys.motion.easing.standard",
+        "motion.durations.short-2",
+        "motion.expressive.easing.standard"
+      ],
+      "states": [
+        "enabled",
+        "hovered",
+        "focused",
+        "pressed",
+        "dragged",
+        "disabled",
+        "error"
+      ],
+      "adaptive": false,
+      "semantics": "manual-context.local/specs-accessibility.md#SearchBar (Clone: manual-context.local/specs-clone-capability.md#SearchBar; Competitive: manual-context.local/specs-competitive-positioning.md#SearchBar; Composite: engine/components/SearchBar.tsx)",
+      "goldenTest": "engine/layout/tests/goldens/SearchBar.png",
+      "status": "present",
+      "ledgers": {
+        "clone": "manual-context.local/specs-clone-capability.md#SearchBar",
+        "competitive": "manual-context.local/specs-competitive-positioning.md#SearchBar"
+      },
+      "composite": "engine/components/SearchBar.tsx",
+      "tokenTable": {
+        "container": "md.comp.search-bar.container",
+        "label": "md.comp.search-bar.label",
+        "state": [
+          "md.comp.search-bar.state.enabled",
+          "md.comp.search-bar.state.hovered",
+          "md.comp.search-bar.state.focused",
+          "md.comp.search-bar.state.pressed",
+          "md.comp.search-bar.state.dragged",
+          "md.comp.search-bar.state.disabled",
+          "md.comp.search-bar.state.error"
+        ],
+        "shape": "md.comp.search-bar.shape",
+        "elevation": "md.comp.search-bar.elevation",
+        "typescale": "md.comp.search-bar.typescale",
+        "sources": {
+          "container": "component",
+          "label": "component",
+          "state": "role",
+          "shape": "role",
+          "elevation": "theme",
+          "typescale": "role"
+        }
+      },
+      "container": "md.comp.search-bar.container",
+      "label": "md.comp.search-bar.label",
+      "opacity": {
+        "hover": 0.08,
+        "focus": 0.12,
+        "press": 0.16
+      },
+      "shape": "md.sys.shape.corner.full",
+      "elevation": "md.sys.state.elevation.level-0",
+      "typescale": "md.sys.typescale.body-large",
+      "keyboard": "Type to filter; Esc clears; Enter submits",
+      "focus": "md.sys.focus.ring.search-bar",
+      "motion": {
+        "token": "motion.expressive.easing.standard",
+        "durationMs": 300
+      },
+      "role": "search"
+    },
+    {
+      "name": "Carousel",
+      "primitive": "M3NativeCarousel",
+      "tokens": [
+        "md.comp.carousel.container",
+        "md.comp.carousel.label",
+        "md.sys.color.surface",
+        "md.sys.color.on-surface",
+        "md.sys.shape.corner.medium",
+        "md.sys.state.elevation.level-1",
+        "motion.durations.short-2",
+        "motion.expressive.easing.standard"
+      ],
+      "states": [
+        "enabled",
+        "hovered",
+        "focused",
+        "pressed",
+        "dragged",
+        "disabled",
+        "error"
+      ],
+      "adaptive": true,
+      "semantics": "manual-context.local/specs-accessibility.md#Carousel (Clone: manual-context.local/specs-clone-capability.md#Carousel; Competitive: manual-context.local/specs-competitive-positioning.md#Carousel; Composite: engine/components/Carousel.tsx)",
+      "goldenTest": "engine/layout/tests/goldens/Carousel.png",
+      "status": "present",
+      "ledgers": {
+        "clone": "manual-context.local/specs-clone-capability.md#Carousel",
+        "competitive": "manual-context.local/specs-competitive-positioning.md#Carousel"
+      },
+      "composite": "engine/components/Carousel.tsx",
+      "tokenTable": {
+        "container": "md.comp.carousel.container",
+        "label": "md.comp.carousel.label",
+        "state": [
+          "md.comp.carousel.state.enabled",
+          "md.comp.carousel.state.hovered",
+          "md.comp.carousel.state.focused",
+          "md.comp.carousel.state.pressed",
+          "md.comp.carousel.state.dragged",
+          "md.comp.carousel.state.disabled",
+          "md.comp.carousel.state.error"
+        ],
+        "shape": "md.comp.carousel.shape",
+        "elevation": "md.comp.carousel.elevation",
+        "typescale": "md.comp.carousel.typescale",
+        "sources": {
+          "container": "component",
+          "label": "component",
+          "state": "role",
+          "shape": "role",
+          "elevation": "theme",
+          "typescale": "role"
+        }
+      },
+      "container": "md.comp.carousel.container",
+      "label": "md.comp.carousel.label",
+      "opacity": {
+        "hover": 0.08,
+        "focus": 0.12,
+        "press": 0.16
+      },
+      "shape": "md.sys.shape.corner.medium",
+      "elevation": "md.sys.state.elevation.level-0",
+      "typescale": "md.sys.typescale.body-large",
+      "keyboard": "Arrows move between items",
+      "focus": "md.sys.focus.ring.carousel",
+      "motion": {
+        "token": "motion.expressive.easing.emphasized",
+        "durationMs": 500
+      },
+      "role": "region"
+    },
+    {
+      "name": "BottomAppBar",
+      "primitive": "M3NativeBottomAppBar",
+      "tokens": [
+        "md.comp.bottom-app-bar.container",
+        "md.comp.bottom-app-bar.label",
+        "md.sys.color.surface",
+        "md.sys.color.on-surface",
+        "md.sys.shape.corner.medium",
+        "md.sys.state.elevation.level-1",
+        "motion.durations.short-2",
+        "motion.expressive.easing.standard"
+      ],
+      "states": [
+        "enabled",
+        "hovered",
+        "focused",
+        "pressed",
+        "dragged",
+        "disabled",
+        "error"
+      ],
+      "adaptive": false,
+      "semantics": "manual-context.local/specs-accessibility.md#BottomAppBar (Clone: manual-context.local/specs-clone-capability.md#BottomAppBar; Competitive: manual-context.local/specs-competitive-positioning.md#BottomAppBar; Composite: engine/components/BottomAppBar.tsx)",
+      "goldenTest": "engine/layout/tests/goldens/BottomAppBar.png",
+      "status": "present",
+      "ledgers": {
+        "clone": "manual-context.local/specs-clone-capability.md#BottomAppBar",
+        "competitive": "manual-context.local/specs-competitive-positioning.md#BottomAppBar"
+      },
+      "composite": "engine/components/BottomAppBar.tsx",
+      "tokenTable": {
+        "container": "md.comp.bottom-app-bar.container",
+        "label": "md.comp.bottom-app-bar.label",
+        "state": [
+          "md.comp.bottom-app-bar.state.enabled",
+          "md.comp.bottom-app-bar.state.hovered",
+          "md.comp.bottom-app-bar.state.focused",
+          "md.comp.bottom-app-bar.state.pressed",
+          "md.comp.bottom-app-bar.state.dragged",
+          "md.comp.bottom-app-bar.state.disabled",
+          "md.comp.bottom-app-bar.state.error"
+        ],
+        "shape": "md.comp.bottom-app-bar.shape",
+        "elevation": "md.comp.bottom-app-bar.elevation",
+        "typescale": "md.comp.bottom-app-bar.typescale",
+        "sources": {
+          "container": "component",
+          "label": "component",
+          "state": "role",
+          "shape": "role",
+          "elevation": "theme",
+          "typescale": "role"
+        }
+      },
+      "container": "md.comp.bottom-app-bar.container",
+      "label": "md.comp.bottom-app-bar.label",
+      "opacity": {
+        "hover": 0.08,
+        "focus": 0.12,
+        "press": 0.16
+      },
+      "shape": "md.sys.shape.corner.none",
+      "elevation": "md.sys.state.elevation.level-2",
+      "typescale": "md.sys.typescale.body-medium",
+      "keyboard": "Tab moves through actions",
+      "focus": "md.sys.focus.ring.bottom-app-bar",
+      "motion": {
+        "token": "motion.expressive.easing.standard",
+        "durationMs": 300
+      },
+      "role": "toolbar"
+    },
+    {
+      "name": "ButtonGroup",
+      "primitive": "M3NativeButtonGroup",
+      "tokens": [
+        "md.comp.button-group.container",
+        "md.comp.button-group.label",
+        "md.sys.color.surface",
+        "md.sys.color.on-surface",
+        "md.sys.shape.corner.medium",
+        "md.sys.state.elevation.level-1",
+        "motion.durations.short-2",
+        "motion.expressive.easing.standard"
+      ],
+      "states": [
+        "enabled",
+        "hovered",
+        "focused",
+        "pressed",
+        "dragged",
+        "disabled",
+        "error"
+      ],
+      "adaptive": false,
+      "semantics": "manual-context.local/specs-accessibility.md#ButtonGroup (Clone: manual-context.local/specs-clone-capability.md#ButtonGroup; Competitive: manual-context.local/specs-competitive-positioning.md#ButtonGroup; Composite: engine/components/ButtonGroup.tsx)",
+      "goldenTest": "engine/layout/tests/goldens/ButtonGroup.png",
+      "status": "present",
+      "ledgers": {
+        "clone": "manual-context.local/specs-clone-capability.md#ButtonGroup",
+        "competitive": "manual-context.local/specs-competitive-positioning.md#ButtonGroup"
+      },
+      "composite": "engine/components/ButtonGroup.tsx",
+      "tokenTable": {
+        "container": "md.comp.button-group.container",
+        "label": "md.comp.button-group.label",
+        "state": [
+          "md.comp.button-group.state.enabled",
+          "md.comp.button-group.state.hovered",
+          "md.comp.button-group.state.focused",
+          "md.comp.button-group.state.pressed",
+          "md.comp.button-group.state.dragged",
+          "md.comp.button-group.state.disabled",
+          "md.comp.button-group.state.error"
+        ],
+        "shape": "md.comp.button-group.shape",
+        "elevation": "md.comp.button-group.elevation",
+        "typescale": "md.comp.button-group.typescale",
+        "sources": {
+          "container": "component",
+          "label": "component",
+          "state": "role",
+          "shape": "role",
+          "elevation": "theme",
+          "typescale": "role"
+        }
+      },
+      "container": "md.comp.button-group.container",
+      "label": "md.comp.button-group.label",
+      "opacity": {
+        "hover": 0.08,
+        "focus": 0.12,
+        "press": 0.16
+      },
+      "shape": "md.sys.shape.corner.full",
+      "elevation": "md.sys.state.elevation.level-0",
+      "typescale": "md.sys.typescale.label-large",
+      "keyboard": "Arrows move between buttons; Space selects",
+      "focus": "md.sys.focus.ring.button-group",
+      "motion": {
+        "token": "motion.expressive.easing.standard",
+        "durationMs": 200
+      },
+      "role": "group"
+    },
+    {
+      "name": "SplitButton",
+      "primitive": "M3NativeSplitButton",
+      "tokens": [
+        "md.comp.split-button.container",
+        "md.comp.split-button.label",
+        "md.sys.color.surface",
+        "md.sys.color.on-surface",
+        "md.sys.shape.corner.medium",
+        "md.sys.state.elevation.level-1",
+        "motion.durations.short-2",
+        "motion.expressive.easing.standard"
+      ],
+      "states": [
+        "enabled",
+        "hovered",
+        "focused",
+        "pressed",
+        "dragged",
+        "disabled",
+        "error"
+      ],
+      "adaptive": false,
+      "semantics": "manual-context.local/specs-accessibility.md#SplitButton (Clone: manual-context.local/specs-clone-capability.md#SplitButton; Competitive: manual-context.local/specs-competitive-positioning.md#SplitButton; Composite: engine/components/SplitButton.tsx)",
+      "goldenTest": "engine/layout/tests/goldens/SplitButton.png",
+      "status": "present",
+      "ledgers": {
+        "clone": "manual-context.local/specs-clone-capability.md#SplitButton",
+        "competitive": "manual-context.local/specs-competitive-positioning.md#SplitButton"
+      },
+      "composite": "engine/components/SplitButton.tsx",
+      "tokenTable": {
+        "container": "md.comp.split-button.container",
+        "label": "md.comp.split-button.label",
+        "state": [
+          "md.comp.split-button.state.enabled",
+          "md.comp.split-button.state.hovered",
+          "md.comp.split-button.state.focused",
+          "md.comp.split-button.state.pressed",
+          "md.comp.split-button.state.dragged",
+          "md.comp.split-button.state.disabled",
+          "md.comp.split-button.state.error"
+        ],
+        "shape": "md.comp.split-button.shape",
+        "elevation": "md.comp.split-button.elevation",
+        "typescale": "md.comp.split-button.typescale",
+        "sources": {
+          "container": "component",
+          "label": "component",
+          "state": "role",
+          "shape": "role",
+          "elevation": "theme",
+          "typescale": "role"
+        }
+      },
+      "container": "md.comp.split-button.container",
+      "label": "md.comp.split-button.label",
+      "opacity": {
+        "hover": 0.08,
+        "focus": 0.12,
+        "press": 0.16
+      },
+      "shape": "md.sys.shape.corner.full",
+      "elevation": "md.sys.state.elevation.level-0",
+      "typescale": "md.sys.typescale.label-large",
+      "keyboard": "Enter activates primary; Alt+Down opens menu",
+      "focus": "md.sys.focus.ring.split-button",
+      "motion": {
+        "token": "motion.expressive.easing.standard",
+        "durationMs": 200
+      },
+      "role": "group"
+    },
+    {
+      "name": "Text",
+      "primitive": "M3NativeText",
+      "tokens": [
+        "md.comp.text.container",
+        "md.comp.text.label",
+        "md.sys.color.on-surface",
+        "md.sys.typescale.body-large",
+        "md.sys.motion.easing.standard",
+        "motion.durations.short-2",
+        "motion.expressive.easing.standard"
+      ],
+      "states": [
+        "enabled",
+        "hovered",
+        "focused",
+        "pressed",
+        "dragged",
+        "disabled",
+        "error"
+      ],
+      "adaptive": false,
+      "semantics": "manual-context.local/specs-accessibility.md#Text (Clone: manual-context.local/specs-clone-capability.md#Text; Competitive: manual-context.local/specs-competitive-positioning.md#Text)",
+      "goldenTest": "engine/layout/tests/goldens/Text.png",
+      "status": "present",
+      "ledgers": {
+        "clone": "manual-context.local/specs-clone-capability.md#Text",
+        "competitive": "manual-context.local/specs-competitive-positioning.md#Text"
+      },
+      "tokenTable": {
+        "container": "md.comp.text.container",
+        "label": "md.comp.text.label",
+        "state": [
+          "md.comp.text.state.enabled",
+          "md.comp.text.state.hovered",
+          "md.comp.text.state.focused",
+          "md.comp.text.state.pressed",
+          "md.comp.text.state.dragged",
+          "md.comp.text.state.disabled",
+          "md.comp.text.state.error"
+        ],
+        "shape": "md.comp.text.shape",
+        "elevation": "md.comp.text.elevation",
+        "typescale": "md.comp.text.typescale",
+        "sources": {
+          "container": "component",
+          "label": "component",
+          "state": "role",
+          "shape": "role",
+          "elevation": "theme",
+          "typescale": "role"
+        }
+      },
+      "container": "md.comp.text.container",
+      "label": "md.comp.text.label",
+      "opacity": {
+        "hover": 0.08,
+        "focus": 0.12,
+        "press": 0.16
+      },
+      "shape": "md.sys.shape.corner.none",
+      "elevation": "md.sys.state.elevation.level-0",
+      "typescale": "md.sys.typescale.body-large",
+      "keyboard": "Not focusable; screen reader reads content",
+      "focus": "md.sys.focus.none",
+      "motion": {
+        "token": "motion.expressive.easing.standard",
+        "durationMs": 200
+      },
+      "role": "text"
+    },
+    {
+      "name": "FAB",
+      "primitive": "M3NativeFAB",
+      "tokens": [
+        "md.comp.fab.container",
+        "md.comp.fab.label",
+        "md.sys.color.primary",
+        "md.sys.color.on-primary",
+        "md.sys.shape.corner.full",
+        "md.sys.motion.duration.short-2",
+        "motion.durations.short-2",
+        "motion.expressive.easing.standard"
+      ],
+      "states": [
+        "enabled",
+        "hovered",
+        "focused",
+        "pressed",
+        "dragged",
+        "disabled",
+        "error"
+      ],
+      "adaptive": false,
+      "semantics": "manual-context.local/specs-accessibility.md#FAB (Clone: manual-context.local/specs-clone-capability.md#FAB; Competitive: manual-context.local/specs-competitive-positioning.md#FAB)",
+      "goldenTest": "engine/layout/tests/goldens/FAB.png",
+      "status": "present",
+      "ledgers": {
+        "clone": "manual-context.local/specs-clone-capability.md#FAB",
+        "competitive": "manual-context.local/specs-competitive-positioning.md#FAB"
+      },
+      "tokenTable": {
+        "container": "md.comp.fab.container",
+        "label": "md.comp.fab.label",
+        "state": [
+          "md.comp.fab.state.enabled",
+          "md.comp.fab.state.hovered",
+          "md.comp.fab.state.focused",
+          "md.comp.fab.state.pressed",
+          "md.comp.fab.state.dragged",
+          "md.comp.fab.state.disabled",
+          "md.comp.fab.state.error"
+        ],
+        "shape": "md.comp.fab.shape",
+        "elevation": "md.comp.fab.elevation",
+        "typescale": "md.comp.fab.typescale",
+        "sources": {
+          "container": "component",
+          "label": "component",
+          "state": "role",
+          "shape": "role",
+          "elevation": "theme",
+          "typescale": "role"
+        }
+      },
+      "container": "md.comp.fab.container",
+      "label": "md.comp.fab.label",
+      "opacity": {
+        "hover": 0.08,
+        "focus": 0.12,
+        "press": 0.16
+      },
+      "shape": "md.sys.shape.corner.large",
+      "elevation": "md.sys.state.elevation.level-3",
+      "typescale": "md.sys.typescale.label-large",
+      "keyboard": "Enter or Space activates; Tab moves focus",
+      "focus": "md.sys.focus.ring.fab",
+      "motion": {
+        "token": "motion.expressive.easing.emphasized",
+        "durationMs": 400
+      },
+      "role": "button"
     }
   ]
 }

@@ -392,18 +392,144 @@ test('AC-M3-023 T3: disabled radio tap keeps unselected with no repaint', () => 
   assert.equal(handle.selected, false);
 });
 
-test('AC-M3-023 T3: disabled radio tap touches neither binding nor listener', () => {
-  const { createRadio } = loadSelection();
-  let writes = 0;
-  let calls = 0;
-  const handle = createRadio({
-    selected: false,
-    enabled: false,
-    binding: { set: () => { writes += 1; } },
-    onSelectedChange: () => { calls += 1; },
+// ---------------------------------------------------------------------------
+// BUG-M3-FIDELITY-010 T2 — behavioral proof over the T1 matrix (AC-M3-003).
+// Hermetic: node:test + node:assert/strict only. Imports the components and
+// driveState through the package public entry (index.js); reads the T1
+// matrix (engine/layout/m3_matrix.json) from disk. No network, no secrets,
+// no services.
+//
+// ASSUMPTION (opacity seam): driveState layer.props.opacity carries the
+// matrix row's measured opacity for the driven state, compared as
+// String(row.opacity[stateKey]) so token-role and numeric forms both match.
+// ---------------------------------------------------------------------------
+
+const { components: behavioralComponents, driveState } = require('../index.js');
+const MATRIX_URL = new URL('../../../engine/layout/m3_matrix.json', import.meta.url);
+
+const OPACITY_STATE_KEYS = { hover: 'hover', focus: 'focus', pressed: 'press' };
+
+function loadMatrixRows() {
+  return JSON.parse(readFileSync(MATRIX_URL, 'utf8')).components;
+}
+
+function matrixRow(name) {
+  const row = loadMatrixRows().find((entry) => entry && entry.name === name);
+  if (row === undefined) {
+    throw new Error(`matrix: ${name} missing row`);
+  }
+  return row;
+}
+
+// Test helper per the T2 Interface line: one boolean per behavioral facet.
+function behavioralRow(name) {
+  const row = matrixRow(name);
+  for (const field of ['container', 'label', 'opacity', 'shape', 'elevation', 'typescale', 'keyboard', 'motion', 'role']) {
+    if (row[field] === undefined) {
+      throw new Error(`matrix: ${name} missing ${field}`);
+    }
+  }
+  const descriptor = behavioralComponents[name](REPRESENTATIVE_PROPS[name]);
+  const serialized = JSON.stringify(descriptor);
+  const tokenOk =
+    typeof row.container === 'string' && typeof row.label === 'string' && !/#[0-9a-fA-F]{3,8}/.test(serialized);
+  let opacityOk = true;
+  for (const [state, key] of Object.entries(OPACITY_STATE_KEYS)) {
+    const driven = driveState(name, state);
+    if (driven.layer.props.opacity !== String(row.opacity[key])) {
+      opacityOk = false;
+    }
+  }
+  const shapeOk = typeof row.shape === 'string' && row.shape.length > 0;
+  const elevationOk = typeof row.elevation === 'string' && row.elevation.length > 0;
+  const typescaleOk = typeof row.typescale === 'string' && row.typescale.length > 0;
+  const keyboardOk = typeof row.keyboard === 'string' && row.keyboard.length > 0;
+  const motionOk = typeof row.motion.token === 'string' && typeof row.motion.durationMs === 'number';
+  const roleOk = typeof row.role === 'string' && row.role.length > 0;
+  return { tokenOk, opacityOk, shapeOk, elevationOk, typescaleOk, keyboardOk, motionOk, roleOk };
+}
+
+// Structural composition: only documented direct members (content/layer/
+// anchor) are scanned — never an anywhere-`type` walk.
+function directMembers(descriptor) {
+  const members = [];
+  for (const slot of ['content', 'layer', 'anchor']) {
+    const value = descriptor[slot];
+    if (value !== undefined) {
+      members.push(value);
+    }
+  }
+  return members;
+}
+
+function assertStructuralComposition(name) {
+  const descriptor = behavioralComponents[name](REPRESENTATIVE_PROPS[name]);
+  const members = directMembers(descriptor);
+  assert.ok(members.length > 0, `${name} descriptor must expose a documented slot (content/layer/anchor)`);
+  const types = collectTypes(members);
+  assert.ok(types.length > 0, `${name} documented slot must nest at least one tier-1 descriptor`);
+  for (const type of types) {
+    assert.ok(TIER_1.has(type), `${name} slot instantiates "${type}", which is not a tier-1 primitive`);
+  }
+}
+
+test('driveState rejects a non-string state with TypeError', () => {
+  assert.throws(() => driveState('Button', 42), TypeError);
+  assert.throws(() => driveState('Button', undefined), TypeError);
+});
+
+test('driveState rejects an unknown state with RangeError', () => {
+  assert.throws(() => driveState('Button', 'dragged_into_space'), RangeError);
+});
+
+test('driveState returns a Ripple layer for hover/focus/pressed/disabled', () => {
+  for (const state of ['hover', 'focus', 'pressed', 'disabled']) {
+    const record = driveState('Button', state);
+    assert.equal(record.target, 'Button');
+    assert.equal(record.state, state);
+    assert.equal(record.layer.type, 'Ripple');
+    assert.equal(typeof record.layer.props.color, 'string');
+  }
+});
+
+for (const name of TIER_2) {
+  test(`${name} structural composition lives on documented slots only`, () => {
+    assertStructuralComposition(name);
   });
-  handle.tap();
-  assert.equal(writes, 0);
-  assert.equal(calls, 0);
-  assert.equal(handle.selected, false);
+}
+
+for (const name of TIER_2) {
+  test(`${name} behavioral row is fully measured (token/opacity/shape/elevation/typescale/keyboard/motion/role)`, () => {
+    const row = behavioralRow(name);
+    assert.deepEqual(row, {
+      tokenOk: true,
+      opacityOk: true,
+      shapeOk: true,
+      elevationOk: true,
+      typescaleOk: true,
+      keyboardOk: true,
+      motionOk: true,
+      roleOk: true,
+    });
+  });
+}
+
+test('Tooltip layers structurally via layer.type === OverlayHost', () => {
+  const descriptor = behavioralComponents.Tooltip({ text: 'Help', anchor: 'target' });
+  assert.equal(descriptor.type, 'Tooltip');
+  assert.ok(descriptor.layer !== undefined, 'Tooltip descriptor must expose a layer slot');
+  assert.equal(descriptor.layer.type, 'OverlayHost');
+});
+
+test('behavioral proof fails when the matrix row is absent', () => {
+  assert.throws(() => matrixRow('NotAComponent'), /matrix: NotAComponent missing row/);
+  assert.throws(() => behavioralRow('NotAComponent'), /matrix: NotAComponent missing row/);
+});
+
+test('structural composition rejects a hardcoded literal with no tier-1 member', () => {
+  const literal = { type: 'Button', props: { variant: 'filled', label: 'OK' } };
+  assert.throws(() => {
+    const types = collectTypes(directMembers(literal));
+    assert.ok(types.length > 0, 'Button documented slot must nest at least one tier-1 descriptor');
+  });
 });

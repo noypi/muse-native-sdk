@@ -15,7 +15,7 @@ export function SegmentedButton(props?: SegmentedButtonProps) {
     type: 'SegmentedButton',
     props: next,
     content: [
-      { type: 'Chip', props: { tone: 'surface' } },
+      { type: 'Chip', props: { tone: 'surface', selected: next.selected } },
       { type: 'Surface', props: { tone: 'surface' } },
       { type: 'Text', props: { variant: 'label-large', color: 'on-surface' } },
       { type: 'Ripple', props: { color: 'primary' } },

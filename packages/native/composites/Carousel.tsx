@@ -15,7 +15,7 @@ export function Carousel(props?: CarouselProps) {
     type: 'Carousel',
     props: next,
     content: [
-      { type: 'Scroll', props: { orientation: 'horizontal' } },
+      { type: 'Scroll', props: { orientation: 'horizontal', index: next.index } },
       { type: 'Stack', props: { direction: 'row' } },
       { type: 'Image', props: { contentFit: 'cover' } },
       { type: 'Surface', props: { tone: 'surface' } },

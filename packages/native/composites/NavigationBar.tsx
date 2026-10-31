@@ -19,7 +19,7 @@ export function NavigationBar(props?: NavigationBarProps) {
       { type: 'Surface', props: { tone: 'surface-container' } },
       { type: 'Stack', props: { direction: 'row' } },
       { type: 'Icon', props: { name: 'home', color: 'on-surface' } },
-      { type: 'Text', props: { variant: 'label-medium', color: 'on-surface' } },
+      { type: 'Text', props: { variant: 'label-medium', color: 'on-surface', selected: next.selected } },
       { type: 'Ripple', props: { color: 'primary' } },
     ],
   };
