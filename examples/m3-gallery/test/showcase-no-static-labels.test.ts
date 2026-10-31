@@ -155,45 +155,80 @@ describe('showcase-no-static-labels (a) Showcase.tsx has zero GalleryRow refs', 
 });
 
 describe('showcase-no-static-labels (b) App.tsx story block has no Text label', () => {
-  // Slice the per-story render block: from stories.map to the end of the
-  // file (the story loop is the last render section in App.tsx).
+  // Slice the single-selected-story render block: from the selected-story
+  // composition (merged FR-SAMPLE-014 contract: `selectedStory` /
+  // `SelectedComponent` over buildStories(manifest), no stories.map loop) to
+  // the end of the file.
   function storyBlock() {
     const src = readSource(APP_PATH);
-    const idx = src.indexOf('stories.map');
-    assert.ok(idx >= 0, 'App.tsx must render its stories via stories.map');
-    return src.slice(idx);
+    // Merged single-story surface: the guarded selected-story block inside
+    // return( — `{selectedStory !== null && ... ? (<View key=...>...} — up to
+    // the shell-chrome pager (<BottomAppBar). Shell-chrome/pager <Text> rows
+    // before/after it (FR-SAMPLE-014) are out of scope for this gate.
+    const start = src.indexOf('{selectedStory !== null &&');
+    assert.ok(start >= 0, 'App.tsx must guard the single selected story surface ({selectedStory !== null && ...)');
+    const endMarkers = ['<BottomAppBar', '{galleryMode'];
+    let end = src.length;
+    for (const m of endMarkers) {
+      const i = src.indexOf(m, start);
+      if (i >= 0 && i > start) {
+        end = i;
+        break;
+      }
+    }
+    assert.ok(end > start, 'story surface block must be non-empty');
+    return src.slice(start, end);
   }
 
   it('no `<Text>` label preceding `StoryComponent` render in the story block', () => {
     const block = storyBlock();
-    // Anchor on the render usage (`<StoryComponent ... />` or
-    // `content={<StoryComponent ... />}`), not the `const StoryComponent =`
-    // binding above it.
-    const usage = block.search(/content=\{<StoryComponent|<StoryComponent\b/);
-    assert.ok(usage >= 0, 'story block must render StoryComponent');
-    const before = block.slice(block.indexOf('return ('), usage);
+    // Anchor on the render usage (`<SelectedComponent ... />` (merged) or
+    // legacy `<StoryComponent ... />`, or `content={<SelectedComponent ... />}`
+    // for overlay members), not the `const SelectedComponent =` binding above it.
+    const usage = block.search(/content=\{<(Selected|Story)Component|<(Selected|Story)Component\b/);
+    assert.ok(usage >= 0, 'story surface must render the single selected SelectedComponent/StoryComponent');
+    const before = block.slice(0, usage);
     assert.ok(
       !/<Text\b/.test(before),
-      'story block must not render a <Text> label before StoryComponent (AC-SAMPLE-041: no static Text-label duplicate rows)',
+      'story block must not render a <Text> label before SelectedComponent (AC-SAMPLE-041: no static Text-label duplicate rows; the FR-SAMPLE-014 index lives in shell chrome/pager only)',
+    );
+    // The story surface itself carries no <Text> label sibling: the render
+    // usage region renders only the View/SelectedComponent/OverlayHost.
+    assert.ok(
+      /selectedStory !== null/.test(block),
+      'story surface must guard the empty list (selectedStory null renders nothing)',
     );
   });
 
   it('no story-descriptor interpolation (`story.component ...`) inside a `<Text>`', () => {
     const block = storyBlock();
-    const labelRe = /<Text[^>]*>\s*\{?\s*[`'"]?\$\{story\.component\}/;
+    // Pre-rebase App.tsx:228 pattern `{`${story.component} ...`}` inside
+    // <Text>; merged single-story spellings use selectedStory/selectedRendered.
+    const labelRe = /<Text[^>]*>\s*\{?\s*[`'"]?\$\{(story\.component|selectedStory|selectedRendered)/;
     assert.ok(
       !labelRe.test(block),
-      'App.tsx:228 pattern `{`${story.component} ...`}` inside <Text> must be gone from the story surface',
+      'App.tsx story surface must carry no story-descriptor interpolation inside <Text> (merged: no Text label sibling at all)',
+    );
+    assert.ok(
+      !/<Text\b/.test(block),
+      'story surface block must carry zero <Text> tags at all (AC-SAMPLE-041 single-story surface)',
     );
   });
 
   it('boundary: empty story list still satisfies the gate (no label rows to render)', () => {
+    const src = readSource(APP_PATH);
     const block = storyBlock();
     const textTags = block.match(/<Text\b/g) || [];
     assert.equal(
       textTags.length,
       0,
       `story block must carry zero <Text> tags at all, found ${textTags.length}`,
+    );
+    // Empty-list boundary holds in the merged structure: no stories →
+    // selectedStory is null and the surface renders nothing (never blank dump).
+    assert.ok(
+      /stories\.length === 0 \? null/.test(src) || /selectedStory !== null/.test(src),
+      'empty story list must resolve to a null selected story that renders nothing',
     );
   });
 });

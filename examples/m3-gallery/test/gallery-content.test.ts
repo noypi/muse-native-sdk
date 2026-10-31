@@ -187,20 +187,40 @@ describe('T2 story rows render instead of JSON debug dump (AC-M3-016)', () => {
 
   it('resolves the descriptor type through the real component table', () => {
     const src = readSource(APP_PATH);
+    // Merged single-story contract (FR-SAMPLE-014 rebase): the selected
+    // story's rendered descriptor is mapped through the real table as
+    // `components[selectedRendered.type]` (the `rendered.type` spelling predates
+    // the selected-story rename; accept either).
     assert.ok(
-      src.includes('components[rendered.type]'),
-      'App.tsx must map the descriptor type string through the real component table (components[rendered.type])',
+      src.includes('components[selectedRendered.type]') || src.includes('components[rendered.type]'),
+      'App.tsx must map the descriptor type string through the real component table (components[selectedRendered.type])',
     );
     assert.ok(
-      /<StoryComponent\b/.test(src),
-      'App.tsx must render the resolved table entry as <StoryComponent .../> (a bare <rendered.type /> would render the string as a host tag)',
+      /<(Selected|Story)Component\b/.test(src),
+      'App.tsx must render the resolved table entry as <SelectedComponent .../> (a bare <rendered.type /> would render the string as a host tag)',
+    );
+    // Overlay members nest the inner component as OverlayHost content.
+    assert.ok(
+      /OverlayHost/.test(src),
+      'App.tsx must nest overlay descriptors via OverlayHost per RULE-M3-006',
     );
   });
 
   it('keeps the buildStories mapping', () => {
     const src = readSource(APP_PATH);
     assert.match(src, /buildStories\(manifest\)/, 'App.tsx must keep the buildStories(manifest) mapping');
-    assert.match(src, /stories\.map\(/, 'App.tsx must keep mapping over stories for rows');
+    // Merged single-story contract (FR-SAMPLE-014 rebase): one selected real
+    // StoryComponent/OverlayHost renders (selectedStory + SelectedComponent),
+    // not a stories.map multi-row loop. The manifest single-source mapping
+    // holds via buildStories(manifest) + component-table resolution above.
+    assert.ok(
+      /selectedStory/.test(src) && /SelectedComponent|StoryComponent/.test(src),
+      'App.tsx must render the single selected real StoryComponent/OverlayHost from buildStories(manifest)',
+    );
+    assert.ok(
+      !src.includes('stories.map'),
+      'App.tsx must not keep the pre-rebase stories.map multi-row loop (single selected story only)',
+    );
   });
 
   it('retains default-exported App()', () => {
