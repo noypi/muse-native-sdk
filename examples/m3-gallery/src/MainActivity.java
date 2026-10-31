@@ -47,6 +47,22 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
 
     private long engineHandle = 0;
 
+    /** T1 (FR-STARTUP-002/AC-STARTUP-003): cold-readiness flag set on the UI-thread post-back. */
+    private volatile boolean treeReady = false;
+
+    /** T2 (FR-STARTUP-002/AC-STARTUP-003): cold-readiness flag set in surfaceCreated/surfaceChanged. */
+    private volatile boolean surfaceReady = false;
+
+    /** T2: latest surface holder for the single first-render gate (RULE-STARTUP-002). */
+    private SurfaceHolder pendingHolder;
+
+    /** T1 generation token (feeds T3): late post-backs with a stale generation are dropped. */
+    private int treeLoadGeneration = 0;
+
+    /** T1 single-owner background loader (ASSUMPTION A2, RULE-STARTUP-002). */
+    private final java.util.concurrent.ExecutorService treeLoader =
+            java.util.concurrent.Executors.newSingleThreadExecutor();
+
     /** TTFD exactly-once guard: reportFullyDrawn() is signalled at most once. */
     private boolean fullyDrawnReported = false;
 
@@ -286,10 +302,128 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             showTextProbePage(root);
         }
         attachImeInsetListener(root);
-        byte[] treeBytes = readTreeAsset();
-        if (treeBytes != null) {
-            engineHandle = nativeLoadTree(treeBytes);
+        startAsyncTreeLoad();
+    }
+
+    /**
+     * T1 (FR-STARTUP-002/AC-STARTUP-003): start the single-owner background
+     * tree load and return immediately. Asset read + nativeLoadTree run on
+     * the background loader; only the resulting handle is posted to the UI
+     * thread. Never blocks, never throws.
+     */
+    void startAsyncTreeLoad() {
+        final int generation = treeLoadGeneration;
+        // A1 single-process lifetime (configChanges, no recreate): the loader is
+        // shut down in onDestroy and never reused — guard the re-entry seam.
+        if (treeLoader.isShutdown()) {
+            Log.e("MainActivity", "tree-load: loader shut down, no reload");
+            return;
         }
+        try {
+            treeLoader.execute(() -> {
+                final byte[] bytes;
+                try {
+                    bytes = readTreeAsset();
+                } catch (Throwable t) {
+                    Log.e("MainActivity", "tree-load: asset read threw");
+                    return;
+                }
+                if (bytes == null) {
+                    Log.e("MainActivity", "tree-load failed-closed: null");
+                    return;
+                }
+                if (bytes.length == 0) {
+                    Log.e("MainActivity", "tree-load failed-closed: empty");
+                    return;
+                }
+                final long handle;
+                try {
+                    handle = nativeLoadTree(bytes);
+                } catch (Throwable t) {
+                    Log.e("MainActivity", "tree-load: parse threw");
+                    return;
+                }
+                if (handle == 0) {
+                    Log.e("MainActivity", "tree-load failed-closed: native-0");
+                    return;
+                }
+                final long readyHandle = handle;
+                final byte[] readyBytes = bytes;
+                new Handler(Looper.getMainLooper()).post(() -> {
+                    if (generation != treeLoadGeneration) {
+                        // Security LOW (destroy-during-parse race): the bg parse
+                        // produced readyHandle after onDestroy bumped the
+                        // generation. Drop without install/render and destroy the
+                        // orphan so one native tree does not leak per race hit.
+                        // UI-thread-safe: same UI-thread nativeDestroy path as
+                        // onDestroy for a never-attached (window == null) handle
+                        // (registry-claimed exactly-once, fail-closed, never throws).
+                        if (readyHandle != 0) {
+                            nativeDestroy(readyHandle);
+                        }
+                        return;
+                    }
+                    try {
+                        handleTreeBytes(readyBytes, readyHandle);
+                    } catch (Throwable t) {
+                        Log.e("MainActivity", "tree-load: completion threw");
+                    }
+                });
+            });
+        } catch (Throwable t) {
+            Log.e("MainActivity", "tree-load: submit failed");
+        }
+    }
+
+    /**
+     * T1 completion hook (runs on the UI thread): fail-closed install of the
+     * pre-parsed tree handle. The costly parse (null/empty check +
+     * nativeLoadTree + == 0 branch) already ran on the background loader;
+     * this hook only re-validates, installs the handle, sets treeReady, and
+     * calls the T2 gate. Null/empty bytes or handle == 0 logs
+     * {@code tree-load failed-closed: <null|empty|native-0>}, leaves
+     * {@code engineHandle} at 0, and never throws.
+     */
+    void handleTreeBytes(byte[] treeBytes, long handle) {
+        try {
+            if (treeBytes == null) {
+                Log.e("MainActivity", "tree-load failed-closed: null");
+                return;
+            }
+            if (treeBytes.length == 0) {
+                Log.e("MainActivity", "tree-load failed-closed: empty");
+                return;
+            }
+            if (handle == 0) {
+                Log.e("MainActivity", "tree-load failed-closed: native-0");
+                return;
+            }
+            engineHandle = handle;
+            treeReady = true;
+            maybeRenderFirstFrame();
+        } catch (Throwable t) {
+            Log.e("MainActivity", "tree-load: handle install failed");
+        }
+    }
+
+    /**
+     * First-render gate (T2, FR-STARTUP-002/AC-STARTUP-003): posts
+     * {@code nativeAttachSurface + nativeRenderFrame} only when
+     * {@code treeReady && surfaceReady && engineHandle != 0}; else silent no-op.
+     * Single first-render entry (RULE-STARTUP-002): both the T1 post-back and
+     * the surface callbacks call this method.
+     */
+    private void maybeRenderFirstFrame() {
+        if (!(treeReady && surfaceReady && engineHandle != 0)) {
+            return;
+        }
+        SurfaceHolder holder = pendingHolder;
+        if (holder == null) {
+            return;
+        }
+        nativeAttachSurface(engineHandle, holder.getSurface());
+        nativeRenderFrame(engineHandle);
+        maybeReportFullyDrawn();
     }
 
     @Override
@@ -347,6 +481,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
 
     @Override
     protected void onDestroy() {
+        treeLoadGeneration++;
+        treeLoader.shutdownNow();
         if (engineHandle != 0) {
             nativeDetachSurface(engineHandle);
             nativeDestroy(engineHandle);
@@ -717,25 +853,21 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
 
     @Override
     public void surfaceCreated(SurfaceHolder holder) {
-        // Attach the native window, then drive one frame through the bridge.
-        if (engineHandle != 0) {
-            nativeAttachSurface(engineHandle, holder.getSurface());
-            nativeRenderFrame(engineHandle);
-            maybeReportFullyDrawn();
-        }
+        pendingHolder = holder;
+        surfaceReady = true;
+        maybeRenderFirstFrame();
     }
 
     @Override
     public void surfaceChanged(SurfaceHolder holder, int format, int width, int height) {
-        if (engineHandle != 0) {
-            nativeAttachSurface(engineHandle, holder.getSurface());
-            nativeRenderFrame(engineHandle);
-            maybeReportFullyDrawn();
-        }
+        pendingHolder = holder;
+        surfaceReady = true;
+        maybeRenderFirstFrame();
     }
 
     @Override
     public void surfaceDestroyed(SurfaceHolder holder) {
+        surfaceReady = false;
         // Release the native window before the framework frees it (the
         // presenter never outlives the host's invalidation call); the tree
         // handle itself survives for the next surface.
