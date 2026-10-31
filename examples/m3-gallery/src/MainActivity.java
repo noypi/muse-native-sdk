@@ -339,11 +339,37 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         field.setTag("m3-text-probe");
         field.setFocusable(true);
         field.setFocusableInTouchMode(true);
+        // AC-M3-013 tap summon: when a tap lands the field gains focus first
+        // (attached + laid out on screen, EditText accepts input), then hand
+        // the already-focused view to IMM so the keyboard reliably appears.
+        field.setOnFocusChangeListener((v, hasFocus) -> {
+            if (hasFocus) {
+                InputMethodManager tapImm =
+                        (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
+                if (tapImm != null) {
+                    tapImm.showSoftInput(field, InputMethodManager.SHOW_IMPLICIT);
+                }
+            }
+        });
         probe.addView(field);
         FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.MATCH_PARENT);
         root.addView(probe, params);
+        // Verification probe: hardened keyboard summon for the overlay field
+        // (requestFocus gate + SHOW_IMPLICIT after attach). If the gate still
+        // reports mInputShown=false, the emulator config — not the app — is
+        // the blocker.
+        field.post(() -> {
+            boolean focused = field.requestFocus();
+            if (focused) {
+                InputMethodManager imm =
+                        (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
+                if (imm != null) {
+                    imm.showSoftInput(field, InputMethodManager.SHOW_IMPLICIT);
+                }
+            }
+        });
     }
 
     /**
