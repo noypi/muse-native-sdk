@@ -1,12 +1,13 @@
 #!/bin/sh
-# run-tf.sh — hermetic foldable API-usage gate (NFR-GRAPHICS-002, AC-GRAPHICS-004 / TC-GRAPHICS-004).
-# Compiles + runs the foldable_api bridge unit test with hermetic g++ and
-# enforces the static source-usage gate: zero ADisplayFeature matches under
-# engine/, and the graphics foldable bridge references
-# WindowManager.getCurrentWindowMetrics / WindowMetricsCalculator /
+# run-tf.sh — hermetic foldable-batch verification (NFR-GRAPHICS-002, AC-GRAPHICS-004 / TC-GRAPHICS-004).
+# Compiles + runs the foldable_api bridge unit test and the foldable posture
+# unit test with hermetic g++ and enforces the static source-usage gate: zero
+# ADisplayFeature matches under engine/, and the graphics foldable bridge
+# references WindowManager.getCurrentWindowMetrics / WindowMetricsCalculator /
 # WindowLayoutInfo / FoldingFeature / TYPE_HINGE_ANGLE.
-# Exits 0 iff the static gate and the unit test both pass; nonzero + reason
+# Exits 0 iff the static gate and all unit tests pass; nonzero + reason
 # line otherwise. Runnable on any host, no device needed.
+# (no Gradle wrapper in repo). Exits nonzero on any compile or test failure.
 # Usage: sh engine/graphics/foldable/run-tf.sh   (from the checkout root)
 set -eu
 
@@ -27,8 +28,12 @@ for tok in "WindowManager.getCurrentWindowMetrics" "WindowMetricsCalculator" "Wi
   echo "PASS run-tf: token '$tok' referenced"
 done
 
-BIN_TF_FOLDABLE=$(mktemp /tmp/tf-foldable_api.XXXXXX)
-trap 'rm -f "$BIN_TF_FOLDABLE"' EXIT
+BIN_TF_FOLDABLE_API=$(mktemp /tmp/tf-foldable_api.XXXXXX)
+BIN_TF_FOLDABLE=$(mktemp /tmp/tf-foldable.XXXXXX)
+trap 'rm -f "$BIN_TF_FOLDABLE_API" "$BIN_TF_FOLDABLE"' EXIT
 
-g++ -std=c++17 -I . engine/graphics/foldable/foldable_api.test.cpp engine/graphics/foldable/foldable_api.cc -o "$BIN_TF_FOLDABLE"
+g++ -std=c++17 -I . engine/graphics/foldable/foldable_api.test.cpp engine/graphics/foldable/foldable_api.cc -o "$BIN_TF_FOLDABLE_API"
+"$BIN_TF_FOLDABLE_API"
+
+g++ -std=c++17 -I . engine/graphics/foldable/foldable.test.cpp engine/graphics/foldable/foldable.cc -o "$BIN_TF_FOLDABLE"
 "$BIN_TF_FOLDABLE"
