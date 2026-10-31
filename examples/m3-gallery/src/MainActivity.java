@@ -81,6 +81,15 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     /** Broadcast action the proof pages through (same entry as the tap path). */
     static final String ACTION_NATIVE_ADVANCE_PAGE = "muse.native.NATIVE_ADVANCE_PAGE";
 
+    /**
+     * Broadcast action driving the same-activity theme switch (T3a): the T3
+     * re-attempt sends {@code muse.native.NATIVE_SET_THEME} with an int
+     * {@code night_mode} extra (0=light, 1=dark) instead of flipping
+     * {@code cmd uimode}. Same entry as the JNI switch above — the activity
+     * is never recreated.
+     */
+    static final String ACTION_NATIVE_SET_THEME = "muse.native.NATIVE_SET_THEME";
+
     /** Receiver for the proof's advance broadcast; same path as the tap entry. */
     private final BroadcastReceiver advanceReceiver = new BroadcastReceiver() {
         @Override
@@ -89,6 +98,18 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                     && engineHandle != 0) {
                 nativeAdvancePage(engineHandle);
                 nativeRenderFrame(engineHandle);
+            }
+        }
+    };
+
+    /** Receiver for the T3a same-page theme switch; same activity, no restart. */
+    private final BroadcastReceiver themeReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            if (ACTION_NATIVE_SET_THEME.equals(intent != null ? intent.getAction() : null)
+                    && engineHandle != 0) {
+                int nightMode = intent.getIntExtra("night_mode", 0);
+                nativeSetTheme(engineHandle, nightMode);
             }
         }
     };
@@ -104,6 +125,15 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
 
     /** Advance one gallery page and render it. Returns the new page index. */
     private static native int nativeAdvancePage(long handle);
+
+    /**
+     * Same-activity theme switch (BUG-M3-FIDELITY-002 T3a / AC-M3-010).
+     * Flips the native palette override in place on the same
+     * {@code MainActivity} instance and re-renders the same page — no new
+     * activity, no restart, state/scroll preserved. {@code nightMode} is
+     * 0=light, 1=dark; returns measured repaint frames, -1 fail-closed.
+     */
+    private static native int nativeSetTheme(long handle, int nightMode);
 
     /**
      * Dispatch a raw touch event to the native tap chain (Option A input
@@ -238,13 +268,16 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     @Override
     protected void onResume() {
         super.onResume();
-        IntentFilter filter = new IntentFilter(ACTION_NATIVE_ADVANCE_PAGE);
         if (Build.VERSION.SDK_INT >= 33) {
             // Trigger is `adb shell am broadcast` from outside the app, so the
-            // receiver must be exported to receive it.
-            registerReceiver(advanceReceiver, filter, Context.RECEIVER_EXPORTED);
+            // receivers must be exported to receive it.
+            registerReceiver(advanceReceiver, new IntentFilter(ACTION_NATIVE_ADVANCE_PAGE),
+                    Context.RECEIVER_EXPORTED);
+            registerReceiver(themeReceiver, new IntentFilter(ACTION_NATIVE_SET_THEME),
+                    Context.RECEIVER_EXPORTED);
         } else {
-            registerReceiver(advanceReceiver, filter);
+            registerReceiver(advanceReceiver, new IntentFilter(ACTION_NATIVE_ADVANCE_PAGE));
+            registerReceiver(themeReceiver, new IntentFilter(ACTION_NATIVE_SET_THEME));
         }
     }
 
@@ -252,6 +285,11 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     protected void onPause() {
         try {
             unregisterReceiver(advanceReceiver);
+        } catch (IllegalArgumentException ignored) {
+            // Receiver was not registered (e.g. paused without resume).
+        }
+        try {
+            unregisterReceiver(themeReceiver);
         } catch (IllegalArgumentException ignored) {
             // Receiver was not registered (e.g. paused without resume).
         }

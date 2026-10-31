@@ -13,9 +13,11 @@
 // hermetic `present_fallback` test links, with no build-file change.
 #include "egl_blit.cpp"
 
+#include <atomic>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <ctime>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -200,6 +202,68 @@ extern "C" MUSE_JNI_EXPORT jint Java_com_muse_devicelab_EngineHost_nativeDetachS
 
 namespace {
 
+// T3a (BUG-M3-FIDELITY-002 / AC-M3-010): same-activity theme override.
+//
+// The gallery rows carry a baked light/dark section marker, and the retained
+// emit path paints whatever palette the row descriptors resolve to —
+// `cmd uimode` therefore re-renders byte-identical pixels (T3 blocker). This
+// process-wide override flips the presented palette in place on the same
+// GalleryHandle/page: when set, every light-baseline ink the window sink
+// submits is remapped to its M3 dark-baseline counterpart before it lands in
+// the locked window. Same activity, same page, no restart, no lifecycle
+// change; `cmd uimode` delivery itself is untouched.
+//
+// Only fully-opaque baseline inks remap (alpha rides through unchanged, so
+// scrims/washes keep their coverage); anything unrecognized passes through,
+// so a future palette addition can never blank the frame.
+constexpr std::uint32_t ThemePx(unsigned r, unsigned g, unsigned b) {
+  // 24-bit RGB only: callers compare against the alpha-stripped payload RGB
+  // and recombine the original alpha afterwards.
+  return static_cast<std::uint32_t>(r & 0xFFu) |
+         (static_cast<std::uint32_t>(g & 0xFFu) << 8) |
+         (static_cast<std::uint32_t>(b & 0xFFu) << 16);
+}
+
+std::atomic<int> g_nightMode{0};
+
+std::uint32_t ThemeInk(std::uint32_t c) {
+  if (g_nightMode.load(std::memory_order_relaxed) == 0) return c;
+  const unsigned a = (c >> 24) & 0xFFu;
+  if (a == 0) return c;
+  const std::uint32_t rgb = c & 0x00FFFFFFu;
+  std::uint32_t out = rgb;
+  // M3 baseline light -> dark pairs (opaque RGB only; alpha recombined).
+  if (rgb == ThemePx(0xFE, 0xF7, 0xFF))
+    out = ThemePx(0x14, 0x12, 0x18);  // surface
+  else if (rgb == ThemePx(0xF7, 0xF2, 0xFA))
+    out = ThemePx(0x1D, 0x1B, 0x20);  // card bg -> dark surfaceContainer
+  else if (rgb == ThemePx(0x67, 0x50, 0xA4))
+    out = ThemePx(0xD0, 0xBC, 0xFF);  // primary
+  else if (rgb == ThemePx(0xFF, 0xFF, 0xFF))
+    out = ThemePx(0x38, 0x1E, 0x72);  // onPrimary
+  else if (rgb == ThemePx(0x1D, 0x1B, 0x20))
+    out = ThemePx(0xE6, 0xE0, 0xE9);  // onSurface / footer bg
+  else if (rgb == ThemePx(0xE8, 0xDE, 0xF8))
+    out = ThemePx(0x4F, 0x37, 0x8B);  // secondaryContainer
+  else if (rgb == ThemePx(0x4F, 0x37, 0x8B))
+    out = ThemePx(0xE8, 0xDE, 0xF8);  // onPrimaryContainer -> dark onSecCont
+  else if (rgb == ThemePx(0xE7, 0xE0, 0xEC))
+    out = ThemePx(0x49, 0x45, 0x4F);  // surfaceVariant
+  else if (rgb == ThemePx(0x49, 0x45, 0x4F))
+    out = ThemePx(0xCA, 0xC4, 0xD0);  // onSurfaceVariant
+  else if (rgb == ThemePx(0xCA, 0xC4, 0xD0))
+    out = ThemePx(0x49, 0x45, 0x4F);  // outlineVariant
+  else if (rgb == ThemePx(0x79, 0x74, 0x7E))
+    out = ThemePx(0x93, 0x8F, 0x99);  // outline
+  else if (rgb == ThemePx(0xFF, 0xD8, 0xE4))
+    out = ThemePx(0x63, 0x3B, 0x48);  // tertiaryContainer
+  else if (rgb == ThemePx(0xBA, 0x1A, 0x1A))
+    out = ThemePx(0xFF, 0xB4, 0xAB);  // error
+  else if (rgb == ThemePx(0x32, 0x2F, 0x35))
+    out = ThemePx(0xE6, 0xE0, 0xE9);  // inverseSurface
+  return out | (static_cast<std::uint32_t>(a) << 24);
+}
+
 #ifdef __ANDROID__
 constexpr const char* kMuseLogTag = "muse-host";
 // Proof-marker tag: matches the gallery-proof `GalleryPage:I` logcat filter
@@ -341,6 +405,8 @@ class WindowSwapchain : public ::runtime::Swapchain {
 
   void submit(const ::runtime::DrawCmd& cmd) override {
     if (bits_ == nullptr) return;
+    // T3a theme override: glyph-run ink resolves here (payload textColor),
+    // so the remap applies before blending — never a whole-bounds fill.
     // T11 fix 1: ShapedText/Text runs blend their real glyph coverage
     // per pixel inside cmd.bounds (threaded out of RasterizeShapedText) —
     // never a solid text-color footprint. Dangling runs (id 0 or
@@ -353,9 +419,9 @@ class WindowSwapchain : public ::runtime::Swapchain {
           ::runtime::RasterizeShapedText(cmd.payload.glyphRunId, cmd.bounds,
                                          cmd.payload.textColor);
       if (!coverage.ok()) return;
-      const std::uint32_t ink = cmd.payload.textColor != 0
-                                    ? cmd.payload.textColor
-                                    : WindowRGBA(0x1D, 0x1B, 0x20, 0xFF);
+      const std::uint32_t ink = ThemeInk(cmd.payload.textColor != 0
+                                     ? cmd.payload.textColor
+                                     : WindowRGBA(0x1D, 0x1B, 0x20, 0xFF));
       BlendMask(*coverage, cmd.bounds, ink);
       return;
     }
@@ -387,28 +453,34 @@ class WindowSwapchain : public ::runtime::Swapchain {
  private:
   static std::uint32_t InkFor(const ::runtime::DrawCmd& cmd) {
     using ::runtime::PrimitiveKind;
+    std::uint32_t ink = WindowRGBA(0xF7, 0xF2, 0xFA, 0xFF);
     switch (cmd.kind) {
       case PrimitiveKind::Text:
       case PrimitiveKind::ShapedText:
-        return cmd.payload.textColor != 0
-                   ? cmd.payload.textColor
-                   : WindowRGBA(0x1D, 0x1B, 0x20, 0xFF);
+        ink = cmd.payload.textColor != 0
+                  ? cmd.payload.textColor
+                  : WindowRGBA(0x1D, 0x1B, 0x20, 0xFF);
+        break;
       case PrimitiveKind::StateLayer:
-        return cmd.payload.stateColor != 0
-                   ? cmd.payload.stateColor
-                   : WindowRGBA(0x67, 0x50, 0xA4, 0xFF);
+        ink = cmd.payload.stateColor != 0
+                  ? cmd.payload.stateColor
+                  : WindowRGBA(0x67, 0x50, 0xA4, 0xFF);
+        break;
       case PrimitiveKind::Ripple:
-        return cmd.payload.rippleColor != 0
-                   ? cmd.payload.rippleColor
-                   : WindowRGBA(0x67, 0x50, 0xA4, 0xFF);
+        ink = cmd.payload.rippleColor != 0
+                  ? cmd.payload.rippleColor
+                  : WindowRGBA(0x67, 0x50, 0xA4, 0xFF);
+        break;
       case PrimitiveKind::VectorIcon:
-        return cmd.payload.tintColor != 0
-                   ? cmd.payload.tintColor
-                   : WindowRGBA(0x67, 0x50, 0xA4, 0xFF);
+        ink = cmd.payload.tintColor != 0
+                  ? cmd.payload.tintColor
+                  : WindowRGBA(0x67, 0x50, 0xA4, 0xFF);
+        break;
       case PrimitiveKind::CircleArc:
-        return cmd.payload.arcColor != 0
-                   ? cmd.payload.arcColor
-                   : WindowRGBA(0x67, 0x50, 0xA4, 0xFF);
+        ink = cmd.payload.arcColor != 0
+                  ? cmd.payload.arcColor
+                  : WindowRGBA(0x67, 0x50, 0xA4, 0xFF);
+        break;
       case PrimitiveKind::OverlayScrim: {
         const float alpha = cmd.payload.scrimAlpha;
         const unsigned a = (alpha <= 0.0f)
@@ -418,8 +490,9 @@ class WindowSwapchain : public ::runtime::Swapchain {
                                      : static_cast<unsigned>(255.0f * alpha +
                                                              0.5f);
         const std::uint32_t c = cmd.payload.scrimColor;
-        return (c & 0x00FFFFFFu) |
+        ink = (c & 0x00FFFFFFu) |
                (static_cast<std::uint32_t>(a & 0xFFu) << 24);
+        break;
       }
       case PrimitiveKind::Rect:
       case PrimitiveKind::RoundedRect:
@@ -427,11 +500,18 @@ class WindowSwapchain : public ::runtime::Swapchain {
         // T11 fix 3: card/band fills. A nonzero payload selects the
         // emitted fill; payload-0 selects the real default tonal card
         // fill (M3 surface-variant), never background-on-background.
-        if (cmd.payload.stateColor != 0) return cmd.payload.stateColor;
-        return WindowRGBA(0xE7, 0xE0, 0xEC, 0xFF);
+        if (cmd.payload.stateColor != 0) {
+          ink = cmd.payload.stateColor;
+        } else {
+          ink = WindowRGBA(0xE7, 0xE0, 0xEC, 0xFF);
+        }
+        break;
       default:
-        return WindowRGBA(0xF7, 0xF2, 0xFA, 0xFF);
+        break;
     }
+    // T3a: same-activity theme override applied at the single ink choke
+    // point — every submitted fill/text/tint/scim resolves here.
+    return ThemeInk(ink);
   }
 
   // T11 fix 1: src-over blend one coverage mask inside bounds. Mask texels
@@ -490,7 +570,9 @@ class WindowSwapchain : public ::runtime::Swapchain {
                   unsigned a) {
     const ::runtime::Rect b = cmd.bounds;
     const float rad = cmd.radius;
-    const std::uint32_t c = cmd.payload.shadowColor;
+    // T3a: shadow ink rides the same theme override as every other ink.
+    const std::uint32_t shadow = ThemeInk(cmd.payload.shadowColor);
+    const std::uint32_t c = shadow;
     const unsigned sr = c & 0xFFu;
     const unsigned sg = (c >> 8) & 0xFFu;
     const unsigned sb = (c >> 16) & 0xFFu;
@@ -617,7 +699,9 @@ void RenderLocked(GalleryHandle* g) {
   std::vector<std::uint32_t> staged(
       static_cast<std::size_t>(stride) * static_cast<std::size_t>(h), 0u);
   WindowSwapchain window(staged.data(), stride, w, h);
-  window.clear(WindowRGBA(0xFE, 0xF7, 0xFF, 0xFF));
+  // T3a: page wash follows the same-activity theme override (light surface
+  // vs dark surface) so no black gutters leak through either mode.
+  window.clear(ThemeInk(WindowRGBA(0xFE, 0xF7, 0xFF, 0xFF)));
   std::string error = g->parseError;
   const bool presented = ::runtime::PresentDeviceGalleryPage(
       g->rows, g->page, renderer, window, h, &error);
@@ -831,6 +915,76 @@ extern "C" MUSE_JNI_EXPORT jint Java_com_muse_host_MainActivity_nativeAdvancePag
       env->ExceptionClear();
     }
     return 0;
+  }
+}
+
+// T3a (BUG-M3-FIDELITY-002 / AC-M3-010): same-activity theme switch entry.
+// Java: com.muse.host.MainActivity.nativeSetTheme(long, int). Flips the
+// process-wide palette override in place on the same GalleryHandle/page and
+// re-renders through the existing RenderLocked path — no new activity, no
+// restart, state/scroll preserved (page index untouched).
+// Fail-closed mirror of nativeAdvancePage: null env, pending exception, an
+// unregistered (zero, forged, stale) handle, or a nightMode outside {0, 1}
+// yields -1 with no exception crossing into the VM and no dereference.
+// Returns measured repaint frames from the CLOCK_MONOTONIC clock over the
+// 16.6667ms nominal vsync interval (min 1, never a constant); the frame-timing
+// line below matches the T2 gate FRAME_TIMING_RE (`framesMeasured`).
+extern "C" MUSE_JNI_EXPORT jint Java_com_muse_host_MainActivity_nativeSetTheme(
+    JNIEnv* env, jobject thiz, jlong handle, jint nightMode) {
+  (void)thiz;
+  if (env == nullptr || env->ExceptionCheck() == JNI_TRUE) {
+    return -1;
+  }
+  if (nightMode != 0 && nightMode != 1) {
+    return -1;
+  }
+  std::shared_ptr<GalleryHandle> g = ToGallery(handle);
+  if (g == nullptr) return -1;
+  try {
+#ifdef __ANDROID__
+    struct timespec t0;
+    struct timespec t1;
+    clock_gettime(CLOCK_MONOTONIC, &t0);
+    int page1 = 0;
+    {
+      std::lock_guard<std::mutex> lock(g->mu);
+      g_nightMode.store(nightMode != 0 ? 1 : 0, std::memory_order_relaxed);
+      RenderLocked(g.get());
+      page1 = g->page + 1;
+    }
+    clock_gettime(CLOCK_MONOTONIC, &t1);
+    const double elapsedMs =
+        static_cast<double>(t1.tv_sec - t0.tv_sec) * 1000.0 +
+        static_cast<double>(t1.tv_nsec - t0.tv_nsec) / 1000000.0;
+    int frames = static_cast<int>(elapsedMs / 16.6667 + 0.5);
+    if (frames < 1) frames = 1;
+    {
+      char msg[224];
+      std::snprintf(msg, sizeof(msg),
+                    "nativeSetTheme: mode=%s framesMeasured=%d "
+                    "frameTimeMs=%.3f clock=clock_gettime-CLOCK_MONOTONIC "
+                    "vsyncMs=16.6667 page=%d",
+                    nightMode != 0 ? "dark" : "light", frames, elapsedMs,
+                    page1);
+      MuseLogInfo(msg);
+    }
+    {
+      char marker[128];
+      std::snprintf(marker, sizeof(marker),
+                    "gallery-theme=%s gallery-page=%d framesMeasured=%d",
+                    nightMode != 0 ? "dark" : "light", page1, frames);
+      GalleryLogInfo(marker);
+    }
+    return static_cast<jint>(frames);
+#else
+    (void)g;
+    return 1;
+#endif
+  } catch (...) {
+    if (env->ExceptionCheck() == JNI_TRUE) {
+      env->ExceptionClear();
+    }
+    return -1;
   }
 }
 
