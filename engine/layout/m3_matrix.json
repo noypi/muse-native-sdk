@@ -72,7 +72,19 @@
         "token": "motion.expressive.easing.standard",
         "durationMs": 200
       },
-      "role": "button"
+      "role": "button",
+      "baseline": "2026-10-28",
+      "containerToken": "md.comp.button.container",
+      "labelToken": "md.comp.button.label",
+      "stateOpacities": {
+        "hover": 0.08,
+        "focus": 0.12,
+        "pressed": 0.16,
+        "disabled": 0.38
+      },
+      "keyboardFocus": "Enter or Space activates; Tab moves focus",
+      "motionToken": "motion.expressive.easing.standard",
+      "a11yRole": "button"
     },
     {
       "name": "IconButton",
@@ -134,7 +146,19 @@
         "token": "motion.expressive.easing.standard",
         "durationMs": 200
       },
-      "role": "button"
+      "role": "button",
+      "baseline": "2026-10-28",
+      "containerToken": "md.comp.icon-button.container",
+      "labelToken": "md.comp.icon-button.label",
+      "stateOpacities": {
+        "hover": 0.08,
+        "focus": 0.12,
+        "pressed": 0.16,
+        "disabled": 0.38
+      },
+      "keyboardFocus": "Enter or Space activates; Tab moves focus",
+      "motionToken": "motion.expressive.easing.standard",
+      "a11yRole": "button"
     },
     {
       "name": "Fab",
@@ -206,7 +230,8 @@
         "token": "motion.expressive.easing.emphasized",
         "durationMs": 400
       },
-      "role": "button"
+      "role": "button",
+      "baseline": "2026-10-28"
     },
     {
       "name": "ExtendedFab",
@@ -268,7 +293,19 @@
         "token": "motion.expressive.easing.emphasized",
         "durationMs": 400
       },
-      "role": "button"
+      "role": "button",
+      "baseline": "2026-10-28",
+      "containerToken": "md.comp.extended-fab.container",
+      "labelToken": "md.comp.extended-fab.label",
+      "stateOpacities": {
+        "hover": 0.08,
+        "focus": 0.12,
+        "pressed": 0.16,
+        "disabled": 0.38
+      },
+      "keyboardFocus": "Enter or Space activates; Tab moves focus",
+      "motionToken": "motion.expressive.easing.emphasized",
+      "a11yRole": "button"
     },
     {
       "name": "Card",
@@ -340,7 +377,19 @@
         "token": "motion.expressive.easing.standard",
         "durationMs": 300
       },
-      "role": "group"
+      "role": "group",
+      "baseline": "2026-10-28",
+      "containerToken": "md.comp.card.container",
+      "labelToken": "md.comp.card.label",
+      "stateOpacities": {
+        "hover": 0.08,
+        "focus": 0.12,
+        "pressed": 0.16,
+        "disabled": 0.38
+      },
+      "keyboardFocus": "Enter activates when actionable; Tab moves focus",
+      "motionToken": "motion.expressive.easing.standard",
+      "a11yRole": "group"
     },
     {
       "name": "Chip",
@@ -412,7 +461,19 @@
         "token": "motion.expressive.easing.standard",
         "durationMs": 200
       },
-      "role": "button"
+      "role": "button",
+      "baseline": "2026-10-28",
+      "containerToken": "md.comp.chip.container",
+      "labelToken": "md.comp.chip.label",
+      "stateOpacities": {
+        "hover": 0.08,
+        "focus": 0.12,
+        "pressed": 0.16,
+        "disabled": 0.38
+      },
+      "keyboardFocus": "Enter or Space toggles; arrows move between chips",
+      "motionToken": "motion.expressive.easing.standard",
+      "a11yRole": "button"
     },
     {
       "name": "Checkbox",
@@ -474,7 +535,19 @@
         "token": "motion.expressive.easing.standard",
         "durationMs": 150
       },
-      "role": "checkbox"
+      "role": "checkbox",
+      "baseline": "2026-10-28",
+      "containerToken": "md.comp.checkbox.container",
+      "labelToken": "md.comp.checkbox.label",
+      "stateOpacities": {
+        "hover": 0.08,
+        "focus": 0.12,
+        "pressed": 0.16,
+        "disabled": 0.38
+      },
+      "keyboardFocus": "Space toggles; Tab moves focus",
+      "motionToken": "motion.expressive.easing.standard",
+      "a11yRole": "checkbox"
     },
     {
       "name": "Radio",
@@ -536,7 +609,19 @@
         "token": "motion.expressive.easing.standard",
         "durationMs": 150
       },
-      "role": "radio"
+      "role": "radio",
+      "baseline": "2026-10-28",
+      "containerToken": "md.comp.radio.container",
+      "labelToken": "md.comp.radio.label",
+      "stateOpacities": {
+        "hover": 0.08,
+        "focus": 0.12,
+        "pressed": 0.16,
+        "disabled": 0.38
+      },
+      "keyboardFocus": "Arrows move within group; Space selects",
+      "motionToken": "motion.expressive.easing.standard",
+      "a11yRole": "radio"
     },
     {
       "name": "Switch",
@@ -598,7 +683,19 @@
         "token": "motion.expressive.easing.emphasized",
         "durationMs": 300
       },
-      "role": "switch"
+      "role": "switch",
+      "baseline": "2026-10-28",
+      "containerToken": "md.comp.switch.container",
+      "labelToken": "md.comp.switch.label",
+      "stateOpacities": {
+        "hover": 0.08,
+        "focus": 0.12,
+        "pressed": 0.16,
+        "disabled": 0.38
+      },
+      "keyboardFocus": "Space toggles; Tab moves focus",
+      "motionToken": "motion.expressive.easing.emphasized",
+      "a11yRole": "switch"
     },
     {
       "name": "Slider",
@@ -670,7 +767,19 @@
         "token": "motion.expressive.easing.standard",
         "durationMs": 100
       },
-      "role": "slider"
+      "role": "slider",
+      "baseline": "2026-10-28",
+      "containerToken": "md.comp.slider.container",
+      "labelToken": "md.comp.slider.label",
+      "stateOpacities": {
+        "hover": 0.08,
+        "focus": 0.12,
+        "pressed": 0.16,
+        "disabled": 0.38
+      },
+      "keyboardFocus": "Arrows adjust value; Home/End jump to ends",
+      "motionToken": "motion.expressive.easing.standard",
+      "a11yRole": "slider"
     },
     {
       "name": "Badge",
@@ -742,7 +851,19 @@
         "token": "motion.expressive.easing.standard",
         "durationMs": 200
       },
-      "role": "status"
+      "role": "status",
+      "baseline": "2026-10-28",
+      "containerToken": "md.comp.badge.container",
+      "labelToken": "md.comp.badge.label",
+      "stateOpacities": {
+        "hover": 0.08,
+        "focus": 0.12,
+        "pressed": 0.16,
+        "disabled": 0.38
+      },
+      "keyboardFocus": "Not focusable; announced with its anchor",
+      "motionToken": "motion.expressive.easing.standard",
+      "a11yRole": "status"
     },
     {
       "name": "LinearProgress",
@@ -804,7 +925,19 @@
         "token": "motion.expressive.easing.standard",
         "durationMs": 500
       },
-      "role": "progressbar"
+      "role": "progressbar",
+      "baseline": "2026-10-28",
+      "containerToken": "md.comp.linear-progress.container",
+      "labelToken": "md.comp.linear-progress.label",
+      "stateOpacities": {
+        "hover": 0.08,
+        "focus": 0.12,
+        "pressed": 0.16,
+        "disabled": 0.38
+      },
+      "keyboardFocus": "Not focusable; progress announced via live region",
+      "motionToken": "motion.expressive.easing.standard",
+      "a11yRole": "progressbar"
     },
     {
       "name": "CircularProgress",
@@ -866,7 +999,19 @@
         "token": "motion.expressive.easing.standard",
         "durationMs": 1333
       },
-      "role": "progressbar"
+      "role": "progressbar",
+      "baseline": "2026-10-28",
+      "containerToken": "md.comp.circular-progress.container",
+      "labelToken": "md.comp.circular-progress.label",
+      "stateOpacities": {
+        "hover": 0.08,
+        "focus": 0.12,
+        "pressed": 0.16,
+        "disabled": 0.38
+      },
+      "keyboardFocus": "Not focusable; progress announced via live region",
+      "motionToken": "motion.expressive.easing.standard",
+      "a11yRole": "progressbar"
     },
     {
       "name": "ListItem",
@@ -928,7 +1073,19 @@
         "token": "motion.expressive.easing.standard",
         "durationMs": 200
       },
-      "role": "listitem"
+      "role": "listitem",
+      "baseline": "2026-10-28",
+      "containerToken": "md.comp.list-item.container",
+      "labelToken": "md.comp.list-item.label",
+      "stateOpacities": {
+        "hover": 0.08,
+        "focus": 0.12,
+        "pressed": 0.16,
+        "disabled": 0.38
+      },
+      "keyboardFocus": "Enter activates; arrows move between items",
+      "motionToken": "motion.expressive.easing.standard",
+      "a11yRole": "listitem"
     },
     {
       "name": "Avatar",
@@ -990,7 +1147,19 @@
         "token": "motion.expressive.easing.standard",
         "durationMs": 200
       },
-      "role": "img"
+      "role": "img",
+      "baseline": "2026-10-28",
+      "containerToken": "md.comp.avatar.container",
+      "labelToken": "md.comp.avatar.label",
+      "stateOpacities": {
+        "hover": 0.08,
+        "focus": 0.12,
+        "pressed": 0.16,
+        "disabled": 0.38
+      },
+      "keyboardFocus": "Not focusable; decorative or labelled image",
+      "motionToken": "motion.expressive.easing.standard",
+      "a11yRole": "img"
     },
     {
       "name": "Tooltip",
@@ -1052,7 +1221,19 @@
         "token": "motion.expressive.easing.standard",
         "durationMs": 150
       },
-      "role": "tooltip"
+      "role": "tooltip",
+      "baseline": "2026-10-28",
+      "containerToken": "md.comp.tooltip.container",
+      "labelToken": "md.comp.tooltip.label",
+      "stateOpacities": {
+        "hover": 0.08,
+        "focus": 0.12,
+        "pressed": 0.16,
+        "disabled": 0.38
+      },
+      "keyboardFocus": "Esc dismisses; anchored to its trigger",
+      "motionToken": "motion.expressive.easing.standard",
+      "a11yRole": "tooltip"
     },
     {
       "name": "TopAppBar",
@@ -1125,7 +1306,8 @@
         "token": "motion.expressive.easing.standard",
         "durationMs": 300
       },
-      "role": "banner"
+      "role": "banner",
+      "baseline": "2026-10-28"
     },
     {
       "name": "NavigationBar",
@@ -1198,7 +1380,8 @@
         "token": "motion.expressive.easing.standard",
         "durationMs": 300
       },
-      "role": "navigation"
+      "role": "navigation",
+      "baseline": "2026-10-28"
     },
     {
       "name": "NavigationRail",
@@ -1271,7 +1454,8 @@
         "token": "motion.expressive.easing.standard",
         "durationMs": 300
       },
-      "role": "navigation"
+      "role": "navigation",
+      "baseline": "2026-10-28"
     },
     {
       "name": "NavigationDrawer",
@@ -1344,7 +1528,8 @@
         "token": "motion.expressive.easing.emphasized",
         "durationMs": 400
       },
-      "role": "navigation"
+      "role": "navigation",
+      "baseline": "2026-10-28"
     },
     {
       "name": "SegmentedButton",
@@ -1417,7 +1602,8 @@
         "token": "motion.expressive.easing.standard",
         "durationMs": 200
       },
-      "role": "group"
+      "role": "group",
+      "baseline": "2026-10-28"
     },
     {
       "name": "Dialog",
@@ -1490,7 +1676,8 @@
         "token": "motion.expressive.easing.emphasized",
         "durationMs": 400
       },
-      "role": "dialog"
+      "role": "dialog",
+      "baseline": "2026-10-28"
     },
     {
       "name": "BottomSheet",
@@ -1563,7 +1750,8 @@
         "token": "motion.expressive.easing.emphasized",
         "durationMs": 500
       },
-      "role": "dialog"
+      "role": "dialog",
+      "baseline": "2026-10-28"
     },
     {
       "name": "Menu",
@@ -1636,7 +1824,8 @@
         "token": "motion.expressive.easing.standard",
         "durationMs": 200
       },
-      "role": "menu"
+      "role": "menu",
+      "baseline": "2026-10-28"
     },
     {
       "name": "SnackbarHost",
@@ -1709,7 +1898,8 @@
         "token": "motion.expressive.easing.emphasized",
         "durationMs": 300
       },
-      "role": "status"
+      "role": "status",
+      "baseline": "2026-10-28"
     },
     {
       "name": "SearchBar",
@@ -1781,7 +1971,8 @@
         "token": "motion.expressive.easing.standard",
         "durationMs": 300
       },
-      "role": "search"
+      "role": "search",
+      "baseline": "2026-10-28"
     },
     {
       "name": "Carousel",
@@ -1854,7 +2045,8 @@
         "token": "motion.expressive.easing.emphasized",
         "durationMs": 500
       },
-      "role": "region"
+      "role": "region",
+      "baseline": "2026-10-28"
     },
     {
       "name": "BottomAppBar",
@@ -1927,7 +2119,8 @@
         "token": "motion.expressive.easing.standard",
         "durationMs": 300
       },
-      "role": "toolbar"
+      "role": "toolbar",
+      "baseline": "2026-10-28"
     },
     {
       "name": "ButtonGroup",
@@ -2000,7 +2193,8 @@
         "token": "motion.expressive.easing.standard",
         "durationMs": 200
       },
-      "role": "group"
+      "role": "group",
+      "baseline": "2026-10-28"
     },
     {
       "name": "SplitButton",
@@ -2073,7 +2267,8 @@
         "token": "motion.expressive.easing.standard",
         "durationMs": 200
       },
-      "role": "group"
+      "role": "group",
+      "baseline": "2026-10-28"
     },
     {
       "name": "Text",
@@ -2144,7 +2339,19 @@
         "token": "motion.expressive.easing.standard",
         "durationMs": 200
       },
-      "role": "text"
+      "role": "text",
+      "baseline": "2026-10-28",
+      "containerToken": "md.comp.text.container",
+      "labelToken": "md.comp.text.label",
+      "stateOpacities": {
+        "hover": 0.08,
+        "focus": 0.12,
+        "pressed": 0.16,
+        "disabled": 0.38
+      },
+      "keyboardFocus": "Not focusable; screen reader reads content",
+      "motionToken": "motion.expressive.easing.standard",
+      "a11yRole": "text"
     },
     {
       "name": "FAB",
@@ -2216,7 +2423,611 @@
         "token": "motion.expressive.easing.emphasized",
         "durationMs": 400
       },
-      "role": "button"
+      "role": "button",
+      "baseline": "2026-10-28",
+      "containerToken": "md.comp.fab.container",
+      "labelToken": "md.comp.fab.label",
+      "stateOpacities": {
+        "hover": 0.08,
+        "focus": 0.12,
+        "pressed": 0.16,
+        "disabled": 0.38
+      },
+      "keyboardFocus": "Enter or Space activates; Tab moves focus",
+      "motionToken": "motion.expressive.easing.emphasized",
+      "a11yRole": "button"
+    },
+    {
+      "name": "Divider",
+      "primitive": "M3NativeDivider",
+      "tokens": [
+        "md.comp.divider.container",
+        "md.comp.divider.label"
+      ],
+      "states": [
+        "enabled",
+        "hovered",
+        "focused",
+        "pressed",
+        "dragged",
+        "disabled",
+        "error"
+      ],
+      "adaptive": false,
+      "semantics": "manual-context.local/specs-accessibility.md#Divider",
+      "goldenTest": "engine/layout/tests/goldens/Divider.png",
+      "status": "present",
+      "ledgers": {},
+      "containerToken": "md.comp.divider.container",
+      "labelToken": "md.comp.divider.label",
+      "stateOpacities": {
+        "hover": 0.08,
+        "focus": 0.12,
+        "pressed": 0.16,
+        "disabled": 0.38
+      },
+      "shape": "md.sys.shape.corner.medium",
+      "elevation": "md.sys.state.elevation.level-1",
+      "typescale": "md.sys.typescale.label-large",
+      "keyboardFocus": "focusable with visible focus state layer",
+      "motionToken": "md.sys.motion.duration.short-2",
+      "a11yRole": "separator",
+      "baseline": "2026-10-28"
+    },
+    {
+      "name": "FABMenu",
+      "primitive": "MuseFabMenu",
+      "tokens": [
+        "color.primary-container",
+        "color.on-primary-container",
+        "shape.corner.large",
+        "motion.expressive.spring.standard",
+        "motion.expressive.easing.emphasized"
+      ],
+      "states": [
+        "enabled",
+        "hovered",
+        "focused",
+        "pressed",
+        "dragged",
+        "disabled",
+        "error"
+      ],
+      "adaptive": false,
+      "semantics": "Expandable FAB menu; expanded state and actions exposed. (Clone: manual-context.local/specs-clone-capability.md#FABMenu; Competitive: manual-context.local/specs-competitive-positioning.md#FABMenu)",
+      "goldenTest": "m3_fab_menu_golden",
+      "status": "present",
+      "ledgers": {
+        "clone": "manual-context.local/specs-clone-capability.md#FABMenu",
+        "competitive": "manual-context.local/specs-competitive-positioning.md#FABMenu"
+      },
+      "baseline": "2026-10-28"
+    },
+    {
+      "name": "Icon",
+      "primitive": "M3NativeIcon",
+      "tokens": [
+        "md.comp.icon.container",
+        "md.comp.icon.label"
+      ],
+      "states": [
+        "enabled",
+        "hovered",
+        "focused",
+        "pressed",
+        "dragged",
+        "disabled",
+        "error"
+      ],
+      "adaptive": false,
+      "semantics": "manual-context.local/specs-accessibility.md#Icon",
+      "goldenTest": "engine/layout/tests/goldens/Icon.png",
+      "status": "present",
+      "ledgers": {},
+      "containerToken": "md.comp.icon.container",
+      "labelToken": "md.comp.icon.label",
+      "stateOpacities": {
+        "hover": 0.08,
+        "focus": 0.12,
+        "pressed": 0.16,
+        "disabled": 0.38
+      },
+      "shape": "md.sys.shape.corner.medium",
+      "elevation": "md.sys.state.elevation.level-1",
+      "typescale": "md.sys.typescale.label-large",
+      "keyboardFocus": "focusable with visible focus state layer",
+      "motionToken": "md.sys.motion.duration.short-2",
+      "a11yRole": "img",
+      "baseline": "2026-10-28"
+    },
+    {
+      "name": "Image",
+      "primitive": "MuseImage",
+      "tokens": [
+        "color.surface-container",
+        "shape.corner.medium",
+        "state-layer.opacity.hover",
+        "motion.expressive.easing.standard"
+      ],
+      "states": [
+        "enabled",
+        "hovered",
+        "focused",
+        "pressed",
+        "dragged",
+        "disabled",
+        "error"
+      ],
+      "adaptive": false,
+      "semantics": "Image with content description for screen readers. (Clone: manual-context.local/specs-clone-capability.md#Image; Competitive: manual-context.local/specs-competitive-positioning.md#Image)",
+      "goldenTest": "m3_image_golden",
+      "status": "present",
+      "ledgers": {
+        "clone": "manual-context.local/specs-clone-capability.md#Image",
+        "competitive": "manual-context.local/specs-competitive-positioning.md#Image"
+      },
+      "containerToken": "md.comp.image.container",
+      "labelToken": "md.comp.image.label",
+      "stateOpacities": {
+        "hover": 0.08,
+        "focus": 0.12,
+        "pressed": 0.16,
+        "disabled": 0.38
+      },
+      "shape": "md.sys.shape.corner.medium",
+      "elevation": "md.sys.state.elevation.level-1",
+      "typescale": "md.sys.typescale.label-large",
+      "keyboardFocus": "focusable with visible focus state layer",
+      "motionToken": "md.sys.motion.duration.short-2",
+      "a11yRole": "img",
+      "baseline": "2026-10-28"
+    },
+    {
+      "name": "List",
+      "primitive": "MuseList",
+      "tokens": [
+        "color.surface",
+        "color.on-surface-variant",
+        "state-layer.opacity.hover",
+        "motion.expressive.easing.emphasized"
+      ],
+      "states": [
+        "enabled",
+        "hovered",
+        "focused",
+        "pressed",
+        "dragged",
+        "disabled",
+        "error"
+      ],
+      "adaptive": true,
+      "semantics": "Virtualized list; row count, scroll position, and item semantics exposed. (Clone: manual-context.local/specs-clone-capability.md#List; Competitive: manual-context.local/specs-competitive-positioning.md#List)",
+      "goldenTest": "m3_list_golden",
+      "status": "present",
+      "ledgers": {
+        "clone": "manual-context.local/specs-clone-capability.md#List",
+        "competitive": "manual-context.local/specs-competitive-positioning.md#List"
+      },
+      "baseline": "2026-10-28"
+    },
+    {
+      "name": "LoadingIndicator",
+      "primitive": "MuseLoadingIndicator",
+      "tokens": [
+        "color.primary",
+        "motion.expressive.easing.standard",
+        "motion.durations.medium"
+      ],
+      "states": [
+        "enabled",
+        "hovered",
+        "focused",
+        "pressed",
+        "dragged",
+        "disabled",
+        "error"
+      ],
+      "adaptive": false,
+      "semantics": "Progress indicator; indeterminate or determinate progress announced. (Clone: manual-context.local/specs-clone-capability.md#LoadingIndicator; Competitive: manual-context.local/specs-competitive-positioning.md#LoadingIndicator)",
+      "goldenTest": "m3_loading_indicator_golden",
+      "status": "present",
+      "ledgers": {
+        "clone": "manual-context.local/specs-clone-capability.md#LoadingIndicator",
+        "competitive": "manual-context.local/specs-competitive-positioning.md#LoadingIndicator"
+      },
+      "baseline": "2026-10-28"
+    },
+    {
+      "name": "OverlayHost",
+      "primitive": "M3NativeOverlayHost",
+      "tokens": [
+        "md.comp.overlayhost.container",
+        "md.comp.overlayhost.label"
+      ],
+      "states": [
+        "enabled",
+        "hovered",
+        "focused",
+        "pressed",
+        "dragged",
+        "disabled",
+        "error"
+      ],
+      "adaptive": false,
+      "semantics": "manual-context.local/specs-accessibility.md#OverlayHost",
+      "goldenTest": "engine/layout/tests/goldens/OverlayHost.png",
+      "status": "present",
+      "ledgers": {},
+      "containerToken": "md.comp.overlayhost.container",
+      "labelToken": "md.comp.overlayhost.label",
+      "stateOpacities": {
+        "hover": 0.08,
+        "focus": 0.12,
+        "pressed": 0.16,
+        "disabled": 0.38
+      },
+      "shape": "md.sys.shape.corner.medium",
+      "elevation": "md.sys.state.elevation.level-1",
+      "typescale": "md.sys.typescale.label-large",
+      "keyboardFocus": "focusable with visible focus state layer",
+      "motionToken": "md.sys.motion.duration.short-2",
+      "a11yRole": "none",
+      "baseline": "2026-10-28"
+    },
+    {
+      "name": "Ripple",
+      "primitive": "M3NativeRipple",
+      "tokens": [
+        "md.comp.ripple.container",
+        "md.comp.ripple.label"
+      ],
+      "states": [
+        "enabled",
+        "hovered",
+        "focused",
+        "pressed",
+        "dragged",
+        "disabled",
+        "error"
+      ],
+      "adaptive": false,
+      "semantics": "manual-context.local/specs-accessibility.md#Ripple",
+      "goldenTest": "engine/layout/tests/goldens/Ripple.png",
+      "status": "present",
+      "ledgers": {},
+      "containerToken": "md.comp.ripple.container",
+      "labelToken": "md.comp.ripple.label",
+      "stateOpacities": {
+        "hover": 0.08,
+        "focus": 0.12,
+        "pressed": 0.16,
+        "disabled": 0.38
+      },
+      "shape": "md.sys.shape.corner.medium",
+      "elevation": "md.sys.state.elevation.level-1",
+      "typescale": "md.sys.typescale.label-large",
+      "keyboardFocus": "focusable with visible focus state layer",
+      "motionToken": "md.sys.motion.duration.short-2",
+      "a11yRole": "none",
+      "baseline": "2026-10-28"
+    },
+    {
+      "name": "Scroll",
+      "primitive": "M3NativeScroll",
+      "tokens": [
+        "md.comp.scroll.container",
+        "md.comp.scroll.label"
+      ],
+      "states": [
+        "enabled",
+        "hovered",
+        "focused",
+        "pressed",
+        "dragged",
+        "disabled",
+        "error"
+      ],
+      "adaptive": false,
+      "semantics": "manual-context.local/specs-accessibility.md#Scroll",
+      "goldenTest": "engine/layout/tests/goldens/Scroll.png",
+      "status": "present",
+      "ledgers": {},
+      "containerToken": "md.comp.scroll.container",
+      "labelToken": "md.comp.scroll.label",
+      "stateOpacities": {
+        "hover": 0.08,
+        "focus": 0.12,
+        "pressed": 0.16,
+        "disabled": 0.38
+      },
+      "shape": "md.sys.shape.corner.medium",
+      "elevation": "md.sys.state.elevation.level-1",
+      "typescale": "md.sys.typescale.label-large",
+      "keyboardFocus": "focusable with visible focus state layer",
+      "motionToken": "md.sys.motion.duration.short-2",
+      "a11yRole": "none",
+      "baseline": "2026-10-28"
+    },
+    {
+      "name": "ScrollView",
+      "primitive": "MuseScrollView",
+      "tokens": [
+        "color.surface",
+        "motion.expressive.spring.standard",
+        "motion.expressive.easing.emphasized",
+        "state-layer.opacity.pressed"
+      ],
+      "states": [
+        "enabled",
+        "hovered",
+        "focused",
+        "pressed",
+        "dragged",
+        "disabled",
+        "error"
+      ],
+      "adaptive": true,
+      "semantics": "Scrollable container; scroll position and bounds exposed to accessibility. (Clone: manual-context.local/specs-clone-capability.md#ScrollView; Competitive: manual-context.local/specs-competitive-positioning.md#ScrollView)",
+      "goldenTest": "m3_scroll_view_golden",
+      "status": "present",
+      "ledgers": {
+        "clone": "manual-context.local/specs-clone-capability.md#ScrollView",
+        "competitive": "manual-context.local/specs-competitive-positioning.md#ScrollView"
+      },
+      "baseline": "2026-10-28"
+    },
+    {
+      "name": "Snackbar",
+      "primitive": "MuseSnackbar",
+      "tokens": [
+        "color.inverse-surface",
+        "color.inverse-on-surface",
+        "shape.corner.extra-small",
+        "motion.expressive.easing.emphasized"
+      ],
+      "states": [
+        "enabled",
+        "hovered",
+        "focused",
+        "pressed",
+        "dragged",
+        "disabled",
+        "error"
+      ],
+      "adaptive": false,
+      "semantics": "Transient message with optional action; announced via live region. (Clone: manual-context.local/specs-clone-capability.md#Snackbar; Competitive: manual-context.local/specs-competitive-positioning.md#Snackbar)",
+      "goldenTest": "m3_snackbar_golden",
+      "status": "present",
+      "ledgers": {
+        "clone": "manual-context.local/specs-clone-capability.md#Snackbar",
+        "competitive": "manual-context.local/specs-competitive-positioning.md#Snackbar"
+      },
+      "baseline": "2026-10-28"
+    },
+    {
+      "name": "Stack",
+      "primitive": "M3NativeStack",
+      "tokens": [
+        "md.comp.stack.container",
+        "md.comp.stack.label"
+      ],
+      "states": [
+        "enabled",
+        "hovered",
+        "focused",
+        "pressed",
+        "dragged",
+        "disabled",
+        "error"
+      ],
+      "adaptive": false,
+      "semantics": "manual-context.local/specs-accessibility.md#Stack",
+      "goldenTest": "engine/layout/tests/goldens/Stack.png",
+      "status": "present",
+      "ledgers": {},
+      "containerToken": "md.comp.stack.container",
+      "labelToken": "md.comp.stack.label",
+      "stateOpacities": {
+        "hover": 0.08,
+        "focus": 0.12,
+        "pressed": 0.16,
+        "disabled": 0.38
+      },
+      "shape": "md.sys.shape.corner.medium",
+      "elevation": "md.sys.state.elevation.level-1",
+      "typescale": "md.sys.typescale.label-large",
+      "keyboardFocus": "focusable with visible focus state layer",
+      "motionToken": "md.sys.motion.duration.short-2",
+      "a11yRole": "none",
+      "baseline": "2026-10-28"
+    },
+    {
+      "name": "Surface",
+      "primitive": "M3NativeSurface",
+      "tokens": [
+        "md.comp.surface.container",
+        "md.comp.surface.label"
+      ],
+      "states": [
+        "enabled",
+        "hovered",
+        "focused",
+        "pressed",
+        "dragged",
+        "disabled",
+        "error"
+      ],
+      "adaptive": false,
+      "semantics": "manual-context.local/specs-accessibility.md#Surface",
+      "goldenTest": "engine/layout/tests/goldens/Surface.png",
+      "status": "present",
+      "ledgers": {},
+      "containerToken": "md.comp.surface.container",
+      "labelToken": "md.comp.surface.label",
+      "stateOpacities": {
+        "hover": 0.08,
+        "focus": 0.12,
+        "pressed": 0.16,
+        "disabled": 0.38
+      },
+      "shape": "md.sys.shape.corner.medium",
+      "elevation": "md.sys.state.elevation.level-1",
+      "typescale": "md.sys.typescale.label-large",
+      "keyboardFocus": "focusable with visible focus state layer",
+      "motionToken": "md.sys.motion.duration.short-2",
+      "a11yRole": "none",
+      "baseline": "2026-10-28"
+    },
+    {
+      "name": "TextField",
+      "primitive": "MuseTextField",
+      "tokens": [
+        "color.surface-container-highest",
+        "color.primary",
+        "color.error",
+        "shape.corner.extra-small",
+        "state-layer.opacity.hover",
+        "motion.expressive.spring.standard"
+      ],
+      "states": [
+        "enabled",
+        "hovered",
+        "focused",
+        "pressed",
+        "dragged",
+        "disabled",
+        "error"
+      ],
+      "adaptive": true,
+      "semantics": "Editable text field; value, label, and error text exposed to accessibility. (Clone: manual-context.local/specs-clone-capability.md#TextField; Competitive: manual-context.local/specs-competitive-positioning.md#TextField)",
+      "goldenTest": "m3_text_field_golden",
+      "status": "present",
+      "ledgers": {
+        "clone": "manual-context.local/specs-clone-capability.md#TextField",
+        "competitive": "manual-context.local/specs-competitive-positioning.md#TextField"
+      },
+      "baseline": "2026-10-28"
+    },
+    {
+      "name": "TextFieldEditCore",
+      "primitive": "M3NativeTextFieldEditCore",
+      "tokens": [
+        "md.comp.textfieldeditcore.container",
+        "md.comp.textfieldeditcore.label"
+      ],
+      "states": [
+        "enabled",
+        "hovered",
+        "focused",
+        "pressed",
+        "dragged",
+        "disabled",
+        "error"
+      ],
+      "adaptive": false,
+      "semantics": "manual-context.local/specs-accessibility.md#TextFieldEditCore",
+      "goldenTest": "engine/layout/tests/goldens/TextFieldEditCore.png",
+      "status": "present",
+      "ledgers": {},
+      "containerToken": "md.comp.textfieldeditcore.container",
+      "labelToken": "md.comp.textfieldeditcore.label",
+      "stateOpacities": {
+        "hover": 0.08,
+        "focus": 0.12,
+        "pressed": 0.16,
+        "disabled": 0.38
+      },
+      "shape": "md.sys.shape.corner.medium",
+      "elevation": "md.sys.state.elevation.level-1",
+      "typescale": "md.sys.typescale.label-large",
+      "keyboardFocus": "focusable with visible focus state layer",
+      "motionToken": "md.sys.motion.duration.short-2",
+      "a11yRole": "textbox",
+      "baseline": "2026-10-28"
+    },
+    {
+      "name": "Toolbar",
+      "primitive": "MuseToolbar",
+      "tokens": [
+        "color.surface",
+        "color.on-surface",
+        "state-layer.opacity.hover",
+        "motion.expressive.easing.standard"
+      ],
+      "states": [
+        "enabled",
+        "hovered",
+        "focused",
+        "pressed",
+        "dragged",
+        "disabled",
+        "error"
+      ],
+      "adaptive": true,
+      "semantics": "Contextual toolbar; actions exposed with overflow menu semantics. (Clone: manual-context.local/specs-clone-capability.md#Toolbar; Competitive: manual-context.local/specs-competitive-positioning.md#Toolbar)",
+      "goldenTest": "m3_toolbar_golden",
+      "status": "present",
+      "ledgers": {
+        "clone": "manual-context.local/specs-clone-capability.md#Toolbar",
+        "competitive": "manual-context.local/specs-competitive-positioning.md#Toolbar"
+      },
+      "baseline": "2026-10-28"
+    },
+    {
+      "name": "Touchable",
+      "primitive": "MuseTouchable",
+      "tokens": [
+        "state-layer.opacity.pressed",
+        "color.primary",
+        "shape.corner.medium",
+        "motion.expressive.spring.standard"
+      ],
+      "states": [
+        "enabled",
+        "hovered",
+        "focused",
+        "pressed",
+        "dragged",
+        "disabled",
+        "error"
+      ],
+      "adaptive": false,
+      "semantics": "Pressable region; ripple feedback with accessible press action. (Clone: manual-context.local/specs-clone-capability.md#Touchable; Competitive: manual-context.local/specs-competitive-positioning.md#Touchable)",
+      "goldenTest": "m3_touchable_golden",
+      "status": "present",
+      "ledgers": {
+        "clone": "manual-context.local/specs-clone-capability.md#Touchable",
+        "competitive": "manual-context.local/specs-competitive-positioning.md#Touchable"
+      },
+      "baseline": "2026-10-28"
+    },
+    {
+      "name": "View",
+      "primitive": "MuseView",
+      "tokens": [
+        "color.surface",
+        "shape.corner.medium",
+        "state-layer.opacity.hover",
+        "motion.expressive.easing.standard"
+      ],
+      "states": [
+        "enabled",
+        "hovered",
+        "focused",
+        "pressed",
+        "dragged",
+        "disabled",
+        "error"
+      ],
+      "adaptive": false,
+      "semantics": "Generic container; groups children for accessibility traversal. (Clone: manual-context.local/specs-clone-capability.md#View; Competitive: manual-context.local/specs-competitive-positioning.md#View)",
+      "goldenTest": "m3_view_golden",
+      "status": "present",
+      "ledgers": {
+        "clone": "manual-context.local/specs-clone-capability.md#View",
+        "competitive": "manual-context.local/specs-competitive-positioning.md#View"
+      },
+      "baseline": "2026-10-28"
     }
   ]
 }
