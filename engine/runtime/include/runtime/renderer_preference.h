@@ -13,9 +13,14 @@
 // returns true with the trigger set).
 //
 // Link note: header-inline definition (mirrors the `egl_blit.h` header-only
-// project pattern), so no CMake target change is needed — the
-// `renderer_preference_fallback_test` executable links the `runtime` lib for
-// its include path and compiles this TU directly.
+// project pattern); the landed `renderer_preference_fallback_test`
+// executable + `add_test` hunk in `engine/runtime/CMakeLists.txt` links the
+// `runtime` lib for its include path and compiles this TU directly.
+// Trigger vocab (intentional split): the CLI `renderer-preference.js` emits
+// human-readable `"<lane> unavailable, downgraded to cpu"` while this header
+// emits machine-tag `renderer-downgrade:<lane>-unavailable` in the
+// `GFX-BLIT-FALLBACK` style; the two layers never exact-match each other so
+// no convergence is needed.
 
 #include <cstddef>
 #include <cstring>
