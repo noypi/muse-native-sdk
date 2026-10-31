@@ -1,4 +1,4 @@
-// T7 (FR-TEXT-012 / AC-TEXT-032): scale-churn resistance — 10k-node tree,
+// T5 (FR-TEXT-012 / AC-TEXT-032): scale-churn resistance — 10k-node tree,
 // <5% remeasured on a nudge, dense screen unclipped at 200%, toggles converge.
 // Test-only: exercises T2 (font_scale.h) + T5 (scale_layout.h) public
 // signatures; no new production header.
@@ -17,7 +17,7 @@
 #include "muse/text/scale_layout.h"
 
 // Plan Interface line (verbatim):
-// none — test-only; asserts over ScaleLayout + NonlinearScale public signatures
+// none — test-only; asserts over RemeasureDirty + NonlinearScale + ScaledSizePx public signatures (10k converged tree, <5% nudge remeasure, toggle convergence, 200% dense unclipped).
 
 namespace {
 

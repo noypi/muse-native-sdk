@@ -13,8 +13,7 @@
 #include "muse/text/scale_config.h"
 
 // Plan Interface line (verbatim):
-// struct UiState { uint64_t scrollPos; std::string fieldText; size_t cursor; };
-// UiState ApplyScaleConfig(UiState state, float newFontScale, float density);
+// ApplyScaleConfig(state: UiState, newFontScale: float, density: float): UiState — resolves scale via NonlinearScale, recomputes metrics via RemeasureDirty, returns state with scrollPos/fieldText/cursor preserved exactly; error shape: none — out-of-range scale clamps, no recreation.
 
 namespace {
 
@@ -137,6 +136,8 @@ static bool check_signatures_match_plan() {
     if (!c()) {                                       \
       std::printf("FAIL %s\n", #c);                   \
       failures++;                                     \
+    } else {                                          \
+      std::printf("PASS %s\n", #c);                   \
     }                                                 \
   } while (0)
 
