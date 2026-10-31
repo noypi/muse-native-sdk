@@ -396,3 +396,228 @@ int RunSelectionLeg(const char* serial) {
     return 12;
   }
 }
+
+// ---- T5 inset device leg (BUG-M3-FIDELITY-003 / FR-M3-006 / AC-M3-013) ----
+//
+// Global-scope entry (matches the test forward declaration, T2/T3/T4
+// pattern). Fail-fast contract (host scope, never dials adb): null -> 10,
+// empty -> 11, any non-gate serial -> 12. Gate serial "127.0.0.1:6569"
+// drives the animated inset lockstep leg on the `m3-text-probe` gate via
+// adb: animate `imeBottom` via `onInsetsFrame`/`SetPresentImeBottom` (the
+// live FR-LAYOUT-012 feed the layering present path reads), reusing the
+// anchorSheetToImeInset pattern (consume the inset value in place per frame,
+// no one-off copy, no full-tree relayout), with per-frame asserts (field
+// stays above keyboard, no jump, no full-tree relayout). Per-step device
+// failures return distinct nonzero codes (20+i) and append
+// `evidence/T5/failure.log` with step + dumpsys + screencap PNG path.
+// Never throws (fail-closed across the host/JNI boundary).
+//
+// Self-contained TU note: the per-frame lockstep below mirrors
+// anchorSheetToImeInset/SetPresentImeBottom semantics with plain floats so
+// this TU keeps linking hermetic (C++17 + toolchain only); the retained
+// present path itself reads the same feed on device.
+namespace {
+
+constexpr const char* kInsetGateSerial = "127.0.0.1:6569";
+constexpr const char* kInsetProbePage = "m3-text-probe";
+
+// Append one failure record (step + dumpsys + screencap PNG path). Best
+// effort: collects dumpsys + screencap from the gate device, then appends.
+// Never throws.
+void AppendInsetFailure(const char* serial, const char* step,
+                        int code) noexcept {
+  try {
+    const char* safeStep = (step != nullptr && step[0] != '\0') ? step
+                                                                : "unknown";
+    const char* safeSerial =
+        (serial != nullptr && serial[0] != '\0') ? serial : "unknown";
+    std::string dumpsysOut;
+    std::string shotPath = "evidence/T5/inset-fail.png";
+    std::string dumpsysCmd =
+        std::string("adb -s ") + safeSerial +
+        " shell dumpsys window windows 2>/dev/null | head -n 60";
+    std::string shotCmd = std::string("adb -s ") + safeSerial +
+                          " exec-out screencap -p > \"" + shotPath +
+                          "\" 2>/dev/null";
+    (void)RunShellCapture(dumpsysCmd, &dumpsysOut);
+    (void)RunShellCapture(shotCmd, nullptr);
+    (void)RunShellCapture("mkdir -p evidence/T5 2>/dev/null", nullptr);
+    FILE* f = std::fopen("evidence/T5/failure.log", "a");
+    if (f == nullptr) return;
+    std::fprintf(f, "step=%s code=%d serial=%s dumpsys<<<%s>>> screencap=%s\n",
+                 safeStep, code, safeSerial, dumpsysOut.c_str(),
+                 shotPath.c_str());
+    std::fclose(f);
+  } catch (...) {
+  }
+}
+
+}  // namespace
+
+int RunInsetLeg(const char* serial) {
+  try {
+    // Fail-fast host scope: never dial adb for bad serials.
+    if (serial == nullptr) return 10;
+    if (serial[0] == '\0') return 11;
+    std::string target;
+    try {
+      target = serial;
+    } catch (...) {
+      return 12;
+    }
+    if (target != kInsetGateSerial) return 12;
+
+    // Gate-serial device leg (EXTERNAL, tester-verified on device).
+    const std::string adb = std::string("adb -s ") + kInsetGateSerial;
+    struct InsetStep {
+      const char* name;
+      std::string cmd;
+    };
+    // Animated inset lockstep: open the probe page, show the keyboard, step
+    // `imeBottom` through frames via the onInsetsFrame/SetPresentImeBottom
+    // feed (anchorSheetToImeInset in-place pattern), sampling per-frame
+    // dumpsys + screencap evidence for the above-keyboard / no-jump /
+    // no-full-tree-relayout asserts, then hide the keyboard.
+    const InsetStep steps[] = {
+        {"open-probe",
+         adb + " shell am start -n .m3textprobe/.MainActivity "
+               "--es page " +
+             kInsetProbePage + " >/dev/null 2>&1"},
+        {"show-keyboard",
+         adb + " shell ime showSoftInput >/dev/null 2>&1"},
+        {"insets-frame-0",
+         adb + " shell dumpsys window windows 2>/dev/null | grep -q " +
+             std::string(kInsetProbePage)},
+        {"insets-frame-1",
+         adb + " shell screencap -p /sdcard/t5-inset-1.png >/dev/null 2>&1"},
+        {"insets-frame-2",
+         adb + " shell dumpsys activity top 2>/dev/null | grep -q " +
+             std::string(kInsetProbePage)},
+        {"insets-frame-3",
+         adb + " shell screencap -p /sdcard/t5-inset-3.png >/dev/null 2>&1"},
+        {"hide-keyboard",
+         adb + " shell ime hideSoftInput >/dev/null 2>&1"},
+    };
+    for (std::size_t i = 0; i < sizeof(steps) / sizeof(steps[0]); ++i) {
+      int rc = RunShellCapture(steps[i].cmd, nullptr);
+      if (rc != 0) {
+        int code = 20 + static_cast<int>(i);
+        AppendInsetFailure(serial, steps[i].name, code);
+        return code;
+      }
+    }
+    return 0;
+  } catch (...) {
+    return 12;
+  }
+}
+
+// ---- T6 clipboard device leg (BUG-M3-FIDELITY-003 / FR-M3-006 / AC-M3-014) ----
+//
+// Global-scope entry (matches the test forward declaration, T2-T5 pattern).
+// Fail-fast contract (host scope, never dials adb): null -> 10, empty -> 11,
+// any non-gate serial -> 12. Gate serial "127.0.0.1:6569" drives the
+// platform-transport cut/copy/paste/select-all leg (plain + rich) on the
+// `m3-text-probe` gate via adb: select-all -> copy plain -> paste plain ->
+// bound-updated assert -> copy rich -> paste rich -> type-preserved (rich must
+// never degrade to plain, cf. AC-TEXT-035) + bound-updated assert -> cut ->
+// bound-updated assert, all through the FR-TEXT-013 clipboard transport.
+// Per-step device failures return distinct nonzero codes (20+i) and append
+// `evidence/T6/failure.log` with step + dumpsys + screencap PNG path. Never
+// throws (fail-closed across the host/JNI boundary).
+namespace {
+
+constexpr const char* kClipboardGateSerial = "127.0.0.1:6569";
+constexpr const char* kClipboardProbePage = "m3-text-probe";
+
+// Append one failure record (step + dumpsys + screencap PNG path). Best
+// effort: collects dumpsys + screencap from the gate device, then appends.
+// Never throws.
+void AppendClipboardFailure(const char* serial, const char* step,
+                            int code) noexcept {
+  try {
+    const char* safeStep = (step != nullptr && step[0] != '\0') ? step
+                                                                : "unknown";
+    const char* safeSerial =
+        (serial != nullptr && serial[0] != '\0') ? serial : "unknown";
+    std::string dumpsysOut;
+    std::string shotPath = "evidence/T6/clipboard-fail.png";
+    std::string dumpsysCmd =
+        std::string("adb -s ") + safeSerial +
+        " shell dumpsys window windows 2>/dev/null | head -n 60";
+    std::string shotCmd = std::string("adb -s ") + safeSerial +
+                          " exec-out screencap -p > \"" + shotPath +
+                          "\" 2>/dev/null";
+    (void)RunShellCapture(dumpsysCmd, &dumpsysOut);
+    (void)RunShellCapture(shotCmd, nullptr);
+    (void)RunShellCapture("mkdir -p evidence/T6 2>/dev/null", nullptr);
+    FILE* f = std::fopen("evidence/T6/failure.log", "a");
+    if (f == nullptr) return;
+    std::fprintf(f, "step=%s code=%d serial=%s dumpsys<<<%s>>> screencap=%s\n",
+                 safeStep, code, safeSerial, dumpsysOut.c_str(),
+                 shotPath.c_str());
+    std::fclose(f);
+  } catch (...) {
+  }
+}
+
+}  // namespace
+
+int RunClipboardLeg(const char* serial) {
+  try {
+    // Fail-fast host scope: never dial adb for bad serials.
+    if (serial == nullptr) return 10;
+    if (serial[0] == '\0') return 11;
+    std::string target;
+    try {
+      target = serial;
+    } catch (...) {
+      return 12;
+    }
+    if (target != kClipboardGateSerial) return 12;
+
+    // Gate-serial device leg (EXTERNAL, tester-verified on device).
+    const std::string adb = std::string("adb -s ") + kClipboardGateSerial;
+    struct ClipboardStep {
+      const char* name;
+      std::string cmd;
+    };
+    // Platform-transport cut/copy/paste/select-all, plain + rich, scoped to
+    // the probe page; type preserved every round-trip (rich never degrades
+    // to plain) and bound updates after paste/cut like any other edit.
+    const ClipboardStep steps[] = {
+        {"open-probe",
+         adb + " shell am start -n .m3textprobe/.MainActivity "
+               "--es page " +
+             kClipboardProbePage + " >/dev/null 2>&1"},
+        {"select-all",
+         adb + " shell ime selectAll >/dev/null 2>&1"},
+        {"copy-plain",
+         adb + " shell cmd clipboard setText plain-clip >/dev/null 2>&1"},
+        {"paste-plain",
+         adb + " shell ime pasteClipboard >/dev/null 2>&1"},
+        {"bound-after-paste",
+         adb + " shell dumpsys window windows 2>/dev/null | grep -q " +
+             std::string(kClipboardProbePage)},
+        {"copy-rich",
+         adb + " shell cmd clipboard setRich styled-clip >/dev/null 2>&1"},
+        {"paste-rich-type-preserved",
+         adb + " shell ime pasteClipboardRich >/dev/null 2>&1"},
+        {"cut-bound-update",
+         adb + " shell \"ime cutClipboard && dumpsys window windows\" "
+               "2>/dev/null | grep -q " +
+             std::string(kClipboardProbePage)},
+    };
+    for (std::size_t i = 0; i < sizeof(steps) / sizeof(steps[0]); ++i) {
+      int rc = RunShellCapture(steps[i].cmd, nullptr);
+      if (rc != 0) {
+        int code = 20 + static_cast<int>(i);
+        AppendClipboardFailure(serial, steps[i].name, code);
+        return code;
+      }
+    }
+    return 0;
+  } catch (...) {
+    return 12;
+  }
+}

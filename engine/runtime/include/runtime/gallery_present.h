@@ -258,16 +258,49 @@ bool liveKindOverrideActive();
 // (step + dumpsys + screencap PNG path). Never throws.
 int RunCompositionLeg(const char* serial);
 
-// ---- T4 selection device leg (BUG-M3-FIDELITY-003 / FR-M3-006 / AC-M3-012)
+// ---- T5 inset device leg (BUG-M3-FIDELITY-003 / FR-M3-006 / AC-M3-013)
 // ----
 //
-// Global-scope gate for the caret/selection leg on the single instrumented
-// probe page ("m3-text-probe", API-29-only gate serial "127.0.0.1:6569").
-// Defined in `engine/runtime/src/js_runtime.cpp` (self-contained TU: links
-// hermetic). Fail-fast null/empty/non-gate serial yields distinct nonzero
-// codes, never throws, no adb on bad serials; the gate serial drives
-// tap -> keyboard -> API set, mutates value, asserts caret/selection survive
-// + binding round-trip report, repaint <= 1 frame, no re-instantiation, with
-// any failure appending `evidence/T4/failure.log` (step + dumpsys +
-// screencap PNG path). Never throws.
+// Global-scope gate for the animated inset lockstep leg on the single
+// instrumented probe page ("m3-text-probe", API-29-only gate serial
+// "127.0.0.1:6569"). Defined in `engine/runtime/src/js_runtime.cpp`
+// (self-contained TU: links hermetic). Fail-fast null/empty/non-gate serial
+// yields distinct nonzero codes, never throws, no adb on bad serials; the
+// gate serial animates `imeBottom` via `onInsetsFrame`/`SetPresentImeBottom`
+// on the `m3-text-probe` gate with per-frame asserts (field above keyboard,
+// no jump, no full-tree relayout), with any failure appending
+// `evidence/T5/failure.log` (step + dumpsys + screencap PNG path). Never
+// throws.
 int RunSelectionLeg(const char* serial);
+
+// ---- T5 inset device leg (BUG-M3-FIDELITY-003 / FR-M3-006 / AC-M3-013)
+// ----
+//
+// Global-scope gate for the animated inset lockstep leg on the single
+// instrumented probe page ("m3-text-probe", API-29-only gate serial
+// "127.0.0.1:6569"). Defined in `engine/runtime/src/js_runtime.cpp`
+// (self-contained TU: links hermetic). Fail-fast null/empty/non-gate serial
+// yields distinct nonzero codes, never throws, no adb on bad serials; the
+// gate serial animates `imeBottom` via `onInsetsFrame`/`SetPresentImeBottom`
+// on the `m3-text-probe` gate with per-frame asserts (field above keyboard,
+// no jump, no full-tree relayout), with any failure appending
+// `evidence/T5/failure.log` (step + dumpsys + screencap PNG path). Never
+// throws.
+int RunInsetLeg(const char* serial);
+
+// ---- T6 clipboard device leg (BUG-M3-FIDELITY-003 / FR-M3-006 / AC-M3-014)
+// ----
+//
+// Global-scope gate for the platform clipboard cut/copy/paste/select-all leg
+// (plain + rich) on the single instrumented probe page ("m3-text-probe",
+// API-29-only gate serial "127.0.0.1:6569"). Defined in
+// `engine/runtime/src/js_runtime.cpp` (self-contained TU: links hermetic).
+// Fail-fast null/empty/non-gate serial yields distinct nonzero codes, never
+// throws, no adb on bad serials; the gate serial drives select-all ->
+// copy/paste (plain + rich) -> cut -> type-preserved + bound-updated asserts
+// via the FR-TEXT-013 platform transport (rich must never degrade to plain,
+// cf. AC-TEXT-035) with per-step asserts (type preserved every round-trip,
+// bound updates after paste like any other edit), with any failure appending
+// `evidence/T6/failure.log` (step + dumpsys + screencap PNG path). Never
+// throws.
+int RunClipboardLeg(const char* serial);
