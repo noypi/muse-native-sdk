@@ -926,7 +926,8 @@ std::vector<GalleryRow> ParseGalleryRows(const void* data, std::size_t len,
                                   "value",   "index",    "icon",
                                   "tone",    "elevation", "orientation",
                                   "direction", "spacing", "open",
-                                  "contentFit", "source", "state"};
+                                  "contentFit", "source", "state",
+                                  "theme"};
         const char* propsVal = nullptr;
         const char* propsEnd = nullptr;
         if (FindKey(span.first, span.second, "props", propsVal) != nullptr &&
@@ -975,7 +976,10 @@ std::vector<GalleryRow> ParseGalleryRows(const void* data, std::size_t len,
         row.comp = type;
         row.label = picked.empty() ? desc : picked;
         row.desc = desc;
-        row.dark = false;
+        // T61 theme literal: "theme=dark" marks dark-section state rows so
+        // light/dark halves stay distinguishable downstream (D4
+        // theme-matched wash). Absent/unknown theme fails closed to light.
+        row.dark = (desc.find(" theme=dark") != std::string::npos);
         row.header = false;
         componentRows.push_back(row);
       }
@@ -1601,6 +1605,53 @@ void PaintComponent(std::uint32_t* px, int stride, int w, int h, int bx,
     return;
   }
 
+  // T61 state-row wash (oracle/CPU lane, mirrors the retained lane 1:1):
+  // src-over primary-role wash driven by StateLayerOpacity, ripple-bounded
+  // for Ripple kind, theme-matched per D4. Fail-closed: unknown/empty state
+  // keeps the base card with no wash, never blank, never throws.
+  if (c == "GalleryRow" || c == "Surface" || c == "Ripple") {
+    try {
+      const float washOpacity = StateLayerOpacity(PropValue(d, "state"));
+      const bool isRipple =
+          (c == "Ripple") || (d.find("Ripple") != std::string::npos);
+      if (washOpacity > 0.0f) {
+        const std::uint32_t primary =
+            row.dark ? kDarkPrimary : kLightPrimary;
+        const unsigned pr = primary & 255u;
+        const unsigned pg = (primary >> 8) & 255u;
+        const unsigned pb = (primary >> 16) & 255u;
+        const std::uint8_t alpha = static_cast<std::uint8_t>(
+            washOpacity * 255.0f + 0.5f);
+        const std::uint8_t wr = static_cast<std::uint8_t>(pr);
+        const std::uint8_t wg = static_cast<std::uint8_t>(pg);
+        const std::uint8_t wb = static_cast<std::uint8_t>(pb);
+        if (isRipple) {
+          const int rr = (bw < bh ? bw : bh) / 3;
+          const int rcx = bx + bw / 2;
+          const int rcy = by + (bh - 20) / 2;
+          for (int yy = rcy - rr; yy <= rcy + rr; ++yy) {
+            for (int xx = rcx - rr; xx <= rcx + rr; ++xx) {
+              const int dx = xx - rcx;
+              const int dy = yy - rcy;
+              if (dx * dx + dy * dy > rr * rr) continue;
+              BlendPixel(px, stride, w, h, xx, yy, wr, wg, wb, alpha);
+            }
+          }
+        } else {
+          for (int yy = by + 8; yy < by + bh - 44; ++yy) {
+            for (int xx = bx + 8; xx < bx + bw - 8; ++xx) {
+              BlendPixel(px, stride, w, h, xx, yy, wr, wg, wb, alpha);
+            }
+          }
+        }
+      }
+    } catch (...) {
+      // Fail closed: keep the base card below.
+    }
+    PaintCaption(px, stride, w, h, bx, by, bw, bh, ShortCaption(row));
+    return;
+  }
+
   // Fallback: tonal card with the component name — never a blank band.
   FillRoundedRect(px, stride, w, h, bx + 8, by + 8, bw - 16, bh - 44, 18,
                   kLightSecondaryContainer);
@@ -1772,6 +1823,14 @@ PrimitiveKind FamilyKind(const std::string& comp) {
       comp == "BottomAppBar" || comp == "SnackbarHost") {
     return PrimitiveKind::Rect;
   }
+  // T61 state rows route through the wash path (retained lane): Surface and
+  // GalleryRow surface rows ride StateLayer, Ripple rows ride Ripple. The
+  // EmitComponentRowCmds gate below keeps unknown states wash-free, so this
+  // mapping never paints an unresolved wash by itself.
+  if (comp == "GalleryRow" || comp == "Surface") {
+    return PrimitiveKind::StateLayer;
+  }
+  if (comp == "Ripple") return PrimitiveKind::Ripple;
   return PrimitiveKind::ShapedText;
 }
 
@@ -1908,6 +1967,60 @@ void EmitComponentRowCmds(const GalleryRow& row, int bx, int by, int bw,
   // the presented-window InkFor); the ElevationShadow above carries the
   // wash and the caption below carries the vector text.
   out.push_back(card);
+  // T61 state-row wash (retained lane, mirrors the oracle lane 1:1):
+  // GalleryRow/Surface/Ripple rows paint through the shared resolver so the
+  // wash opacity mirrors JS driveState (D2) with the 0.38 disabled pin
+  // (D1), primary-role and ripple-bounded for Ripple kind, theme-matched
+  // per D4. Fail-closed: unknown/empty state emits the neutral family cmd
+  // (no wash, row kept), never blank, never throws across JNI.
+  if (row.comp == "GalleryRow" || row.comp == "Surface" ||
+      row.comp == "Ripple") {
+    try {
+      const std::string state = PropValue(row.desc, "state");
+      const bool ripple =
+          (row.comp == "Ripple") ||
+          (row.desc.find("Ripple") != std::string::npos);
+      if (IsPropKeyWhitelisted("state") && StateLayerOpacity(state) > 0.0f) {
+        DrawCmd base;
+        base.nodeId = node;
+        base.opacity = 1.0f;
+        const std::uint32_t primary =
+            row.dark ? kDarkPrimary : kLightPrimary;
+        const std::string kind = ripple ? "Ripple" : "Surface";
+        if (ripple) {
+          base.kind = PrimitiveKind::Ripple;
+          int s = bh - 56;
+          if (s > bw - 16) s = bw - 16;
+          if (s < 24) s = 24;
+          const float fx = static_cast<float>(bx + bw / 2 - s / 2);
+          const float fy =
+              static_cast<float>(by + 12 + (bh - 56) / 2 - s / 2);
+          base.bounds = {fx, fy, static_cast<float>(s),
+                         static_cast<float>(s)};
+          base.payload.rippleBounds = base.bounds;
+          base.payload.rippleProgress = 1.0f;
+          base.payload.rippleColor = primary;
+        } else {
+          base.kind = PrimitiveKind::StateLayer;
+          base.bounds = {static_cast<float>(bx + 8),
+                         static_cast<float>(by + 8),
+                         static_cast<float>(bw - 16),
+                         static_cast<float>(bh - 52)};
+          base.radius = 18.0f;
+          base.payload.stateColor = primary;
+          base.payload.stateOpacity = 1.0f;
+        }
+        out.push_back(PaintStateWash(base, kind, state));
+        EmitCaptionCmd(bx, by, bw, bh, node, ShortCaption(row), out);
+        return;
+      }
+    } catch (...) {
+      // Fail closed: fall through to the neutral family cmd below.
+    }
+    EmitFamilyCmd(row, PrimitiveKind::ShapedText, bx, by, bw, bh, node, out);
+    EmitCaptionCmd(bx, by, bw, bh, node, ShortCaption(row), out);
+    return;
+  }
   EmitFamilyCmd(row, FamilyKind(row.comp), bx, by, bw, bh, node, out);
   EmitCaptionCmd(bx, by, bw, bh, node, ShortCaption(row), out);
 }
