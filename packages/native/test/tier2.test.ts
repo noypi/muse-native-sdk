@@ -25,8 +25,12 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { createRequire } from 'node:module';
+import { fileURLToPath } from 'node:url';
 
 const require = createRequire(import.meta.url);
 const { components } = require('../index.js');
@@ -532,4 +536,132 @@ test('structural composition rejects a hardcoded literal with no tier-1 member',
     const types = collectTypes(directMembers(literal));
     assert.ok(types.length > 0, 'Button documented slot must nest at least one tier-1 descriptor');
   });
+});
+
+// ---------------------------------------------------------------------------
+// TC-M3-004 / AC-M3-004: typed tier-2 props with build-time rejection of
+// unsupported variants (FR-M3-002).
+//
+// Hermetic: node:test + node:assert/strict only. Reads muse.manifest.json and
+// index.d.ts from disk, drives scripts/check-props.js as a child process
+// against tmp-dir fixtures (ASSUMPTION P3: MANIFEST_PATH / DTS_PATH env
+// overrides). No network, no secrets, no services, no tsc shell-out here —
+// the tsc reject half lives in test-d/negative-variant.ts (@ts-expect-error)
+// executed via `npm run check:types -w @muse/native`.
+//
+// ASSUMPTION A1 (runtime echo vs typed rejection): the JS descriptor
+// factories echo props without validation, so "unsupported variant/prop
+// fails" is asserted at the contract layer — the manifest `values` lists and
+// the index.d.ts literal unions never admit the value, and check-props.js
+// exits 1 naming `component.prop` on any drift.
+// ---------------------------------------------------------------------------
+
+const CHECK_PROPS_SCRIPT = fileURLToPath(new URL('../scripts/check-props.js', import.meta.url));
+const INDEX_DTS_URL = new URL('../index.d.ts', import.meta.url);
+
+function runCheckProps(env = {}) {
+  return spawnSync(process.execPath, [CHECK_PROPS_SCRIPT], {
+    encoding: 'utf8',
+    env: { ...process.env, ...env },
+  });
+}
+
+function fixtureManifestPath(mutatedManifest) {
+  const dir = mkdtempSync(join(tmpdir(), 'muse-tc-m3-004-'));
+  const fixtureManifest = join(dir, 'manifest.json');
+  writeFileSync(fixtureManifest, JSON.stringify(mutatedManifest));
+  return fixtureManifest;
+}
+
+test('TC-M3-004: every manifest variant value constructs and echoes (Button/Card/Chip)', () => {
+  const manifest = loadManifest();
+  const byName = new Map(manifest.components.map((c) => [c.name, c]));
+  for (const name of ['Button', 'Card', 'Chip']) {
+    const values = byName.get(name).props.variant.values;
+    assert.ok(Array.isArray(values) && values.length > 0, `${name}.variant must list values`);
+    for (const variant of values) {
+      const descriptor = components[name]({ variant, label: 'x' });
+      assert.equal(descriptor.type, name);
+      assert.equal(descriptor.props.variant, variant);
+    }
+  }
+});
+
+test('TC-M3-004: accepted shared keys construct (enabled/selected/error/icon)', () => {
+  assert.equal(components.Button({ variant: 'filled', enabled: true }).props.enabled, true);
+  assert.equal(components.Chip({ variant: 'assist', selected: true }).props.selected, true);
+  assert.equal(components.Checkbox({ checked: true, error: 'bad' }).props.error, 'bad');
+  assert.equal(components.Button({ variant: 'filled', icon: 'star' }).props.icon, 'star');
+});
+
+test('TC-M3-004: unsupported variant "giant" is absent from every manifest values list', () => {
+  const manifest = loadManifest();
+  for (const entry of manifest.components) {
+    for (const [prop, schema] of Object.entries(entry.props ?? {})) {
+      if (schema && Array.isArray(schema.values)) {
+        assert.ok(!schema.values.includes('giant'), `${entry.name}.${prop} must not admit "giant"`);
+      }
+    }
+  }
+});
+
+test('TC-M3-004: index.d.ts literal unions never admit "giant"', () => {
+  const dts = readFileSync(INDEX_DTS_URL, 'utf8');
+  assert.ok(!dts.includes("'giant'") && !dts.includes('"giant"'),
+    'no d.ts union may admit a "giant" variant');
+  const buttonProps = dts.slice(dts.indexOf('ButtonProps'));
+  assert.ok(!/variant\?:\s*string\s*[;}]/.test(buttonProps),
+    'ButtonProps.variant must be a literal union, never plain string');
+});
+
+test('TC-M3-004: unsupported prop key is absent from the manifest schema (Button.giantProp)', () => {
+  const manifest = loadManifest();
+  const button = manifest.components.find((c) => c.name === 'Button');
+  assert.ok(button.props.giantProp === undefined, 'Button.giantProp must not exist in the schema');
+});
+
+test('TC-M3-004: check-props.js exits 1 naming Button.variant on variant drift', () => {
+  const manifest = loadManifest();
+  const drifted = {
+    ...manifest,
+    components: manifest.components.map((c) =>
+      c.name === 'Button'
+        ? { ...c, props: { ...c.props, variant: { ...c.props.variant, values: [...c.props.variant.values, 'giant'] } } }
+        : c,
+    ),
+  };
+  const res = runCheckProps({
+    MANIFEST_PATH: fixtureManifestPath(drifted),
+    DTS_PATH: fileURLToPath(INDEX_DTS_URL),
+  });
+  assert.equal(res.error, undefined, `gate failed to spawn: ${res.error}`);
+  assert.equal(res.status, 1, `gate must exit 1 on variant drift; stderr: ${res.stderr}`);
+  assert.ok(`${res.stdout ?? ''}${res.stderr ?? ''}`.includes('Button.variant'),
+    'gate output must name the drifting component.prop');
+});
+
+test('TC-M3-004: check-props.js exits 1 naming Button.giantProp on added-prop drift', () => {
+  const manifest = loadManifest();
+  const drifted = {
+    ...manifest,
+    components: manifest.components.map((c) =>
+      c.name === 'Button'
+        ? { ...c, props: { ...c.props, giantProp: { type: 'string' } } }
+        : c,
+    ),
+  };
+  const res = runCheckProps({
+    MANIFEST_PATH: fixtureManifestPath(drifted),
+    DTS_PATH: fileURLToPath(INDEX_DTS_URL),
+  });
+  assert.equal(res.error, undefined, `gate failed to spawn: ${res.error}`);
+  assert.notEqual(res.status, 0, 'gate must fail when a schema prop drifts from the typed surface');
+  assert.ok(`${res.stdout ?? ''}${res.stderr ?? ''}`.includes('Button.giantProp'),
+    'gate output must name the added component.prop');
+});
+
+test('TC-M3-004: check-props.js exits 0 when manifest and d.ts agree', () => {
+  const res = runCheckProps();
+  assert.equal(res.error, undefined, `gate failed to spawn: ${res.error}`);
+  assert.equal(res.status, 0, `gate must exit 0 on agreement; stderr: ${res.stderr}`);
 });
