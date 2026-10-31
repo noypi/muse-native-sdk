@@ -50,6 +50,14 @@ add_library(pviews-lifecycle
 target_include_directories(pviews-lifecycle PUBLIC include)
 target_compile_options(pviews-lifecycle PRIVATE -Wall -Wextra -Wpedantic)
 
+# Canvas core API target (FR-PVIEWS-007). Records into the Vulkan DAG
+# render-graph queue; never flushes synchronously.
+add_library(pviews-canvas
+  src/canvas.cpp
+)
+target_include_directories(pviews-canvas PUBLIC include)
+target_compile_options(pviews-canvas PRIVATE -Wall -Wextra -Wpedantic)
+
 include(CTest)
 enable_testing()
 
@@ -102,3 +110,8 @@ add_executable(lifecycle_focus_a11y_test tests/lifecycle_focus_a11y_test.cpp)
 target_link_libraries(lifecycle_focus_a11y_test PRIVATE pviews-lifecycle)
 target_compile_options(lifecycle_focus_a11y_test PRIVATE -Wall -Wextra -Wpedantic)
 add_test(NAME lifecycle_focus_a11y COMMAND lifecycle_focus_a11y_test)
+
+add_executable(canvas_record_test tests/canvas_record_test.cpp)
+target_link_libraries(canvas_record_test PRIVATE pviews-canvas)
+target_compile_options(canvas_record_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME canvas_record COMMAND canvas_record_test)
