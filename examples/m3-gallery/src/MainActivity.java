@@ -38,6 +38,9 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
 
     private long engineHandle = 0;
 
+    /** Last forwarded inset height; throttles the paced present (F1). */
+    private float lastImeBottomPx = -1f;
+
     /**
      * Touch-slop mirror for the page-flip fallback gate below. Sole source
      * of truth is {@code runtime::touch_detail::kTouchSlopPx} (plan A2,
@@ -311,6 +314,22 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                             return insets;
                         }
                     });
+            // F2 sampler fallback (bug-runtime-004 t5r6): on API 30+ the
+            // onProgress path above never delivers nonzero heights on
+            // 127.0.0.1:6562, so register the same visible-display-frame
+            // sampler shape as the pre-30 fallback alongside it and feed
+            // the SAME onInsetsFrame entry (no parallel feed).
+            root.getViewTreeObserver().addOnGlobalLayoutListener(
+                    new ViewTreeObserver.OnGlobalLayoutListener() {
+                        @Override
+                        public void onGlobalLayout() {
+                            Rect visible = new Rect();
+                            root.getWindowVisibleDisplayFrame(visible);
+                            int keyboardHeight = Math.max(
+                                    0, root.getRootView().getHeight() - visible.bottom);
+                            onInsetsFrame((float) keyboardHeight);
+                        }
+                    });
         } else {
             root.setOnApplyWindowInsetsListener((v, insets) -> {
                 onInsetsFrame((float) insets.getSystemWindowInsetBottom());
@@ -339,10 +358,18 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
      * Single inset feed: carry one animated frame height into the JNI
      * setter backing deps.insets.imeBottom (same px field the T1 anchor
      * consumes). Sole entry point — keep exactly one definition.
+     * Paces one layering present per changed frame (F1): forwards the
+     * value then renders, throttled by a last-value guard so an
+     * unchanged frame is a no-op.
      */
     void onInsetsFrame(float imeBottomPx) {
         if (engineHandle != 0) {
+            if (imeBottomPx == lastImeBottomPx) {
+                return;
+            }
+            lastImeBottomPx = imeBottomPx;
             nativeSetImeBottom(engineHandle, imeBottomPx);
+            nativeRenderFrame(engineHandle);
         }
     }
 

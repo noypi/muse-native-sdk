@@ -162,6 +162,71 @@ else
   pass "gallery window avoids ADJUST_PAN / ADJUST_NOTHING"
 fi
 
+# F1-PACE-1 (bug-runtime-004 F1, review MAJOR 1): the T4 call site runs only
+# inside PresentDeviceGalleryPage, so bus writes without a present are silent
+# (12/12 lines inset=0.0 on API 35, 2 steady states on API 29 despite running
+# animations). The single onInsetsFrame feed must therefore request exactly
+# one layering present per forwarded frame — either a direct
+# nativeRenderFrame(engineHandle) call in the onInsetsFrame body, or a
+# Choreographer frame callback (postFrameCallback) that forwards then renders.
+# Scoped so the pre-existing surfaceCreated/surfaceChanged nativeRenderFrame
+# calls do not satisfy it. FAILS until the pacing lands.
+ONINSETS_BLOCK=$(awk '/void onInsetsFrame\(/{flag=1} flag{print} flag && /^    \}/{exit}' "$JAVA_FILE")
+# Pass iff the onInsetsFrame body renders directly, or the file paces the
+# feed via a Choreographer frame callback.
+if printf '%s\n' "$ONINSETS_BLOCK" | grep -qE 'nativeRenderFrame|requestRender'; then
+  pass "inset feed paces one layering present per frame (render/request path)"
+elif grep -q 'Choreographer' "$JAVA_FILE" && grep -q 'postFrameCallback' "$JAVA_FILE"; then
+  pass "inset feed paces one layering present per frame (render/request path)"
+else
+  fail "inset feed paces one layering present per frame (render/request path)"
+fi
+
+# F1-PACE-2 (bug-runtime-004 F1): the paced present is throttled — one
+# present per animation frame, no-op when the value is unchanged. Satisfied
+# either by a last-value/changed guard in the onInsetsFrame body
+# (last|mLast|previous|unchanged — deliberately NOT bare `!=`, which the
+# existing engineHandle null-guard already contains) or by Choreographer
+# frame pacing (one callback per vsync by construction). FAILS until the
+# throttle lands.
+if printf '%s\n' "$ONINSETS_BLOCK" | grep -qE '[lL]ast|previous|Previous|unchanged'; then
+  pass "paced present throttled (changed-guard or frame pacing)"
+elif grep -q 'Choreographer' "$JAVA_FILE" && grep -q 'postFrameCallback' "$JAVA_FILE"; then
+  pass "paced present throttled (changed-guard or frame pacing)"
+else
+  fail "paced present throttled (changed-guard or frame pacing)"
+fi
+
+# F2-SAMPLER-1 (bug-runtime-004 F2, review MAJOR 2): on API 30+ the code
+# trusts WindowInsetsAnimation.Callback.onProgress exclusively, but t5r6
+# proves onProgress never delivers nonzero heights on 127.0.0.1:6562 (bus
+# pinned 0.0 across 3 PIDs / 3 show cycles, shown-steady also 0.0). The 30+
+# branch of attachImeInsetListener must therefore register the API-29 sampler
+# shape as a fallback (OnGlobalLayoutListener / OnLayoutChangeListener /
+# getViewTreeObserver / getWindowVisibleDisplayFrame / OnApplyWindowInsets
+# read). Scoped to the >=30 branch (up to the else) so the landed <30
+# sampler does not satisfy it. FAILS until the fallback lands.
+GE30_LINE=$(awk '/attachImeInsetListener\(View root\)/{seen=1} seen && /SDK_INT >= 30/{print NR; exit}' "$JAVA_FILE" || true)
+BRANCH30=""
+if [ -n "${GE30_LINE:-}" ] && [ -n "${ELSE_LINE:-}" ]; then
+  BRANCH30=$(sed -n "${GE30_LINE},${ELSE_LINE}p" "$JAVA_FILE")
+fi
+if [ -n "$BRANCH30" ] && printf '%s\n' "$BRANCH30" | grep -qE 'OnGlobalLayoutListener|addOnGlobalLayoutListener|OnLayoutChangeListener|addOnLayoutChangeListener|getViewTreeObserver|getWindowVisibleDisplayFrame|OnApplyWindowInsetsListener|setOnApplyWindowInsetsListener'; then
+  pass "30+ branch registers a fallback sampler"
+else
+  fail "30+ branch registers a fallback sampler"
+fi
+
+# F2-SAMPLER-2 (bug-runtime-004 F2 guard): the 30+ fallback sampler must feed
+# the SAME single onInsetsFrame entry — no second setter, no parallel bus.
+# Passes on current code (onProgress already forwards via onInsetsFrame);
+# guards the fix against a parallel feed (T3-SINGLE-1 stays the denial).
+if [ -n "$BRANCH30" ] && printf '%s\n' "$BRANCH30" | grep -q 'onInsetsFrame'; then
+  pass "30+ fallback forwards via onInsetsFrame (no parallel feed)"
+else
+  fail "30+ fallback forwards via onInsetsFrame (no parallel feed)"
+fi
+
 if [ "$FAILURES" -gt 0 ]; then
   printf 'ime-bus-feed-check: %d failing\n' "$FAILURES"
   printf 'device half (tester, 127.0.0.1:6569):\n'
