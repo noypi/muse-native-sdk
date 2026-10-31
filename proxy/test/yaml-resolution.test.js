@@ -10,6 +10,9 @@
 
 const { describe, it, beforeEach, afterEach } = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 
 function loadDispatch() {
   return require('../lib/dispatch.js');
@@ -242,6 +245,255 @@ describe('T5 fail-closed: unlisted model/param never reaches upstream (TC-MUSE-0
       err = e;
     }
     assert.ok(err, 'expected non-muse-model rejection');
+    assert.equal(err.code, 'non-muse-model');
+    assert.equal(upstream.calls.length, 0);
+  });
+});
+
+// --- BUG-MUSE-003 Batch 4 ------------------------------------------------
+// T7 — loadProjectMuse(appDir) reads ONLY <appDir>/dist/muse.json (A2;
+// never parent-dir search, never the repo-root file per RULE-WORKFLOW-007;
+// appDir comes from ctx.appDir, never process.cwd() sniffing).
+// T3-hardening — artefact values are untrusted: dispatch re-validates the
+// merged params and the pinned model pre-upstream.
+//
+// Hermeticity: the artefact lives in a fake appDir under os.tmpdir()
+// (mkdtemp, removed in teardown). In-memory fixtures otherwise; never the
+// repo-root muse-native.yaml, never examples/* yaml (RULE-WORKFLOW-007);
+// no network, no keys (recording upstream fake + dummy injectKey).
+function loadProjectMuse() {
+  return require('../lib/load-muse.js').loadProjectMuse;
+}
+
+function loadProxyError() {
+  return require('../lib/errors.js').ProxyError;
+}
+
+describe('T7 loadProjectMuse reads ONLY <appDir>/dist/muse.json (AC-MUSE-046, A2)', () => {
+  const tmpDirs = [];
+  afterEach(() => {
+    while (tmpDirs.length > 0) {
+      const dir = tmpDirs.pop();
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  function makeAppDir(museJson) {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'muse-t7-'));
+    tmpDirs.push(dir);
+    if (museJson !== undefined) {
+      fs.mkdirSync(path.join(dir, 'dist'), { recursive: true });
+      const body = typeof museJson === 'string' ? museJson : JSON.stringify(museJson);
+      fs.writeFileSync(path.join(dir, 'dist', 'muse.json'), body);
+    }
+    return dir;
+  }
+
+  function artefactFixture() {
+    return {
+      models: { reason: 'sam-3.1' },
+      presets: {
+        'reason-default': { route: 'reason', params: { reasoning_effort: 'low', strict: true } },
+      },
+    };
+  }
+
+  it('returns the artefact models/presets verbatim from <appDir>/dist/muse.json', () => {
+    const dir = makeAppDir(artefactFixture());
+    assert.deepEqual(loadProjectMuse()(dir), artefactFixture());
+  });
+
+  it('absent file returns { models: {}, presets: {} } (route defaults)', () => {
+    const dir = makeAppDir();
+    assert.deepEqual(loadProjectMuse()(dir), { models: {}, presets: {} });
+  });
+
+  it('unparseable JSON throws fail-closed ProxyError, never a partial object', () => {
+    const dir = makeAppDir('{ not json !!!');
+    const ProxyError = loadProxyError();
+    assert.throws(() => loadProjectMuse()(dir), (err) => err instanceof ProxyError);
+  });
+
+  it('non-record shape throws fail-closed ProxyError (array doc)', () => {
+    const dir = makeAppDir('[]');
+    const ProxyError = loadProxyError();
+    assert.throws(() => loadProjectMuse()(dir), (err) => err instanceof ProxyError);
+  });
+
+  it('non-record shape throws fail-closed ProxyError (missing presets)', () => {
+    const dir = makeAppDir({ models: { reason: 'sam-3.1' } });
+    const ProxyError = loadProxyError();
+    assert.throws(() => loadProjectMuse()(dir), (err) => err instanceof ProxyError);
+  });
+
+  it('unreadable artefact path throws fail-closed ProxyError (dist/muse.json is a directory)', () => {
+    const dir = makeAppDir();
+    fs.mkdirSync(path.join(dir, 'dist', 'muse.json'), { recursive: true });
+    const ProxyError = loadProxyError();
+    assert.throws(() => loadProjectMuse()(dir), (err) => err instanceof ProxyError);
+  });
+
+  it('reads the explicit appDir only: two appDirs return their own contents (no cwd sniffing)', () => {
+    const dirA = makeAppDir(artefactFixture());
+    const dirB = makeAppDir({ models: {}, presets: {} });
+    assert.deepEqual(loadProjectMuse()(dirA), artefactFixture());
+    assert.deepEqual(loadProjectMuse()(dirB), { models: {}, presets: {} });
+  });
+});
+
+describe('T7 dispatch wire-in: ctx.appDir loads and attaches the artefact (AC-MUSE-046)', () => {
+  const tmpDirs = [];
+  afterEach(() => {
+    while (tmpDirs.length > 0) {
+      const dir = tmpDirs.pop();
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  function makeAppDir(museJson) {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'muse-t7-'));
+    tmpDirs.push(dir);
+    if (museJson !== undefined) {
+      fs.mkdirSync(path.join(dir, 'dist'), { recursive: true });
+      const body = typeof museJson === 'string' ? museJson : JSON.stringify(museJson);
+      fs.writeFileSync(path.join(dir, 'dist', 'muse.json'), body);
+    }
+    return dir;
+  }
+
+  function artefactFixture() {
+    return {
+      models: { reason: 'sam-3.1' },
+      presets: {
+        'reason-default': { route: 'reason', params: { reasoning_effort: 'low', strict: true } },
+      },
+    };
+  }
+
+  it('ctx.appDir with a built artefact reaches upstream with zero caller-side projectMuse plumbing', async () => {
+    const { dispatch } = loadDispatch();
+    const upstream = okUpstream({});
+    const dir = makeAppDir(artefactFixture());
+    await dispatch(
+      { route: 'reason', params: {}, preset: 'reason-default' },
+      ctxWith(upstream, { appDir: dir }),
+    );
+    assert.equal(upstream.calls.length, 1);
+    assert.equal(upstream.calls[0].body.model, 'sam-3.1');
+    assert.deepEqual(upstream.calls[0].body.params, { reasoning_effort: 'low', strict: true });
+  });
+
+  it('D1 caller-wins still holds for the T7-loaded block (preset as defaults)', async () => {
+    const { dispatch } = loadDispatch();
+    const upstream = okUpstream({});
+    const dir = makeAppDir(artefactFixture());
+    await dispatch(
+      { route: 'reason', params: { reasoning_effort: 'high' }, preset: 'reason-default' },
+      ctxWith(upstream, { appDir: dir }),
+    );
+    assert.equal(upstream.calls.length, 1);
+    assert.equal(upstream.calls[0].body.model, 'sam-3.1');
+    assert.deepEqual(upstream.calls[0].body.params, { reasoning_effort: 'high', strict: true });
+  });
+
+  it('absent artefact file via ctx.appDir behaves exactly like absent projectMuse (no model key)', async () => {
+    const { dispatch } = loadDispatch();
+    const upstream = okUpstream({});
+    const dir = makeAppDir();
+    await dispatch(
+      { route: 'reason', params: { reasoning_effort: 'high' } },
+      ctxWith(upstream, { appDir: dir }),
+    );
+    assert.equal(upstream.calls.length, 1);
+    assert.deepEqual(upstream.calls[0].body.params, { reasoning_effort: 'high' });
+    assert.ok(!('model' in upstream.calls[0].body), 'absent artefact must not add a model key');
+  });
+
+  it('corrupt artefact via ctx.appDir rejects pre-upstream with zero upstream calls', async () => {
+    const { dispatch } = loadDispatch();
+    const upstream = okUpstream({});
+    const dir = makeAppDir('{ not json !!!');
+    const ProxyError = loadProxyError();
+    let err;
+    try {
+      await dispatch(
+        { route: 'reason', params: {} },
+        ctxWith(upstream, { appDir: dir }),
+      );
+    } catch (e) {
+      err = e;
+    }
+    assert.ok(err instanceof ProxyError, 'expected fail-closed ProxyError');
+    assert.equal(upstream.calls.length, 0);
+  });
+
+  it('req.projectMuse takes precedence over the ctx.appDir artefact (?? order)', async () => {
+    const { dispatch } = loadDispatch();
+    const upstream = okUpstream({});
+    const dir = makeAppDir(artefactFixture());
+    await dispatch(
+      { route: 'reason', params: {}, projectMuse: { models: {}, presets: {} } },
+      ctxWith(upstream, { appDir: dir }),
+    );
+    assert.equal(upstream.calls.length, 1);
+    assert.ok(!('model' in upstream.calls[0].body), 'explicit req.projectMuse wins over appDir load');
+  });
+
+  it('absent ctx.appDir keeps today\u2019s wire shape exactly (no model key, params verbatim)', async () => {
+    const { dispatch } = loadDispatch();
+    const upstream = okUpstream({});
+    await dispatch(
+      { route: 'reason', params: { reasoning_effort: 'high' } },
+      ctxWith(upstream),
+    );
+    assert.equal(upstream.calls.length, 1);
+    assert.deepEqual(upstream.calls[0].body.params, { reasoning_effort: 'high' });
+    assert.ok(!('model' in upstream.calls[0].body), 'no appDir means no load, no model key');
+  });
+});
+
+describe('T3-hardening: artefact values are untrusted input (AC-MUSE-046, review MAJOR 2)', () => {
+  it('unlisted preset-param-via-artefact rejects unlisted-param pre-upstream with zero upstream calls', async () => {
+    const { dispatch } = loadDispatch();
+    const upstream = okUpstream({});
+    const evilBlock = {
+      models: { reason: 'sam-3.1' },
+      presets: {
+        'reason-default': { route: 'reason', params: { reasoning_effort: 'low', evil_param: 1 } },
+      },
+    };
+    let err;
+    try {
+      await dispatch(
+        { route: 'reason', params: {}, preset: 'reason-default', projectMuse: evilBlock },
+        ctxWith(upstream),
+      );
+    } catch (e) {
+      err = e;
+    }
+    assert.ok(err, 'expected unlisted-param rejection for artefact-supplied param');
+    assert.equal(err.code, 'unlisted-param');
+    assert.equal(err.retryable, false);
+    assert.equal(upstream.calls.length, 0);
+  });
+
+  it('non-allow-listed pinned model rejects non-muse-model pre-upstream with zero upstream calls', async () => {
+    const { dispatch } = loadDispatch();
+    const upstream = okUpstream({});
+    const evilBlock = {
+      models: { reason: 'gpt-4' },
+      presets: {},
+    };
+    let err;
+    try {
+      await dispatch(
+        { route: 'reason', params: {}, projectMuse: evilBlock },
+        ctxWith(upstream),
+      );
+    } catch (e) {
+      err = e;
+    }
+    assert.ok(err, 'expected non-muse-model rejection for artefact-supplied model');
     assert.equal(err.code, 'non-muse-model');
     assert.equal(upstream.calls.length, 0);
   });

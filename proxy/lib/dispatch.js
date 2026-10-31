@@ -7,6 +7,7 @@
 const path = require('node:path');
 const { ProxyError } = require('./errors');
 const { loadConfig } = require('./load-config');
+const { loadProjectMuse } = require('./load-muse');
 
 // Closed per-route param allow-lists (Q-MUSE-001 verified only; mirrors T1).
 const ALLOW_PARAMS = {
@@ -105,7 +106,7 @@ async function dispatch(req, ctx) {
   // ?? cfg.routes[route].model and merge preset params as defaults under
   // caller params. KNOWN_PRESETS/ALLOW_MODELS/ALLOW_PARAMS stay reject-only.
   // Absent/empty block keeps today's wire shape exactly (no model key).
-  const projectMuse = req.projectMuse;
+  const projectMuse = req.projectMuse ?? (ctx?.appDir ? loadProjectMuse(ctx.appDir) : undefined);
   let mergedParams = params;
   if (isRecord(projectMuse) && isRecord(projectMuse.presets) && req.preset !== undefined) {
     const presetEntry = Object.prototype.hasOwnProperty.call(projectMuse.presets, req.preset)
@@ -132,6 +133,27 @@ async function dispatch(req, ctx) {
   if (req.turnId !== undefined) body.turnId = req.turnId;
   // targetId is bound at commit only: forwarded upstream, never echoed back.
   if (req.targetId !== undefined) body.targetId = req.targetId;
+
+  // T3-hardening — artefact values are untrusted input (AC-MUSE-046, review
+  // MAJOR 2). Post-merge, pre-upstream re-validation: (a) every key of the
+  // merged body.params against ALLOW_PARAMS[route] -> unlisted-param;
+  // (b) the pinned body.model against the model vocabulary -> non-muse-model.
+  // Both reject with zero upstream calls. Lists stay reject-only.
+  for (const key of Object.keys(body.params)) {
+    if (!allowed.has(key)) {
+      fail('unlisted-param', route, false);
+    }
+  }
+  if (body.model !== undefined) {
+    const museModels = new Set(
+      Object.values(cfg.routes)
+        .map((entry) => entry && entry.model)
+        .filter((model) => typeof model === 'string'),
+    );
+    if (!museModels.has(body.model)) {
+      fail('non-muse-model', route, false);
+    }
+  }
 
   let lastError;
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {

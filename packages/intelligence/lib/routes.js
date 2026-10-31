@@ -67,7 +67,7 @@ async function assertMuseRoutes(fetchImpl, options) {
   if (resolveParams && preset !== undefined && preset !== null) {
     const entry = presets && typeof presets === 'object' ? presets[preset] : undefined;
     if (entry && typeof entry === 'object' && 'params' in entry) {
-      result.params = entry.params;
+      result.params = { ...entry.params };
     }
   }
   return result;

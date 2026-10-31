@@ -181,3 +181,22 @@ describe('BUG-MUSE-003 T4 — resolveParams threading (AC-MUSE-046, A3)', () => 
     assert.ok(calls.every((c) => !String(c.url).startsWith('upstream:')));
   });
 });
+
+describe('BUG-MUSE-003 T4 cleanup — result.params is a defensive copy (AC-MUSE-046)', () => {
+  // The returned params object must be a shallow copy (`{ ...entry.params }`),
+  // never the live doc entry: mutating one call's result must not leak into
+  // the next call's params.
+  it('mutating returned result.params does not affect a second call\u2019s params', async () => {
+    const { fetchImpl } = stubFetch({
+      presets: {
+        'reason-default': { route: 'reason', params: { reasoning_effort: 'low', strict: true } },
+      },
+    });
+    const first = await assertMuseRoutes(fetchImpl, { preset: 'reason-default', resolveParams: true });
+    assert.deepEqual(first.params, { reasoning_effort: 'low', strict: true });
+    first.params.reasoning_effort = 'MUTATED';
+    first.params.injected = true;
+    const second = await assertMuseRoutes(fetchImpl, { preset: 'reason-default', resolveParams: true });
+    assert.deepEqual(second.params, { reasoning_effort: 'low', strict: true });
+  });
+});

@@ -55,9 +55,9 @@ function validateMuseSection(yaml, allowList) {
       const model = muse.models[route];
       if (!museModels.has(model)) {
         const expected = `verified model for route '${route}', expected one of: ${[...museModels].join(', ')}`;
-        // Non-Muse IDs name the model; a verified ID on the wrong route
-        // names the route so the mismatch is locatable either way.
-        throw new ConfigError(museModels.has(model) ? route : String(model), FILE, expected);
+        // Membership failed, so the model names itself (non-Muse ID or an
+        // ID verified for another route under the widened T2 rule).
+        throw new ConfigError(String(model), FILE, expected);
       }
     }
   }
