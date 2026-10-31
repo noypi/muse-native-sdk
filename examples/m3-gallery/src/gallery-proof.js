@@ -23,8 +23,6 @@ const TOLERANCES_PATH = join(GOLDENS_DIR, 'm3-tolerances.json');
 
 const { buildStories } = require('./stories.js');
 
-const THEMES = ['light', 'dark'];
-
 // STATES is SUPERSEDED (BUG-SAMPLE-003 T5): hover/focus/pressed/disabled are
 // driveState concerns exercised via driveState, never gallery proof pages.
 // Only TextFieldEditCore wires a boolean state prop (`enabled`); Surface and
@@ -168,7 +166,6 @@ module.exports = {
   DEFAULT_TOLERANCE,
   GOLDENS_DIR,
   TOLERANCES_PATH,
-  THEMES,
   STATES,
   proofCommand,
   buildProofPlan,

@@ -10,7 +10,8 @@
 // text children, so the built tree carries the whole gallery with no JS
 // evaluation on device. Covers all three tiers with their documented
 // variants, each in a light row and a dark row. No hooks, no expressions,
-// no imports beyond @muse/native.
+// no imports beyond @muse/native except ./galleryMode for the
+// static-fallback reporter.
 // T61 state-row coverage (FR-M3-009 / AC-M3-020) is retained as
 // manifest-generated story variants via buildStories in stories.js, not as
 // hand-listed rows here (BUG-SAMPLE-003 T2).
