@@ -51,6 +51,10 @@
 #                              + src/webview_hosting.cpp + src/webview_bridge.cpp (-I engine/platform-views/include)
 #   :pviews:mapsHosting -> g++ engine/platform-views/tests/maps_hosting_test.cpp
 #                              + src/maps_hosting.cpp (-I engine/platform-views/include)
+#   :pviews:hybridEmbedding -> g++ engine/platform-views/tests/hybrid_embedding_test.cpp
+#                              + src/hybrid_embedding.cpp (-I engine/platform-views/include)
+#   :pviews:fallbackComposition -> g++ engine/platform-views/tests/fallback_composition_test.cpp
+#                              + src/fallback_composition.cpp (-I engine/platform-views/include)
 set -eu
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 
@@ -92,6 +96,8 @@ Tasks:
   :pviews:webviewPersistence g++ webview_persistence_test + webview_persistence
   :pviews:webviewHosting   g++ webview_hosting_test + webview_hosting + webview_bridge
   :pviews:mapsHosting      g++ maps_hosting_test + maps_hosting
+  :pviews:hybridEmbedding g++ hybrid_embedding_test + hybrid_embedding
+  :pviews:fallbackComposition g++ fallback_composition_test + fallback_composition
 Extra args after :benchmark:perfGate are forwarded to benchmark/gate/run.py
 as <manifest> <results-json>.
 EOF
@@ -605,6 +611,28 @@ print('golden diff sensitivity ok: rerun zero-diff, shift + blend flagged')"
       "$ROOT/engine/platform-views/src/maps_hosting.cpp" \
       -o "$PVDIR/maps_hosting_test" || exit 1
     "$PVDIR/maps_hosting_test" || exit 1
+    rm -rf "$PVDIR"
+    trap - EXIT INT TERM
+    ;;
+  :pviews:hybridEmbedding)
+    PVDIR="$(mktemp -d)" || exit 1
+    trap 'rm -rf "$PVDIR"' EXIT INT TERM
+    g++ -std=c++17 -Wall -Wextra -Wpedantic -I "$ROOT/engine/platform-views/include" \
+      "$ROOT/engine/platform-views/tests/hybrid_embedding_test.cpp" \
+      "$ROOT/engine/platform-views/src/hybrid_embedding.cpp" \
+      -o "$PVDIR/hybrid_embedding_test" || exit 1
+    "$PVDIR/hybrid_embedding_test" || exit 1
+    rm -rf "$PVDIR"
+    trap - EXIT INT TERM
+    ;;
+  :pviews:fallbackComposition)
+    PVDIR="$(mktemp -d)" || exit 1
+    trap 'rm -rf "$PVDIR"' EXIT INT TERM
+    g++ -std=c++17 -Wall -Wextra -Wpedantic -I "$ROOT/engine/platform-views/include" \
+      "$ROOT/engine/platform-views/tests/fallback_composition_test.cpp" \
+      "$ROOT/engine/platform-views/src/fallback_composition.cpp" \
+      -o "$PVDIR/fallback_composition_test" || exit 1
+    "$PVDIR/fallback_composition_test" || exit 1
     rm -rf "$PVDIR"
     trap - EXIT INT TERM
     ;;

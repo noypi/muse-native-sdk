@@ -9,6 +9,8 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 add_library(pviews
   src/external_memory_probe.cpp
   src/z_order.cpp
+  src/hybrid_embedding.cpp
+  src/fallback_composition.cpp
 )
 target_include_directories(pviews PUBLIC include)
 target_compile_options(pviews PRIVATE -Wall -Wextra -Wpedantic)
@@ -53,6 +55,16 @@ add_executable(z_order_test tests/z_order_test.cpp)
 target_link_libraries(z_order_test PRIVATE pviews)
 target_compile_options(z_order_test PRIVATE -Wall -Wextra -Wpedantic)
 add_test(NAME z_order COMMAND z_order_test)
+
+add_executable(hybrid_embedding_test tests/hybrid_embedding_test.cpp)
+target_link_libraries(hybrid_embedding_test PRIVATE pviews)
+target_compile_options(hybrid_embedding_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME hybrid_embedding COMMAND hybrid_embedding_test)
+
+add_executable(fallback_composition_test tests/fallback_composition_test.cpp)
+target_link_libraries(fallback_composition_test PRIVATE pviews)
+target_compile_options(fallback_composition_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME fallback_composition COMMAND fallback_composition_test)
 
 add_executable(brownfield_embed_test tests/brownfield_embed_test.cpp)
 target_link_libraries(brownfield_embed_test PRIVATE pviews-embed)
