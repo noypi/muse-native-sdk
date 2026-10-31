@@ -176,6 +176,30 @@ function validateConfig(raw, file) {
   if (raw.renderer !== undefined) assertRendererValue(raw.renderer, where);
 }
 
+// T4 (AC-WORKFLOW-016, FR-WORKFLOW-006): report requested vs effective
+// renderer separately; never overwrite the preference. `requested` echoes
+// `resolvedConfig.config.renderer` verbatim. `effective` equals
+// `probe.effective` when a valid renderer value is supplied, else
+// `requested`. `downgraded` is true iff `effective !== requested`. The
+// downgrade itself stays engine-owned (FR-GRAPHICS-014) — this helper only
+// records the probe outcome. Never mutates `resolvedConfig.config.renderer`.
+// A `trigger` string is preserved only when the probe outcome was accepted;
+// ignored probes (invalid/absent `effective`) fall back with no trigger.
+function resolveRendererPreference(resolvedConfig, probe) {
+  const requested = resolvedConfig && resolvedConfig.config
+    ? resolvedConfig.config.renderer
+    : undefined;
+  let effective = requested;
+  let trigger;
+  if (probe && typeof probe === 'object' && RENDERER_VALUES.includes(probe.effective)) {
+    effective = probe.effective;
+    if (typeof probe.trigger === 'string') trigger = probe.trigger;
+  }
+  const out = { requested, effective, downgraded: effective !== requested };
+  if (trigger !== undefined) out.trigger = trigger;
+  return out;
+}
+
 function envNameFor(key) {
   return ENV_PREFIX + key.replace(/([a-z0-9])([A-Z])/g, '$1_$2').toUpperCase();
 }
@@ -508,7 +532,12 @@ function resolveConfig(argv, env, cwd) {
       winningLayer[key] = 'default';
     }
   }
-  return { config, winningLayer };
+  // T4 (AC-WORKFLOW-016): pre-probe preference pair. Carried as a top-level
+  // `renderer` key so `--print-config` (which spreads the resolved object)
+  // reports `{ requested, effective, downgraded }` with effective defaulting
+  // to requested pre-probe. `config.renderer` itself is never mutated.
+  const renderer = resolveRendererPreference({ config }, undefined);
+  return { config, winningLayer, renderer };
 }
 
 // Option schema for `muse-native build --help`: derived from the same live
@@ -522,6 +551,9 @@ function getOptionSchema() {
     type: SCHEMA[name],
     default: DEFAULTS[name],
   }));
+  for (const entry of entries) {
+    if (entry.name === 'renderer') entry.allowed = RENDERER_VALUES.slice();
+  }
   let stageAllowed = [];
   try {
     stageAllowed = require('./stages.js').STAGES;
@@ -537,4 +569,4 @@ function getOptionSchema() {
   return entries;
 }
 
-module.exports = { SCHEMA, DEFAULTS, ConfigError, resolveConfig, validateConfig, getOptionSchema, readFileLayer, parseMuseSubtree, assertRendererValue };
+module.exports = { SCHEMA, DEFAULTS, ConfigError, resolveConfig, validateConfig, getOptionSchema, readFileLayer, parseMuseSubtree, assertRendererValue, resolveRendererPreference };

@@ -20,6 +20,10 @@ version: 0.0.1
 # Packaging mode: fat (one APK covering all archs) | split (one APK per
 # arch) | both (fat + full split set). Default is fat.
 packaging: fat
+# Rendering backend preference (preference-only): cpu | egl | skia.
+# Default is cpu. The resolved value is reported as the requested preference;
+# the engine probe may downgrade to a different effective path at runtime.
+# renderer: cpu
 # Pinned Muse models per route plus named preset bundles. Validated at
 # build time against the proxy allow-list before any compile work.
 muse:
