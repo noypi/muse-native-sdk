@@ -29,9 +29,10 @@ android {
     }
 }
 
-// Verification lanes (TC-PVIEWS-001 / TC-PVIEWS-002):
+// Verification lanes (TC-PVIEWS-001 / TC-PVIEWS-002 / TC-PVIEWS-007):
 //   ./gradlew :pviews:externalMemory  — zero-copy probe (NFR-PVIEWS-001)
 //   ./gradlew :pviews:zOrder          — z-order/clipping (FR-PVIEWS-001)
+//   ./gradlew :pviews:clipping        — dynamic surface clipping (FR-PVIEWS-005)
 // Each lane compiles its hermetic binary (test + production source,
 // -I engine/platform-views/include) and executes it; the build fails on
 // any nonzero exit.
@@ -43,4 +44,9 @@ tasks.register('externalMemory', Exec) {
 tasks.register('zOrder', Exec) {
     description = 'Run z-order checks (TC-PVIEWS-002).'
     commandLine 'sh', '-c', 'g++ -std=c++17 ../engine/platform-views/tests/z_order_test.cpp ../engine/platform-views/src/z_order.cpp -I../engine/platform-views/include -o /tmp/pviews_z_order && /tmp/pviews_z_order'
+}
+
+tasks.register('clipping', Exec) {
+    description = 'Run dynamic surface clipping checks (TC-PVIEWS-007).'
+    commandLine 'sh', '-c', 'g++ -std=c++17 ../engine/platform-views/tests/clipping_test.cpp -I../engine/platform-views/include -o /tmp/pviews_clipping && /tmp/pviews_clipping'
 }
