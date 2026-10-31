@@ -803,8 +803,170 @@ describe('TC-M3-022 — golden diff with recorded per-component tolerance (AC-M3
 
 const RELOCATED_GOLDENS_DIR = join(GALLERY_DIR, 'goldens');
 const RELOCATED_TOLERANCES_PATH = join(RELOCATED_GOLDENS_DIR, 'm3-tolerances.json');
-// T61 in-batch: the four state tokens every state row must carry.
-const T63_STATES = ['hover', 'focus', 'pressed', 'disabled'];
+// T5 RECONCILED (BUG-SAMPLE-003) — the proof plan must be re-emitted from the
+// cleaned tree, never hand-edited. Reconciliation: SPEC-SAMPLE-PROJECT v2.37
+// AC-SAMPLE-041 removed the 24 hand-listed GalleryRow rows, so the proof plan
+// is exactly the `buildStories(manifest)` expansion over the REAL manifest
+// (one page per component x documented variant x owned state x light/dark),
+// probed live below — never the hardcoded hover/focus/pressed/disabled cross
+// product the stale T63 block asserted. Coder finding (honored, cf. T61-note):
+// Surface/Ripple declare NO boolean state props (only TextFieldEditCore
+// declares `enabled`); hover/focus/pressed/disabled are exercised via
+// driveState, not gallery story state — so the proof plan must NOT contain
+// pages for unwired states. Probed emission truth (2026-10-31, real manifest,
+// `node -e` in run checkout `.worktrees/bug-sample-003/_run`):
+//   buildStories total 232 unique component|variant|state|theme keys;
+//   Surface 2 (states ['default']), Ripple 2 (states ['default']),
+//   TextFieldEditCore 4 (states ['default','enabled']);
+//   buildProofPlan total 536 (states ['hover','focus','pressed','disabled']);
+//   key overlap 0 — the stale plan shares NOT ONE page with the cleaned tree.
+// Re-probe (not hand-edit) if manifest props change.
+const STORIES_PATH = join(GALLERY_DIR, 'src', 'stories.js');
+// Re-emitted counts from the current cleaned sources (probed, asserted
+// verbatim — never hand-edited).
+const REBASELINED_TOTAL = 232;
+const REBASELINED_T61_SLICE = { Surface: 2, Ripple: 2, TextFieldEditCore: 4 };
+// Interaction states exercised via driveState, never gallery proof pages.
+const NON_PROOF_STATES = ['hover', 'focus', 'pressed', 'disabled'];
+
+function loadStoriesModule() {
+  let mod = null;
+  try {
+    mod = require(STORIES_PATH);
+  } catch (err) {
+    assert.fail(`stories.js missing/unloadable at ${STORIES_PATH}: ${err.message}`);
+  }
+  assert.equal(typeof mod.buildStories, 'function', 'stories.js must export buildStories(manifest)');
+  return mod;
+}
+
+function storyKeys(manifest) {
+  const { buildStories } = loadStoriesModule();
+  return new Set(
+    buildStories(manifest).map((s) => `${s.component}|${s.variant}|${s.state}|${s.theme}`),
+  );
+}
+
+function planKeys(plan) {
+  return new Set(
+    (Array.isArray(plan) ? plan : []).map(
+      (p) => `${p.component}|${p.variant}|${p.state}|${p.theme}`,
+    ),
+  );
+}
+
+describe('T63 RECONCILED — proof plan is re-emitted from the cleaned tree (AC-M3-020/TC-M3-021, AC-SAMPLE-041)', () => {
+  it('proof plan carries no driveState-only state pages (hover/focus/pressed/disabled are unwired)', () => {
+    requireProof();
+    const plan = proof.buildProofPlan(loadManifest());
+    for (const entry of plan) {
+      assert.ok(
+        !NON_PROOF_STATES.includes(entry.state),
+        `page ${entry.page}: state "${entry.state}" is a driveState concern, not a gallery proof page`,
+      );
+    }
+  });
+
+  it('proof plan key set equals the buildStories expansion over the real manifest (re-baselined, never hand-edited)', () => {
+    requireProof();
+    const manifest = loadManifest();
+    const expected = storyKeys(manifest);
+    assert.ok(expected.size > 0, 'buildStories(manifest) must be non-empty (re-emission oracle)');
+    const plan = proof.buildProofPlan(manifest);
+    const seen = planKeys(plan);
+    assert.equal(
+      seen.size,
+      expected.size,
+      `re-baselined proof plan must hold ${expected.size} pages, saw ${seen.size}`,
+    );
+    for (const key of expected) {
+      assert.ok(seen.has(key), `re-baselined proof plan is missing story page ${key}`);
+    }
+    for (const key of seen) {
+      assert.ok(expected.has(key), `re-baselined proof plan carries extra page ${key} with no story`);
+    }
+  });
+
+  it('re-baselined totals match the probed cleaned-tree emission (232 pages; Surface 2 / Ripple 2 / TextFieldEditCore 4)', () => {
+    requireProof();
+    const manifest = loadManifest();
+    const plan = proof.buildProofPlan(manifest);
+    assert.equal(
+      plan.length,
+      REBASELINED_TOTAL,
+      `re-baselined proof plan must hold ${REBASELINED_TOTAL} pages, saw ${plan.length}`,
+    );
+    for (const name of Object.keys(REBASELINED_T61_SLICE)) {
+      const slice = plan.filter((p) => p.component === name);
+      assert.equal(
+        slice.length,
+        REBASELINED_T61_SLICE[name],
+        `${name}: re-baselined proof slice must hold ${REBASELINED_T61_SLICE[name]} pages, saw ${slice.length}`,
+      );
+    }
+  });
+
+  it('assertCounts passes on the re-baselined plan and rejects the stale 536-page plan naming page/state', () => {
+    requireProof();
+    const manifest = loadManifest();
+    const { buildStories } = loadStoriesModule();
+    const rebased = buildStories(manifest).map((s) => ({
+      component: s.component,
+      tier: s.tier,
+      variant: s.variant,
+      state: s.state,
+      theme: s.theme,
+      page: `tier${s.tier}/${s.component}/${s.variant}/${s.state}/${s.theme}`,
+    }));
+    assert.doesNotThrow(
+      () => proof.assertCounts(rebased, manifest),
+      're-baselined (stories-derived) plan must pass counts',
+    );
+    const stale = proof.buildProofPlan(manifest).filter((p) => p.state === 'pressed');
+    assert.throws(
+      () => proof.assertCounts(stale, manifest),
+      (err) => {
+        const msg = String(err && err.message);
+        assert.ok(
+          /pressed/.test(msg),
+          `stale-plan count failure must name the state, saw: ${msg}`,
+        );
+        assert.ok(
+          new RegExp(manifest.components[0].name).test(msg),
+          `stale-plan count failure must name the page/component, saw: ${msg}`,
+        );
+        return true;
+      },
+      'stale hover/focus/pressed/disabled slice must fail counts naming page/state',
+    );
+  });
+
+  it('assertCounts rejects an unknown-state page (fail-closed, T62 parity)', () => {
+    requireProof();
+    const manifest = loadManifest();
+    const { buildStories } = loadStoriesModule();
+    const rebased = buildStories(manifest).map((s) => ({
+      component: s.component,
+      tier: s.tier,
+      variant: s.variant,
+      state: s.state,
+      theme: s.theme,
+      page: `tier${s.tier}/${s.component}/${s.variant}/${s.state}/${s.theme}`,
+    }));
+    const poisoned = [...rebased, {
+      component: manifest.components[0].name,
+      tier: manifest.components[0].tier,
+      variant: 'default',
+      state: 'hover',
+      theme: 'light',
+      page: 'bogus/hover-state/light',
+    }];
+    assert.throws(
+      () => proof.assertCounts(poisoned, manifest),
+      'plan with a driveState-only page must fail counts',
+    );
+  });
+});
 
 function loadRelocatedTolerances() {
   let raw = null;
@@ -815,77 +977,6 @@ function loadRelocatedTolerances() {
   }
   return JSON.parse(raw);
 }
-
-describe('T63 — state-row proof plan requires T61 state × theme rows (AC-M3-020)', () => {
-  it('every proof-plan entry carries a known state token (T61 in-batch)', () => {
-    requireProof();
-    assert.equal(typeof proof.buildProofPlan, 'function', 'must export buildProofPlan(manifest)');
-    const plan = proof.buildProofPlan(loadManifest());
-    assert.ok(plan.length > 0, 'proof plan must be non-empty');
-    for (const entry of plan) {
-      assert.ok(
-        T63_STATES.includes(entry.state),
-        `page ${entry.page}: unknown state ${JSON.stringify(entry.state)} (known: ${T63_STATES.join(', ')})`,
-      );
-    }
-  });
-
-  it('proof plan covers every component × state × theme (T61 rows)', () => {
-    requireProof();
-    const plan = proof.buildProofPlan(loadManifest());
-    for (const entry of loadManifest().components) {
-      for (const state of T63_STATES) {
-        for (const theme of ['light', 'dark']) {
-          assert.ok(
-            plan.some((p) => p.component === entry.name && p.state === state && p.theme === theme),
-            `${entry.name}: no ${state}/${theme} page in the proof plan`,
-          );
-        }
-      }
-    }
-  });
-
-  it('assertCounts rejects a plan missing a state slice naming page/state', () => {
-    requireProof();
-    const manifest = loadManifest();
-    const plan = proof.buildProofPlan(manifest);
-    const dropped = plan.filter((p) => p.state !== 'pressed');
-    assert.throws(
-      () => proof.assertCounts(dropped, manifest),
-      (err) => {
-        const msg = String(err && err.message);
-        assert.ok(
-          /pressed/.test(msg),
-          `count failure must name the missing state, saw: ${msg}`,
-        );
-        assert.ok(
-          new RegExp(manifest.components[0].name).test(msg),
-          `count failure must name the page/component, saw: ${msg}`,
-        );
-        return true;
-      },
-      'plan missing the pressed slice must fail counts naming page/state',
-    );
-  });
-
-  it('assertCounts rejects an unknown-state page (fail-closed, T62 parity)', () => {
-    requireProof();
-    const manifest = loadManifest();
-    const plan = proof.buildProofPlan(manifest);
-    const poisoned = [...plan, {
-      component: manifest.components[0].name,
-      tier: manifest.components[0].tier,
-      variant: 'default',
-      state: 'enabled',
-      theme: 'light',
-      page: 'bogus/unknown-state/light',
-    }];
-    assert.throws(
-      () => proof.assertCounts(poisoned, manifest),
-      'plan with an unknown-state page must fail counts',
-    );
-  });
-});
 
 describe('T63 — golden diff resolves tolerances at the RELOCATED path (AC-M3-021, D3)', () => {
   it('relocated tolerances file exists at examples/m3-gallery/goldens/ (D3)', () => {
