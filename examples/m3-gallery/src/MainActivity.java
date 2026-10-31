@@ -47,6 +47,16 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
 
     private long engineHandle = 0;
 
+    /** T1 (FR-STARTUP-002/AC-STARTUP-003): cold-readiness flag set on the UI-thread post-back. */
+    private volatile boolean treeReady = false;
+
+    /** T1 generation token (feeds T3): late post-backs with a stale generation are dropped. */
+    private int treeLoadGeneration = 0;
+
+    /** T1 single-owner background loader (ASSUMPTION A2, RULE-STARTUP-002). */
+    private final java.util.concurrent.ExecutorService treeLoader =
+            java.util.concurrent.Executors.newSingleThreadExecutor();
+
     /** TTFD exactly-once guard: reportFullyDrawn() is signalled at most once. */
     private boolean fullyDrawnReported = false;
 
@@ -286,9 +296,83 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             showTextProbePage(root);
         }
         attachImeInsetListener(root);
-        byte[] treeBytes = readTreeAsset();
-        if (treeBytes != null) {
-            engineHandle = nativeLoadTree(treeBytes);
+        startAsyncTreeLoad();
+    }
+
+    /**
+     * T1 (FR-STARTUP-002/AC-STARTUP-003): start the single-owner background
+     * tree load and return immediately. Never blocks, never throws.
+     */
+    void startAsyncTreeLoad() {
+        final int generation;
+        try {
+            generation = treeLoadGeneration;
+        } catch (Throwable t) {
+            Log.e("MainActivity", "tree-load: generation read failed");
+            return;
+        }
+        try {
+            treeLoader.execute(() -> {
+                final byte[] bytes;
+                try {
+                    bytes = readTreeAsset();
+                } catch (Throwable t) {
+                    Log.e("MainActivity", "tree-load: asset read threw");
+                    return;
+                }
+                new Handler(Looper.getMainLooper()).post(() -> {
+                    if (generation != treeLoadGeneration) {
+                        return;
+                    }
+                    try {
+                        handleTreeBytes(bytes);
+                    } catch (Throwable t) {
+                        Log.e("MainActivity", "tree-load: completion threw");
+                    }
+                });
+            });
+        } catch (Throwable t) {
+            Log.e("MainActivity", "tree-load: submit failed");
+        }
+    }
+
+    /**
+     * T1 completion hook (runs on the UI thread): fail-closed install of the
+     * tree handle. Signature: void handleTreeBytes(byte[]).
+     * Null/empty bytes or nativeLoadTree == 0 logs
+     * {@code tree-load: <reason>}, leaves {@code engineHandle} at 0, and
+     * never throws.
+     */
+    void handleTreeBytes(byte[] treeBytes) {
+        try {
+            if (treeBytes == null) {
+                Log.e("MainActivity", "tree-load: null asset bytes");
+                return;
+            }
+            if (treeBytes.length == 0) {
+                Log.e("MainActivity", "tree-load: empty asset bytes");
+                return;
+            }
+            long handle = nativeLoadTree(treeBytes);
+            if (handle == 0) {
+                Log.e("MainActivity", "tree-load: nativeLoadTree returned 0");
+                return;
+            }
+            engineHandle = handle;
+            treeReady = true;
+            maybeRenderFirstFrame();
+        } catch (Throwable t) {
+            Log.e("MainActivity", "tree-load: handle install failed");
+        }
+    }
+
+    /**
+     * First-render gate entry (T2 owns the full {@code treeReady &&
+     * surfaceReady} gate): T1 completion calls it; T2 expands the body.
+     */
+    private void maybeRenderFirstFrame() {
+        if (!treeReady || engineHandle == 0) {
+            return;
         }
     }
 
