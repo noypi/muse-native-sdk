@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # zero-copy-trace suite (NFR-PVIEWS-002 / AC-PVIEWS-006, TC-PVIEWS-006).
 #
-# Usage: run.sh [--serial 127.0.0.1:6562]
-#   No args pins ANDROID_SERIAL=127.0.0.1:6562 (env or default); exactly one
-#   optional flag --serial <serial> is accepted and must equal 127.0.0.1:6562.
+# Usage: run.sh [--serial KDSBB22429250346]
+#   No args pins ANDROID_SERIAL=KDSBB22429250346 (env or default); exactly one
+#   optional flag --serial <serial> is accepted and must equal KDSBB22429250346.
 #   Any other arg, missing --serial value, extra args, or a non-target serial
 #   exits 2 (usage/serial-mismatch, fail closed, no device touched).
 #
@@ -22,17 +22,17 @@
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-TARGET_SERIAL="127.0.0.1:6562"
+TARGET_SERIAL="KDSBB22429250346"
 RESULT_FILE="zero-copy-trace-result.json"
 
 usage() {
-  echo "usage: run.sh [--serial 127.0.0.1:6562]" >&2
-  echo "serial pin: ANDROID_SERIAL=127.0.0.1:6562 (fail closed on any other serial)" >&2
+  echo "usage: run.sh [--serial KDSBB22429250346]" >&2
+  echo "serial pin: ANDROID_SERIAL=KDSBB22429250346 (fail closed on any other serial)" >&2
 }
 
 if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
   echo "zero-copy-trace suite (NFR-PVIEWS-002 / AC-PVIEWS-006)"
-  echo "usage: run.sh [--serial 127.0.0.1:6562]"
+  echo "usage: run.sh [--serial KDSBB22429250346]"
   echo "evidence: {noMemcpy: true, zOrderOk: true, handlesLeaked: 0} validated by validate.py;"
   echo "  ZERO_COPY_TRACE_EVIDENCE_PATH retargets the evidence path only."
   exit 0
