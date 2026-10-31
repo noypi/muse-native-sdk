@@ -496,18 +496,27 @@ describe('BUG-MUSE-003 T3 — projectMuse resolution (AC-MUSE-046, FR-MUSE-002)'
     assert.equal(upstream.calls.length, 0);
   });
 
-  it('merging preset params never pollutes Object.prototype (ASSUMPTION: trusted artefact, spread merge)', async () => {
+  // T3-hardening (review MAJOR 2 + plan T3-hardening): artefact values are
+  // untrusted input, so dispatch re-validates merged keys pre-upstream. The
+  // `__proto__` preset param is not in ALLOW_PARAMS[reason], so the hardened
+  // code rejects `unlisted-param` with zero upstream calls — nothing reaches
+  // the merge (fail-closed, AC-MUSE-046 "unlisted param anywhere rejects").
+  it('merging preset params never pollutes Object.prototype (T3-hardening: __proto__ preset param rejects unlisted-param pre-upstream)', async () => {
     const { dispatch } = loadImpl();
     const upstream = okUpstream({});
     const poisoned = projectMuse();
     poisoned.presets['reason-default'].params = JSON.parse(
       '{"reasoning_effort":"low","__proto__":{"polluted":"yes"}}',
     );
-    await dispatch(
-      { route: 'reason', params: {}, preset: 'reason-default', projectMuse: poisoned },
-      ctxWith(upstream),
+    await assertProxyError(
+      dispatch(
+        { route: 'reason', params: {}, preset: 'reason-default', projectMuse: poisoned },
+        ctxWith(upstream),
+      ),
+      'unlisted-param',
+      'reason',
     );
-    assert.equal(upstream.calls.length, 1);
+    assert.equal(upstream.calls.length, 0);
     assert.equal({}.polluted, undefined, 'Object.prototype must not be polluted');
   });
 });
