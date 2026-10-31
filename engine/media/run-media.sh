@@ -17,7 +17,9 @@ BIN_MEDIA_ANIMATED_DECODE=$(mktemp /tmp/media-animated_decode_test.XXXXXX)
 BIN_MEDIA_ANIMATED_HDR=$(mktemp /tmp/media-animated_hdr_test.XXXXXX)
 BIN_FETCH_BRIDGE=$(mktemp /tmp/media-fetch_bridge_test.XXXXXX)
 BIN_CAPS=$(mktemp /tmp/media-host_copy_caps_acceptance_test.XXXXXX)
-trap 'rm -f "$BIN_MEDIA_WORKER_POOL" "$BIN_MEDIA_DECODE_METADATA" "$BIN_MEDIA_IMAGE_CACHE" "$BIN_MEDIA_COLOR_SPACE_UPLOAD" "$BIN_MEDIA_ANIMATED_DECODE" "$BIN_MEDIA_ANIMATED_HDR" "$BIN_FETCH_BRIDGE" "$BIN_CAPS"' EXIT
+BIN_MEDIA_LIFECYCLE_AUDIO_FOCUS=$(mktemp /tmp/media-lifecycle_audio_focus_test.XXXXXX)
+BIN_MEDIA_AUDIO_ENGINE=$(mktemp /tmp/media-audio_engine_test.XXXXXX)
+trap 'rm -f "$BIN_MEDIA_WORKER_POOL" "$BIN_MEDIA_DECODE_METADATA" "$BIN_MEDIA_IMAGE_CACHE" "$BIN_MEDIA_COLOR_SPACE_UPLOAD" "$BIN_MEDIA_ANIMATED_DECODE" "$BIN_MEDIA_ANIMATED_HDR" "$BIN_FETCH_BRIDGE" "$BIN_CAPS" "$BIN_MEDIA_LIFECYCLE_AUDIO_FOCUS" "$BIN_MEDIA_AUDIO_ENGINE"' EXIT
 
 g++ -std=c++17 -Wall -Wextra -Wpedantic -I . -I engine/core/thread/include -I engine/core/budget/include engine/media/tests/worker_pool_test.cpp engine/media/decode/decode_dispatch.cc engine/core/thread/src/worker_pool.cpp engine/core/budget/src/manager.cpp engine/graphics/textures/texture_pool.cc -o "$BIN_MEDIA_WORKER_POOL"
 "$BIN_MEDIA_WORKER_POOL"
@@ -42,3 +44,9 @@ g++ -std=c++17 -Wall -Wextra -Wpedantic -I . -I engine/core/budget/include -I en
 
 g++ -std=c++17 -Wall -Wextra -Wpedantic -I . engine/media/tests/host_copy_caps_acceptance_test.cpp engine/media/src/image_cache.cc -o "$BIN_CAPS"
 "$BIN_CAPS"
+
+g++ -std=c++17 -Wall -Wextra -Wpedantic -I . engine/media/tests/lifecycle_audio_focus_test.cpp -o "$BIN_MEDIA_LIFECYCLE_AUDIO_FOCUS"
+"$BIN_MEDIA_LIFECYCLE_AUDIO_FOCUS"
+
+g++ -std=c++17 -Wall -Wextra -Wpedantic -I . engine/media/tests/audio_engine_test.cpp -o "$BIN_MEDIA_AUDIO_ENGINE"
+"$BIN_MEDIA_AUDIO_ENGINE"
