@@ -110,4 +110,42 @@ describe('T5 behavioral — scan-keys.sh --strict exit contract (AC-MUSE-004, AC
     const r = runGate([], dir);
     assert.equal(r.status, 0, `clean fixture must pass, got: ${r.stdout}${r.stderr}`);
   });
+
+  it('delimiter-prefixed sk- key still fails --strict post-anchor: key=sk-... exit 1 (SEC-REVIEW)', () => {
+    const dir = mkDir();
+    fs.writeFileSync(
+      path.join(dir, 'leak-env.js'),
+      'key=sk-test-not-real-secret-value\n',
+    );
+    const r = runGate(['--strict'], dir);
+    assert.equal(r.status, 1, `delimiter-prefixed sk- fixture must fail --strict, got: ${r.stdout}${r.stderr}`);
+    const out = `${r.stdout}${r.stderr}`;
+    assert.ok(out.includes('leak-env.js'), 'exit 1 must name the offending file');
+    assert.ok(/sk-/.test(out), 'exit 1 must name the offending pattern');
+  });
+
+  it('delimiter-prefixed xai- key still fails --strict post-anchor: key=xai-... exit 1 (SEC-REVIEW)', () => {
+    const dir = mkDir();
+    fs.writeFileSync(
+      path.join(dir, 'leak-xai.js'),
+      'key=xai-test-not-real-secret-value\n',
+    );
+    const r = runGate(['--strict'], dir);
+    assert.equal(r.status, 1, `delimiter-prefixed xai- fixture must fail --strict, got: ${r.stdout}${r.stderr}`);
+    const out = `${r.stdout}${r.stderr}`;
+    assert.ok(out.includes('leak-xai.js'), 'exit 1 must name the offending file');
+    assert.ok(/xai-/.test(out), 'exit 1 must name the offending pattern');
+  });
+
+  it('mid-word sk- words pass --strict: task-affinity + disk-scheduling exit 0 (BUG-MUSE-001)', () => {
+    const dir = mkDir();
+    fs.writeFileSync(
+      path.join(dir, 'lint.py'),
+      '"""FR-NAV-010 T11: Launch-mode / task-affinity contradiction lint.\n' +
+        'disk-scheduling note: no key material here.\n' +
+        '"""\n',
+    );
+    const r = runGate(['--strict'], dir);
+    assert.equal(r.status, 0, `task-affinity fixture must pass --strict, got: ${r.stdout}${r.stderr}`);
+  });
 });
