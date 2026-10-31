@@ -115,6 +115,50 @@ int main() {
     assert(after.source == before.source);
     printf("PASS unknown-tier-denied-unchanged\n");
   }
+  // 9. Hardening (d): unknown tiers denied with no telemetry write — every
+  //    out-of-range value x every source returns false, tier unchanged, and
+  //    the last telemetry record (tier, source, frameTimeOk) untouched.
+  //    Spec: unknown tiers are denied.
+  //    NOTE: an earlier case latches the app-override lock, so the known
+  //    baseline is (re-)established via kAppOverride (always accepted);
+  //    the denial assertions themselves are source-independent.
+  {
+    assert(requestTier(QualityTier::kMedium, TierSource::kAppOverride));
+    const QualityTier kBad[] = {
+        static_cast<QualityTier>(999), static_cast<QualityTier>(-1),
+        static_cast<QualityTier>(4), static_cast<QualityTier>(-100)};
+    const TierSource kSources[] = {TierSource::kCapability, TierSource::kThermal,
+                                  TierSource::kAppOverride};
+    for (int i = 0; i < 4; ++i) {
+      for (int j = 0; j < 3; ++j) {
+        TierTelemetry before = lastTierTelemetry();
+        assert(!requestTier(kBad[i], kSources[j]));
+        assert(currentTier() == QualityTier::kMedium);
+        TierTelemetry after = lastTierTelemetry();
+        assert(after.tier == before.tier);
+        assert(after.source == before.source);
+        assert(after.frameTimeOk == before.frameTimeOk);
+      }
+    }
+    printf("PASS unknown-tiers-denied-no-telemetry-write\n");
+  }
+  // 10. Hardening (e): effectSetFor returns the safe Low set for an
+  //     out-of-range tier value. Spec: the Low set is the minimum-effect
+  //     fallback, so clamping unknown input there can never over-commit.
+  {
+    TierEffectSet low = effectSetFor(QualityTier::kLow);
+    const QualityTier kBad[] = {static_cast<QualityTier>(999),
+                               static_cast<QualityTier>(-1),
+                               static_cast<QualityTier>(4)};
+    for (int i = 0; i < 3; ++i) {
+      TierEffectSet got = effectSetFor(kBad[i]);
+      assert(got.blurPasses == low.blurPasses);
+      assert(got.shadowQuality == low.shadowQuality);
+      assert(got.shadingRate == low.shadingRate);
+      assert(got.msaaSamples == low.msaaSamples);
+    }
+    printf("PASS effect-set-out-of-range-falls-back-to-low\n");
+  }
   printf("ALL QUALITY_TIER TESTS PASSED\n");
   return 0;
 }

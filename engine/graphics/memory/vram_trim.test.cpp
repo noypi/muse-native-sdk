@@ -14,6 +14,7 @@
 // documented 48MiB (at 4GiB) and 128MiB (at 6GiB) tier edges, matching the
 // tierForRam interpolation; the spec pins only the low/high edges exactly.
 #include <cassert>
+#include <climits>
 #include <cstddef>
 #include <cstdio>
 
@@ -210,6 +211,85 @@ int main() {
     assert(t.usedBytes == 1000000);
     assert(t.visibleBytes == 1000000);
     printf("PASS background-overflow-boundary-21_5M\n");
+  }
+  // 15. Hardening (a): every invalid shape (usedBytes<0, visibleBytes<0,
+  //     visibleBytes>usedBytes) is rejected with kInvalidArg and zero state
+  //     mutation, on every trim tier. Expectations from the header contract
+  //     (invalid state -> kInvalidArg, no mutation), never from the impl.
+  {
+    const TrimLevel kTiers[] = {TrimLevel::kRunningLow,
+                               TrimLevel::kRunningCritical,
+                               TrimLevel::kBackground};
+    VramState bad[3] = {
+        State(2000, -100, 0, true),    // usedBytes < 0
+        State(2000, 500, -10, true),    // visibleBytes < 0
+        State(2000, 300, 400, false),   // visibleBytes > usedBytes
+    };
+    for (int i = 0; i < 3; ++i) {
+      for (int t = 0; t < 3; ++t) {
+        VramState s = bad[i];
+        TrimOutcome o = applyTrim(s, kTiers[t]);
+        assert(o.status == Status::kInvalidArg);
+        assert(o.flushedBytes == 0);
+        assert(s.capBytes == bad[i].capBytes);
+        assert(s.usedBytes == bad[i].usedBytes);
+        assert(s.visibleBytes == bad[i].visibleBytes);
+        assert(s.prefetchEnabled == bad[i].prefetchEnabled);
+      }
+    }
+    printf("PASS invalid-shapes-rejected-zero-mutation-all-tiers\n");
+  }
+  // 16. Hardening (b): INT_MAX-scale nonVisible clamp — for all three tiers,
+  //     flush stays within [0, nonVisible] and used never goes negative.
+  //     Spec: flushes are charged to non-visible only (visible-never-evicted).
+  {
+    const TrimLevel kTiers[] = {TrimLevel::kRunningLow,
+                               TrimLevel::kRunningCritical,
+                               TrimLevel::kBackground};
+    for (int t = 0; t < 3; ++t) {
+      VramState s = State(INT_MAX, INT_MAX, 0, true);
+      const int nonVisible = s.usedBytes - s.visibleBytes;
+      TrimOutcome o = applyTrim(s, kTiers[t]);
+      assert(o.status == Status::kOk);
+      assert(o.flushedBytes >= 0);
+      assert(o.flushedBytes <= nonVisible);
+      assert(s.usedBytes >= 0);
+      assert(s.usedBytes == nonVisible - o.flushedBytes);
+      assert(s.visibleBytes == 0);
+    }
+    // With a visible residue, BACKGROUND must retain exactly visible.
+    {
+      VramState s = State(INT_MAX, INT_MAX, 1000, true);
+      TrimOutcome o = applyTrim(s, TrimLevel::kBackground);
+      assert(o.status == Status::kOk);
+      assert(o.flushedBytes == INT_MAX - 1000);
+      assert(s.usedBytes == 1000);
+      assert(s.visibleBytes == 1000);
+    }
+    printf("PASS intmax-scale-clamp-all-tiers\n");
+  }
+  // 17. Hardening (c): negative usage never fits, and the 4GiB->6GiB
+  //     interpolation is monotone non-decreasing (48MiB at 4GiB .. 128MiB
+  //     at 6GiB per the header contract).
+  {
+    const size_t kG = 1024ULL * 1024ULL * 1024ULL;
+    assert(!withinProfileBound(-1, 3 * kG));
+    assert(!withinProfileBound(-1, 5 * kG));
+    assert(!withinProfileBound(-1, 8 * kG));
+    assert(!withinProfileBound(INT_MIN, 8 * kG));
+    const size_t kRams[] = {4 * kG, 9 * kG / 2, 5 * kG, 11 * kG / 2, 6 * kG};
+    int prevCap = 0;
+    for (int r = 0; r < 5; ++r) {
+      // Cap = largest m (MiB) admitted; [48,128] bracket per header edges.
+      int cap = 0;
+      for (int m = 48; m <= 128; ++m) {
+        if (withinProfileBound(m * kMiB, kRams[r])) cap = m;
+      }
+      assert(cap >= 48 && cap <= 128);
+      assert(cap >= prevCap);  // monotone non-decreasing in RAM class.
+      prevCap = cap;
+    }
+    printf("PASS negative-usage-denied-bound-monotone\n");
   }
   printf("ALL VRAM_TRIM TESTS PASSED\n");
   return 0;
