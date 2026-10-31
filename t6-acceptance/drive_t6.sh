@@ -29,9 +29,15 @@ echo "== T6 step 0: freshness gates (source + baked tree asset) =="
 SRC_ROWS=$(grep -c GalleryRow examples/m3-gallery/src/Showcase.tsx || true)
 [ "$SRC_ROWS" = "0" ] && S0=PASS || S0=FAIL
 check x "src-Showcase-zero-GalleryRow" "$S0" "grep count=$SRC_ROWS (want 0)"
-ASSET_ROWS=$(strings examples/m3-gallery/dist/tree.mui.bin 2>/dev/null | grep -c GalleryRow || true)
-[ "$ASSET_ROWS" = "0" ] && S0b=PASS || S0b=FAIL
-check x "dist-tree-zero-GalleryRow" "$S0b" "strings count=$ASSET_ROWS (want 0)"
+ASSET="examples/m3-gallery/dist/tree.mui.bin"
+if [ ! -s "$ASSET" ]; then
+  S0b=FAIL
+  check x "dist-tree-zero-GalleryRow" "$S0b" "$ASSET missing or empty (want existing non-empty asset with 0 GalleryRow)"
+else
+  ASSET_ROWS=$(strings "$ASSET" 2>/dev/null | grep -c GalleryRow || true)
+  [ "$ASSET_ROWS" = "0" ] && S0b=PASS || S0b=FAIL
+  check x "dist-tree-zero-GalleryRow" "$S0b" "strings count=$ASSET_ROWS (want 0)"
+fi
 
 echo "== T6 step 1: device info =="
 adb -s "$SERIAL" shell "getprop ro.build.version.sdk; getprop ro.product.model; getprop ro.product.cpu.abi" | tee "$OUT/t6-device.txt"
@@ -52,7 +58,6 @@ check x "shell-Prev-Next-index-present" "$S2" "see $OUT/t6-chrome.txt (AC-039 ne
 
 echo "== T6 step 3: outside-tap paging probe (AC-039 forbids surface paging) =="
 adb -s "$SERIAL" logcat -c
-BEFORE=$(adb -s "$SERIAL" shell logcat -d 2>/dev/null | grep -c "gallery-page=" || true)
 adb -s "$SERIAL" shell input tap 285 1000
 sleep 2
 TAPLOG=$(adb -s "$SERIAL" shell logcat -d 2>/dev/null | grep -E "gallery-page=|slice page" | tail -2 | tee "$OUT/t6-tap.log")
