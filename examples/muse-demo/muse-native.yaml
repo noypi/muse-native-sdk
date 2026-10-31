@@ -3,3 +3,21 @@
 # <target>/muse-native.yaml with no workspace-root fallback.
 name: muse-demo
 version: 0.0.0
+muse:
+  # Q-MUSE-001 verified model IDs only. style_preset/seed stay
+  # assumed/unverified and MUST NOT appear here.
+  models:
+    segment: sam-3.1
+    reason: muse-spark-1.3
+    structure: muse-spark-1.3
+    transcribe: muse-voice-transcribe-1.0
+    generate-image: muse-image
+  presets:
+    reason-default:
+      route: reason
+      params:
+        reasoning_effort: high
+    lens-fast:
+      route: segment
+      params:
+        mask_encoding: polygon
