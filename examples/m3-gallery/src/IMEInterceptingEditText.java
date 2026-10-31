@@ -42,6 +42,17 @@ import java.util.concurrent.atomic.AtomicLong;
  * same envelope ({@link #withClipEnvelope}). Malformed envelopes fail
  * closed (emitted as plain text, never a crash).
  *
+ * <p>T10 note (AC-M3-014 remainder): no commitContent-style URI path is
+ * added here. A commitContent override would go through
+ * androidx.core.view.inputmethod.InputConnectionCompat, which is not on the
+ * m3-gallery host classpath (this file deliberately avoids androidx), and
+ * the framework InputConnection.commitContent API level + URI-permission
+ * grant path is not reachable without new permissions/dependencies. The
+ * text/html round trip is therefore observed end-to-end through the
+ * existing clip_changed MIME routing (withClipEnvelope, generic mime type
+ * 0) plus paste → TextWatcher text_updated, with no behavior change
+ * besides the MainActivity "Stage rich clip" affordance.
+ *
  * <p>Fail-closed everywhere: every emission is wrapped so no throwable
  * (null/empty/rapid input included) can escape into the IME or the view
  * system; a disabled observation path leaves a working editor behind.

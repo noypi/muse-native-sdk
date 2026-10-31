@@ -24,6 +24,7 @@ import android.view.WindowInsets;
 import android.view.WindowInsetsAnimation;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.EditText;
+import android.widget.Button;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.TextView;
@@ -437,6 +438,16 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             }
         });
         probe.addView(field);
+        // T10 (AC-M3-014 remainder, U2): probe-page debug affordance that
+        // stages the pinned rich clip. The staged clip is system clipboard
+        // content, so the existing OnPrimaryClipChangedListener WILL fire —
+        // that clip_changed (mime=text/html) IS the asserted event, not echo
+        // (echo guard covers programmatic field edits only, not clipboard).
+        Button stageRichClip = new Button(this);
+        stageRichClip.setText("Stage rich clip");
+        stageRichClip.setContentDescription("Stage rich clip");
+        stageRichClip.setOnClickListener(v -> stageRichClip());
+        probe.addView(stageRichClip);
         FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.MATCH_PARENT);
@@ -501,6 +512,29 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                     IMEInterceptingEditText.nextEventId());
         } catch (Throwable t) {
             Log.w(IMEInterceptingEditText.MUSE_TEXT_TAG, "clip_changed observation failed", t);
+        }
+    }
+
+    /**
+     * T10 staging affordance (AC-M3-014 remainder): stages the pinned rich
+     * payload — HTML {@code <b>rich</b>} + plain fallback {@code rich} — via
+     * {@code ClipData.newHtmlText} so the existing clip_changed listener
+     * reports it with {@code mime=text/html}. The listener's MIME field is
+     * generic (reads description mime type 0 verbatim), so text/html routes
+     * with no transport change. Fail-closed: null manager / throwable never
+     * crashes the probe page. No new permissions required.
+     */
+    private void stageRichClip() {
+        try {
+            ClipboardManager manager = clipboardManager != null ? clipboardManager
+                    : (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+            if (manager == null) {
+                return;
+            }
+            manager.setPrimaryClip(
+                    ClipData.newHtmlText("muse-rich-probe", "rich", "<b>rich</b>"));
+        } catch (Throwable ignored) {
+            // Fail-closed: staging never breaks the probe page.
         }
     }
 
