@@ -1,7 +1,8 @@
 #!/bin/sh
 # run-tq.sh — hermetic quality-tier gate (NFR-GRAPHICS-005, AC-GRAPHICS-026/027 / TC-GRAPHICS-026/027).
-# Compiles + runs the quality_tier tests with hermetic g++ (no Gradle wrapper
-# in repo). Exits nonzero on any compile or test failure.
+# Compiles + runs the merged quality_tier tests (global-API block + namespaced
+# quality_tier:: contract block) with hermetic g++ (no Gradle wrapper in
+# repo). Exits nonzero on any compile or test failure.
 # Usage: sh engine/graphics/quality/run-tq.sh   (from the checkout root)
 set -eu
 
