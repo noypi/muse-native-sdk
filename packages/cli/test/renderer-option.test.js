@@ -1,11 +1,13 @@
 'use strict';
-// TC-WORKFLOW-015 (AC-WORKFLOW-015, FR-WORKFLOW-006, RULE-WORKFLOW-002/007) — Batch 1.
-// Scope: renderer schema/default/fail-closed ONLY (T1 + T2). This file is shared
-// with TC-GRAPHICS-042 (AC-GRAPHICS-040 present-path selection, graphics run);
-// NO present-path selection is asserted here — that belongs to the graphics run.
-// Hermetic: node:test + node:assert/strict + stdlib only. Imports lib/config.js
-// and lib/cli.js in-process; file layer uses fs.mkdtemp dirs; env is a plain
-// object argument; no network, no secrets, no live services, no dist/ writes.
+// MERGED rebase resolution: keeps BOTH add-add sides (different modules).
+// HEAD side - TC-WORKFLOW-015 (AC-WORKFLOW-015, FR-WORKFLOW-006, RULE-WORKFLOW-002-007):
+// workflow-owned renderer option validation at config-load time
+// (lib config.js + lib cli.js). Hermetic: node:test + node:assert-strict +
+// stdlib only; file layer uses fs.mkdtemp dirs; env is a plain object argument.
+// Ours side (b526001, AC-GRAPHICS-041, TC-GRAPHICS-043 CLI half) -
+// graphics-owned parseRendererPreference and resolveEffectivePath unit tests over
+// lib renderer-preference.js (pure parse + probe-downgrade reporting per
+// FR-GRAPHICS-014). Imports deduplicated; both afterEach hooks retained.
 
 const { describe, it, afterEach } = require('node:test');
 const assert = require('node:assert/strict');
@@ -17,6 +19,12 @@ const config = require('../lib/config.js');
 const cli = require('../lib/cli.js');
 
 const { resolveConfig, validateConfig, ConfigError } = config;
+
+const MODULE_PATH = '../lib/renderer-preference.js';
+
+function load() {
+  return require(MODULE_PATH);
+}
 
 const tmpRoots = [];
 function mkTmp(prefix) {
@@ -31,6 +39,14 @@ afterEach(() => {
 function noDist(dir) {
   assert.ok(!fs.existsSync(path.join(dir, 'dist')), 'no dist/ writes on failure');
 }
+
+const savedEnv = { ...process.env };
+afterEach(() => {
+  for (const k of Object.keys(process.env)) {
+    if (!(k in savedEnv)) delete process.env[k];
+  }
+  for (const [k, v] of Object.entries(savedEnv)) process.env[k] = v;
+});
 
 // ---- T1: schema + default (AC-WORKFLOW-015 default `cpu`) ----
 
@@ -188,5 +204,152 @@ describe('T2 fail-closed — CLI and env layers (AC-WORKFLOW-015)', () => {
       assert.match(String(err.accepted), /cpu, egl, skia/);
       return true;
     });
+  });
+});
+
+// --- parseRendererPreference ------------------------------------------------
+
+describe('T1 — parseRendererPreference defaults (AC-GRAPHICS-041)', () => {
+  it("null yields requested 'cpu'", () => {
+    const r = load().parseRendererPreference(null);
+    assert.equal(r.requested, 'cpu');
+  });
+
+  it("undefined yields requested 'cpu'", () => {
+    const r = load().parseRendererPreference(undefined);
+    assert.equal(r.requested, 'cpu');
+  });
+
+  it("'' yields requested 'cpu'", () => {
+    const r = load().parseRendererPreference('');
+    assert.equal(r.requested, 'cpu');
+  });
+
+  it("default reports requested and effective separately (effective 'cpu', not downgraded, empty trigger)", () => {
+    const r = load().parseRendererPreference(null);
+    assert.equal(r.effective, 'cpu');
+    assert.equal(r.downgraded, false);
+    assert.equal(r.trigger, '');
+  });
+});
+
+describe('T1 — parseRendererPreference accepted values (AC-GRAPHICS-041)', () => {
+  for (const value of ['cpu', 'egl', 'skia']) {
+    it(`'${value}' is accepted with requested '${value}'`, () => {
+      const r = load().parseRendererPreference(value);
+      assert.equal(r.requested, value);
+    });
+  }
+
+  it('known value without probe info is not downgraded (effective===requested, empty trigger)', () => {
+    // ASSUMPTION A-P1: parse alone performs no probing — it has no probe
+    // argument — so effective===requested, downgraded===false, trigger==='' .
+    for (const value of ['cpu', 'egl', 'skia']) {
+      const r = load().parseRendererPreference(value);
+      assert.equal(r.effective, value);
+      assert.equal(r.downgraded, false);
+      assert.equal(r.trigger, '');
+    }
+  });
+});
+
+describe('T1 — parseRendererPreference fail-closed (AC-GRAPHICS-041)', () => {
+  it("unknown string throws Error naming option and values ('renderer: unknown value ... (expected cpu|egl|skia)')", () => {
+    const { parseRendererPreference } = load();
+    assert.throws(
+      () => parseRendererPreference('vulkan'),
+      (err) =>
+        err instanceof Error &&
+        /renderer: unknown value/.test(err.message) &&
+        /expected cpu\|egl\|skia/.test(err.message)
+    );
+  });
+
+  it('unknown value error is a thrown Error (no return-code contract)', () => {
+    const { parseRendererPreference } = load();
+    let caught = null;
+    try {
+      parseRendererPreference('metal');
+    } catch (err) {
+      caught = err;
+    }
+    assert.ok(caught instanceof Error, 'must throw, not return a code');
+  });
+
+  it("case-variant 'EGL' throws (exact match only)", () => {
+    // ASSUMPTION A-P2: matching is case-sensitive; the Interface line names
+    // only lowercase values, so 'EGL' is unknown and throws.
+    assert.throws(() => load().parseRendererPreference('EGL'), /renderer: unknown value/);
+  });
+
+  it('non-string truthy input throws the same renderer Error', () => {
+    // ASSUMPTION A-P3: the Interface line pins strings; non-string input is
+    // fail-closed with the same unknown-value Error rather than coerced.
+    for (const raw of [42, true, {}, ['egl']]) {
+      assert.throws(() => load().parseRendererPreference(raw), /renderer: unknown value/, `raw=${String(raw)}`);
+    }
+  });
+
+  it('never reads env/config beyond its arguments', () => {
+    process.env.RENDERER = 'skia';
+    process.env.renderer = 'egl';
+    process.env.MUSE_RENDERER = 'skia';
+    const r = load().parseRendererPreference(null);
+    assert.equal(r.requested, 'cpu');
+    assert.equal(r.effective, 'cpu');
+  });
+});
+
+// --- resolveEffectivePath ----------------------------------------------------
+
+describe('T1 — resolveEffectivePath keeps available paths (AC-GRAPHICS-041)', () => {
+  it("requested 'cpu' stays 'cpu' with empty trigger even when nothing is available", () => {
+    const r = load().resolveEffectivePath('cpu', { eglAvailable: false, skiaAvailable: false });
+    assert.equal(r.effective, 'cpu');
+    assert.equal(r.trigger, '');
+  });
+
+  it("requested 'egl' stays 'egl' with empty trigger when available", () => {
+    const r = load().resolveEffectivePath('egl', { eglAvailable: true, skiaAvailable: false });
+    assert.equal(r.effective, 'egl');
+    assert.equal(r.trigger, '');
+  });
+
+  it("requested 'skia' stays 'skia' with empty trigger when available", () => {
+    const r = load().resolveEffectivePath('skia', { eglAvailable: false, skiaAvailable: true });
+    assert.equal(r.effective, 'skia');
+    assert.equal(r.trigger, '');
+  });
+});
+
+describe('T1 — resolveEffectivePath downgrades unavailable paths (AC-GRAPHICS-041)', () => {
+  it("unavailable 'egl' downgrades to 'cpu' with a non-empty egl-naming trigger", () => {
+    const r = load().resolveEffectivePath('egl', { eglAvailable: false, skiaAvailable: true });
+    assert.equal(r.effective, 'cpu');
+    assert.ok(typeof r.trigger === 'string' && r.trigger.length > 0, 'trigger must be non-empty');
+    assert.match(r.trigger.toLowerCase(), /egl/);
+  });
+
+  it("unavailable 'skia' downgrades to 'cpu' with a non-empty skia-naming trigger", () => {
+    const r = load().resolveEffectivePath('skia', { eglAvailable: true, skiaAvailable: false });
+    assert.equal(r.effective, 'cpu');
+    assert.ok(typeof r.trigger === 'string' && r.trigger.length > 0, 'trigger must be non-empty');
+    assert.match(r.trigger.toLowerCase(), /skia/);
+  });
+
+  it("both paths unavailable: requested 'egl' still resolves to 'cpu' (never blank)", () => {
+    const r = load().resolveEffectivePath('egl', { eglAvailable: false, skiaAvailable: false });
+    assert.equal(r.effective, 'cpu');
+    assert.ok(r.trigger.length > 0);
+  });
+
+  it('unknown requested path throws the renderer Error', () => {
+    // ASSUMPTION A-P4: fail-closed applies here too — the Interface line's
+    // throw contract is stated once for the module, so resolve rejects
+    // unknown values instead of resolving them.
+    assert.throws(
+      () => load().resolveEffectivePath('vulkan', { eglAvailable: true, skiaAvailable: true }),
+      /renderer: unknown value/
+    );
   });
 });

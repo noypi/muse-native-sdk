@@ -477,3 +477,13 @@ add_executable(skia_fallback_test tests/skia_fallback_test.cpp ../graphics/skia/
 target_include_directories(skia_fallback_test PRIVATE ../graphics/skia)
 target_compile_options(skia_fallback_test PRIVATE -Wall -Wextra -Wpedantic)
 add_test(NAME skia_fallback_test COMMAND skia_fallback_test)
+
+# AC-GRAPHICS-041 T2: renderer-preference fallback contract (test owned by
+# code-unit-tester, binds only to `ResolveRendererFallback` in
+# `engine/runtime/include/runtime/renderer_preference.h`). Links the `runtime`
+# lib (the coder defines the resolve function there); hermetic host lane —
+# availability is injected per-call, no EGL/Skia/GPU on host.
+add_executable(renderer_preference_fallback_test tests/renderer_preference_fallback_test.cpp)
+target_link_libraries(renderer_preference_fallback_test PRIVATE runtime)
+target_compile_options(renderer_preference_fallback_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME renderer_preference_fallback COMMAND renderer_preference_fallback_test)
