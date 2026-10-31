@@ -35,6 +35,7 @@ android {
 //   ./gradlew :pviews:clipping        — dynamic surface clipping (FR-PVIEWS-005)
 //   ./gradlew :pviews:brownfieldEmbed  — brownfield embed (FR-PVIEWS-003)
 //   ./gradlew :pviews:composeInterop   — compose interop (FR-PVIEWS-009)
+//   ./gradlew :pviews:semanticsMerge   — semantics merge (FR-PVIEWS-009)
 // Each lane compiles its hermetic binary (test + production source,
 // -I engine/platform-views/include) and executes it; the build fails on
 // any nonzero exit.
@@ -61,4 +62,9 @@ tasks.register('brownfieldEmbed', Exec) {
 tasks.register('composeInterop', Exec) {
     description = 'Run compose interop checks (TC-PVIEWS-009/TC-PVIEWS-010).'
     commandLine 'sh', '-c', 'g++ -std=c++17 ../engine/platform-views/tests/compose_interop_test.cpp ../engine/platform-views/src/interop.cpp -I../engine/platform-views/include -o /tmp/pviews_compose_interop && /tmp/pviews_compose_interop'
+}
+
+tasks.register('semanticsMerge', Exec) {
+    description = 'Run semantics merge checks (TC-PVIEWS-011).'
+    commandLine 'sh', '-c', 'g++ -std=c++17 ../engine/platform-views/tests/semantics_merge_test.cpp ../engine/platform-views/src/semantics.cpp -I../engine/platform-views/include -o /tmp/pviews_semantics_merge && /tmp/pviews_semantics_merge'
 }

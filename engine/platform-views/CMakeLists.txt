@@ -27,6 +27,13 @@ add_library(pviews-interop
 target_include_directories(pviews-interop PUBLIC include)
 target_compile_options(pviews-interop PRIVATE -Wall -Wextra -Wpedantic)
 
+# Semantics merge target (FR-PVIEWS-009 / AC-PVIEWS-011).
+add_library(pviews-semantics
+  src/semantics.cpp
+)
+target_include_directories(pviews-semantics PUBLIC include)
+target_compile_options(pviews-semantics PRIVATE -Wall -Wextra -Wpedantic)
+
 include(CTest)
 enable_testing()
 
@@ -49,3 +56,8 @@ add_executable(compose_interop_test tests/compose_interop_test.cpp)
 target_link_libraries(compose_interop_test PRIVATE pviews-interop)
 target_compile_options(compose_interop_test PRIVATE -Wall -Wextra -Wpedantic)
 add_test(NAME compose_interop COMMAND compose_interop_test)
+
+add_executable(semantics_merge_test tests/semantics_merge_test.cpp)
+target_link_libraries(semantics_merge_test PRIVATE pviews-semantics)
+target_compile_options(semantics_merge_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME semantics_merge COMMAND semantics_merge_test)
