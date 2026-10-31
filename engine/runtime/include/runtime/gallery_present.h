@@ -218,3 +218,29 @@ DrawCmd BuildOracleGalleryRowCmd(const DrawCmd& base,
                                  const std::string& state);
 
 }  // namespace runtime
+
+// ---- T2 live probe text field (BUG-M3-FIDELITY-003 / FR-M3-006) ----
+//
+// Global-scope attach gate for the single instrumented probe page
+// ("m3-text-probe", single-probe scope BQ1, API-29-only gate). Declared here
+// (rather than in a narrower header) so the JNI bridge (FR-INPUT-011 lane),
+// the JS-runtime seam (FR-RUNTIME-010, consumed not reimplemented), and the
+// retained-kind override in FamilyKind all bind to one entry. Defined in
+// `engine/runtime/src/js_runtime.cpp` (self-contained TU: links hermetic).
+// Fail-closed: null/empty/unknown page ids and any missing collaborator
+// yield false + a `muse_text` logcat reason, never a throw across JNI.
+struct LiveTextFieldDeps {
+  const void* editingEngine = nullptr;    // FR-TEXT-009 editing engine handle
+  const void* insetFeed = nullptr;        // FR-LAYOUT-012 imeBottom feed handle
+  const void* clipboard = nullptr;        // FR-TEXT-013 clipboard transport
+  const void* inputConnection = nullptr;  // FR-TEXT-008 IME bridge handle
+};
+
+// Returns true iff the live field replaced the static box on the probe page
+// and the retained-kind override is active. Never throws.
+bool AttachLiveTextField(const char* pageId, const LiveTextFieldDeps& deps);
+
+// Proposed observer for "retained-kind override active" (see contract T2):
+// true once a probe-page attach has succeeded (idempotent, sticky until
+// process exit). Never throws.
+bool liveKindOverrideActive();

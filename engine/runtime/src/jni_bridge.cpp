@@ -97,6 +97,20 @@ PresenterError Runtime_detachSurface() {
   }
 }
 
+// T2 (BUG-M3-FIDELITY-003 / FR-M3-006): JNI-lane view of the live probe
+// field. The IME/touch entries consult this before routing composition or
+// caret events at the probe page: while no live field is attached the static
+// box painter stands in (fail-closed, never a phantom editable). Consumes the
+// RULE-M3-004 attach gate (FR-TEXT-008/009/013, FR-LAYOUT-012) without
+// reimplementing it. Never throws across the VM boundary.
+bool LiveTextProbeAttachedForIme() noexcept {
+  try {
+    return ::liveKindOverrideActive();
+  } catch (...) {
+    return false;
+  }
+}
+
 }  // namespace runtime
 
 MUSE_JNI_EXPORT jint JNI_OnLoad(JavaVM* vm, void* reserved) {
