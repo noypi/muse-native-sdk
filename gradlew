@@ -55,6 +55,12 @@
 #                              + src/hybrid_embedding.cpp (-I engine/platform-views/include)
 #   :pviews:fallbackComposition -> g++ engine/platform-views/tests/fallback_composition_test.cpp
 #                              + src/fallback_composition.cpp (-I engine/platform-views/include)
+#   :pviews:lifecycleFocusA11y -> g++ engine/platform-views/tests/lifecycle_focus_a11y_test.cpp
+#                              + src/lifecycle_mirror.cpp (-I engine/platform-views/include)
+#   :pviews:canvasRecord -> g++ engine/platform-views/tests/canvas_record_test.cpp
+#                              + src/canvas.cpp + src/canvas_record.cpp (-I engine/platform-views/include)
+#   :pviews:canvasConformance -> g++ engine/platform-views/tests/canvas_conformance_test.cpp
+#                              + src/canvas.cpp + src/canvas_record.cpp + src/picture.cpp (-I engine/platform-views/include)
 set -eu
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 
@@ -98,6 +104,9 @@ Tasks:
   :pviews:mapsHosting      g++ maps_hosting_test + maps_hosting
   :pviews:hybridEmbedding g++ hybrid_embedding_test + hybrid_embedding
   :pviews:fallbackComposition g++ fallback_composition_test + fallback_composition
+  :pviews:lifecycleFocusA11y g++ lifecycle_focus_a11y_test + lifecycle_mirror
+  :pviews:canvasRecord g++ canvas_record_test + canvas + canvas_record
+  :pviews:canvasConformance g++ canvas_conformance_test + canvas + canvas_record + picture
 Extra args after :benchmark:perfGate are forwarded to benchmark/gate/run.py
 as <manifest> <results-json>.
 EOF
@@ -633,6 +642,42 @@ print('golden diff sensitivity ok: rerun zero-diff, shift + blend flagged')"
       "$ROOT/engine/platform-views/src/fallback_composition.cpp" \
       -o "$PVDIR/fallback_composition_test" || exit 1
     "$PVDIR/fallback_composition_test" || exit 1
+    rm -rf "$PVDIR"
+    trap - EXIT INT TERM
+    ;;
+  :pviews:lifecycleFocusA11y)
+    PVDIR="$(mktemp -d)" || exit 1
+    trap 'rm -rf "$PVDIR"' EXIT INT TERM
+    g++ -std=c++17 -Wall -Wextra -Wpedantic -I "$ROOT/engine/platform-views/include" \
+      "$ROOT/engine/platform-views/tests/lifecycle_focus_a11y_test.cpp" \
+      "$ROOT/engine/platform-views/src/lifecycle_mirror.cpp" \
+      -o "$PVDIR/lifecycle_focus_a11y_test" || exit 1
+    "$PVDIR/lifecycle_focus_a11y_test" || exit 1
+    rm -rf "$PVDIR"
+    trap - EXIT INT TERM
+    ;;
+  :pviews:canvasRecord)
+    PVDIR="$(mktemp -d)" || exit 1
+    trap 'rm -rf "$PVDIR"' EXIT INT TERM
+    g++ -std=c++17 -Wall -Wextra -Wpedantic -I "$ROOT/engine/platform-views/include" \
+      "$ROOT/engine/platform-views/tests/canvas_record_test.cpp" \
+      "$ROOT/engine/platform-views/src/canvas.cpp" \
+      "$ROOT/engine/platform-views/src/canvas_record.cpp" \
+      -o "$PVDIR/canvas_record_test" || exit 1
+    "$PVDIR/canvas_record_test" || exit 1
+    rm -rf "$PVDIR"
+    trap - EXIT INT TERM
+    ;;
+  :pviews:canvasConformance)
+    PVDIR="$(mktemp -d)" || exit 1
+    trap 'rm -rf "$PVDIR"' EXIT INT TERM
+    g++ -std=c++17 -Wall -Wextra -Wpedantic -I "$ROOT/engine/platform-views/include" \
+      "$ROOT/engine/platform-views/tests/canvas_conformance_test.cpp" \
+      "$ROOT/engine/platform-views/src/canvas.cpp" \
+      "$ROOT/engine/platform-views/src/canvas_record.cpp" \
+      "$ROOT/engine/platform-views/src/picture.cpp" \
+      -o "$PVDIR/canvas_conformance_test" || exit 1
+    "$PVDIR/canvas_conformance_test" || exit 1
     rm -rf "$PVDIR"
     trap - EXIT INT TERM
     ;;
