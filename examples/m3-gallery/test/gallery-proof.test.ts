@@ -579,9 +579,7 @@ const PROOF_PATH =
 const TOLERANCES_RELOCATED = join(GALLERY_DIR, 'goldens', 'm3-tolerances.json');
 const TOLERANCES_PATH =
   process.env.GALLERY_TOLERANCES_PATH ??
-  (existsSync(TOLERANCES_RELOCATED)
-    ? TOLERANCES_RELOCATED
-    : join(GALLERY_DIR, 'build', 'goldens', 'm3-tolerances.json'));
+  join(GALLERY_DIR, 'goldens', 'm3-tolerances.json');
 
 // ASSUMPTION A1: the only device this run may touch.
 const DEVICE_SERIAL = '127.0.0.1:6569';

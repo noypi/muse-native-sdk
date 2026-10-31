@@ -566,6 +566,25 @@ muse::text::StatusOr<CoverageMask> RasterizeShapedText(
   return mask;
 }
 
+// T62 retained row path: one parsed gallery state row (`kind` + `state`
+// from the T61 `GalleryRow desc` literal) paints its wash through the
+// shared resolver before submit. Gated on `IsPropKeyWhitelisted("state")`
+// so only whitelisted props reach the paint path; fail-closed (base command
+// kept, row never blank, never throws) so the JNI boundary stays
+// exception-free.
+DrawCmd BuildRetainedGalleryRowCmd(const DrawCmd& base,
+                                   const std::string& kind,
+                                   const std::string& state) {
+  try {
+    if (!IsPropKeyWhitelisted("state")) {
+      return base;
+    }
+    return PaintStateWash(base, kind, state);
+  } catch (...) {
+    return base;
+  }
+}
+
 Renderer::Renderer(DeviceCaps caps) : caps_(caps) {}
 
 DrawError Renderer::draw(const std::vector<DrawCmd>& cmds, Swapchain& target) {

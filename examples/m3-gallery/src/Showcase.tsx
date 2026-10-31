@@ -10,6 +10,8 @@
 // with literal desc + state props only (stub arrives with the T62 wiring).
 import { View, Text, TopAppBar, NavigationBar, NavigationRail, NavigationDrawer, BottomAppBar, SearchBar, SegmentedButton, ButtonGroup, SplitButton, Button, IconButton, Fab, ExtendedFab, Card, Chip, Checkbox, Radio, Switch, Slider, LinearProgress, CircularProgress, Badge, ListItem, Avatar, Icon, Image, Divider, TextFieldEditCore, TextInput, Dialog, BottomSheet, Menu, SnackbarHost, Tooltip, Carousel, Surface, Scroll, Stack, Ripple, OverlayHost } from '@muse/native';
 
+function GalleryRow() { return null; }
+
 export default function Showcase() {
   return (
     <View>

@@ -14,6 +14,8 @@
 
 #include "runtime/presenter.h"
 
+#include "runtime/gallery_present.h"
+
 #include <cstdint>
 #include <cstring>
 #include <mutex>
@@ -405,6 +407,25 @@ PresenterError PresentPaced(const DrawCmds& cmds, ChoreographerDeadline deadline
   }
   ++g_paced_in_window;
   return {PresenterCode::kOk, ""};
+}
+
+// T62 oracle row path: builds the 1:1 CPU-oracle expectation for one parsed
+// gallery state row (`kind` + `state` from the T61 `GalleryRow desc`
+// literal) through the shared resolver. Gated on
+// `IsPropKeyWhitelisted("state")` so only whitelisted props reach the paint
+// path; fail-closed (base command kept, row never blank, never throws) so
+// the JNI boundary stays exception-free and raster/oracle agree 1:1.
+DrawCmd BuildOracleGalleryRowCmd(const DrawCmd& base,
+                                 const std::string& kind,
+                                 const std::string& state) {
+  try {
+    if (!IsPropKeyWhitelisted("state")) {
+      return base;
+    }
+    return CpuOraclePaintStateWash(base, kind, state);
+  } catch (...) {
+    return base;
+  }
 }
 
 }  // namespace runtime
