@@ -12,6 +12,7 @@ const path = require('node:path');
 
 const ALL_ARCHS = ['arm64-v8a', 'armeabi-v7a', 'x86_64', 'x86'];
 const PACKAGING_VALUES = ['fat', 'split', 'both'];
+const RENDERER_VALUES = ['cpu', 'egl', 'skia'];
 
 const SCHEMA = {
   name: 'string',
@@ -25,6 +26,7 @@ const SCHEMA = {
   diagnostics: 'object',
   archs: 'object',
   packaging: 'string',
+  renderer: 'string',
   keystore: 'string',
   keyAlias: 'string',
   storepass: 'string',
@@ -42,6 +44,7 @@ const DEFAULTS = {
   diagnostics: undefined,
   archs: ALL_ARCHS.slice(),
   packaging: 'fat',
+  renderer: 'cpu',
   keystore: path.join(__dirname, '..', 'templates', 'android', 'debug.keystore'),
   keyAlias: 'androiddebugkey',
   storepass: undefined,
@@ -105,6 +108,12 @@ function assertPackagingValue(value, where) {
   }
 }
 
+function assertRendererValue(value, where) {
+  if (!RENDERER_VALUES.includes(value)) {
+    throw new ConfigError('renderer', where, `unknown renderer "${value}", expected one of: ${RENDERER_VALUES.join(', ')}`, 'CFG-BAD-RENDERER');
+  }
+}
+
 // Schema validator: fail closed on unknown keys / wrong value types.
 // Throws ConfigError naming the key, the file, and the expected type;
 // never returns a partial config. Called by resolveConfig before any
@@ -164,6 +173,31 @@ function validateConfig(raw, file) {
   // value + fat/split/both (CFG-BAD-PACKAGING); empty never defaults.
   if (raw.archs !== undefined) assertArchsList(raw.archs, where);
   if (raw.packaging !== undefined) assertPackagingValue(raw.packaging, where);
+  if (raw.renderer !== undefined) assertRendererValue(raw.renderer, where);
+}
+
+// T4 (AC-WORKFLOW-016, FR-WORKFLOW-006): report requested vs effective
+// renderer separately; never overwrite the preference. `requested` echoes
+// `resolvedConfig.config.renderer` verbatim. `effective` equals
+// `probe.effective` when a valid renderer value is supplied, else
+// `requested`. `downgraded` is true iff `effective !== requested`. The
+// downgrade itself stays engine-owned (FR-GRAPHICS-014) — this helper only
+// records the probe outcome. Never mutates `resolvedConfig.config.renderer`.
+// A `trigger` string is preserved only when the probe outcome was accepted;
+// ignored probes (invalid/absent `effective`) fall back with no trigger.
+function resolveRendererPreference(resolvedConfig, probe) {
+  const requested = resolvedConfig && resolvedConfig.config
+    ? resolvedConfig.config.renderer
+    : undefined;
+  let effective = requested;
+  let trigger;
+  if (probe && typeof probe === 'object' && RENDERER_VALUES.includes(probe.effective)) {
+    effective = probe.effective;
+    if (typeof probe.trigger === 'string') trigger = probe.trigger;
+  }
+  const out = { requested, effective, downgraded: effective !== requested };
+  if (trigger !== undefined) out.trigger = trigger;
+  return out;
 }
 
 function envNameFor(key) {
@@ -478,6 +512,7 @@ function resolveConfig(argv, env, cwd) {
     // accepted set at configure time, before anything merges.
     if (layer.values.archs !== undefined) assertArchsList(layer.values.archs, layer.file);
     if (layer.values.packaging !== undefined) assertPackagingValue(layer.values.packaging, layer.file);
+    if (layer.values.renderer !== undefined) assertRendererValue(layer.values.renderer, layer.file);
   }
 
   const config = {};
@@ -497,7 +532,12 @@ function resolveConfig(argv, env, cwd) {
       winningLayer[key] = 'default';
     }
   }
-  return { config, winningLayer };
+  // T4 (AC-WORKFLOW-016): pre-probe preference pair. Carried as a top-level
+  // `renderer` key so `--print-config` (which spreads the resolved object)
+  // reports `{ requested, effective, downgraded }` with effective defaulting
+  // to requested pre-probe. `config.renderer` itself is never mutated.
+  const renderer = resolveRendererPreference({ config }, undefined);
+  return { config, winningLayer, renderer };
 }
 
 // Option schema for `muse-native build --help`: derived from the same live
@@ -511,6 +551,9 @@ function getOptionSchema() {
     type: SCHEMA[name],
     default: DEFAULTS[name],
   }));
+  for (const entry of entries) {
+    if (entry.name === 'renderer') entry.allowed = RENDERER_VALUES.slice();
+  }
   let stageAllowed = [];
   try {
     stageAllowed = require('./stages.js').STAGES;
@@ -526,4 +569,4 @@ function getOptionSchema() {
   return entries;
 }
 
-module.exports = { SCHEMA, DEFAULTS, ConfigError, resolveConfig, validateConfig, getOptionSchema, readFileLayer, parseMuseSubtree };
+module.exports = { SCHEMA, DEFAULTS, ConfigError, resolveConfig, validateConfig, getOptionSchema, readFileLayer, parseMuseSubtree, assertRendererValue, resolveRendererPreference };
