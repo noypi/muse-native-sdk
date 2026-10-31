@@ -24,7 +24,7 @@ android {
 
     externalNativeBuild {
         cmake {
-            path '../../engine/platform-views/CMakeLists.txt'
+            path '../engine/platform-views/CMakeLists.txt'
         }
     }
 }
@@ -37,10 +37,10 @@ android {
 // any nonzero exit.
 tasks.register('externalMemory', Exec) {
     description = 'Run external-memory probe checks (TC-PVIEWS-001).'
-    commandLine 'sh', '-c', 'g++ -std=c++17 ../../engine/platform-views/tests/external_memory_test.cpp ../../engine/platform-views/src/external_memory_probe.cpp -I../../engine/platform-views/include -o /tmp/pviews_external_memory && /tmp/pviews_external_memory'
+    commandLine 'sh', '-c', 'g++ -std=c++17 ../engine/platform-views/tests/external_memory_test.cpp ../engine/platform-views/src/external_memory_probe.cpp -I../engine/platform-views/include -o /tmp/pviews_external_memory && /tmp/pviews_external_memory'
 }
 
 tasks.register('zOrder', Exec) {
     description = 'Run z-order checks (TC-PVIEWS-002).'
-    commandLine 'sh', '-c', 'g++ -std=c++17 ../../engine/platform-views/tests/z_order_test.cpp ../../engine/platform-views/src/z_order.cpp -I../../engine/platform-views/include -o /tmp/pviews_z_order && /tmp/pviews_z_order'
+    commandLine 'sh', '-c', 'g++ -std=c++17 ../engine/platform-views/tests/z_order_test.cpp ../engine/platform-views/src/z_order.cpp -I../engine/platform-views/include -o /tmp/pviews_z_order && /tmp/pviews_z_order'
 }
