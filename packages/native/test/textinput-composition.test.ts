@@ -1,3 +1,4 @@
+// Hermetic: in-memory fakes only — no device/adb/network. Device leg: RunCompositionLeg on 127.0.0.1:6569 (TC-M3-011).
 /**
  * TC-M3-011 (contract shape) — Batch 1 / T1: the `TextInput` component
  * surface over the tier-1 text-field edit core (FR-M3-006, AC-M3-011

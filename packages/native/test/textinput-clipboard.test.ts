@@ -1,3 +1,4 @@
+// Hermetic: in-memory fakes only — no device/adb/network. Device leg: RunClipboardLeg on 127.0.0.1:6569 (TC-M3-014).
 'use strict';
 // T5 — Cut/copy/paste/select-all through the platform clipboard (Batch 4,
 // FR-M3-006 AC-M3-014, TC-M3-014).
