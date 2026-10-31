@@ -120,3 +120,64 @@ describe('T2 — preset key validation (AC-MUSE-034/035/036)', () => {
     );
   });
 });
+
+describe('BUG-MUSE-003 T4 — resolveParams threading (AC-MUSE-046, A3)', () => {
+  // The `presets` doc already carries each preset's params object
+  // (`{ route, params }` per entry), so `resolveParams: true` threads that
+  // object through on the return value — no second resolution path (A3):
+  // values come from the fetched doc verbatim, model resolution stays in
+  // `proxy/lib/dispatch.js` (T3).
+  function stubFetchWithParams() {
+    return stubFetch({
+      presets: {
+        'reason-default': {
+          route: 'reason',
+          params: { reasoning_effort: 'low', strict: true },
+        },
+      },
+    });
+  }
+
+  it('resolveParams:true with a known preset carries its params object', async () => {
+    const { fetchImpl } = stubFetchWithParams();
+    const result = await assertMuseRoutes(fetchImpl, { preset: 'reason-default', resolveParams: true });
+    assert.equal(result.ok, true);
+    assert.deepEqual(result.missing, []);
+    assert.deepEqual(result.params, { reasoning_effort: 'low', strict: true });
+  });
+
+  it('resolveParams:true returns the doc params verbatim, never substituted', async () => {
+    const { fetchImpl } = stubFetchWithParams();
+    const result = await assertMuseRoutes(fetchImpl, { preset: 'reason-default', resolveParams: true });
+    assert.equal(result.params.reasoning_effort, 'low');
+    assert.equal(result.params.strict, true);
+  });
+
+  it('absent resolveParams keeps today\u2019s shape exactly: no params key', async () => {
+    const { fetchImpl } = stubFetchWithParams();
+    const result = await assertMuseRoutes(fetchImpl, { preset: 'reason-default' });
+    assert.deepEqual(result, { ok: true, missing: [] });
+  });
+
+  it('resolveParams:false keeps today\u2019s shape exactly: no params key', async () => {
+    const { fetchImpl } = stubFetchWithParams();
+    const result = await assertMuseRoutes(fetchImpl, { preset: 'reason-default', resolveParams: false });
+    assert.ok(!('params' in result), 'falsy resolveParams must not add a params key');
+  });
+
+  it('resolveParams:true without a preset returns no params key (ASSUMPTION)', async () => {
+    const { fetchImpl } = stubFetchWithParams();
+    const result = await assertMuseRoutes(fetchImpl, { resolveParams: true });
+    assert.equal(result.ok, true);
+    assert.ok(!('params' in result), 'no preset selected means no params to thread');
+  });
+
+  it('resolveParams:true with an unknown preset still throws unknown-preset before any upstream call', async () => {
+    const { fetchImpl, calls } = stubFetchWithParams();
+    await assert.rejects(
+      assertMuseRoutes(fetchImpl, { preset: 'no-such-preset', resolveParams: true }),
+      (err) => err && err.code === 'unknown-preset',
+    );
+    assert.ok(calls.every((c) => !String(c.url).startsWith('upstream:')));
+  });
+});

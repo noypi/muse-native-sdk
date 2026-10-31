@@ -100,7 +100,34 @@ async function dispatch(req, ctx) {
   const maxRetries = typeof entry.retry === 'number' ? entry.retry : 1;
   const maxAttempts = maxRetries + 1;
 
-  const body = { params, key };
+  // T3 — projectMuse resolution (AC-MUSE-046, FR-MUSE-002; D1 caller-wins).
+  // After the allow-list gates pass: resolve model = projectMuse.models[route]
+  // ?? cfg.routes[route].model and merge preset params as defaults under
+  // caller params. KNOWN_PRESETS/ALLOW_MODELS/ALLOW_PARAMS stay reject-only.
+  // Absent/empty block keeps today's wire shape exactly (no model key).
+  const projectMuse = req.projectMuse;
+  let mergedParams = params;
+  if (isRecord(projectMuse) && isRecord(projectMuse.presets) && req.preset !== undefined) {
+    const presetEntry = Object.prototype.hasOwnProperty.call(projectMuse.presets, req.preset)
+      ? projectMuse.presets[req.preset]
+      : undefined;
+    const presetParams = isRecord(presetEntry) && isRecord(presetEntry.params)
+      ? presetEntry.params
+      : undefined;
+    if (presetParams !== undefined) {
+      mergedParams = { ...presetParams, ...params };
+    }
+  }
+
+  const body = { params: mergedParams, key };
+  if (isRecord(projectMuse) && isRecord(projectMuse.models)) {
+    if (Object.prototype.hasOwnProperty.call(projectMuse.models, route)) {
+      const pinned = projectMuse.models[route];
+      if (typeof pinned === 'string' && pinned.length > 0) {
+        body.model = pinned;
+      }
+    }
+  }
   if (req.preset !== undefined) body.preset = req.preset;
   if (req.turnId !== undefined) body.turnId = req.turnId;
   // targetId is bound at commit only: forwarded upstream, never echoed back.
