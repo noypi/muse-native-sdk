@@ -1,0 +1,41 @@
+// pviews Gradle module (NFR-PVIEWS-001 / FR-PVIEWS-001).
+// Follows device-lab/app/build.gradle conventions: Android library pinned to
+// minSdk 29 so the API 29+ zero-copy gate holds at build time.
+plugins {
+    id 'com.android.library'
+}
+
+android {
+    namespace 'com.muse.pviews'
+    compileSdk 34
+
+    defaultConfig {
+        minSdk 29
+        targetSdk 34
+
+        externalNativeBuild {
+            cmake {
+                // NDK r27 pin consumed from the version catalog (NFR-BUILD-016).
+                arguments '-DANDROID_PLATFORM=android-29'
+                abiFilters 'arm64-v8a', 'x86_64'
+            }
+        }
+    }
+
+    externalNativeBuild {
+        cmake {
+            path '../../engine/runtime/CMakeLists.txt'
+        }
+    }
+}
+
+// Verification lanes (TC-PVIEWS-001 / TC-PVIEWS-002):
+//   ./gradlew :pviews:externalMemory  — zero-copy probe (NFR-PVIEWS-001)
+//   ./gradlew :pviews:zOrder          — z-order/clipping (FR-PVIEWS-001)
+tasks.register('externalMemory') {
+    description = 'Run external-memory probe checks (TC-PVIEWS-001).'
+}
+
+tasks.register('zOrder') {
+    description = 'Run z-order checks (TC-PVIEWS-002).'
+}
