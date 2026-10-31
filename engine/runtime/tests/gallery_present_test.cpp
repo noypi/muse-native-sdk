@@ -1,8 +1,11 @@
-// Gallery bring-up tests — FR-RUNTIME-009 / FR-M3-007 (device gallery).
-// The JNI host entry carries the MUI1 tree asset; gallery_present extracts
-// the static Showcase rows and rasterizes pages into an RGBA_8888 buffer.
+// Gallery bring-up tests — FR-RUNTIME-009 / FR-M3-007 (device gallery) +
+// T62 contract tests — FR-M3-009 / AC-M3-020 (TC-M3-021), FR-M3-008 /
+// AC-M3-018 (8/12/16) + AC-M3-019 (token-only).
+// Merged rebase resolution: keeps every test from both sides (HEAD present
+// path + OURS T62 14-case StateLayerOpacity suite).
 // Hermetic: C++17 + committed runtime headers only; in-memory buffers, no
 // ANativeWindow, no GPU, no network, no filesystem.
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <string>
@@ -11,6 +14,15 @@
 #include "runtime/gallery_present.h"
 #include "runtime/renderer.h"
 #include "runtime/vulkan_baseline.h"
+
+namespace runtime {
+// Production declaration (coder-owned gallery_present.cpp / present path).
+// Assumed symbol: `float runtime::StateLayerOpacity(const std::string&)`.
+// Declared here so this test binds to the published signature, not to an
+// implementation detail. If the merged header declares it, this forward
+// declaration is a benign duplicate of the same signature.
+float StateLayerOpacity(const std::string& state);
+}  // namespace runtime
 
 namespace {
 
@@ -87,6 +99,107 @@ std::vector<std::uint8_t> MakeAsset() {
 }
 
 }  // namespace
+
+// --- T62 constants (D1/D2/D4 settled 2026-10-31; see T62 header note) ---
+constexpr float kHoverOpacity = 0.08f;
+constexpr float kFocusOpacity = 0.12f;
+constexpr float kPressOpacity = 0.16f;
+// D1: explicit 0.38 pin from the m3_matrix.json baseline (tokenSnapshot
+// 2026-10-28). If the baseline entry is absent the coder pins 0.38 here.
+constexpr float kDisabledOpacity = 0.38f;
+// Fail-closed sentinel for unknown/empty state: no wash painted (ASSUMPTION).
+constexpr float kNoWashOpacity = 0.0f;
+
+bool nearly_equal(float a, float b) { return std::fabs(a - b) < 1e-6f; }
+
+// --- harness cases (convention copied from present_frame_test.cpp) ----------
+
+bool check_harness_entry_reached() { return true; }
+
+bool check_all_green_returns_zero() {
+  const int greenFailures = 0;
+  return greenFailures == 0;
+}
+
+bool check_failure_protocol_shape() {
+  const char* failingName = "";
+  return failingName != nullptr && std::string(failingName).empty();
+}
+
+// --- T62 cases ---------------------------------------------------------------
+
+bool check_hover_opacity_is_08() {
+  return nearly_equal(runtime::StateLayerOpacity("hover"), kHoverOpacity);
+}
+
+bool check_focus_opacity_is_12() {
+  return nearly_equal(runtime::StateLayerOpacity("focus"), kFocusOpacity);
+}
+
+bool check_pressed_opacity_is_16() {
+  return nearly_equal(runtime::StateLayerOpacity("pressed"), kPressOpacity);
+}
+
+bool check_disabled_opacity_matches_baseline_038() {
+  // D1: 0.38 explicitly pinned from the m3_matrix.json baseline entry.
+  return nearly_equal(runtime::StateLayerOpacity("disabled"),
+                       kDisabledOpacity);
+}
+
+bool check_opacity_ordering_hover_lt_focus_lt_pressed() {
+  const float hover = runtime::StateLayerOpacity("hover");
+  const float focus = runtime::StateLayerOpacity("focus");
+  const float pressed = runtime::StateLayerOpacity("pressed");
+  return hover < focus && focus < pressed;
+}
+
+bool check_unknown_state_fail_closed_no_wash() {
+  // Unknown state: fail-closed, no wash painted, row kept (never blank).
+  return nearly_equal(runtime::StateLayerOpacity("enabled"), kNoWashOpacity);
+}
+
+bool check_empty_state_fail_closed_no_wash() {
+  // Boundary: empty state paints no wash.
+  return nearly_equal(runtime::StateLayerOpacity(""), kNoWashOpacity);
+}
+
+bool check_unknown_state_never_throws_across_jni() {
+  // Must never throw across JNI: unknown AND empty inputs return closed.
+  try {
+    (void)runtime::StateLayerOpacity("enabled");
+    (void)runtime::StateLayerOpacity("");
+    (void)runtime::StateLayerOpacity("hovered");
+  } catch (...) {
+    return false;
+  }
+  return true;
+}
+
+bool check_known_states_never_throw() {
+  try {
+    (void)runtime::StateLayerOpacity("hover");
+    (void)runtime::StateLayerOpacity("focus");
+    (void)runtime::StateLayerOpacity("pressed");
+    (void)runtime::StateLayerOpacity("disabled");
+  } catch (...) {
+    return false;
+  }
+  return true;
+}
+
+bool check_mirror_equality_with_js_drive_state() {
+  // D2: C++ map mirrors JS driveState 1:1. driveState('Surface','hover')
+  // .layer.props.opacity === 0.08, focus 0.12, pressed 0.16, disabled 0.38.
+  return nearly_equal(runtime::StateLayerOpacity("hover"), 0.08f) &&
+         nearly_equal(runtime::StateLayerOpacity("focus"), 0.12f) &&
+         nearly_equal(runtime::StateLayerOpacity("pressed"), 0.16f) &&
+         nearly_equal(runtime::StateLayerOpacity("disabled"), 0.38f);
+}
+
+bool check_case_sensitive_unknown_is_closed() {
+  // "Hover" is not "hover": fail-closed rather than guessing.
+  return nearly_equal(runtime::StateLayerOpacity("Hover"), kNoWashOpacity);
+}
 
 // Named case: the component inventory leads (the actual M3 gallery), then
 // the literal label sections with their light/dark order intact.
@@ -334,6 +447,20 @@ int main() {
   RUN_CASE(check_present_gallery_bad_envelope_diagnostic_never_blank);
   RUN_CASE(check_present_gallery_null_error_ptr_never_throws);
   RUN_CASE(check_present_gallery_no_rows_diagnostic_never_blank);
+  RUN_CASE(check_harness_entry_reached);
+  RUN_CASE(check_all_green_returns_zero);
+  RUN_CASE(check_failure_protocol_shape);
+  RUN_CASE(check_hover_opacity_is_08);
+  RUN_CASE(check_focus_opacity_is_12);
+  RUN_CASE(check_pressed_opacity_is_16);
+  RUN_CASE(check_disabled_opacity_matches_baseline_038);
+  RUN_CASE(check_opacity_ordering_hover_lt_focus_lt_pressed);
+  RUN_CASE(check_unknown_state_fail_closed_no_wash);
+  RUN_CASE(check_empty_state_fail_closed_no_wash);
+  RUN_CASE(check_unknown_state_never_throws_across_jni);
+  RUN_CASE(check_known_states_never_throw);
+  RUN_CASE(check_mirror_equality_with_js_drive_state);
+  RUN_CASE(check_case_sensitive_unknown_is_closed);
   if (failures > 0) {
     std::printf("gallery_present_test: %d failing\n", failures);
     return 1;

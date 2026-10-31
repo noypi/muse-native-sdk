@@ -5,12 +5,21 @@
 // proofCommand only renders the command string the tester runs on device.
 //
 // Device serial (ASSUMPTION A1): every device step uses 127.0.0.1:6569.
-// Tolerance default (ASSUMPTION A3): 0.02 until build/goldens/m3-tolerances.json
-// pins per-component values; the committed file is authoritative.
+// Tolerance default (ASSUMPTION A3): 0.02 until goldens/m3-tolerances.json
+// pins per-component values; the relocated file at
+// examples/m3-gallery/goldens/m3-tolerances.json is authoritative per D3.
+// The committed build/goldens/m3-tolerances.json is superseded (untouched).
+
+const { join } = require('node:path');
 
 const DEVICE_SERIAL = '127.0.0.1:6569';
 
 const DEFAULT_TOLERANCE = 0.02;
+
+// D3 relocation: authoritative goldens live outside build/.
+const GOLDENS_DIR = join(__dirname, '..', 'goldens');
+
+const TOLERANCES_PATH = join(GOLDENS_DIR, 'm3-tolerances.json');
 
 const THEMES = ['light', 'dark'];
 
@@ -113,8 +122,17 @@ function isDiagnosticOnly(output) {
   return false;
 }
 
-function diffAgainstGolden(actual, golden, tolerance, meta) {
-  const page = meta && meta.page ? meta.page : 'unknown-page';
+function toleranceFor(component, tolerances) {
+  if (tolerances && typeof tolerances[component] === 'number') {
+    return tolerances[component];
+  }
+  if (tolerances && typeof tolerances.default === 'number') {
+    return tolerances.default;
+  }
+  return DEFAULT_TOLERANCE;
+}
+
+function diffAgainstGolden(actual, golden, tolerance, meta) {  const page = meta && meta.page ? meta.page : 'unknown-page';
   const component = meta && meta.component ? meta.component : undefined;
   if (golden === null || golden === undefined) {
     return { pass: false, page, component };
@@ -141,6 +159,8 @@ function diffAgainstGolden(actual, golden, tolerance, meta) {
 module.exports = {
   DEVICE_SERIAL,
   DEFAULT_TOLERANCE,
+  GOLDENS_DIR,
+  TOLERANCES_PATH,
   THEMES,
   STATES,
   proofCommand,
@@ -148,5 +168,6 @@ module.exports = {
   assertCounts,
   isBlankViewport,
   isDiagnosticOnly,
+  toleranceFor,
   diffAgainstGolden,
 };

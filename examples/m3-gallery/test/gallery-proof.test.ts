@@ -780,3 +780,160 @@ describe('TC-M3-022 — golden diff with recorded per-component tolerance (AC-M3
 // (rebase conflict marker removed; both sides kept)
   });
 });
+
+// T63 — Re-proof: state-wash gallery gates + relocated goldens green on device.
+// Binds ONLY to the plan T63 interfaces:
+//   `muse-native gallery-proof --tiers --themes --assert-counts --no-blank`
+//     → exit 0 with state-row screenshots as run artifacts;
+//   `muse-native gallery-diff --tolerance <relocated path>` → exit 0;
+//   failure shape: missing state row / blank-or-diagnostic-only viewport /
+//     undocumented pixel change → nonzero exit naming page/component/state.
+// Extends the T4 blocks above WITHOUT modifying them (T4 tests are READ-ONLY).
+// Hermetic: node:test + node:assert/strict + node:fs only; synthetic pixel
+// buffers; never renders, never touches a device, network, secrets, or config.
+//
+// ASSUMPTIONS (settled paint-path decisions, plan 2026-10-31):
+//   D3 (relocation): goldens/tolerances relocate out of `build/` to
+//       `examples/m3-gallery/goldens/`; `TOLERANCES_PATH` update is
+//       coder-owned. New tests below resolve tolerances at the RELOCATED
+//       path only. The committed `build/goldens/m3-tolerances.json` is
+//       recorded as SUPERSEDED by the relocated file (see T63.md).
+//   A1 (device serial): unchanged from T4 — `adb -s 127.0.0.1:6569` only.
+//   Live walk (tiers × variants × states × light/dark on 127.0.0.1:6569,
+//       shots/6569-gallery-proof*.png as run artifacts, T5 flip) is NOT
+//       unit-verifiable here; marked UNVERIFIED, owner tester/manual.
+
+const RELOCATED_GOLDENS_DIR = join(GALLERY_DIR, 'goldens');
+const RELOCATED_TOLERANCES_PATH = join(RELOCATED_GOLDENS_DIR, 'm3-tolerances.json');
+// T61 in-batch: the four state tokens every state row must carry.
+const T63_STATES = ['hover', 'focus', 'pressed', 'disabled'];
+
+function loadRelocatedTolerances() {
+  let raw = null;
+  try {
+    raw = readFileSync(RELOCATED_TOLERANCES_PATH, 'utf8');
+  } catch (err) {
+    assert.fail(`relocated tolerances missing at ${RELOCATED_TOLERANCES_PATH}: ${err.message}`);
+  }
+  return JSON.parse(raw);
+}
+
+describe('T63 — state-row proof plan requires T61 state × theme rows (AC-M3-020)', () => {
+  it('every proof-plan entry carries a known state token (T61 in-batch)', () => {
+    requireProof();
+    assert.equal(typeof proof.buildProofPlan, 'function', 'must export buildProofPlan(manifest)');
+    const plan = proof.buildProofPlan(loadManifest());
+    assert.ok(plan.length > 0, 'proof plan must be non-empty');
+    for (const entry of plan) {
+      assert.ok(
+        T63_STATES.includes(entry.state),
+        `page ${entry.page}: unknown state ${JSON.stringify(entry.state)} (known: ${T63_STATES.join(', ')})`,
+      );
+    }
+  });
+
+  it('proof plan covers every component × state × theme (T61 rows)', () => {
+    requireProof();
+    const plan = proof.buildProofPlan(loadManifest());
+    for (const entry of loadManifest().components) {
+      for (const state of T63_STATES) {
+        for (const theme of ['light', 'dark']) {
+          assert.ok(
+            plan.some((p) => p.component === entry.name && p.state === state && p.theme === theme),
+            `${entry.name}: no ${state}/${theme} page in the proof plan`,
+          );
+        }
+      }
+    }
+  });
+
+  it('assertCounts rejects a plan missing a state slice naming page/state', () => {
+    requireProof();
+    const manifest = loadManifest();
+    const plan = proof.buildProofPlan(manifest);
+    const dropped = plan.filter((p) => p.state !== 'pressed');
+    assert.throws(
+      () => proof.assertCounts(dropped, manifest),
+      (err) => {
+        const msg = String(err && err.message);
+        assert.ok(
+          /pressed/.test(msg),
+          `count failure must name the missing state, saw: ${msg}`,
+        );
+        assert.ok(
+          new RegExp(manifest.components[0].name).test(msg),
+          `count failure must name the page/component, saw: ${msg}`,
+        );
+        return true;
+      },
+      'plan missing the pressed slice must fail counts naming page/state',
+    );
+  });
+
+  it('assertCounts rejects an unknown-state page (fail-closed, T62 parity)', () => {
+    requireProof();
+    const manifest = loadManifest();
+    const plan = proof.buildProofPlan(manifest);
+    const poisoned = [...plan, {
+      component: manifest.components[0].name,
+      tier: manifest.components[0].tier,
+      variant: 'default',
+      state: 'enabled',
+      theme: 'light',
+      page: 'bogus/unknown-state/light',
+    }];
+    assert.throws(
+      () => proof.assertCounts(poisoned, manifest),
+      'plan with an unknown-state page must fail counts',
+    );
+  });
+});
+
+describe('T63 — golden diff resolves tolerances at the RELOCATED path (AC-M3-021, D3)', () => {
+  it('relocated tolerances file exists at examples/m3-gallery/goldens/ (D3)', () => {
+    loadRelocatedTolerances();
+  });
+
+  it('relocated tolerances carry per-component numeric entries', () => {
+    const tolerances = loadRelocatedTolerances();
+    for (const entry of loadManifest().components) {
+      const value = tolerances[entry.name] !== undefined ? tolerances[entry.name] : tolerances.default;
+      assert.equal(
+        typeof value,
+        'number',
+        `${entry.name}: no numeric per-component tolerance (or default) at the relocated path`,
+      );
+    }
+  });
+
+  it('diff honors the relocated per-component tolerance on identical pixels', () => {
+    requireProof();
+    const tolerances = loadRelocatedTolerances();
+    const name = loadManifest().components[0].name;
+    const tolerance = tolerances[name] !== undefined ? tolerances[name] : tolerances.default;
+    const a = mixedPixels(8, 8);
+    const result = proof.diffAgainstGolden(a.pixels, [...a.pixels], tolerance, {
+      page: `tier1/${name}/light`,
+      component: name,
+    });
+    assert.equal(result.pass, true, 'identical pixels must pass at the relocated tolerance');
+  });
+
+  it('diff at the relocated tolerance fails a state-wash-scale change naming the component', () => {
+    requireProof();
+    const tolerances = loadRelocatedTolerances();
+    const name = loadManifest().components[0].name;
+    const tolerance = tolerances[name] !== undefined ? tolerances[name] : tolerances.default;
+    const a = mixedPixels(8, 8);
+    const changed = [...a.pixels].map((v) => (v + 128) % 256);
+    const result = proof.diffAgainstGolden(a.pixels, changed, tolerance, {
+      page: `tier1/${name}/hover/light`,
+      component: name,
+    });
+    assert.equal(result.pass, false, 'state-scale pixel change must fail at the relocated tolerance');
+    assert.ok(
+      String(result.component || result.page || '').includes(name),
+      `diff failure must name the page/component, saw: ${JSON.stringify(result)}`,
+    );
+  });
+});
