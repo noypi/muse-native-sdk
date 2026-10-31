@@ -11,15 +11,19 @@
 // evaluation on device. Covers all three tiers with their documented
 // variants, each in a light row and a dark row. No hooks, no expressions,
 // no imports beyond @muse/native.
-// T61 state rows (FR-M3-009 / AC-M3-020): per-state literal `state=` rows
-// (Surface / Ripple / TextFieldEditCore x hover|focus|pressed|disabled)
-// live at the end of each theme section below, as static GalleryRow rows
-// with literal desc + state props only (stub arrives with the T62 wiring).
+// T61 state-row coverage (FR-M3-009 / AC-M3-020) is retained as
+// manifest-generated story variants via buildStories in stories.js, not as
+// hand-listed rows here (BUG-SAMPLE-003 T2).
 import { View, Text, TopAppBar, NavigationBar, NavigationRail, NavigationDrawer, BottomAppBar, SearchBar, SegmentedButton, ButtonGroup, SplitButton, Button, IconButton, Fab, ExtendedFab, Card, Chip, Checkbox, Radio, Switch, Slider, LinearProgress, CircularProgress, Badge, ListItem, Avatar, Icon, Image, Divider, TextFieldEditCore, TextInput, Dialog, BottomSheet, Menu, SnackbarHost, Tooltip, Carousel, Surface, Scroll, Stack, Ripple, OverlayHost } from '@muse/native';
+import { reportStaticFallback } from "./galleryMode";
 
-function GalleryRow() { return null; }
+// BUG-SAMPLE-003 T4 — this static Showcase renders only behind the explicit
+// MUSE_GALLERY_STATIC_FALLBACK=1 flag (mode 'static-fallback'); the default
+// 'generated' path renders only manifest-generated real tags. Rendering this
+// static root explicitly reports the fallback (AC-RUNTIME-032).
 
 export default function Showcase() {
+  reportStaticFallback();
   return (
     <View>
       <View theme="light">
@@ -75,18 +79,6 @@ export default function Showcase() {
         <Stack direction="column" spacing={8} />
         <Ripple bounded={true} />
         <OverlayHost />
-        <GalleryRow desc='Surface state="hover" theme="light"' state="hover" />
-        <GalleryRow desc='Surface state="focus" theme="light"' state="focus" />
-        <GalleryRow desc='Surface state="pressed" theme="light"' state="pressed" />
-        <GalleryRow desc='Surface state="disabled" theme="light"' state="disabled" />
-        <GalleryRow desc='Ripple state="hover" theme="light"' state="hover" />
-        <GalleryRow desc='Ripple state="focus" theme="light"' state="focus" />
-        <GalleryRow desc='Ripple state="pressed" theme="light"' state="pressed" />
-        <GalleryRow desc='Ripple state="disabled" theme="light"' state="disabled" />
-        <GalleryRow desc='TextFieldEditCore state="hover" theme="light"' state="hover" />
-        <GalleryRow desc='TextFieldEditCore state="focus" theme="light"' state="focus" />
-        <GalleryRow desc='TextFieldEditCore state="pressed" theme="light"' state="pressed" />
-        <GalleryRow desc='TextFieldEditCore state="disabled" theme="light"' state="disabled" />
       </View>
       <View theme="dark">
         <TopAppBar title="m3-gallery" size="small" />
@@ -141,18 +133,6 @@ export default function Showcase() {
         <Stack direction="column" spacing={8} />
         <Ripple bounded={true} />
         <OverlayHost />
-        <GalleryRow desc='Surface state="hover" theme="dark"' state="hover" />
-        <GalleryRow desc='Surface state="focus" theme="dark"' state="focus" />
-        <GalleryRow desc='Surface state="pressed" theme="dark"' state="pressed" />
-        <GalleryRow desc='Surface state="disabled" theme="dark"' state="disabled" />
-        <GalleryRow desc='Ripple state="hover" theme="dark"' state="hover" />
-        <GalleryRow desc='Ripple state="focus" theme="dark"' state="focus" />
-        <GalleryRow desc='Ripple state="pressed" theme="dark"' state="pressed" />
-        <GalleryRow desc='Ripple state="disabled" theme="dark"' state="disabled" />
-        <GalleryRow desc='TextFieldEditCore state="hover" theme="dark"' state="hover" />
-        <GalleryRow desc='TextFieldEditCore state="focus" theme="dark"' state="focus" />
-        <GalleryRow desc='TextFieldEditCore state="pressed" theme="dark"' state="pressed" />
-        <GalleryRow desc='TextFieldEditCore state="disabled" theme="dark"' state="disabled" />
       </View>
     </View>
   );
@@ -180,6 +160,7 @@ export function TextProbePage() {
 // overlay content. The dismiss hook site is declared on the host below; the
 // dismiss behavior itself is owned by L3.
 export function LayeringPage() {
+  reportStaticFallback();
   return (
     <View sharedId="layering-page">
       <Text>Layering page</Text>

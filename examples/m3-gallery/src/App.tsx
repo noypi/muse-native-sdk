@@ -4,6 +4,7 @@ import { spring } from '@muse/core';
 import ButtonScreen from "./screens/ButtonScreen";
 import { LayeringPage } from "./Showcase";
 import { buildStories } from "./stories";
+import { getGalleryMode, reportStaticFallback } from "./galleryMode";
 import { shuffleRemix, encodeRemix, decodeRemix } from "./remix";
 import { parseStoryLink, storyIdOf, isPagingGesture } from "./galleryNav";
 
@@ -269,6 +270,15 @@ export default function App() {
   // render the string as a host tag instead of the real component.
   // Overlay members nest the inner component as OverlayHost content.
   const SelectedComponent = selectedRendered !== null ? components[selectedRendered.type] : null;
+  // BUG-SAMPLE-003 T4 — explicit reporting fallback flag
+  // (MUSE_GALLERY_STATIC_FALLBACK=1 env or launch/argv token, AC-RUNTIME-032).
+  // Default mode is 'generated': only manifest-generated real tags render.
+  // The static Showcase companions below (ButtonScreen / LayeringPage) render
+  // only in 'static-fallback' mode, and that path reports the fallback.
+  const galleryMode = getGalleryMode();
+  if (galleryMode === 'static-fallback') {
+    reportStaticFallback();
+  }
   return (
     <View>
       <TopAppBar title="m3-gallery" />
@@ -306,11 +316,10 @@ export default function App() {
           </View>
         </View>
       ) : null}
-      <ButtonScreen />
-      <LayeringPage />
+      {galleryMode === 'static-fallback' ? <ButtonScreen /> : null}
+      {galleryMode === 'static-fallback' ? <LayeringPage /> : null}
       {selectedStory !== null && selectedRendered !== null && SelectedComponent ? (
         <View key={`${selectedStory.component}-${selectedStory.variant}-${selectedStory.state}-${selectedStory.theme}-${clampedIndex}`}>
-          <Text color={theme.onSurface}>{`${selectedStory.component} ${selectedStory.variant} ${selectedStory.state} ${selectedStory.theme}`}</Text>
           {selectedRendered.host ? (
             <OverlayHost content={<SelectedComponent {...selectedRendered.props} />} />
           ) : (
