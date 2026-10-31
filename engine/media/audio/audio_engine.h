@@ -45,6 +45,8 @@ struct StreamConfig {
   AudioUsage usage = AudioUsage::kMedia;
   bool backgroundFgs = false;
   bool effects = false;
+  bool aaudioAvailable = false;
+  bool lowLatencyPath = false;
 };
 
 class AudioEngine {
@@ -56,6 +58,7 @@ class AudioEngine {
     usage_ = IsValidUsage(cfg.usage) ? cfg.usage : AudioUsage::kMedia;
     background_fgs_ = cfg.backgroundFgs;
     effects_ = cfg.effects;
+    backend_ = selectBackend(cfg.aaudioAvailable, cfg.lowLatencyPath);
     stream_open_ = true;
   }
 

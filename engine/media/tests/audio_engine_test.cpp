@@ -177,6 +177,53 @@ static void check_invalid_route_never_throws() {
   (void)before;
 }
 
+static void check_configure_latches_backend() {
+  {
+    StreamConfig cfg{};
+    cfg.format = AudioFormat::kPcm;
+    cfg.usage = AudioUsage::kMedia;
+    cfg.aaudioAvailable = true;
+    cfg.lowLatencyPath = true;
+    AudioEngine e;
+    e.configure(cfg);
+    CHECK("configure both true -> kAAudio", e.backend() == Backend::kAAudio);
+  }
+  {
+    StreamConfig cfg{};
+    cfg.aaudioAvailable = false;
+    cfg.lowLatencyPath = true;
+    AudioEngine e;
+    e.configure(cfg);
+    CHECK("configure no aaudio -> kOboeFallback",
+          e.backend() == Backend::kOboeFallback);
+  }
+  {
+    StreamConfig cfg{};
+    cfg.aaudioAvailable = true;
+    cfg.lowLatencyPath = false;
+    AudioEngine e;
+    e.configure(cfg);
+    CHECK("configure no low-latency -> kOboeFallback",
+          e.backend() == Backend::kOboeFallback);
+  }
+  {
+    StreamConfig cfg{};
+    cfg.aaudioAvailable = false;
+    cfg.lowLatencyPath = false;
+    AudioEngine e;
+    e.configure(cfg);
+    CHECK("configure neither -> kOboeFallback",
+          e.backend() == Backend::kOboeFallback);
+  }
+  {
+    StreamConfig cfg{};
+    AudioEngine e;
+    e.configure(cfg);
+    CHECK("default StreamConfig -> kOboeFallback",
+          e.backend() == Backend::kOboeFallback);
+  }
+}
+
 int main() {
   check_backend_select();
   check_latency_class();
@@ -185,6 +232,7 @@ int main() {
   check_focus_duck_pause();
   check_route_matrix();
   check_invalid_route_never_throws();
+  check_configure_latches_backend();
   if (s_failures == 0) {
     std::printf("ALL GREEN audio_engine_test\n");
     return 0;
