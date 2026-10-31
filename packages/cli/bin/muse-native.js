@@ -44,7 +44,7 @@
   const present = require('../lib/gallery-present.js');
   if (argv.includes('--help') || argv.includes('-h')) {
     process.stdout.write(
-      'Usage: muse-native gallery-present [--path egl|cpu] [--dump-frame <png>]\n',
+      'Usage: muse-native gallery-present [--path egl|cpu|skia] [--dump-frame <png>]\n',
     );
     return;
   }
@@ -52,7 +52,7 @@
   try {
     opts = present.parseGalleryPresentArgs(argv);
   } catch (err) {
-    process.stderr.write(`${(err && err.message) || String(err)}\nUsage: muse-native gallery-present [--path egl|cpu] [--dump-frame <png>]\n`);
+    process.stderr.write(`${(err && err.message) || String(err)}\nUsage: muse-native gallery-present [--path egl|cpu|skia] [--dump-frame <png>]\n`);
     process.exitCode = 2;
     return;
   }
