@@ -34,6 +34,7 @@ android {
 //   ./gradlew :pviews:zOrder          — z-order/clipping (FR-PVIEWS-001)
 //   ./gradlew :pviews:clipping        — dynamic surface clipping (FR-PVIEWS-005)
 //   ./gradlew :pviews:brownfieldEmbed  — brownfield embed (FR-PVIEWS-003)
+//   ./gradlew :pviews:composeInterop   — compose interop (FR-PVIEWS-009)
 // Each lane compiles its hermetic binary (test + production source,
 // -I engine/platform-views/include) and executes it; the build fails on
 // any nonzero exit.
@@ -55,4 +56,9 @@ tasks.register('clipping', Exec) {
 tasks.register('brownfieldEmbed', Exec) {
     description = 'Run brownfield embed checks (TC-PVIEWS-004).'
     commandLine 'sh', '-c', 'g++ -std=c++17 ../engine/platform-views/tests/brownfield_embed_test.cpp ../engine/platform-views/src/embed.cpp -I../engine/platform-views/include -o /tmp/pviews_brownfield_embed && /tmp/pviews_brownfield_embed'
+}
+
+tasks.register('composeInterop', Exec) {
+    description = 'Run compose interop checks (TC-PVIEWS-009/TC-PVIEWS-010).'
+    commandLine 'sh', '-c', 'g++ -std=c++17 ../engine/platform-views/tests/compose_interop_test.cpp ../engine/platform-views/src/interop.cpp -I../engine/platform-views/include -o /tmp/pviews_compose_interop && /tmp/pviews_compose_interop'
 }

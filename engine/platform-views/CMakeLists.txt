@@ -20,6 +20,13 @@ add_library(pviews-embed
 target_include_directories(pviews-embed PUBLIC include)
 target_compile_options(pviews-embed PRIVATE -Wall -Wextra -Wpedantic)
 
+# Compose interop target (FR-PVIEWS-009 / AC-PVIEWS-009 / AC-PVIEWS-010).
+add_library(pviews-interop
+  src/interop.cpp
+)
+target_include_directories(pviews-interop PUBLIC include)
+target_compile_options(pviews-interop PRIVATE -Wall -Wextra -Wpedantic)
+
 include(CTest)
 enable_testing()
 
@@ -37,3 +44,8 @@ add_executable(brownfield_embed_test tests/brownfield_embed_test.cpp)
 target_link_libraries(brownfield_embed_test PRIVATE pviews-embed)
 target_compile_options(brownfield_embed_test PRIVATE -Wall -Wextra -Wpedantic)
 add_test(NAME brownfield_embed COMMAND brownfield_embed_test)
+
+add_executable(compose_interop_test tests/compose_interop_test.cpp)
+target_link_libraries(compose_interop_test PRIVATE pviews-interop)
+target_compile_options(compose_interop_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME compose_interop COMMAND compose_interop_test)
