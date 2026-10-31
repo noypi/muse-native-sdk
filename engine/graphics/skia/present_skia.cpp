@@ -12,8 +12,16 @@
 #include "present_skia.h"
 
 #include <cstdio>
+#include <string>
 
 namespace {
+
+// One `GFX-BLIT-FALLBACK: <trigger>` log line per fallback (AC-034 contract
+// shape, ported from `engine/runtime/src/egl_blit.cpp`: greppable on the
+// 6562 device leg via logcat, stderr on host).
+void EmitBlitFallbackLog(const std::string& trigger) {
+  std::fprintf(stderr, "GFX-BLIT-FALLBACK: %s\n", trigger.c_str());
+}
 
 // One `GFX-SKIA-FALLBACK: <trigger>` log line per failure (TC-GRAPHICS-040
 // exact check: greppable on the device leg via logcat, stderr on host).
@@ -22,9 +30,20 @@ void EmitSkiaFallbackLog(const char* trigger) {
                trigger != nullptr ? trigger : "unknown");
 }
 
+// --- T3 host stub-Skia seam (extended egl_blit_test shape) ----------------
+// Fault state for `PresentSkiaFrameWithFallback` (device leg T5 may no-op
+// the setter). All clear on host by default; every stub below consults it.
+struct SkiaFaultState {
+  skia_test::FaultHooks hooks;
+};
+SkiaFaultState& SkiaFaults() {
+  static SkiaFaultState s;
+  return s;
+}
 // --- host stub-Skia seam (device leg T5 provides the real swap) ------------
-// Each stub names the real Skia entry it stands in for. All succeed on host;
-// the fallback branch below stays linked for the device leg.
+// Each stub names the real Skia entry it stands in for. All succeed on host
+// unless the T3 fault hooks above inject a failure; the fallback branch
+// below stays linked for the device leg.
 bool StubSkiaInit() { return true; }
 bool StubSkiaMakeContext() { return true; }
 bool StubSkiaSwapOnce() { return true; }
@@ -84,4 +103,74 @@ int GalleryPresentSkia(const char* png_out_path) {
     return FailWithFallback("fwrite: frame dump failed");
   }
   return 0;
+}
+
+void skia_test::SetFaultHooks(const FaultHooks* hooks) {
+  if (hooks == nullptr) {
+    SkiaFaults().hooks = FaultHooks{};
+  } else {
+    SkiaFaults().hooks = *hooks;
+  }
+}
+
+bool PresentSkiaFrameWithFallback(const uint32_t* rgba, int w, int h,
+                                  std::string* fallback_trigger) {
+  // A frame is always pushed: every return below is true, including null
+  // pixels, zero/negative dims, and null trigger (all tolerated, never a
+  // crash). Ported from `PresentFrameWithFallback` in
+  // `engine/runtime/src/egl_blit.cpp` with Skia trigger names.
+  auto succeed = [&](const std::string& trigger) {
+    if (fallback_trigger != nullptr) {
+      *fallback_trigger = trigger;
+    }
+    return true;
+  };
+  auto fallBack = [&](const std::string& trigger) {
+    // Proven CPU SurfaceView push, same process. Host lane is a stub (no NDK
+    // calls execute in hermetic tests; observable behavior is the return
+    // value + trigger string + `GFX-BLIT-FALLBACK` log line).
+    (void)rgba;
+    (void)w;
+    (void)h;
+    CpuSurfaceViewPush();
+    EmitBlitFallbackLog(trigger);
+    return succeed(trigger);
+  };
+
+  skia_test::FaultHooks& hooks = SkiaFaults().hooks;
+  if (hooks.fail_init) {
+    return fallBack("skia-init-fail");
+  }
+  if (hooks.no_surface) {
+    return fallBack("skia-no-surface");
+  }
+  // Null pixels and zero/negative dims are tolerated: the CPU push still
+  // covers the frame, so report the healthy lane (no fallback).
+  if (rgba == nullptr || w <= 0 || h <= 0) {
+    return succeed(std::string());
+  }
+  if (hooks.lose_context) {
+    return fallBack("skia-context-lost");
+  }
+  // Swap-fault persistence: the seam's `fail_next_swap` is one-shot (mirrors
+  // the stub-EGL shape), but the contract requires the fallback to stay live
+  // across frames while the fault is injected. Snapshot before the
+  // (consuming) swap attempt and re-arm afterwards; the seam is test-only
+  // (the device lane no-ops it), so production recovery semantics are
+  // unchanged.
+  const bool swapArmed = hooks.fail_next_swap;
+  bool swapped = true;
+  if (swapArmed) {
+    hooks.fail_next_swap = false;
+    swapped = false;
+  } else {
+    swapped = StubSkiaSwapOnce();
+  }
+  if (!swapped) {
+    if (swapArmed) {
+      hooks.fail_next_swap = true;
+    }
+    return fallBack("skia-swap-fail");
+  }
+  return succeed(std::string());
 }

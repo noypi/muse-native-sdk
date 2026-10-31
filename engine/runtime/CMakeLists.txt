@@ -468,3 +468,12 @@ add_executable(present_fallback_test tests/present_fallback_test.cpp)
 target_link_libraries(present_fallback_test PRIVATE runtime)
 target_compile_options(present_fallback_test PRIVATE -Wall -Wextra -Wpedantic)
 add_test(NAME present_fallback COMMAND present_fallback_test)
+
+# AC-GRAPHICS-039 T3: Skia fallback contract (test owned by code-unit-tester,
+# binds only to `PresentSkiaFrameWithFallback` + `skia_test::SetFaultHooks`
+# in `engine/graphics/skia/present_skia.h`). Links the Skia present TU
+# directly so the hermetic host lane needs no Skia SDK/GPU.
+add_executable(skia_fallback_test tests/skia_fallback_test.cpp ../graphics/skia/present_skia.cpp)
+target_include_directories(skia_fallback_test PRIVATE ../graphics/skia)
+target_compile_options(skia_fallback_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME skia_fallback_test COMMAND skia_fallback_test)
