@@ -8,12 +8,13 @@ import android.content.IntentFilter;
 import android.graphics.Rect;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.view.MotionEvent;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
 import android.view.View;
 import android.view.ViewTreeObserver;
-import android.view.WindowManager;
 import android.view.WindowInsets;
 import android.view.WindowInsetsAnimation;
 import android.view.inputmethod.InputMethodManager;
@@ -126,10 +127,6 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        // T3 resize (bug-runtime-004 t5r4): opt into ADJUST_RESIZE so the IME
-        // transition runs real layout passes and the sampler emits per-frame
-        // intermediate values (ADJUST_PAN runs no mid-transition layout pass).
-        getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
         SurfaceView surfaceView = new SurfaceView(this);
         surfaceView.getHolder().addCallback(this);
         // Tap routing (BUG-M3-FIDELITY-007 disposition): every touch goes to
@@ -340,6 +337,40 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             // the keyboard height per layout pass from the visible display
             // frame and feed the SAME onInsetsFrame entry (no parallel feed,
             // no window-behavior change).
+            // Time-based per-frame sampler (F3, t5r5 root cause on API 29):
+            // the app-window resize is a discrete jump — zero onGlobalLayout
+            // passes fire mid-animation — so the layout-pass sampler above
+            // can never observe transition frames. Poll the visible display
+            // frame per frame during the transition window via a
+            // handler-paced Runnable (started on the show/hide layout
+            // trigger, stopped at steady state) and forward through the SAME
+            // single onInsetsFrame entry. The layout-pass sampler stays for
+            // steady states; this complements, never replaces, it.
+            final Handler imeTransitionHandler = new Handler(Looper.getMainLooper());
+            final int[] imeTransitionLastHeight = new int[] { -1 };
+            final int[] imeTransitionStableFrames = new int[] { 0 };
+            final boolean[] imeTransitionPolling = new boolean[] { false };
+            final Runnable[] imeTransitionPoll = new Runnable[1];
+            imeTransitionPoll[0] = new Runnable() {
+                @Override
+                public void run() {
+                    Rect frame = new Rect();
+                    root.getWindowVisibleDisplayFrame(frame);
+                    int keyboardHeight = Math.max(
+                            0, root.getRootView().getHeight() - frame.bottom);
+                    onInsetsFrame((float) keyboardHeight);
+                    if (keyboardHeight != imeTransitionLastHeight[0]) {
+                        imeTransitionLastHeight[0] = keyboardHeight;
+                        imeTransitionStableFrames[0] = 0;
+                        imeTransitionHandler.postDelayed(imeTransitionPoll[0], 16);
+                    } else if (imeTransitionStableFrames[0] < 3) {
+                        imeTransitionStableFrames[0]++;
+                        imeTransitionHandler.postDelayed(imeTransitionPoll[0], 16);
+                    } else {
+                        imeTransitionPolling[0] = false;
+                    }
+                }
+            };
             root.getViewTreeObserver().addOnGlobalLayoutListener(
                     new ViewTreeObserver.OnGlobalLayoutListener() {
                         @Override
@@ -349,6 +380,11 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                             int keyboardHeight = Math.max(
                                     0, root.getRootView().getHeight() - visible.bottom);
                             onInsetsFrame((float) keyboardHeight);
+                            if (!imeTransitionPolling[0]) {
+                                imeTransitionPolling[0] = true;
+                                imeTransitionStableFrames[0] = 0;
+                                imeTransitionHandler.post(imeTransitionPoll[0]);
+                            }
                         }
                     });
         }

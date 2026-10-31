@@ -139,18 +139,22 @@ else
   fail "pre-30 sampler forwards visible-display-frame height via onInsetsFrame"
 fi
 
-# T3-RESIZE-1 (regression, bug-runtime-004 t5r4 device 127.0.0.1:6569,
-# evidence t5r4_logcat_full.txt): under ADJUST_PAN no layout pass runs
-# mid-transition — only 2 discrete inset states (66.0/474.0), single 408px
-# jump, violating L9's max-1px-steps clause. The gallery window must opt
-# into SOFT_INPUT_ADJUST_RESIZE (getWindow().setSoftInputMode(...)) so the
-# IME transition runs real layout passes and the sampler emits true
-# per-frame intermediate values. FAILS until the fix lands.
-if grep -q 'setSoftInputMode' "$JAVA_FILE" \
-  && grep -q 'SOFT_INPUT_ADJUST_RESIZE' "$JAVA_FILE"; then
-  pass "gallery window opts into SOFT_INPUT_ADJUST_RESIZE"
+# F4-RESIZE-A (bug-runtime-004 F4, user-approved option A REVERT — SUPERSEDES
+# T3-RESIZE-1, which asserted ADJUST_RESIZE present): `adjustResize` shrinks
+# the viewport and re-paginates the gallery tree 19→38 mid-transition, moving
+# the probe slice off-page so evidence taps hit the outside-tap page-flip
+# fallback (t5r6 finding 5) — tap-driven sampling is structurally broken under
+# resize. The revert returns the window to PAN-compatible behavior (no
+# viewport shrink, no re-pagination) while the F1 paced present + F3
+# time-based sampler carry the per-frame values. T3-RESIZE-1 is therefore
+# re-scoped by contract amendment (NOT silently deleted): the window must NOT
+# opt into SOFT_INPUT_ADJUST_RESIZE. T3-RESIZE-2 (no PAN/NOTHING) is unchanged
+# and T3-POLL-1/2 stay green. FAILS until the revert lands (the t5r4 line is
+# still present).
+if grep -q 'SOFT_INPUT_ADJUST_RESIZE' "$JAVA_FILE"; then
+  fail "gallery window reverted from ADJUST_RESIZE (F1+F3 samplers carry frames)"
 else
-  fail "gallery window opts into SOFT_INPUT_ADJUST_RESIZE"
+  pass "gallery window reverted from ADJUST_RESIZE (F1+F3 samplers carry frames)"
 fi
 
 # T3-RESIZE-2 (denial, bug-runtime-004 t5r4): the window must NOT opt into
@@ -225,6 +229,35 @@ if [ -n "$BRANCH30" ] && printf '%s\n' "$BRANCH30" | grep -q 'onInsetsFrame'; th
   pass "30+ fallback forwards via onInsetsFrame (no parallel feed)"
 else
   fail "30+ fallback forwards via onInsetsFrame (no parallel feed)"
+fi
+
+# F3-TIME-1 (bug-runtime-004 F3, t5r5 root cause on API 29): the API-29 app-
+# window resize is a discrete jump — zero onGlobalLayout passes fire
+# mid-animation (clean-cycle summon produced ZERO new per-frame lines), so a
+# layout-pass sampler can never observe transition frames regardless of
+# soft-input mode. The pre-30 fallback region (else-branch to method end, same
+# FALLBACK_FULL window as T3-POLL-1/2) must therefore poll the visible display
+# frame per frame during the transition window (Choreographer frame callback
+# or handler-paced poll, started on show/hide trigger, stopped at steady
+# state); the layout-pass sampler stays for steady states. FAILS until the
+# time-based sampler lands (fallback has only OnGlobalLayoutListener today).
+if [ -n "$FALLBACK_FULL" ] && printf '%s\n' "$FALLBACK_FULL" | grep -qE 'Choreographer|postFrameCallback|postOnAnimation|postDelayed|Handler|Runnable'; then
+  pass "pre-30 fallback polls per frame during transitions (time-based sampler)"
+else
+  fail "pre-30 fallback polls per frame during transitions (time-based sampler)"
+fi
+
+# F3-TIME-2 (bug-runtime-004 F3 guard): the time-based sampler forwards
+# through the SAME single onInsetsFrame entry — no second setter, no parallel
+# bus (T3-SINGLE-1 stays the denial; D2 unchanged). Both the frame-paced
+# scheduler and the onInsetsFrame forward must appear in the fallback region.
+# FAILS until the sampler lands.
+if [ -n "$FALLBACK_FULL" ] \
+  && printf '%s\n' "$FALLBACK_FULL" | grep -qE 'Choreographer|postFrameCallback|postOnAnimation|postDelayed|Handler|Runnable' \
+  && printf '%s\n' "$FALLBACK_FULL" | grep -q 'onInsetsFrame'; then
+  pass "pre-30 time-based sampler forwards via onInsetsFrame (no parallel feed)"
+else
+  fail "pre-30 time-based sampler forwards via onInsetsFrame (no parallel feed)"
 fi
 
 if [ "$FAILURES" -gt 0 ]; then

@@ -14,6 +14,7 @@
 
 #include "runtime/gallery_present.h"
 
+#include <atomic>
 #include <cctype>
 #include <cmath>
 #include <cstdio>
@@ -2240,9 +2241,15 @@ void SetPresentError(std::string* error, const char* msg) {
 namespace {
 // Single live inset holder shaped like the bus slice the anchor consumes:
 // `deps.insets.imeBottom` in px.
+//
+// F5 hardening (BUG-RUNTIME-004 review MINOR): the store is
+// `std::atomic<float>` with relaxed load/store — the JNI/UI thread writes via
+// SetPresentImeBottom while the render path reads every frame before paint,
+// so a plain float is formally a data race (UB). Relaxed ordering suffices:
+// a single float needs atomicity only, no happens-before edge.
 struct PresentImeDeps {
   struct Insets {
-    float imeBottom = 0.0f;
+    std::atomic<float> imeBottom{0.0f};
   };
   Insets insets;
 };
@@ -2260,7 +2267,7 @@ void SetPresentImeBottom(float imeBottomPx) noexcept {
   try {
     float value = imeBottomPx;
     if (!std::isfinite(value) || value < 0.0f) value = 0.0f;
-    PresentDeps().insets.imeBottom = value;
+    PresentDeps().insets.imeBottom.store(value, std::memory_order_relaxed);
   } catch (...) {
     // Keep the last good inset on failure; never throws across the boundary.
   }
@@ -2441,7 +2448,9 @@ bool PresentDeviceGalleryPage(const std::vector<GalleryRow>& rows, int page,
       // sheet to the live FR-LAYOUT-012 inset (`deps.insets.imeBottom`) every
       // frame before paint. In-place sheet-Y mutation only, no full-tree
       // relayout; a zero inset is a no-op via the anchor's own clamp.
-      anchorSheetToImeInset(scene, PresentDeps().insets.imeBottom);
+      const float live_inset_px =
+          PresentDeps().insets.imeBottom.load(std::memory_order_relaxed);
+      anchorSheetToImeInset(scene, live_inset_px);
       paintLayeringPage(scene, renderer, target, error);
       if (error != nullptr && !error->empty()) return false;
       // L8b dispatch confirm: names the routed page and shape count,
