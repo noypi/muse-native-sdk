@@ -17,7 +17,7 @@
 //   struct MergedTree { SemNode* data; size_t size; size_t capacity; };
 //       // ASSUMPTION: caller-provided fixed buffer merge target; merge fills
 //       // data[0..size) and never allocates (hermetic, no OOM path).
-//   enum class SemErrorCode { NONE = 0, SEM_DUPLICATE_NODE = 1 };
+//   enum class SemErrorCode { NONE = 0, SEM_DUPLICATE_NODE = 1, SEM_BUFFER_TOO_SMALL = 2 };
 //   struct MergeResult { bool ok; size_t count; SemErrorCode error; uint64_t duplicateId; };
 //   MergeResult mergeSemantics(const NodeList& engineTree, const NodeList& platformTree,
 //                              MergedTree& out) noexcept;
@@ -220,6 +220,45 @@ static bool check_duplicate_across_boundary_denied() {
   }
 }
 
+// ---- Error path: SEM_BUFFER_TOO_SMALL (F1 fix: never truncate) ----
+
+// Case: caller buffer smaller than total nodes -> typed denial, nothing
+// published (ok==false, count==0, out.size==0), never throws.
+static bool check_undersized_buffer_denied() {
+  try {
+    SemNode engine[] = {{{1}, {kEngine}}, {{2}, {kEngine}}};
+    SemNode platform[] = {{{3}, {kPlatform}}};
+    SemNode buf[2] = {};
+    MergedTree out = makeOut(buf, 2);
+    const MergeResult r =
+        mergeSemantics(makeList(engine, 2), makeList(platform, 1), out);
+    return !r.ok && r.count == 0 &&
+           r.error == SemErrorCode::SEM_BUFFER_TOO_SMALL &&
+           out.size == 0;
+  } catch (...) {
+    return false;  // errors are values, never exceptions
+  }
+}
+
+// Case: null caller buffer with non-empty input -> typed denial, nothing
+// published (ok==false, count==0, out.size==0), never throws.
+static bool check_null_buffer_denied() {
+  try {
+    SemNode engine[] = {{{1}, {kEngine}}};
+    MergedTree out;
+    out.data = nullptr;
+    out.size = 0;
+    out.capacity = 0;
+    const MergeResult r =
+        mergeSemantics(makeList(engine, 1), makeList(nullptr, 0), out);
+    return !r.ok && r.count == 0 &&
+           r.error == SemErrorCode::SEM_BUFFER_TOO_SMALL &&
+           out.size == 0;
+  } catch (...) {
+    return false;  // errors are values, never exceptions
+  }
+}
+
 #define RUN_CASE(name)                 \
   do {                                 \
     if (!(name)()) {                   \
@@ -242,6 +281,8 @@ int main() {
   RUN_CASE(check_duplicate_within_engine_denied);
   RUN_CASE(check_duplicate_within_platform_denied);
   RUN_CASE(check_duplicate_across_boundary_denied);
+  RUN_CASE(check_undersized_buffer_denied);
+  RUN_CASE(check_null_buffer_denied);
   if (failures > 0) {
     std::printf("semantics_merge_test: %d failing\n", failures);
     return 1;
