@@ -313,6 +313,7 @@ export type DialogProps = {
 
 export type BottomSheetProps = {
   open: boolean;
+  imeSafe: boolean;
   content?: unknown;
 };
 

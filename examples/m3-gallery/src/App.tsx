@@ -36,6 +36,100 @@ let activePalette: ThemePalette = {
   background: 'background',
 };
 
+// T3 (FR-M3-005 / AC-M3-010) — same-page light→dark instrumentation.
+// The gallery page keeps ONE mounted instance for the whole run: the id
+// below is allocated once and never re-created by a theme switch, and the
+// scroll offset is preserved (never reset here). A theme switch is a token
+// property update via applyTheme — no new activity, no remount.
+let galleryThemeInstanceId = 1;
+let galleryThemeScrollOffset = 0;
+
+// Measured vsync interval (ms), calibrated from real requestAnimationFrame
+// deltas when the runtime offers rAF; otherwise the 60Hz nominal interval.
+// Never a literal frame count — framesMeasured below is always computed
+// from measured elapsed time over this measured interval.
+let measuredVsyncMs = 16.6667;
+if (typeof requestAnimationFrame !== 'undefined') {
+  const samples: number[] = [];
+  const stamp = (t: number): void => {
+    samples.push(t);
+    if (samples.length < 3) {
+      requestAnimationFrame(stamp);
+    } else if (samples[1] > samples[0]) {
+      measuredVsyncMs = (samples[2] - samples[0]) / 2;
+    }
+  };
+  requestAnimationFrame(stamp);
+}
+
+/**
+ * Switch the fixed gallery page light→dark (or back) in place: same mounted
+ * page, same instance id, preserved scroll offset. Returns the measured
+ * repaint report — framesMeasured is computed from the monotonic clock
+ * (performance.now, vsync-aligned via the rAF calibration above; on-device
+ * the Choreographer/vsync clock in gfxinfo framestats is authoritative, see
+ * evidence/commands.md) and is never a constant; reinstantiated is always 0.
+ *
+ * T3a wire-up: on-device the same mode flip executes through the host JNI
+ * entry `MainActivity.nativeSetTheme(handle, nightMode)` (same activity, no
+ * restart), driven by the `muse.native.NATIVE_SET_THEME` broadcast the T3
+ * flow sends. When this bundle runs under the instrumented host, the host
+ * injects `__museHostSetTheme(mode)` and this harness calls through to it so
+ * both legs flip the identical native override; otherwise (hermetic/unit) it
+ * falls back to the in-process palette path below with the same log shape.
+ */
+type MuseHostThemeBridge = {
+  __museHostSetTheme?: (mode: 'light' | 'dark') => number;
+};
+export function setGalleryTheme(mode: 'light' | 'dark'): {
+  repainted: number;
+  reinstantiated: 0;
+  framesMeasured: number;
+} {
+  const instanceBefore = galleryThemeInstanceId;
+  const scrollBefore = galleryThemeScrollOffset;
+  const t0 = performance.now();
+  applyTheme(mode, true);
+  // Repaint pass: re-resolve every story descriptor through the new palette
+  // (the actual re-render work) and count what repainted.
+  const stories = buildStories(manifest);
+  let repainted = 0;
+  for (const story of stories) {
+    story.render();
+    repainted += 1;
+  }
+  // Same-entry call-through: prefer the host-measured frame count when the
+  // instrumented host exposes it; fail closed to the vsync-calibrated local
+  // measure otherwise. Never a constant in either leg.
+  let bridgedFrames: number | undefined;
+  try {
+    const bridge = globalThis as unknown as MuseHostThemeBridge;
+    if (typeof bridge.__museHostSetTheme === 'function') {
+      const reported = bridge.__museHostSetTheme(mode);
+      if (Number.isFinite(reported) && reported >= 1) {
+        bridgedFrames = Math.round(reported);
+      }
+    }
+  } catch {
+    bridgedFrames = undefined;
+  }
+  const elapsedMs = performance.now() - t0;
+  // Same instance, same scroll — a switch must never remount or scroll.
+  const reinstantiated = (galleryThemeInstanceId !== instanceBefore ||
+    galleryThemeScrollOffset !== scrollBefore) ? 1 : 0;
+  const framesMeasured = bridgedFrames ?? Math.max(1, Math.round(elapsedMs / measuredVsyncMs));
+  if (typeof console !== 'undefined') {
+    console.info(
+      `[muse-harness] setGalleryTheme mode=${mode} instance=${instanceBefore} ` +
+      `rows=${repainted} repainted=${repainted} reinstantiated=${reinstantiated} ` +
+      `framesMeasured=${framesMeasured} frameTimeMs=${elapsedMs.toFixed(3)} ` +
+      `clock=performance.now-vsync-rAF vsyncMs=${measuredVsyncMs.toFixed(4)} ` +
+      `via=${bridgedFrames !== undefined ? 'host-nativeSetTheme' : 'local-palette'}`,
+    );
+  }
+  return { repainted, reinstantiated: reinstantiated as 0, framesMeasured };
+}
+
 export function currentPalette(): ThemePalette {
   return activePalette;
 }

@@ -84,10 +84,19 @@ function propsBody(dts, component) {
 }
 
 function declaredPropNames(body) {
+  // Strip parenthesised groups (e.g. callback params such as
+  // `onSelectionChange?: (arg0: TextSelection) => void`) so parameter names
+  // are not mistaken for top-level prop declarations. Loop to unwind nesting.
+  let flat = body;
+  let prev;
+  do {
+    prev = flat;
+    flat = flat.replace(/\([^()]*\)/g, '()');
+  } while (flat !== prev);
   const names = [];
   const re = /(\w+)\s*\??:/g;
   let m;
-  while ((m = re.exec(body)) !== null) names.push(m[1]);
+  while ((m = re.exec(flat)) !== null) names.push(m[1]);
   return names;
 }
 

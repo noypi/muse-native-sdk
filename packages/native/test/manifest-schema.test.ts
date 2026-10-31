@@ -170,9 +170,13 @@ test('known variant unions stay in the manifest single source', () => {
 // vendored in this checkout, so no test shells out to `tsc`. These tests pin
 // the type-surface contract that makes `tsc --noEmit` rejection hold — named
 // literal unions (never `string`) generated from the manifest `values` lists
-// — plus the package.json wiring that runs `tsc --noEmit` in the build gate.
-// A `variant="giant"` assignment is unrepresentable in the pinned unions, so
-// `tsc --noEmit` must reject it once the wired compiler runs.
+// — plus the package.json wiring that runs `tsc --noEmit` in the build gate
+// INDIRECTLY: `check:types` invokes `scripts/check-types.js` (commit 6f2328f
+// moved the literal `tsc --noEmit` out of package.json for the Windows
+// `tsc.cmd` spawn fix + the missing-tsc SKIP guard), and that wrapper runs
+// the local compiler with `tsc --noEmit -p tsconfig.json`. A
+// `variant="giant"` assignment is unrepresentable in the pinned unions, so
+// the wired compiler must reject it once it runs.
 // ---------------------------------------------------------------------------
 
 const CHECK_PROPS_SCRIPT = join(NATIVE_DIR, 'scripts', 'check-props.js');
@@ -194,13 +198,29 @@ test('package.json wires check-props.js as a check/prebuild script', () => {
   assert.ok(wired, 'package.json must wire check-props.js as a check/prebuild script');
 });
 
-test('build gate runs tsc --noEmit alongside check-props.js', () => {
+test('build gate runs tsc --noEmit via check-types.js alongside check-props.js', () => {
   const pkg = JSON.parse(readFileSync(PACKAGE_JSON, 'utf8'));
   const scripts = pkg.scripts ?? {};
-  const all = Object.values(scripts).filter((cmd) => typeof cmd === 'string').join('\n');
+  // (1) check:types must invoke the check-types.js wrapper — the literal
+  // `tsc --noEmit` in package.json was deliberately moved here (6f2328f:
+  // Windows tsc.cmd spawn fix + missing-tsc SKIP guard). Inlining the
+  // literal would regress that fix.
+  const checkTypes = scripts['check:types'];
   assert.ok(
-    all.includes('tsc --noEmit'),
-    'package.json build gate must run tsc --noEmit (unsupported variants fail type check)',
+    typeof checkTypes === 'string' && checkTypes.includes('check-types.js'),
+    'check:types must invoke scripts/check-types.js (local-compiler wrapper with SKIP guard)',
+  );
+  // (2) the wrapper must run the local compiler with tsc --noEmit.
+  const wrapper = readFileSync(join(NATIVE_DIR, 'scripts', 'check-types.js'), 'utf8');
+  assert.ok(
+    wrapper.includes('--noEmit') && wrapper.includes('tsc'),
+    'check-types.js must run tsc --noEmit via the local compiler',
+  );
+  // (3) teeth: the test gate must chain check:types so type-checking cannot
+  // be silently dropped from the gate.
+  assert.ok(
+    typeof scripts.test === 'string' && scripts.test.includes('check:types'),
+    'test gate must chain check:types (dropping type-checking must fail this test)',
   );
 });
 
