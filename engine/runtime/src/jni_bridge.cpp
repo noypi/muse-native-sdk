@@ -751,13 +751,23 @@ bool EnsureFrameResourcesLocked(GalleryHandle* g, int stride, int h) noexcept {
 
 // Renders the current page into the attached window. Callers must hold
 // g->mu: attach state, page, and rows are all mutated under that lock.
+// FR-STARTUP-003 T3 (AC-STARTUP-006, RULE-STARTUP-001/002) drop-beats-tear:
+// every drop path leaves the locked bits untouched and keeps the previous
+// posted frame standing — null/detached window returns silent (no draw, no
+// crash); lock-fail / null-bits logs one
+// "nativeRenderFrame: window lock failed; frame skipped" line and returns
+// without unlockAndPost of partial bits; presented==false skips the
+// staged->locked copy (bits untouched) and unlockAndPost reposts the previous
+// frame; markers still emit from the live row model on every locked present.
 void RenderLocked(GalleryHandle* g) {
   ANativeWindow* win = g->window;
   if (win == nullptr) {
     return;  // No surface yet (or already detached): fail closed, no log
              // spam — surface callbacks re-render once attached.
   }
-  ANativeWindow_Buffer buf;
+  // Value-init so the lock-fail path sees null bits even if the platform
+  // leaves buf untouched on failure (never read indeterminate bits).
+  ANativeWindow_Buffer buf{};
   if (ANativeWindow_lock(win, &buf, nullptr) != 0 || buf.bits == nullptr) {
     MuseLogInfo("nativeRenderFrame: window lock failed; frame skipped");
     return;
@@ -784,6 +794,10 @@ void RenderLocked(GalleryHandle* g) {
   // frame instead of a torn copy.
   if (w <= 0 || !EnsureFrameResourcesLocked(g, stride, h)) {
     ANativeWindow_unlockAndPost(win);
+    // T3: geometry drop still emits live markers so the proof pair stays
+    // visible on every locked present; bits were never copied (last good
+    // frame reposted above).
+    EmitGalleryMarkersLocked(g, pages, w, h);
     return;
   }
   // T11 fix 2 (clear-then-post ordering): present into a staged buffer
@@ -807,6 +821,8 @@ void RenderLocked(GalleryHandle* g) {
     std::string eglFallback;
     PresentFrameWithFallback(g->staged.data(), w, h, &eglFallback);
   }
+  // T3: staged->locked copy gated on presented — when false the locked bits
+  // stay untouched and the unlockAndPost below reposts the previous frame.
   if (presented) {
     std::uint32_t* bits = static_cast<std::uint32_t*>(buf.bits);
     for (int y = 0; y < h; ++y) {
