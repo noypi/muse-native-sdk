@@ -244,3 +244,30 @@ bool AttachLiveTextField(const char* pageId, const LiveTextFieldDeps& deps);
 // true once a probe-page attach has succeeded (idempotent, sticky until
 // process exit). Never throws.
 bool liveKindOverrideActive();
+
+// ---- T3 composition device leg (BUG-M3-FIDELITY-003 / FR-M3-006 / AC-M3-011)
+// ----
+//
+// Global-scope gate for the IME composition preview/commit/cancel leg on the
+// single instrumented probe page ("m3-text-probe", API-29-only gate serial
+// "127.0.0.1:6569"). Defined in `engine/runtime/src/js_runtime.cpp`
+// (self-contained TU: links hermetic). Fail-fast null/empty/non-gate serial
+// yields distinct nonzero codes, never throws; the gate serial drives
+// setComposingText -> preview -> commit -> bound==visible -> setComposing +
+// cancel -> withdraw, with any failure appending `evidence/T3/failure.log`
+// (step + dumpsys + screencap PNG path). Never throws.
+int RunCompositionLeg(const char* serial);
+
+// ---- T4 selection device leg (BUG-M3-FIDELITY-003 / FR-M3-006 / AC-M3-012)
+// ----
+//
+// Global-scope gate for the caret/selection leg on the single instrumented
+// probe page ("m3-text-probe", API-29-only gate serial "127.0.0.1:6569").
+// Defined in `engine/runtime/src/js_runtime.cpp` (self-contained TU: links
+// hermetic). Fail-fast null/empty/non-gate serial yields distinct nonzero
+// codes, never throws, no adb on bad serials; the gate serial drives
+// tap -> keyboard -> API set, mutates value, asserts caret/selection survive
+// + binding round-trip report, repaint <= 1 frame, no re-instantiation, with
+// any failure appending `evidence/T4/failure.log` (step + dumpsys +
+// screencap PNG path). Never throws.
+int RunSelectionLeg(const char* serial);
