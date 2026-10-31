@@ -351,6 +351,16 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                 final byte[] readyBytes = bytes;
                 new Handler(Looper.getMainLooper()).post(() -> {
                     if (generation != treeLoadGeneration) {
+                        // Security LOW (destroy-during-parse race): the bg parse
+                        // produced readyHandle after onDestroy bumped the
+                        // generation. Drop without install/render and destroy the
+                        // orphan so one native tree does not leak per race hit.
+                        // UI-thread-safe: same UI-thread nativeDestroy path as
+                        // onDestroy for a never-attached (window == null) handle
+                        // (registry-claimed exactly-once, fail-closed, never throws).
+                        if (readyHandle != 0) {
+                            nativeDestroy(readyHandle);
+                        }
                         return;
                     }
                     try {

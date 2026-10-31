@@ -87,5 +87,42 @@ else
   echo "FAIL: stale post-back dropped via generation check"
   FAIL=$((FAIL+1))
 fi
+# 11-13. Security: stale destroy-during-parse/load post-back installs nothing,
+# renders nothing, and accounts for the orphaned native handle (LOW note in
+# security-review.md: readyHandle would leak if the stale branch just returns).
+# Extract the stale-generation branch body (the block guarded by the
+# generation != treeLoadGeneration check inside the T1 post-back).
+STALE_BODY=$(awk '/if \(generation != treeLoadGeneration\)/{flag=1} flag{print} flag && /^\s*\}/{exit}' "$SRC")
+# 11. Stale completion installs nothing: no engineHandle install, no treeReady set,
+# no delegation to the install hook.
+if echo "$STALE_BODY" | grep -Eq 'engineHandle *='; then
+  echo "FAIL: stale post-back installs nothing (sets engineHandle)"
+  FAIL=$((FAIL+1))
+elif echo "$STALE_BODY" | grep -Eq 'treeReady *= *true'; then
+  echo "FAIL: stale post-back installs nothing (sets treeReady)"
+  FAIL=$((FAIL+1))
+elif echo "$STALE_BODY" | grep -Eq 'handleTreeBytes'; then
+  echo "FAIL: stale post-back installs nothing (calls handleTreeBytes)"
+  FAIL=$((FAIL+1))
+else
+  echo "PASS: stale post-back installs nothing (no engineHandle/treeReady/handleTreeBytes)"
+fi
+# 12. Stale completion renders nothing: never reaches the T2 render gate path.
+if echo "$STALE_BODY" | grep -Eq 'maybeRenderFirstFrame|nativeRenderFrame|nativeAttachSurface'; then
+  echo "FAIL: stale post-back renders nothing (reaches render path)"
+  FAIL=$((FAIL+1))
+else
+  echo "PASS: stale post-back renders nothing (no render gate path)"
+fi
+# 13. Stale completion accounts for the orphaned native handle: either destroys
+# it in the stale branch or documents the leak as accepted under A1.
+if echo "$STALE_BODY" | grep -Eq 'nativeDestroy *\( *readyHandle *\)'; then
+  echo "PASS: stale post-back destroys orphaned handle (nativeDestroy)"
+elif grep -Eiq 'orphan|accepted leak|leak[^.]*accepted|A1[^.]*leak|leak[^.]*A1' "$SRC"; then
+  echo "PASS: stale post-back orphan handle leak documented as accepted (A1)"
+else
+  echo "FAIL: stale post-back accounts for orphaned handle (nativeDestroy or documented accept)"
+  FAIL=$((FAIL+1))
+fi
 echo "== $FAIL failure(s) =="
 exit "$FAIL"
