@@ -106,6 +106,9 @@ function resolveMuseSection(yaml, allowList) {
   if (muse.presets !== undefined) {
     presets = {};
     for (const name of Object.keys(muse.presets)) {
+      if (name === '__proto__') {
+        throw new ConfigError(name, FILE, 'a preset name that is safe as an own property');
+      }
       const preset = muse.presets[name];
       presets[name] = { route: preset.route, params: { ...(preset.params || {}) } };
     }
