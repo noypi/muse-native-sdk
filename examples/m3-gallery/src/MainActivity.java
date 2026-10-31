@@ -307,14 +307,16 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
 
     /**
      * T1 (FR-STARTUP-002/AC-STARTUP-003): start the single-owner background
-     * tree load and return immediately. Never blocks, never throws.
+     * tree load and return immediately. Asset read + nativeLoadTree run on
+     * the background loader; only the resulting handle is posted to the UI
+     * thread. Never blocks, never throws.
      */
     void startAsyncTreeLoad() {
-        final int generation;
-        try {
-            generation = treeLoadGeneration;
-        } catch (Throwable t) {
-            Log.e("MainActivity", "tree-load: generation read failed");
+        final int generation = treeLoadGeneration;
+        // A1 single-process lifetime (configChanges, no recreate): the loader is
+        // shut down in onDestroy and never reused — guard the re-entry seam.
+        if (treeLoader.isShutdown()) {
+            Log.e("MainActivity", "tree-load: loader shut down, no reload");
             return;
         }
         try {
@@ -326,12 +328,33 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                     Log.e("MainActivity", "tree-load: asset read threw");
                     return;
                 }
+                if (bytes == null) {
+                    Log.e("MainActivity", "tree-load failed-closed: null");
+                    return;
+                }
+                if (bytes.length == 0) {
+                    Log.e("MainActivity", "tree-load failed-closed: empty");
+                    return;
+                }
+                final long handle;
+                try {
+                    handle = nativeLoadTree(bytes);
+                } catch (Throwable t) {
+                    Log.e("MainActivity", "tree-load: parse threw");
+                    return;
+                }
+                if (handle == 0) {
+                    Log.e("MainActivity", "tree-load failed-closed: native-0");
+                    return;
+                }
+                final long readyHandle = handle;
+                final byte[] readyBytes = bytes;
                 new Handler(Looper.getMainLooper()).post(() -> {
                     if (generation != treeLoadGeneration) {
                         return;
                     }
                     try {
-                        handleTreeBytes(bytes);
+                        handleTreeBytes(readyBytes, readyHandle);
                     } catch (Throwable t) {
                         Log.e("MainActivity", "tree-load: completion threw");
                     }
@@ -344,12 +367,14 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
 
     /**
      * T1 completion hook (runs on the UI thread): fail-closed install of the
-     * tree handle. Signature: void handleTreeBytes(byte[]).
-     * Null/empty bytes or nativeLoadTree == 0 logs
+     * pre-parsed tree handle. The costly parse (null/empty check +
+     * nativeLoadTree + == 0 branch) already ran on the background loader;
+     * this hook only re-validates, installs the handle, sets treeReady, and
+     * calls the T2 gate. Null/empty bytes or handle == 0 logs
      * {@code tree-load failed-closed: <null|empty|native-0>}, leaves
      * {@code engineHandle} at 0, and never throws.
      */
-    void handleTreeBytes(byte[] treeBytes) {
+    void handleTreeBytes(byte[] treeBytes, long handle) {
         try {
             if (treeBytes == null) {
                 Log.e("MainActivity", "tree-load failed-closed: null");
@@ -359,7 +384,6 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                 Log.e("MainActivity", "tree-load failed-closed: empty");
                 return;
             }
-            long handle = nativeLoadTree(treeBytes);
             if (handle == 0) {
                 Log.e("MainActivity", "tree-load failed-closed: native-0");
                 return;

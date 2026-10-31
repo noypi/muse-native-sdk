@@ -28,8 +28,10 @@ check_absent() { # $1 = description, rest = grep -E pattern (must NOT match regi
 echo "== T1 async tree load checks =="
 # 1. Public interface exists verbatim: void startAsyncTreeLoad()
 check "startAsyncTreeLoad() declared (void, no args)" 'void startAsyncTreeLoad\(\)'
-# 2. Test hook exists: package-private handleTreeBytes(byte[])
-check "handleTreeBytes(byte[]) hook declared" 'void handleTreeBytes\(byte\[\]\)'
+# 2. Test hook exists (MAJOR fix): package-private handleTreeBytes(byte[], long)
+#    — parse moved into the treeLoader background lambda; only the resulting
+#    handle is posted to the UI thread.
+check "handleTreeBytes(byte[], long) hook declared" 'void handleTreeBytes\(byte\[\][^)]*, *long'
 # 3. onCreate delegates to startAsyncTreeLoad (no inline sync load)
 check "onCreate calls startAsyncTreeLoad" 'startAsyncTreeLoad\(\)'
 # 4. onCreate must NOT block on the load path: no .get()/.join()/await/Future.get/CountDownLatch.await/Thread.join in onCreate region
@@ -55,5 +57,31 @@ check "fail-closed logcat diagnostic 'tree-load:'" 'tree-load'
 check "engineHandle fail-closed (stays 0 / guarded)" 'engineHandle'
 # 9. Loader never throws: completion path catches Throwable/Exception
 check "loader never throws (catches Throwable|Exception|IOException)" 'catch *\( *(Throwable|Exception|IOException)'
+# 10. MAJOR placement rule: nativeLoadTree runs on the background loader, never
+#     on the UI thread. Split startAsyncTreeLoad at the Handler.post boundary:
+#     the pre-post (background) part must contain nativeLoadTree; the post
+#     (UI-thread callback) tail and the handleTreeBytes hook body must not.
+LOADER_BODY=$(sed -n '/void startAsyncTreeLoad/,/^    }/p' "$SRC")
+BG_BEFORE_POST=$(echo "$LOADER_BODY" | awk '/Handler.*post/{exit} {print}')
+POST_AND_AFTER=$(echo "$LOADER_BODY" | awk '/Handler.*post/{flag=1} flag{print}')
+HOOK_BODY_T1=$(sed -n '/void handleTreeBytes/,/^    }/p' "$SRC")
+if echo "$BG_BEFORE_POST" | grep -Eq 'nativeLoadTree'; then
+  echo "PASS: nativeLoadTree reachable from background-loader lambda region"
+else
+  echo "FAIL: nativeLoadTree reachable from background-loader lambda region"
+  FAIL=$((FAIL+1))
+fi
+if echo "$POST_AND_AFTER" | grep -Eq 'nativeLoadTree'; then
+  echo "FAIL: nativeLoadTree absent from Handler.post UI-thread callback"
+  FAIL=$((FAIL+1))
+else
+  echo "PASS: nativeLoadTree absent from Handler.post UI-thread callback"
+fi
+if echo "$HOOK_BODY_T1" | grep -Eq 'nativeLoadTree'; then
+  echo "FAIL: nativeLoadTree absent from handleTreeBytes hook body (parse is off-UI)"
+  FAIL=$((FAIL+1))
+else
+  echo "PASS: nativeLoadTree absent from handleTreeBytes hook body (parse is off-UI)"
+fi
 echo "== $FAIL failure(s) =="
 exit "$FAIL"
