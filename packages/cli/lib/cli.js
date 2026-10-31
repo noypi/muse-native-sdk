@@ -33,7 +33,7 @@ function loadStages() {
   return ['configure', 'typecheck', 'compile', 'emit', 'native-build', 'package', 'install'];
 }
 
-const ACCEPTED_OPTIONS = '--stage, --print-config, --name, --version, --help, --with-sample, --abi, --release, --modules, --output, --strict, --archs, --packaging, --keystore, --key-alias';
+const ACCEPTED_OPTIONS = '--stage, --print-config, --name, --version, --help, --with-sample, --abi, --release, --modules, --output, --strict, --archs, --packaging, --renderer, --keystore, --key-alias';
 
 // Validate the option layer (`--` flags) of an argv array. Positional
 // operands (the command, `<appDir>`, and the one target operand
@@ -42,13 +42,14 @@ const ACCEPTED_OPTIONS = '--stage, --print-config, --name, --version, --help, --
 // the option and the accepted values for: unknown options,
 // `--flag=value` form
 // (only `--<name> <value>` is accepted), a missing/invalid `--stage`
-// value, and an invalid `--packaging` value (only `fat|split|both`).
+// value, and an invalid `--packaging` value (only `fat|split|both`) or an
+// invalid `--renderer` value (only `cpu|egl|skia`).
 // Never validates config keys — unknown CONFIG keys stay ConfigError
 // (T1/T2).
 function validateOptions(argv) {
   const args = Array.isArray(argv) ? argv : [];
   const STAGES = loadStages();
-  const VALUE_FLAGS = new Set(['--stage', '--name', '--version', '--abi', '--modules', '--output', '--archs', '--packaging', '--keystore', '--key-alias']);
+  const VALUE_FLAGS = new Set(['--stage', '--name', '--version', '--abi', '--modules', '--output', '--archs', '--packaging', '--renderer', '--keystore', '--key-alias']);
   const BOOL_FLAGS = new Set(['--print-config', '--help', '-h', '--with-sample', '--release', '--strict']);
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
@@ -97,6 +98,11 @@ function validateOptions(argv) {
     if (name === '--packaging') {
       if (!['fat', 'split', 'both'].includes(value)) {
         throw new OptionError('--packaging', 'one of: fat, split, both');
+      }
+    }
+    if (name === '--renderer') {
+      if (!['cpu', 'egl', 'skia'].includes(value)) {
+        throw new OptionError('--renderer', 'one of: cpu, egl, skia');
       }
     }
   }

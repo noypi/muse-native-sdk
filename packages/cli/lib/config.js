@@ -12,6 +12,7 @@ const path = require('node:path');
 
 const ALL_ARCHS = ['arm64-v8a', 'armeabi-v7a', 'x86_64', 'x86'];
 const PACKAGING_VALUES = ['fat', 'split', 'both'];
+const RENDERER_VALUES = ['cpu', 'egl', 'skia'];
 
 const SCHEMA = {
   name: 'string',
@@ -25,6 +26,7 @@ const SCHEMA = {
   diagnostics: 'object',
   archs: 'object',
   packaging: 'string',
+  renderer: 'string',
   keystore: 'string',
   keyAlias: 'string',
   storepass: 'string',
@@ -42,6 +44,7 @@ const DEFAULTS = {
   diagnostics: undefined,
   archs: ALL_ARCHS.slice(),
   packaging: 'fat',
+  renderer: 'cpu',
   keystore: path.join(__dirname, '..', 'templates', 'android', 'debug.keystore'),
   keyAlias: 'androiddebugkey',
   storepass: undefined,
@@ -105,6 +108,12 @@ function assertPackagingValue(value, where) {
   }
 }
 
+function assertRendererValue(value, where) {
+  if (!RENDERER_VALUES.includes(value)) {
+    throw new ConfigError('renderer', where, `unknown renderer "${value}", expected one of: ${RENDERER_VALUES.join(', ')}`, 'CFG-BAD-RENDERER');
+  }
+}
+
 // Schema validator: fail closed on unknown keys / wrong value types.
 // Throws ConfigError naming the key, the file, and the expected type;
 // never returns a partial config. Called by resolveConfig before any
@@ -164,6 +173,7 @@ function validateConfig(raw, file) {
   // value + fat/split/both (CFG-BAD-PACKAGING); empty never defaults.
   if (raw.archs !== undefined) assertArchsList(raw.archs, where);
   if (raw.packaging !== undefined) assertPackagingValue(raw.packaging, where);
+  if (raw.renderer !== undefined) assertRendererValue(raw.renderer, where);
 }
 
 function envNameFor(key) {
@@ -478,6 +488,7 @@ function resolveConfig(argv, env, cwd) {
     // accepted set at configure time, before anything merges.
     if (layer.values.archs !== undefined) assertArchsList(layer.values.archs, layer.file);
     if (layer.values.packaging !== undefined) assertPackagingValue(layer.values.packaging, layer.file);
+    if (layer.values.renderer !== undefined) assertRendererValue(layer.values.renderer, layer.file);
   }
 
   const config = {};
@@ -526,4 +537,4 @@ function getOptionSchema() {
   return entries;
 }
 
-module.exports = { SCHEMA, DEFAULTS, ConfigError, resolveConfig, validateConfig, getOptionSchema, readFileLayer, parseMuseSubtree };
+module.exports = { SCHEMA, DEFAULTS, ConfigError, resolveConfig, validateConfig, getOptionSchema, readFileLayer, parseMuseSubtree, assertRendererValue };
