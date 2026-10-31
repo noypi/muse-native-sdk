@@ -421,11 +421,83 @@ static void check_color_and_size_never_throws() {
   CHECK("applyColorAndSize never throws on empty", !threw);
 }
 
+// Security-owned pin (GR-08 T1.13, security-review T3): crafted EXIF length
+// fields must degrade to kNormal and never throw — no allocation is sized by
+// these fields, they gate parsing only.
+static void check_exif_crafted_length_fields() {
+  // (a) JPEG seg_len claiming far beyond len.
+  {
+    std::vector<uint8_t> b = {0xFF, 0xD8, 0xFF, 0xE1, 0xFF, 0xFF, 0x45, 0x78,
+                              0x69, 0x66, 0x00, 0x00, 0x49, 0x49};
+    bool threw = false;
+    media::ExifOrientation o = media::ExifOrientation::kRotate90CW;
+    try {
+      o = media::readExifOrientation(b.data(), b.size());
+    } catch (...) {
+      threw = true;
+    }
+    CHECK("overlong seg_len never throws", !threw);
+    CHECK("overlong seg_len yields kNormal",
+          o == media::ExifOrientation::kNormal);
+  }
+  // (b) PNG chunk_len claiming far beyond len.
+  {
+    std::vector<uint8_t> b = {0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A,
+                              0xFF, 0xFF, 0xFF, 0xFF, 0x65, 0x58, 0x49, 0x46,
+                              0x49, 0x49, 0x2A, 0x00};
+    bool threw = false;
+    media::ExifOrientation o = media::ExifOrientation::kRotate90CW;
+    try {
+      o = media::readExifOrientation(b.data(), b.size());
+    } catch (...) {
+      threw = true;
+    }
+    CHECK("overlong chunk_len never throws", !threw);
+    CHECK("overlong chunk_len yields kNormal",
+          o == media::ExifOrientation::kNormal);
+  }
+  // (c) TIFF ifd_off pointing past the end.
+  {
+    std::vector<uint8_t> tiff = MakeTiffOrientation(6);
+    // ifd offset at bytes 4-7 → 0xFFFFFF00 (far past end).
+    tiff[4] = 0x00;
+    tiff[5] = 0xFF;
+    tiff[6] = 0xFF;
+    tiff[7] = 0xFF;
+    bool threw = false;
+    media::ExifOrientation o = media::ExifOrientation::kRotate90CW;
+    try {
+      o = media::readExifOrientation(tiff.data(), tiff.size());
+    } catch (...) {
+      threw = true;
+    }
+    CHECK("ifd_off past end never throws", !threw);
+    CHECK("ifd_off past end yields kNormal",
+          o == media::ExifOrientation::kNormal);
+  }
+  // (d) Truncated entries: buffer cut mid-entry so e+12 > len.
+  {
+    std::vector<uint8_t> tiff = MakeTiffOrientation(6);
+    tiff.resize(20);  // IFD claims 1 entry (bytes 10-21) but only 10 survive
+    bool threw = false;
+    media::ExifOrientation o = media::ExifOrientation::kRotate90CW;
+    try {
+      o = media::readExifOrientation(tiff.data(), tiff.size());
+    } catch (...) {
+      threw = true;
+    }
+    CHECK("truncated entries never throws", !threw);
+    CHECK("truncated entries yields kNormal",
+          o == media::ExifOrientation::kNormal);
+  }
+}
+
 int main() {
   check_exif_all_orientations_tiff();
   check_exif_all_orientations_jpeg_app1();
   check_exif_png_exif_chunk();
   check_exif_png_idat_magic_ignored();
+  check_exif_crafted_length_fields();
   check_exif_missing_and_corrupt_identity();
   check_orientation_identity_normal();
   check_orientation_remaps();

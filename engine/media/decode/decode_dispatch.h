@@ -29,6 +29,13 @@ struct DecodeRequest {
 // DecodedImage is the shared rich type owned by image_metadata.h
 // (Interface ruling); T2 uploaded semantics unchanged.
 
+// Contract (security-review MEDIUM + LOW): dispatchDecode copies `len` bytes
+// from `bytes` into an owned task-closure buffer on the caller thread, so
+// the caller may release or reuse its `bytes` storage as soon as dispatch
+// returns. The caller must not touch `*out` from dispatch until pool
+// join/shutdown (not just before reading): the worker reads `*out` as its
+// decode seed and writes the upload result, so any concurrent caller access
+// races the worker.
 MediaDecodeOutcome dispatchDecode(core::thread::WorkerPool& pool,
                                  DecodedImage* out, const uint8_t* bytes,
                                  std::size_t len, const DecodeRequest& req);

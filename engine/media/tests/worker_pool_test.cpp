@@ -335,6 +335,107 @@ static void check_malformed_bytes_never_throw() {
   pool.shutdown();
 }
 
+// Security-owned pin (GR-08 T1.13, security-review MEDIUM): the worker parses
+// only from an owned copy, so the caller may release/reuse `bytes` as soon as
+// dispatch returns. Dispatch a heap buffer carrying JPEG APP1 orientation 6,
+// destroy + reuse the heap allocation immediately after the accepted return,
+// and prove the decode still completes with the orientation applied (seed 3x2
+// → transposed 2x3). A worker reading the caller buffer would see garbage
+// (kNormal → dims stay 3x2) or crash.
+static std::vector<uint8_t> MakeLifetimeTiffOri6() {
+  std::vector<uint8_t> b = {0x49, 0x49, 0x2A, 0x00, 0x08, 0x00, 0x00, 0x00,
+                            0x01, 0x00, 0x12, 0x01, 0x03, 0x00, 0x01, 0x00,
+                            0x00, 0x00, 0x06, 0x00, 0x00, 0x00, 0x00, 0x00,
+                            0x00, 0x00};
+  return b;
+}
+
+static std::vector<uint8_t> MakeLifetimeJpegOri6() {
+  const std::vector<uint8_t> tiff = MakeLifetimeTiffOri6();
+  std::vector<uint8_t> b = {0xFF, 0xD8, 0xFF, 0xE1, 0x00, 0x00, 0x45, 0x78,
+                            0x69, 0x66, 0x00, 0x00};
+  b.insert(b.end(), tiff.begin(), tiff.end());
+  const uint16_t seg_len = static_cast<uint16_t>(b.size() - 4 + 2);
+  b[4] = static_cast<uint8_t>((seg_len >> 8) & 0xFF);
+  b[5] = static_cast<uint8_t>(seg_len & 0xFF);
+  b.push_back(0xFF);
+  b.push_back(0xD9);
+  return b;
+}
+
+static media::DecodedImage MakeSeed3x2() {
+  media::DecodedImage img;
+  img.width = 3;
+  img.height = 2;
+  img.colorSpace = media::ColorSpace::kSrgb;
+  img.pixels = {255, 0,   0,   255, 0,   255, 0,   255, 0,   0,   255, 255,
+                0,   255, 255, 255, 255, 0,   255, 255, 255, 255, 0,   255};
+  return img;
+}
+
+static void check_bytes_lifetime_owned_copy() {
+  core::thread::WorkerPool pool(2);
+  core::budget::Manager budget(
+      core::budget::Manager::Config{8ULL << 30, 1ULL << 20});
+  media::DecodeRequest req = MakeReq(&budget, 64);
+  media::DecodedImage out = MakeSeed3x2();
+
+  // Heap buffer per the finding: caller-owned storage released after return.
+  std::vector<uint8_t>* heap =
+      new std::vector<uint8_t>(MakeLifetimeJpegOri6());
+  const uint8_t* raw = heap->data();
+  const std::size_t raw_len = heap->size();
+  media::MediaDecodeOutcome o =
+      media::dispatchDecode(pool, &out, raw, raw_len, req);
+  CHECK("lifetime pin dispatch accepted", o.accepted == true);
+  // Release AND reuse the caller buffer immediately (delete + spray fresh
+  // heap garbage) — the worker must not observe any of this.
+  delete heap;
+  std::vector<uint8_t> spray(4096, 0x00);
+  (void)spray;
+  CHECK("decode completes after caller bytes released",
+        wait_for([&out] { return out.uploaded; }));
+  // Orientation 6 transposes 3x2 → 2x3 only if the owned copy was parsed.
+  CHECK("owned-copy parse applied orientation (2x3)",
+        out.width == 2 && out.height == 3);
+  pool.shutdown();
+}
+
+// Security-owned pin (GR-08 T1.13, security-review LOW): the caller must not
+// touch `*out` from dispatch until pool join/shutdown. Minimal executable pin
+// (no data-race detector): reusing the SAME out object across two dispatches
+// is well-defined only when the first pool has joined — dispatch #2 after
+// shutdown must accept and complete.
+static void check_out_reuse_after_join() {
+  core::budget::Manager budget(
+      core::budget::Manager::Config{8ULL << 30, 1ULL << 20});
+  media::DecodedImage out = MakeSeed3x2();
+
+  {
+    core::thread::WorkerPool pool1(1);
+    media::DecodeRequest req1 = MakeReq(&budget, 64);
+    media::MediaDecodeOutcome o1 = media::dispatchDecode(
+        pool1, &out, kFakeJpeg, kFakeJpegLen, req1);
+    CHECK("first dispatch with shared out accepted", o1.accepted == true);
+    CHECK("first dispatch with shared out completes",
+          wait_for([&out] { return out.uploaded; }));
+    pool1.shutdown();  // join: caller may now touch/reuse *out
+  }
+
+  out.uploaded = false;  // reset the completion flag between joined runs
+  {
+    core::thread::WorkerPool pool2(1);
+    media::DecodeRequest req2 = MakeReq(&budget, 64);
+    media::MediaDecodeOutcome o2 = media::dispatchDecode(
+        pool2, &out, kFakeJpeg, kFakeJpegLen, req2);
+    CHECK("second dispatch with same out after join accepted",
+          o2.accepted == true);
+    CHECK("second dispatch with same out after join completes",
+          wait_for([&out] { return out.uploaded; }));
+    pool2.shutdown();
+  }
+}
+
 int main() {
   check_invalid_arg_shapes();
   check_over_budget_shape();
@@ -345,6 +446,8 @@ int main() {
   check_accepted_decodes_release_budget();
   check_null_budget_rejected();
   check_malformed_bytes_never_throw();
+  check_bytes_lifetime_owned_copy();
+  check_out_reuse_after_join();
   if (s_failures == 0) {
     std::printf("ALL GREEN worker_pool_test\n");
     return 0;
