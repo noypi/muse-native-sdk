@@ -23,7 +23,11 @@ TrimOutcome applyTrim(VramState& state, TrimLevel level) noexcept {
       pct = 100;
       break;
   }
-  const int flushed = nonVisible * pct / 100;
+  const long long flushedWide =
+      static_cast<long long>(nonVisible) * pct / 100;
+  int flushed = static_cast<int>(flushedWide);
+  if (flushed < 0) flushed = 0;
+  if (flushed > nonVisible) flushed = nonVisible;
   state.usedBytes -= flushed;
   if (level == TrimLevel::kRunningLow) {
     state.prefetchEnabled = false;

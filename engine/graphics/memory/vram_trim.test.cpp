@@ -153,6 +153,64 @@ int main() {
     assert(foundCap);
     printf("PASS tier-edges-and-mid-monotone\n");
   }
+  // 11. F1 soak repro: CRITICAL at soak scale flushes exactly 50% of
+  //     non-visible with 64-bit arithmetic (no 32-bit overflow).
+  {
+    VramState s = State(60000000, 50129232, 2322432, true);
+    TrimOutcome o = applyTrim(s, TrimLevel::kRunningCritical);
+    assert(o.status == Status::kOk);
+    assert(o.flushedBytes == 23903400);  // 50% of (50129232 - 2322432).
+    assert(s.usedBytes == 26225832);
+    assert(s.visibleBytes == 2322432);
+    printf("PASS f1-critical-soak-scale-50pct\n");
+  }
+  // 12. F1 soak repro: BACKGROUND at soak scale flushes all non-visible,
+  //     retains visible.
+  {
+    VramState s = State(40000000, 30000000, 1000000, true);
+    TrimOutcome o = applyTrim(s, TrimLevel::kBackground);
+    assert(o.status == Status::kOk);
+    assert(o.flushedBytes == 29000000);  // all of (30000000 - 1000000).
+    assert(s.usedBytes == 1000000);
+    assert(s.visibleBytes == 1000000);
+    printf("PASS f1-background-soak-scale-full-flush\n");
+  }
+  // 13. CRITICAL overflow boundary: nonVisible straddling the old 32-bit
+  //     overflow threshold (~42.9M for pct=50: 42949672*50 < 2^31,
+  //     42949674*50 > 2^31-1). Exact 50% fractions both sides.
+  {
+    VramState s = State(60000000, 43949672, 1000000, true);
+    TrimOutcome o = applyTrim(s, TrimLevel::kRunningCritical);
+    assert(o.status == Status::kOk);
+    assert(o.flushedBytes == 21474836);  // 50% of 42949672.
+    assert(s.usedBytes == 22474836);
+    assert(s.visibleBytes == 1000000);
+    VramState t = State(60000000, 43949674, 1000000, true);
+    TrimOutcome p = applyTrim(t, TrimLevel::kRunningCritical);
+    assert(p.status == Status::kOk);
+    assert(p.flushedBytes == 21474837);  // 50% of 42949674.
+    assert(t.usedBytes == 22474837);
+    assert(t.visibleBytes == 1000000);
+    printf("PASS critical-overflow-boundary-42_9M\n");
+  }
+  // 14. BACKGROUND overflow boundary: nonVisible straddling the old 32-bit
+  //     overflow threshold (~21.5M for pct=100: 21474836*100 < 2^31,
+  //     21474837*100 > 2^31-1). Full flush both sides, visible retained.
+  {
+    VramState s = State(40000000, 22474836, 1000000, true);
+    TrimOutcome o = applyTrim(s, TrimLevel::kBackground);
+    assert(o.status == Status::kOk);
+    assert(o.flushedBytes == 21474836);  // all of 21474836.
+    assert(s.usedBytes == 1000000);
+    assert(s.visibleBytes == 1000000);
+    VramState t = State(40000000, 22474837, 1000000, true);
+    TrimOutcome p = applyTrim(t, TrimLevel::kBackground);
+    assert(p.status == Status::kOk);
+    assert(p.flushedBytes == 21474837);  // all of 21474837.
+    assert(t.usedBytes == 1000000);
+    assert(t.visibleBytes == 1000000);
+    printf("PASS background-overflow-boundary-21_5M\n");
+  }
   printf("ALL VRAM_TRIM TESTS PASSED\n");
   return 0;
 }
