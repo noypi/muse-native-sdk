@@ -27,6 +27,13 @@ add_library(pviews-interop
 target_include_directories(pviews-interop PUBLIC include)
 target_compile_options(pviews-interop PRIVATE -Wall -Wextra -Wpedantic)
 
+# Brownfield host target (FR-PVIEWS-010 / AC-PVIEWS-013).
+add_library(pviews-brownfield
+  src/brownfield.cpp
+)
+target_include_directories(pviews-brownfield PUBLIC include)
+target_compile_options(pviews-brownfield PRIVATE -Wall -Wextra -Wpedantic)
+
 # Semantics merge target (FR-PVIEWS-009 / AC-PVIEWS-011).
 add_library(pviews-semantics
   src/semantics.cpp
@@ -61,3 +68,13 @@ add_executable(semantics_merge_test tests/semantics_merge_test.cpp)
 target_link_libraries(semantics_merge_test PRIVATE pviews-semantics)
 target_compile_options(semantics_merge_test PRIVATE -Wall -Wextra -Wpedantic)
 add_test(NAME semantics_merge COMMAND semantics_merge_test)
+
+add_executable(brownfield_host_test tests/brownfield_host_test.cpp)
+target_link_libraries(brownfield_host_test PRIVATE pviews-brownfield pviews-embed)
+target_compile_options(brownfield_host_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME brownfield_host COMMAND brownfield_host_test)
+
+add_executable(shared_engine_teardown_test tests/shared_engine_teardown_test.cpp)
+target_link_libraries(shared_engine_teardown_test PRIVATE pviews-brownfield pviews-embed)
+target_compile_options(shared_engine_teardown_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME shared_engine_teardown COMMAND shared_engine_teardown_test)
