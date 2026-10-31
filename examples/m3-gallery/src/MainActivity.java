@@ -2,6 +2,8 @@ package com.muse.host;
 
 import android.app.Activity;
 import android.content.BroadcastReceiver;
+import android.content.ClipData;
+import android.content.ClipboardManager;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
@@ -10,6 +12,9 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.text.Editable;
+import android.text.TextWatcher;
+import android.util.Log;
 import android.view.MotionEvent;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
@@ -79,6 +84,36 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
      * focused together on the L7 probe tap path.
      */
     private View inputViewMuseField;
+
+    /**
+     * T8 (BUG-M3-FIDELITY-003 / FR-M3-006): live probe field for the
+     * single instrumented page ("m3-text-probe"). An
+     * {@link IMEInterceptingEditText} (observability-only
+     * {@link EditText} subclass) so every Gboard composition/caret action
+     * on the probe field emits one {@code muse_text} JSON logcat line via
+     * the native sink. Null unless the probe page is showing.
+     */
+    private IMEInterceptingEditText probeField;
+
+    /**
+     * T8 echo guard: while true, programmatic edits (see
+     * {@link #applyRemoteEdit(String)}) suppress the
+     * {@code TextWatcher}→native echo so a remote {@code setText} emits no
+     * {@code text_updated} line of its own. User edits always emit.
+     */
+    private boolean isApplyingRemoteEdit;
+
+    /** T8 clipboard transport for {@code clip_changed} (content + MIME). */
+    private ClipboardManager clipboardManager;
+
+    /** T8 clipboard listener; registered only while the probe field exists. */
+    private final ClipboardManager.OnPrimaryClipChangedListener clipListener =
+            new ClipboardManager.OnPrimaryClipChangedListener() {
+                @Override
+                public void onPrimaryClipChanged() {
+                    reportClipboardChanged();
+                }
+            };
 
     /** Broadcast action the proof pages through (same entry as the tap path). */
     static final String ACTION_NATIVE_ADVANCE_PAGE = "muse.native.NATIVE_ADVANCE_PAGE";
@@ -278,6 +313,17 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     @Override
     protected void onResume() {
         super.onResume();
+        if (probeField != null) {
+            try {
+                clipboardManager =
+                        (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+                if (clipboardManager != null) {
+                    clipboardManager.addPrimaryClipChangedListener(clipListener);
+                }
+            } catch (Throwable ignored) {
+                // Fail-closed: no clipboard observation without a manager.
+            }
+        }
         if (Build.VERSION.SDK_INT >= 33) {
             // Trigger is `adb shell am broadcast` from outside the app, so the
             // receivers must be exported to receive it.
@@ -293,6 +339,15 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
 
     @Override
     protected void onPause() {
+        try {
+            if (clipboardManager != null) {
+                clipboardManager.removePrimaryClipChangedListener(clipListener);
+            }
+        } catch (Throwable ignored) {
+            // Listener was not registered.
+        } finally {
+            clipboardManager = null;
+        }
         try {
             unregisterReceiver(advanceReceiver);
         } catch (IllegalArgumentException ignored) {
@@ -333,12 +388,42 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         title.setText("Text probe page");
         title.setContentDescription("m3-text-probe");
         probe.addView(title);
-        EditText field = new EditText(this);
+        EditText field = new IMEInterceptingEditText(this);
         field.setHint("Probe live field");
         field.setContentDescription("Probe live field");
         field.setTag("m3-text-probe");
         field.setFocusable(true);
         field.setFocusableInTouchMode(true);
+        // T8 observation wiring: TextWatcher content/bound path with the
+        // isApplyingRemoteEdit echo guard (programmatic setText emits no
+        // text_updated of its own; user edits always emit). The touch-caret
+        // (onSelectionChanged) and IME (InputConnection wrapper) paths live
+        // in IMEInterceptingEditText itself; clipboard (content + MIME)
+        // arrives via the OnPrimaryClipChangedListener below.
+        probeField = (IMEInterceptingEditText) field;
+        probeField.addTextChangedListener(new TextWatcher() {
+            @Override
+            public void beforeTextChanged(CharSequence s, int start, int count, int after) {
+            }
+
+            @Override
+            public void onTextChanged(CharSequence s, int start, int before, int count) {
+            }
+
+            @Override
+            public void afterTextChanged(Editable s) {
+                if (isApplyingRemoteEdit) {
+                    return;
+                }
+                try {
+                    if (probeField != null) {
+                        probeField.nativeOnTextUpdated(s != null ? s.toString() : "");
+                    }
+                } catch (Throwable ignored) {
+                    // Fail-closed: observation never breaks the probe field.
+                }
+            }
+        });
         // AC-M3-013 tap summon: when a tap lands the field gains focus first
         // (attached + laid out on screen, EditText accepts input), then hand
         // the already-focused view to IMM so the keyboard reliably appears.
@@ -370,6 +455,71 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                 }
             }
         });
+    }
+
+    /**
+     * T8 clipboard path (AC-M3-014): reports the new primary clip as one
+     * {@code clip_changed} observation (content + MIME) through the probe
+     * field's native sink. Null/empty clips fail closed (no line, no
+     * crash); failures warn under the shared {@code muse_text} tag only.
+     */
+    private void reportClipboardChanged() {
+        if (probeField == null) {
+            return;
+        }
+        try {
+            ClipboardManager manager = clipboardManager != null ? clipboardManager
+                    : (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+            if (manager == null || !manager.hasPrimaryClip()) {
+                return;
+            }
+            ClipData clip = manager.getPrimaryClip();
+            if (clip == null || clip.getItemCount() == 0) {
+                return;
+            }
+            ClipData.Item item = clip.getItemAt(0);
+            CharSequence content = item != null ? item.coerceToText(this) : null;
+            String mime = null;
+            try {
+                if (clip.getDescription() != null && clip.getDescription().getMimeTypeCount() > 0) {
+                    mime = clip.getDescription().getMimeType(0);
+                }
+            } catch (Throwable ignored) {
+                mime = null;
+            }
+            int cursor = 0;
+            try {
+                cursor = Math.max(0, probeField.getSelectionStart());
+            } catch (Throwable ignored) {
+                cursor = 0;
+            }
+            probeField.nativeOnIMEEvent(
+                    "clip_changed",
+                    IMEInterceptingEditText.withClipEnvelope(
+                            content != null ? content.toString() : "", mime),
+                    cursor,
+                    IMEInterceptingEditText.nextEventId());
+        } catch (Throwable t) {
+            Log.w(IMEInterceptingEditText.MUSE_TEXT_TAG, "clip_changed observation failed", t);
+        }
+    }
+
+    /**
+     * T8 echo-guard path: applies a programmatic (remote) edit to the
+     * probe field without emitting a {@code text_updated} echo of its own.
+     * The {@link TextWatcher} suppresses its native echo while
+     * {@code isApplyingRemoteEdit} is set; user edits are unaffected.
+     */
+    void applyRemoteEdit(String text) {
+        if (probeField == null) {
+            return;
+        }
+        isApplyingRemoteEdit = true;
+        try {
+            probeField.setText(text != null ? text : "");
+        } finally {
+            isApplyingRemoteEdit = false;
+        }
     }
 
     /**

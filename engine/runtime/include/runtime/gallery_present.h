@@ -313,3 +313,41 @@ int RunInsetLeg(const char* serial);
 // markers (log -t muse_text) bracket the leg start/steps/finish. Never
 // throws.
 int RunClipboardLeg(const char* serial);
+
+// ---- T8 IME/text/clipboard observation surface (BUG-M3-FIDELITY-003 /
+// FR-M3-006 / AC-M3-011/012/014) ----
+//
+// JNI registration point for the in-app observation surface. The Java probe
+// field (`IMEInterceptingEditText`, an observability-only EditText
+// subclass) forwards every IME/text/clipboard event through
+// `nativeOnIMEEvent` / `nativeOnTextUpdated`; the definitions in
+// `engine/runtime/src/jni_bridge.cpp` form the logcat-relay sink: no heavy
+// work in the callback (copy strings + return), each event emitting exactly
+// one `muse_text` JSON logcat line (`__android_log_print(ANDROID_LOG_DEBUG,
+// "muse_text", ...)` with a canonical monotonically increasing eventId,
+// queryable via `adb logcat -s muse_text`) plus an atomic receive-counter.
+// Fail-closed/never-throw across JNI: exception-check + early return on
+// every entry; null/empty/rapid inputs never crash the process.
+//
+// `text` may carry a trailing metadata envelope (`\x01key=value;...`,
+// produced by the Java envelope helpers for span-carrying and clipboard
+// events); the sink strips it and re-emits `spanStart`/`spanEnd`/`mime`
+// top-level, so the fixed 4-arg JNI signatures are never reshaped.
+// Malformed envelopes fail closed (emitted as plain text). Never throws.
+
+// Relays one IME/clipboard/caret event to the `muse_text` logcat stream.
+// `eventType` is one of the closed 9-member set (composing, commit_text,
+// finish_composing, delete, set_selection, key_event, editor_action,
+// text_updated, clip_changed); `eventId` is the Java-side monotonic hint,
+// canonicalized gap-free by the sink. Null pointers fail closed to empty.
+void EmitMuseTextEvent(const char* eventType, const char* text,
+                       int cursorPosition, long long eventId);
+
+// Relays one TextWatcher content snapshot to the `muse_text` logcat stream
+// (emitted as `type=text_updated` with the sink-owned canonical event id).
+// Null fails closed to empty.
+void EmitMuseTextUpdated(const char* currentText);
+
+// Number of observation lines relayed since process start (counts both
+// entries above). Backed by a relaxed atomic; safe to call from any thread.
+long long MuseTextReceiveCount() noexcept;
