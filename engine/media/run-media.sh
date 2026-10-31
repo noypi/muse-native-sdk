@@ -19,7 +19,11 @@ BIN_FETCH_BRIDGE=$(mktemp /tmp/media-fetch_bridge_test.XXXXXX)
 BIN_CAPS=$(mktemp /tmp/media-host_copy_caps_acceptance_test.XXXXXX)
 BIN_MEDIA_LIFECYCLE_AUDIO_FOCUS=$(mktemp /tmp/media-lifecycle_audio_focus_test.XXXXXX)
 BIN_MEDIA_AUDIO_ENGINE=$(mktemp /tmp/media-audio_engine_test.XXXXXX)
-trap 'rm -f "$BIN_MEDIA_WORKER_POOL" "$BIN_MEDIA_DECODE_METADATA" "$BIN_MEDIA_IMAGE_CACHE" "$BIN_MEDIA_COLOR_SPACE_UPLOAD" "$BIN_MEDIA_ANIMATED_DECODE" "$BIN_MEDIA_ANIMATED_HDR" "$BIN_FETCH_BRIDGE" "$BIN_CAPS" "$BIN_MEDIA_LIFECYCLE_AUDIO_FOCUS" "$BIN_MEDIA_AUDIO_ENGINE"' EXIT
+BIN_MEDIA_ZERO_COPY_FRAME=$(mktemp /tmp/media-zero_copy_frame_test.XXXXXX)
+BIN_MEDIA_DRM_SESSION=$(mktemp /tmp/media-drm_session_test.XXXXXX)
+BIN_MEDIA_DOWNLOAD_RESUME=$(mktemp /tmp/media-download_resume_test.XXXXXX)
+BIN_MEDIA_PLAYBACK_PIPELINE=$(mktemp /tmp/media-playback_pipeline_test.XXXXXX)
+trap 'rm -f "$BIN_MEDIA_WORKER_POOL" "$BIN_MEDIA_DECODE_METADATA" "$BIN_MEDIA_IMAGE_CACHE" "$BIN_MEDIA_COLOR_SPACE_UPLOAD" "$BIN_MEDIA_ANIMATED_DECODE" "$BIN_MEDIA_ANIMATED_HDR" "$BIN_FETCH_BRIDGE" "$BIN_CAPS" "$BIN_MEDIA_LIFECYCLE_AUDIO_FOCUS" "$BIN_MEDIA_AUDIO_ENGINE" "$BIN_MEDIA_ZERO_COPY_FRAME" "$BIN_MEDIA_DRM_SESSION" "$BIN_MEDIA_DOWNLOAD_RESUME" "$BIN_MEDIA_PLAYBACK_PIPELINE"' EXIT
 
 g++ -std=c++17 -Wall -Wextra -Wpedantic -I . -I engine/core/thread/include -I engine/core/budget/include engine/media/tests/worker_pool_test.cpp engine/media/decode/decode_dispatch.cc engine/core/thread/src/worker_pool.cpp engine/core/budget/src/manager.cpp engine/graphics/textures/texture_pool.cc -o "$BIN_MEDIA_WORKER_POOL"
 "$BIN_MEDIA_WORKER_POOL"
@@ -50,3 +54,15 @@ g++ -std=c++17 -Wall -Wextra -Wpedantic -I . engine/media/tests/lifecycle_audio_
 
 g++ -std=c++17 -Wall -Wextra -Wpedantic -I . engine/media/tests/audio_engine_test.cpp -o "$BIN_MEDIA_AUDIO_ENGINE"
 "$BIN_MEDIA_AUDIO_ENGINE"
+
+g++ -std=c++17 -Wall -Wextra -Wpedantic -I . engine/media/tests/zero_copy_frame_test.cpp engine/media/src/zero_copy_frame.cc -o "$BIN_MEDIA_ZERO_COPY_FRAME"
+"$BIN_MEDIA_ZERO_COPY_FRAME"
+
+g++ -std=c++17 -Wall -Wextra -Wpedantic -I . engine/media/tests/drm_session_test.cpp engine/media/src/drm_session.cc -o "$BIN_MEDIA_DRM_SESSION"
+"$BIN_MEDIA_DRM_SESSION"
+
+g++ -std=c++17 -Wall -Wextra -Wpedantic -I . engine/media/tests/download_resume_test.cpp engine/media/src/download_resume.cc -o "$BIN_MEDIA_DOWNLOAD_RESUME"
+"$BIN_MEDIA_DOWNLOAD_RESUME"
+
+g++ -std=c++17 -Wall -Wextra -Wpedantic -I . engine/media/tests/playback_pipeline_test.cpp engine/media/src/playback_pipeline.cc -o "$BIN_MEDIA_PLAYBACK_PIPELINE"
+"$BIN_MEDIA_PLAYBACK_PIPELINE"
