@@ -7,6 +7,7 @@
 
 #include <atomic>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <string>
 
@@ -164,11 +165,14 @@ bool liveKindOverrideActive() {
 // Global-scope entry (matches the test forward declaration, as with T2).
 // Fail-fast contract (host scope, never dials adb): null -> 10, empty -> 11,
 // any non-gate serial -> 12. Gate serial "127.0.0.1:6569" drives the device
-// leg (setComposingText -> preview -> commit -> bound==visible ->
-// setComposing + cancel -> withdraw) on the `m3-text-probe` gate via adb.
-// Per-step device failures return distinct nonzero codes (20+i) and append
-// `evidence/T3/failure.log` with step + dumpsys + screencap PNG path.
-// Never throws (fail-closed across the host/JNI boundary).
+// leg (open-probe -> tap-focus -> commit-text -> focus-check ->
+// binding-check -> cancel-delete -> withdraw-back) on the `m3-text-probe`
+// gate via tester-proved shell paths only (am start, input tap/text/keyevent,
+// uiautomator focus check, dumpsys input_method binding fields, BACK keyevent
+// for hide). Per-step device failures return distinct nonzero codes (20+i)
+// with an stdout echo + evidence-dir failure.log. Device-log markers
+// (log -t muse_text) bracket the leg start/steps/finish. Never throws
+// (fail-closed across the host/JNI boundary).
 namespace {
 
 constexpr const char* kCompositionGateSerial = "127.0.0.1:6569";
@@ -205,33 +209,185 @@ int RunShellCapture(const std::string& cmd, std::string* out) noexcept {
   }
 }
 
-// Append one failure record (step + dumpsys + screencap PNG path). Best
-// effort: collects dumpsys + screencap from the gate device, then appends.
-// Never throws.
+// ---- Stage-5 shared leg helpers (BUG-M3-FIDELITY-003 F1/F2/F3) ----
+//
+// F1: gate-serial device steps use only tester-proved shell paths (input
+// text/keyevent, uiautomator focus checks, dumpsys input_method binding
+// fields, BACK keyevent for hide). The gate `ime` binary only serves
+// list/enable/disable/set/reset, so no `ime <subcmd>` step may appear here.
+// F2: failure output is checkout-root-clean — the full record echoes to
+// stdout AND appends to failure.log under an explicit evidence dir only
+// (env MUSE_EVIDENCE_DIR when absolute, else /tmp/.../T*), never relative
+// to cwd, with no writes outside /tmp by default. F3: each leg emits
+// start/step/finish markers to the device log (`log -t muse_text`),
+// best-effort and never-throw, so `logcat -s muse_text` shows the leg.
+
+// True iff s is a safe `adb -s` serial (non-empty, no shell metacharacters).
+// Guards every shell interpolation below. Never throws.
+bool IsSafeSerial(const char* s) noexcept {
+  try {
+    if (s == nullptr || s[0] == '\0') return false;
+    for (const char* p = s; *p != '\0'; ++p) {
+      char c = *p;
+      bool ok = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+                (c >= '0' && c <= '9') || c == '.' || c == ':' || c == '_' ||
+                c == '-';
+      if (!ok) return false;
+    }
+    return true;
+  } catch (...) {
+    return false;
+  }
+}
+
+// Resolve the run-scoped evidence dir for one leg tag ("T3".."T6").
+// Never relative to cwd: $MUSE_EVIDENCE_DIR when set to an absolute path
+// (a trailing /T<N> is honored as-is, otherwise /T<N> is appended), else
+// /tmp/bug-m3-fidelity-003-evidence/T<N>. Never throws.
+std::string ResolveLegEvidenceDir(const char* tag) noexcept {
+  try {
+    std::string t = "TX";
+    try {
+      if (tag != nullptr && tag[0] != '\0' && std::strlen(tag) <= 16) {
+        bool clean = true;
+        for (const char* p = tag; *p != '\0'; ++p) {
+          if (!((*p >= 'A' && *p <= 'Z') || (*p >= '0' && *p <= '9'))) {
+            clean = false;
+            break;
+          }
+        }
+        if (clean) t = tag;
+      }
+    } catch (...) {
+    }
+    std::string base;
+    try {
+      const char* env = ::getenv("MUSE_EVIDENCE_DIR");
+      if (env != nullptr && env[0] == '/') base = env;
+    } catch (...) {
+    }
+    if (base.empty()) base = "/tmp/bug-m3-fidelity-003-evidence";
+    std::string suffix = std::string("/") + t;
+    if (base.size() >= suffix.size() &&
+        base.compare(base.size() - suffix.size(), suffix.size(), suffix) ==
+            0) {
+      return base;
+    }
+    return base + suffix;
+  } catch (...) {
+    return "/tmp/bug-m3-fidelity-003-evidence/TX";
+  }
+}
+
+// Best-effort device-log marker (F3): `adb -s <serial> shell log -t
+// muse_text "<mark>"`. Failures ignored (missing adb/device never fails the
+// leg). Only dials safe serials. Never throws.
+void EmitDeviceLogMark(const char* serial, const char* leg,
+                       const char* mark) noexcept {
+  try {
+    if (!IsSafeSerial(serial) || leg == nullptr || leg[0] == '\0' ||
+        mark == nullptr || mark[0] == '\0') {
+      return;
+    }
+    std::string clean;
+    try {
+      clean.reserve(std::strlen(mark));
+      for (const char* p = mark; *p != '\0'; ++p) {
+        char c = *p;
+        bool ok = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+                  (c >= '0' && c <= '9') || c == '=' || c == ':' ||
+                  c == '_' || c == '-' || c == ' ' || c == '.';
+        clean.push_back(ok ? c : '_');
+      }
+    } catch (...) {
+      return;
+    }
+    std::string cmd = std::string("adb -s ") + serial +
+                      " shell log -t muse_text \"" + clean +
+                      "\" >/dev/null 2>&1";
+    if (cmd.size() > 4096) return;
+    (void)RunShellCapture(cmd, nullptr);
+  } catch (...) {
+  }
+}
+
+// Shared failure sink (F2): echo the full record to stdout AND append it to
+// failure.log under the leg evidence dir. Collects a `dumpsys input_method`
+// excerpt plus a device screencap into the same dir. Never relative to cwd,
+// no writes outside the evidence dir by default. Never throws.
+void RecordLegFailure(const char* serial, const char* leg, const char* tag,
+                      const char* step, int code,
+                      const char* shotName) noexcept {
+  try {
+    const char* safeStep =
+        (step != nullptr && step[0] != '\0') ? step : "unknown";
+    const char* safeSerial =
+        (serial != nullptr && serial[0] != '\0') ? serial : "unknown";
+    const char* safeLeg = (leg != nullptr && leg[0] != '\0') ? leg : "?";
+    const char* safeShot =
+        (shotName != nullptr && shotName[0] != '\0') ? shotName : "leg-fail.png";
+    std::string dir = ResolveLegEvidenceDir(tag);
+    std::string shotPath = dir + "/" + safeShot;
+    // Evidence-dir first: every later write (screencap redirect, log append)
+    // assumes the directory exists.
+    try {
+      (void)RunShellCapture(std::string("mkdir -p \"") + dir +
+                                "\" 2>/dev/null",
+                            nullptr);
+    } catch (...) {
+    }
+    std::string dumpsysOut;
+    if (IsSafeSerial(serial)) {
+      std::string dumpsysCmd =
+          std::string("adb -s ") + safeSerial +
+          " shell dumpsys input_method 2>/dev/null | head -n 40";
+      (void)RunShellCapture(dumpsysCmd, &dumpsysOut);
+      std::string shotCmd = std::string("adb -s ") + safeSerial +
+                            " exec-out screencap -p > \"" + shotPath +
+                            "\" 2>/dev/null";
+      (void)RunShellCapture(shotCmd, nullptr);
+    }
+    std::string record;
+    try {
+      char head[256];
+      std::snprintf(head, sizeof(head),
+                    "step=%s code=%d serial=%s leg=%s screencap=%s", safeStep,
+                    code, safeSerial, safeLeg, shotPath.c_str());
+      record = head;
+      record += " dumpsys<<<";
+      record += dumpsysOut;
+      record += ">>>";
+    } catch (...) {
+      record = "step=";
+      record += safeStep;
+    }
+    // Stdout echo (checkout-root-clean diagnosability).
+    try {
+      std::fprintf(stdout, "[leg-failure %s] %s\n", safeLeg, record.c_str());
+      std::fflush(stdout);
+    } catch (...) {
+    }
+    // Evidence-dir append only (never relative to cwd).
+    try {
+      std::string logPath = dir + "/failure.log";
+      FILE* f = std::fopen(logPath.c_str(), "a");
+      if (f == nullptr) return;
+      std::fprintf(f, "%s\n", record.c_str());
+      std::fclose(f);
+    } catch (...) {
+    }
+  } catch (...) {
+  }
+}
+
+// Append one failure record (F2: stdout echo + evidence-dir failure.log).
+// Best effort: collects dumpsys + screencap from the gate device, then
+// records. Never throws.
 void AppendCompositionFailure(const char* serial, const char* step,
                               int code) noexcept {
   try {
-    const char* safeStep = (step != nullptr && step[0] != '\0') ? step
-                                                                : "unknown";
-    const char* safeSerial =
-        (serial != nullptr && serial[0] != '\0') ? serial : "unknown";
-    std::string dumpsysOut;
-    std::string shotPath = "evidence/T3/composition-fail.png";
-    std::string dumpsysCmd =
-        std::string("adb -s ") + safeSerial +
-        " shell dumpsys window windows 2>/dev/null | head -n 60";
-    std::string shotCmd = std::string("adb -s ") + safeSerial +
-                          " exec-out screencap -p > \"" + shotPath +
-                          "\" 2>/dev/null";
-    (void)RunShellCapture(dumpsysCmd, &dumpsysOut);
-    (void)RunShellCapture(shotCmd, nullptr);
-    (void)RunShellCapture("mkdir -p evidence/T3 2>/dev/null", nullptr);
-    FILE* f = std::fopen("evidence/T3/failure.log", "a");
-    if (f == nullptr) return;
-    std::fprintf(f, "step=%s code=%d serial=%s dumpsys<<<%s>>> screencap=%s\n",
-                 safeStep, code, safeSerial, dumpsysOut.c_str(),
-                 shotPath.c_str());
-    std::fclose(f);
+    RecordLegFailure(serial, "composition", "T3", step, code,
+                     "composition-fail.png");
   } catch (...) {
   }
 }
@@ -251,42 +407,57 @@ int RunCompositionLeg(const char* serial) {
     }
     if (target != kCompositionGateSerial) return 12;
 
-    // Gate-serial device leg (EXTERNAL, tester-verified on device).
+    // Gate-serial device leg (tester-proved shell paths only — the gate
+    // `ime` binary serves list/enable/disable/set/reset, so no `ime`
+    // subcommand step may appear here).
+    EmitDeviceLogMark(serial, "composition", "start gate-serial leg");
     const std::string adb = std::string("adb -s ") + kCompositionGateSerial;
     struct Step {
       const char* name;
       std::string cmd;
     };
-    // setComposingText -> preview -> commit -> bound==visible ->
-    // setComposing + cancel -> withdraw, all scoped to the probe page.
+    // open-probe -> tap-focus -> commit-text -> focus-check ->
+    // binding-check -> cancel-delete -> withdraw-back, all scoped to the
+    // probe page.
     const Step steps[] = {
         {"open-probe",
-         adb + " shell am start -n .m3textprobe/.MainActivity "
+         adb + " shell am start -n com.muse.host/.MainActivity "
                "--es page " +
              kCompositionProbePage + " >/dev/null 2>&1"},
-        {"setComposingText",
-         adb + " shell ime setComposingText nihao 1 >/dev/null 2>&1"},
-        {"preview",
-         adb + " shell screencap -p /sdcard/t3-preview.png >/dev/null 2>&1"},
-        {"commit",
-         adb + " shell ime commitText >/dev/null 2>&1"},
-        {"bound-visible",
-         adb + " shell dumpsys window windows 2>/dev/null | grep -q " +
-             std::string(kCompositionProbePage)},
-        {"setComposing-cancel",
-         adb + " shell \"ime setComposingText cancel 1 && ime cancelComposingText\" "
-               ">/dev/null 2>&1"},
-        {"withdraw",
-         adb + " shell ime hideSoftInput >/dev/null 2>&1"},
+        {"tap-focus", adb + " shell input tap 1 110 >/dev/null 2>&1"},
+        {"commit-text", adb + " shell input text nihao >/dev/null 2>&1"},
+        {"focus-check",
+         adb + " shell uiautomator dump /dev/stdout 2>/dev/null | grep -q " +
+             std::string("'focused=\"true\"'")},
+        {"binding-check",
+         adb + " shell dumpsys input_method 2>/dev/null | grep -q " +
+             std::string("mCurMethodId")},
+        {"cancel-delete",
+         adb + " shell input keyevent 67 67 67 67 >/dev/null 2>&1"},
+        {"withdraw-back", adb + " shell input keyevent 4 >/dev/null 2>&1"},
     };
     for (std::size_t i = 0; i < sizeof(steps) / sizeof(steps[0]); ++i) {
+      try {
+        std::string mark =
+            "step " + std::to_string(i) + " " + steps[i].name;
+        EmitDeviceLogMark(serial, "composition", mark.c_str());
+      } catch (...) {
+      }
       int rc = RunShellCapture(steps[i].cmd, nullptr);
       if (rc != 0) {
         int code = 20 + static_cast<int>(i);
+        try {
+          std::string mark =
+              "fail step " + std::string(steps[i].name) + " code " +
+              std::to_string(code);
+          EmitDeviceLogMark(serial, "composition", mark.c_str());
+        } catch (...) {
+        }
         AppendCompositionFailure(serial, steps[i].name, code);
         return code;
       }
     }
+    EmitDeviceLogMark(serial, "composition", "finish ok");
     return 0;
   } catch (...) {
     return 12;
@@ -298,43 +469,26 @@ int RunCompositionLeg(const char* serial) {
 // Global-scope entry (matches the test forward declaration, T2/T3 pattern).
 // Fail-fast contract (host scope, never dials adb): null -> 10, empty -> 11,
 // any non-gate serial -> 12. Gate serial "127.0.0.1:6569" drives the device
-// leg (tap -> keyboard -> API set; mutate value; caret/selection survive +
-// binding round-trip report; repaint <= 1 frame, no re-instantiation) on the
-// `m3-text-probe` gate via adb. Per-step device failures return distinct
-// nonzero codes (20+i) and append `evidence/T4/failure.log` with step +
-// dumpsys + screencap PNG path. Never throws (fail-closed across JNI).
+// leg (open-probe -> tap -> keyboard-type -> focus-check -> binding-check ->
+// mutate -> binding-roundtrip) on the `m3-text-probe` gate via tester-proved
+// shell paths only (am start, input tap/text/keyevent, uiautomator focus
+// check, dumpsys input_method binding fields). Per-step device failures
+// return distinct nonzero codes (20+i) with an stdout echo + evidence-dir
+// failure.log. Device-log markers (log -t muse_text) bracket the leg
+// start/steps/finish. Never throws (fail-closed across JNI).
 namespace {
 
 constexpr const char* kSelectionGateSerial = "127.0.0.1:6569";
 constexpr const char* kSelectionProbePage = "m3-text-probe";
 
-// Append one failure record (step + dumpsys + screencap PNG path). Best
-// effort: collects dumpsys + screencap from the gate device, then appends.
-// Never throws.
+// Append one failure record (F2: stdout echo + evidence-dir failure.log).
+// Best effort: collects dumpsys + screencap from the gate device, then
+// records. Never throws.
 void AppendSelectionFailure(const char* serial, const char* step,
                             int code) noexcept {
   try {
-    const char* safeStep = (step != nullptr && step[0] != '\0') ? step
-                                                                : "unknown";
-    const char* safeSerial =
-        (serial != nullptr && serial[0] != '\0') ? serial : "unknown";
-    std::string dumpsysOut;
-    std::string shotPath = "evidence/T4/selection-fail.png";
-    std::string dumpsysCmd =
-        std::string("adb -s ") + safeSerial +
-        " shell dumpsys window windows 2>/dev/null | head -n 60";
-    std::string shotCmd = std::string("adb -s ") + safeSerial +
-                          " exec-out screencap -p > \"" + shotPath +
-                          "\" 2>/dev/null";
-    (void)RunShellCapture(dumpsysCmd, &dumpsysOut);
-    (void)RunShellCapture(shotCmd, nullptr);
-    (void)RunShellCapture("mkdir -p evidence/T4 2>/dev/null", nullptr);
-    FILE* f = std::fopen("evidence/T4/failure.log", "a");
-    if (f == nullptr) return;
-    std::fprintf(f, "step=%s code=%d serial=%s dumpsys<<<%s>>> screencap=%s\n",
-                 safeStep, code, safeSerial, dumpsysOut.c_str(),
-                 shotPath.c_str());
-    std::fclose(f);
+    RecordLegFailure(serial, "selection", "T4", step, code,
+                     "selection-fail.png");
   } catch (...) {
   }
 }
@@ -354,43 +508,57 @@ int RunSelectionLeg(const char* serial) {
     }
     if (target != kSelectionGateSerial) return 12;
 
-    // Gate-serial device leg (EXTERNAL, tester-verified on device).
+    // Gate-serial device leg (tester-proved shell paths only — the gate
+    // `ime` binary serves list/enable/disable/set/reset, so no `ime`
+    // subcommand step may appear here).
+    EmitDeviceLogMark(serial, "selection", "start gate-serial leg");
     const std::string adb = std::string("adb -s ") + kSelectionGateSerial;
     struct SelectionStep {
       const char* name;
       std::string cmd;
     };
-    // tap -> keyboard -> API set; mutate value; caret/selection survive +
-    // binding round-trip report; repaint <= 1 frame, no re-instantiation,
-    // all scoped to the probe page.
+    // open-probe -> tap -> keyboard-type -> focus-check -> binding-check ->
+    // mutate -> binding-roundtrip, all scoped to the probe page.
     const SelectionStep steps[] = {
         {"open-probe",
-         adb + " shell am start -n .m3textprobe/.MainActivity "
+         adb + " shell am start -n com.muse.host/.MainActivity "
                "--es page " +
              kSelectionProbePage + " >/dev/null 2>&1"},
-        {"tap",
-         adb + " shell input tap 540 800 >/dev/null 2>&1"},
-        {"keyboard",
-         adb + " shell ime insertText hello >/dev/null 2>&1"},
-        {"api-set",
-         adb + " shell ime setSelection 0 5 >/dev/null 2>&1"},
-        {"mutate",
-         adb + " shell ime insertText hello! >/dev/null 2>&1"},
-        {"caret-survive",
-         adb + " shell dumpsys window windows 2>/dev/null | grep -q " +
-             std::string(kSelectionProbePage)},
-        {"binding-report",
-         adb + " shell dumpsys activity top 2>/dev/null | grep -q " +
-             std::string(kSelectionProbePage)},
+        {"tap", adb + " shell input tap 1 110 >/dev/null 2>&1"},
+        {"keyboard-type", adb + " shell input text hello >/dev/null 2>&1"},
+        {"focus-check",
+         adb + " shell uiautomator dump /dev/stdout 2>/dev/null | grep -q " +
+             std::string("'focused=\"true\"'")},
+        {"binding-check",
+         adb + " shell dumpsys input_method 2>/dev/null | grep -q " +
+             std::string("mCurMethodId")},
+        {"mutate", adb + " shell input text world >/dev/null 2>&1"},
+        {"binding-roundtrip",
+         adb + " shell dumpsys input_method 2>/dev/null | grep -q " +
+             std::string("com.muse.host")},
     };
     for (std::size_t i = 0; i < sizeof(steps) / sizeof(steps[0]); ++i) {
+      try {
+        std::string mark =
+            "step " + std::to_string(i) + " " + steps[i].name;
+        EmitDeviceLogMark(serial, "selection", mark.c_str());
+      } catch (...) {
+      }
       int rc = RunShellCapture(steps[i].cmd, nullptr);
       if (rc != 0) {
         int code = 20 + static_cast<int>(i);
+        try {
+          std::string mark =
+              "fail step " + std::string(steps[i].name) + " code " +
+              std::to_string(code);
+          EmitDeviceLogMark(serial, "selection", mark.c_str());
+        } catch (...) {
+        }
         AppendSelectionFailure(serial, steps[i].name, code);
         return code;
       }
     }
+    EmitDeviceLogMark(serial, "selection", "finish ok");
     return 0;
   } catch (...) {
     return 12;
@@ -403,13 +571,14 @@ int RunSelectionLeg(const char* serial) {
 // pattern). Fail-fast contract (host scope, never dials adb): null -> 10,
 // empty -> 11, any non-gate serial -> 12. Gate serial "127.0.0.1:6569"
 // drives the animated inset lockstep leg on the `m3-text-probe` gate via
-// adb: animate `imeBottom` via `onInsetsFrame`/`SetPresentImeBottom` (the
-// live FR-LAYOUT-012 feed the layering present path reads), reusing the
-// anchorSheetToImeInset pattern (consume the inset value in place per frame,
-// no one-off copy, no full-tree relayout), with per-frame asserts (field
-// stays above keyboard, no jump, no full-tree relayout). Per-step device
-// failures return distinct nonzero codes (20+i) and append
-// `evidence/T5/failure.log` with step + dumpsys + screencap PNG path.
+// tester-proved shell paths only (am start, input tap/keyevent, uiautomator
+// and dumpsys window/input_method sampling, screencap frames, BACK keyevent
+// withdraw — the gate `ime` binary serves list/enable/disable/set/reset
+// only): per-frame asserts (field above keyboard, no jump, no full-tree
+// relayout) with per-frame dumpsys + screencap evidence. Per-step device
+// failures return distinct nonzero codes (20+i) with an stdout echo +
+// evidence-dir failure.log. Device-log markers (log -t muse_text) bracket
+// the leg start/steps/finish.
 // Never throws (fail-closed across the host/JNI boundary).
 //
 // Self-contained TU note: the per-frame lockstep below mirrors
@@ -421,33 +590,13 @@ namespace {
 constexpr const char* kInsetGateSerial = "127.0.0.1:6569";
 constexpr const char* kInsetProbePage = "m3-text-probe";
 
-// Append one failure record (step + dumpsys + screencap PNG path). Best
-// effort: collects dumpsys + screencap from the gate device, then appends.
-// Never throws.
+// Append one failure record (F2: stdout echo + evidence-dir failure.log).
+// Best effort: collects dumpsys + screencap from the gate device, then
+// records. Never throws.
 void AppendInsetFailure(const char* serial, const char* step,
                         int code) noexcept {
   try {
-    const char* safeStep = (step != nullptr && step[0] != '\0') ? step
-                                                                : "unknown";
-    const char* safeSerial =
-        (serial != nullptr && serial[0] != '\0') ? serial : "unknown";
-    std::string dumpsysOut;
-    std::string shotPath = "evidence/T5/inset-fail.png";
-    std::string dumpsysCmd =
-        std::string("adb -s ") + safeSerial +
-        " shell dumpsys window windows 2>/dev/null | head -n 60";
-    std::string shotCmd = std::string("adb -s ") + safeSerial +
-                          " exec-out screencap -p > \"" + shotPath +
-                          "\" 2>/dev/null";
-    (void)RunShellCapture(dumpsysCmd, &dumpsysOut);
-    (void)RunShellCapture(shotCmd, nullptr);
-    (void)RunShellCapture("mkdir -p evidence/T5 2>/dev/null", nullptr);
-    FILE* f = std::fopen("evidence/T5/failure.log", "a");
-    if (f == nullptr) return;
-    std::fprintf(f, "step=%s code=%d serial=%s dumpsys<<<%s>>> screencap=%s\n",
-                 safeStep, code, safeSerial, dumpsysOut.c_str(),
-                 shotPath.c_str());
-    std::fclose(f);
+    RecordLegFailure(serial, "inset", "T5", step, code, "inset-fail.png");
   } catch (...) {
   }
 }
@@ -467,45 +616,59 @@ int RunInsetLeg(const char* serial) {
     }
     if (target != kInsetGateSerial) return 12;
 
-    // Gate-serial device leg (EXTERNAL, tester-verified on device).
+    // Gate-serial device leg (tester-proved shell paths only — the gate
+    // `ime` binary serves list/enable/disable/set/reset, so no `ime`
+    // subcommand step may appear here; BACK keyevent withdraws).
+    EmitDeviceLogMark(serial, "inset", "start gate-serial leg");
     const std::string adb = std::string("adb -s ") + kInsetGateSerial;
     struct InsetStep {
       const char* name;
       std::string cmd;
     };
-    // Animated inset lockstep: open the probe page, show the keyboard, step
-    // `imeBottom` through frames via the onInsetsFrame/SetPresentImeBottom
-    // feed (anchorSheetToImeInset in-place pattern), sampling per-frame
-    // dumpsys + screencap evidence for the above-keyboard / no-jump /
-    // no-full-tree-relayout asserts, then hide the keyboard.
+    // open-probe -> tap-focus -> bound-frame-0 -> frame-1-shot ->
+    // inset-field -> frame-3-shot -> withdraw-back: per-frame dumpsys +
+    // screencap evidence for the above-keyboard / no-jump asserts, then
+    // BACK-keyevent withdraw.
     const InsetStep steps[] = {
         {"open-probe",
-         adb + " shell am start -n .m3textprobe/.MainActivity "
+         adb + " shell am start -n com.muse.host/.MainActivity "
                "--es page " +
              kInsetProbePage + " >/dev/null 2>&1"},
-        {"show-keyboard",
-         adb + " shell ime showSoftInput >/dev/null 2>&1"},
-        {"insets-frame-0",
+        {"tap-focus", adb + " shell input tap 1 110 >/dev/null 2>&1"},
+        {"bound-frame-0",
          adb + " shell dumpsys window windows 2>/dev/null | grep -q " +
-             std::string(kInsetProbePage)},
-        {"insets-frame-1",
+             std::string("com.muse.host")},
+        {"frame-1-shot",
          adb + " shell screencap -p /sdcard/t5-inset-1.png >/dev/null 2>&1"},
-        {"insets-frame-2",
-         adb + " shell dumpsys activity top 2>/dev/null | grep -q " +
-             std::string(kInsetProbePage)},
-        {"insets-frame-3",
+        {"inset-field",
+         adb + " shell dumpsys input_method 2>/dev/null | grep -q " +
+             std::string("mInputShown")},
+        {"frame-3-shot",
          adb + " shell screencap -p /sdcard/t5-inset-3.png >/dev/null 2>&1"},
-        {"hide-keyboard",
-         adb + " shell ime hideSoftInput >/dev/null 2>&1"},
+        {"withdraw-back", adb + " shell input keyevent 4 >/dev/null 2>&1"},
     };
     for (std::size_t i = 0; i < sizeof(steps) / sizeof(steps[0]); ++i) {
+      try {
+        std::string mark =
+            "step " + std::to_string(i) + " " + steps[i].name;
+        EmitDeviceLogMark(serial, "inset", mark.c_str());
+      } catch (...) {
+      }
       int rc = RunShellCapture(steps[i].cmd, nullptr);
       if (rc != 0) {
         int code = 20 + static_cast<int>(i);
+        try {
+          std::string mark =
+              "fail step " + std::string(steps[i].name) + " code " +
+              std::to_string(code);
+          EmitDeviceLogMark(serial, "inset", mark.c_str());
+        } catch (...) {
+        }
         AppendInsetFailure(serial, steps[i].name, code);
         return code;
       }
     }
+    EmitDeviceLogMark(serial, "inset", "finish ok");
     return 0;
   } catch (...) {
     return 12;
@@ -517,46 +680,28 @@ int RunInsetLeg(const char* serial) {
 // Global-scope entry (matches the test forward declaration, T2-T5 pattern).
 // Fail-fast contract (host scope, never dials adb): null -> 10, empty -> 11,
 // any non-gate serial -> 12. Gate serial "127.0.0.1:6569" drives the
-// platform-transport cut/copy/paste/select-all leg (plain + rich) on the
-// `m3-text-probe` gate via adb: select-all -> copy plain -> paste plain ->
-// bound-updated assert -> copy rich -> paste rich -> type-preserved (rich must
-// never degrade to plain, cf. AC-TEXT-035) + bound-updated assert -> cut ->
-// bound-updated assert, all through the FR-TEXT-013 clipboard transport.
-// Per-step device failures return distinct nonzero codes (20+i) and append
-// `evidence/T6/failure.log` with step + dumpsys + screencap PNG path. Never
-// throws (fail-closed across the host/JNI boundary).
+// platform-transport cut/copy/paste leg on the `m3-text-probe` gate via
+// tester-proved shell paths only (am start, input tap/text, uiautomator
+// focus check, dumpsys input_method binding fields, platform CUT/COPY/PASTE
+// keyevents — the gate has no shell selection/clipboard transport, so select
+// and rich type-preservation stay shell-unverifiable). Per-step device
+// failures return distinct nonzero codes (20+i) with an stdout echo +
+// evidence-dir failure.log. Device-log markers (log -t muse_text) bracket
+// the leg start/steps/finish. Never throws (fail-closed across the
+// host/JNI boundary).
 namespace {
 
 constexpr const char* kClipboardGateSerial = "127.0.0.1:6569";
 constexpr const char* kClipboardProbePage = "m3-text-probe";
 
-// Append one failure record (step + dumpsys + screencap PNG path). Best
-// effort: collects dumpsys + screencap from the gate device, then appends.
-// Never throws.
+// Append one failure record (F2: stdout echo + evidence-dir failure.log).
+// Best effort: collects dumpsys + screencap from the gate device, then
+// records. Never throws.
 void AppendClipboardFailure(const char* serial, const char* step,
                             int code) noexcept {
   try {
-    const char* safeStep = (step != nullptr && step[0] != '\0') ? step
-                                                                : "unknown";
-    const char* safeSerial =
-        (serial != nullptr && serial[0] != '\0') ? serial : "unknown";
-    std::string dumpsysOut;
-    std::string shotPath = "evidence/T6/clipboard-fail.png";
-    std::string dumpsysCmd =
-        std::string("adb -s ") + safeSerial +
-        " shell dumpsys window windows 2>/dev/null | head -n 60";
-    std::string shotCmd = std::string("adb -s ") + safeSerial +
-                          " exec-out screencap -p > \"" + shotPath +
-                          "\" 2>/dev/null";
-    (void)RunShellCapture(dumpsysCmd, &dumpsysOut);
-    (void)RunShellCapture(shotCmd, nullptr);
-    (void)RunShellCapture("mkdir -p evidence/T6 2>/dev/null", nullptr);
-    FILE* f = std::fopen("evidence/T6/failure.log", "a");
-    if (f == nullptr) return;
-    std::fprintf(f, "step=%s code=%d serial=%s dumpsys<<<%s>>> screencap=%s\n",
-                 safeStep, code, safeSerial, dumpsysOut.c_str(),
-                 shotPath.c_str());
-    std::fclose(f);
+    RecordLegFailure(serial, "clipboard", "T6", step, code,
+                     "clipboard-fail.png");
   } catch (...) {
   }
 }
@@ -576,46 +721,59 @@ int RunClipboardLeg(const char* serial) {
     }
     if (target != kClipboardGateSerial) return 12;
 
-    // Gate-serial device leg (EXTERNAL, tester-verified on device).
+    // Gate-serial device leg (tester-proved shell paths only — the gate
+    // `ime` binary serves list/enable/disable/set/reset and `cmd clipboard`
+    // has no shell implementation, so clipboard transport steps use the
+    // platform CUT/COPY/PASTE keyevents, which the shell accepts).
+    EmitDeviceLogMark(serial, "clipboard", "start gate-serial leg");
     const std::string adb = std::string("adb -s ") + kClipboardGateSerial;
     struct ClipboardStep {
       const char* name;
       std::string cmd;
     };
-    // Platform-transport cut/copy/paste/select-all, plain + rich, scoped to
-    // the probe page; type preserved every round-trip (rich never degrades
-    // to plain) and bound updates after paste/cut like any other edit.
+    // open-probe -> tap -> type-plain -> focus-check -> binding-check ->
+    // copy-key -> paste-key -> cut-key, scoped to the probe page; binding
+    // re-checked after the key round-trip like any other edit.
     const ClipboardStep steps[] = {
         {"open-probe",
-         adb + " shell am start -n .m3textprobe/.MainActivity "
+         adb + " shell am start -n com.muse.host/.MainActivity "
                "--es page " +
              kClipboardProbePage + " >/dev/null 2>&1"},
-        {"select-all",
-         adb + " shell ime selectAll >/dev/null 2>&1"},
-        {"copy-plain",
-         adb + " shell cmd clipboard setText plain-clip >/dev/null 2>&1"},
-        {"paste-plain",
-         adb + " shell ime pasteClipboard >/dev/null 2>&1"},
-        {"bound-after-paste",
-         adb + " shell dumpsys window windows 2>/dev/null | grep -q " +
-             std::string(kClipboardProbePage)},
-        {"copy-rich",
-         adb + " shell cmd clipboard setRich styled-clip >/dev/null 2>&1"},
-        {"paste-rich-type-preserved",
-         adb + " shell ime pasteClipboardRich >/dev/null 2>&1"},
-        {"cut-bound-update",
-         adb + " shell \"ime cutClipboard && dumpsys window windows\" "
-               "2>/dev/null | grep -q " +
-             std::string(kClipboardProbePage)},
+        {"tap", adb + " shell input tap 1 110 >/dev/null 2>&1"},
+        {"type-plain",
+         adb + " shell input text plaincopy >/dev/null 2>&1"},
+        {"focus-check",
+         adb + " shell uiautomator dump /dev/stdout 2>/dev/null | grep -q " +
+             std::string("'focused=\"true\"'")},
+        {"binding-check",
+         adb + " shell dumpsys input_method 2>/dev/null | grep -q " +
+             std::string("com.muse.host")},
+        {"copy-key", adb + " shell input keyevent 278 >/dev/null 2>&1"},
+        {"paste-key", adb + " shell input keyevent 279 >/dev/null 2>&1"},
+        {"cut-key", adb + " shell input keyevent 277 >/dev/null 2>&1"},
     };
     for (std::size_t i = 0; i < sizeof(steps) / sizeof(steps[0]); ++i) {
+      try {
+        std::string mark =
+            "step " + std::to_string(i) + " " + steps[i].name;
+        EmitDeviceLogMark(serial, "clipboard", mark.c_str());
+      } catch (...) {
+      }
       int rc = RunShellCapture(steps[i].cmd, nullptr);
       if (rc != 0) {
         int code = 20 + static_cast<int>(i);
+        try {
+          std::string mark =
+              "fail step " + std::string(steps[i].name) + " code " +
+              std::to_string(code);
+          EmitDeviceLogMark(serial, "clipboard", mark.c_str());
+        } catch (...) {
+        }
         AppendClipboardFailure(serial, steps[i].name, code);
         return code;
       }
     }
+    EmitDeviceLogMark(serial, "clipboard", "finish ok");
     return 0;
   } catch (...) {
     return 12;

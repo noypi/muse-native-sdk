@@ -253,9 +253,14 @@ bool liveKindOverrideActive();
 // "127.0.0.1:6569"). Defined in `engine/runtime/src/js_runtime.cpp`
 // (self-contained TU: links hermetic). Fail-fast null/empty/non-gate serial
 // yields distinct nonzero codes, never throws; the gate serial drives
-// setComposingText -> preview -> commit -> bound==visible -> setComposing +
-// cancel -> withdraw, with any failure appending `evidence/T3/failure.log`
-// (step + dumpsys + screencap PNG path). Never throws.
+// open-probe -> tap-focus -> commit-text -> focus-check -> binding-check ->
+// cancel-delete -> withdraw-back via tester-proved shell paths only (am
+// start, input tap/text/keyevent, uiautomator focus check, dumpsys
+// input_method binding fields, BACK keyevent for hide), with any failure
+// echoing the full record to stdout AND appending failure.log under the
+// explicit evidence dir ($MUSE_EVIDENCE_DIR when absolute, else
+// /tmp/bug-m3-fidelity-003-evidence/T3). Device-log markers
+// (log -t muse_text) bracket the leg start/steps/finish. Never throws.
 int RunCompositionLeg(const char* serial);
 
 // ---- T4 selection device leg (BUG-M3-FIDELITY-003 / FR-M3-006 / AC-M3-012)
@@ -266,9 +271,12 @@ int RunCompositionLeg(const char* serial);
 // serial "127.0.0.1:6569"). Defined in `engine/runtime/src/js_runtime.cpp`
 // (self-contained TU: links hermetic). Fail-fast null/empty/non-gate serial
 // yields distinct nonzero codes, never throws, no adb on bad serials; the
-// gate serial drives touch/keyboard/API selection -> caret/selection asserts
-// + binding report, with any failure appending `evidence/T4/failure.log`
-// (step + dumpsys + screencap PNG path). Never throws.
+// gate serial drives open-probe -> tap -> keyboard-type -> focus-check ->
+// binding-check -> mutate -> binding-roundtrip via tester-proved shell paths
+// only, with any failure echoing the full record to stdout AND appending
+// failure.log under the explicit evidence dir ($MUSE_EVIDENCE_DIR when
+// absolute, else /tmp/bug-m3-fidelity-003-evidence/T4). Device-log markers
+// (log -t muse_text) bracket the leg start/steps/finish. Never throws.
 int RunSelectionLeg(const char* serial);
 
 // ---- T5 inset device leg (BUG-M3-FIDELITY-003 / FR-M3-006 / AC-M3-013)
@@ -279,11 +287,13 @@ int RunSelectionLeg(const char* serial);
 // "127.0.0.1:6569"). Defined in `engine/runtime/src/js_runtime.cpp`
 // (self-contained TU: links hermetic). Fail-fast null/empty/non-gate serial
 // yields distinct nonzero codes, never throws, no adb on bad serials; the
-// gate serial animates `imeBottom` via `onInsetsFrame`/`SetPresentImeBottom`
-// on the `m3-text-probe` gate with per-frame asserts (field above keyboard,
-// no jump, no full-tree relayout), with any failure appending
-// `evidence/T5/failure.log` (step + dumpsys + screencap PNG path). Never
-// throws.
+// gate serial drives the per-frame evidence leg (tap-focus, dumpsys
+// window/input_method sampling, screencap frames, BACK keyevent withdraw)
+// via tester-proved shell paths only on the `m3-text-probe` gate, with any
+// failure echoing the full record to stdout AND appending failure.log under
+// the explicit evidence dir ($MUSE_EVIDENCE_DIR when absolute, else
+// /tmp/bug-m3-fidelity-003-evidence/T5). Device-log markers
+// (log -t muse_text) bracket the leg start/steps/finish. Never throws.
 int RunInsetLeg(const char* serial);
 
 // ---- T6 clipboard device leg (BUG-M3-FIDELITY-003 / FR-M3-006 / AC-M3-014)
@@ -294,11 +304,12 @@ int RunInsetLeg(const char* serial);
 // API-29-only gate serial "127.0.0.1:6569"). Defined in
 // `engine/runtime/src/js_runtime.cpp` (self-contained TU: links hermetic).
 // Fail-fast null/empty/non-gate serial yields distinct nonzero codes, never
-// throws, no adb on bad serials; the gate serial drives select-all ->
-// copy/paste (plain + rich) -> cut -> type-preserved + bound-updated asserts
-// via the FR-TEXT-013 platform transport (rich must never degrade to plain,
-// cf. AC-TEXT-035) with per-step asserts (type preserved every round-trip,
-// bound updates after paste like any other edit), with any failure appending
-// `evidence/T6/failure.log` (step + dumpsys + screencap PNG path). Never
+// throws, no adb on bad serials; the gate serial drives open-probe -> tap ->
+// type-plain -> focus-check -> binding-check -> copy/paste/cut keyevents via
+// tester-proved shell paths only (the gate has no shell selection/clipboard
+// transport), with any failure echoing the full record to stdout AND
+// appending failure.log under the explicit evidence dir ($MUSE_EVIDENCE_DIR
+// when absolute, else /tmp/bug-m3-fidelity-003-evidence/T6). Device-log
+// markers (log -t muse_text) bracket the leg start/steps/finish. Never
 // throws.
 int RunClipboardLeg(const char* serial);
