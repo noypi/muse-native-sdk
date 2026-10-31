@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Brownfield sample manifest (FR-PVIEWS-010 / AC-PVIEWS-013 carry-over).
+     Manifest-clean: no new <service>, <provider>, or <uses-permission>
+     entries beyond the engine's own. Only the pre-existing HostActivity
+     (with its pre-existing intent-filter) is declared. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <application
+        android:label="Brownfield Sample"
+        android:allowBackup="false"
+        android:supportsRtl="true">
+        <activity
+            android:name=".HostActivity"
+            android:exported="true"
+            android:configChanges="orientation|screenSize|keyboardHidden">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+
+</manifest>
