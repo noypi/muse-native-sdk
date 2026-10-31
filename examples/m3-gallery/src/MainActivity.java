@@ -127,7 +127,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                 }
             };
 
-    /** Broadcast action the proof pages through (same entry as the tap path). */
+    /** Neutralized broadcast entry (AC-SAMPLE-039): kept registered, never pages. The proof uses ACTION_PROOF_ADVANCE_PAGE. */
     static final String ACTION_NATIVE_ADVANCE_PAGE = "muse.native.NATIVE_ADVANCE_PAGE";
 
     /**
@@ -214,13 +214,14 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             }
             try {
                 int direction = intent.getIntExtra("direction", 1);
-                if (direction != 1 && direction != -1) {
-                    direction = 1;
+                if (direction != 1) {
+                    Log.w("GalleryPage", "PROOF_ADVANCE_PAGE backward unsupported (direction="
+                            + direction + "); forward-only (+1), no page turn");
+                    return;
                 }
                 // The native entry advances one page per call (forward-only);
-                // the direction extra is accepted with default +1 per the T1
-                // interface. Single step either way through the navigateStory
-                // path — one JNI advance, one page marker.
+                // this entry is forward-only (+1): one JNI advance, one page
+                // marker through the navigateStory path.
                 int newIndex = nativeAdvancePage(engineHandle);
                 Log.i("GalleryPage", "PROOF_ADVANCE_PAGE page=" + newIndex);
             } catch (Throwable ignored) {

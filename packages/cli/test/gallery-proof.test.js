@@ -74,7 +74,7 @@ describe('gallery-proof proof-only entry (AC-M3-020 via TC-M3-021)', () => {
       sleep: noSleep,
       settleMs: 0,
     });
-    assert.deepEqual(result, { wrapped: true });
+    assert.deepStrictEqual(result, { wrapped: true });
   });
 
   it('dead-advance guard: a no-op advance (neutralized bridge) fails counts-mismatch with the no-motion signature', async () => {
@@ -147,9 +147,9 @@ describe('gallery-proof proof-only entry (AC-M3-020 via TC-M3-021)', () => {
     );
     // The sent advance broadcast is the proof action; the old action must not
     // remain as the sent `-a` argument of the advance broadcast.
+    const sentProof = (src.match(new RegExp(`shell',\\s*'am',\\s*'broadcast',\\s*'-a',\\s*'${PROOF_ACTION.replace(/\./g, '\\.')}'`, 'g')) || []).length;
     assert.ok(
-      src.includes(`-a', '${PROOF_ACTION}'`) || src.includes(`-a", "${PROOF_ACTION}"`)
-        || (src.includes(PROOF_ACTION) && src.includes('am', 0)),
+      sentProof >= 1,
       `defaultAdvancePage must send ${PROOF_ACTION}`,
     );
     const sentNeutralized = (src.match(new RegExp(`shell',\\s*'am',\\s*'broadcast',\\s*'-a',\\s*'${NEUTRALIZED_ACTION.replace(/\./g, '\\.')}'`, 'g')) || []).length;
@@ -171,7 +171,7 @@ describe('neutralized-path guardrails (AC-SAMPLE-039 via TC-SAMPLE-039)', () => 
     assert.equal(nav.handleBroadcast(PROOF_ACTION), false);
     assert.equal(nav.handleBroadcast(NEUTRALIZED_ACTION), false);
     assert.equal(nav.handleOutsideTap(), false);
-    assert.deepEqual(nav.current(), before);
+    assert.deepStrictEqual(nav.current(), before);
   });
 
   it('galleryNav keeps the neutralized broadcast constant and documents the proof entry without paging on it', () => {
