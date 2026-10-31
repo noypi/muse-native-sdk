@@ -31,6 +31,8 @@
 #                              + src/external_memory_probe.cpp (-I engine/platform-views/include)
 #   :pviews:zOrder         -> g++ engine/platform-views/tests/z_order_test.cpp
 #                              + src/z_order.cpp (-I engine/platform-views/include)
+#   :pviews:clipping        -> g++ engine/platform-views/tests/clipping_test.cpp
+#                              (-I engine/platform-views/include, headers-only)
 set -eu
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 
@@ -62,6 +64,7 @@ Tasks:
   :testing:goldenDiffSensitivity testing.goldens.diff sensitivity (AC-035)
   :pviews:externalMemory   g++ external_memory_test + external_memory_probe (NFR-PVIEWS-001)
   :pviews:zOrder           g++ z_order_test + z_order (FR-PVIEWS-001)
+  :pviews:clipping         g++ clipping_test (FR-PVIEWS-005, headers-only)
 Extra args after :benchmark:perfGate are forwarded to benchmark/gate/run.py
 as <manifest> <results-json>.
 EOF
@@ -463,6 +466,16 @@ print('golden diff sensitivity ok: rerun zero-diff, shift + blend flagged')"
       "$ROOT/engine/platform-views/src/z_order.cpp" \
       -o "$PVDIR/z_order_test" || exit 1
     "$PVDIR/z_order_test" || exit 1
+    rm -rf "$PVDIR"
+    trap - EXIT INT TERM
+    ;;
+  :pviews:clipping)
+    PVDIR="$(mktemp -d)" || exit 1
+    trap 'rm -rf "$PVDIR"' EXIT INT TERM
+    g++ -std=c++17 -Wall -Wextra -Wpedantic -I "$ROOT/engine/platform-views/include" \
+      "$ROOT/engine/platform-views/tests/clipping_test.cpp" \
+      -o "$PVDIR/clipping_test" || exit 1
+    "$PVDIR/clipping_test" || exit 1
     rm -rf "$PVDIR"
     trap - EXIT INT TERM
     ;;
