@@ -382,6 +382,119 @@ test('removing a prop from a schema fails the gate naming component.prop (TC-M3-
 });
 
 // ---------------------------------------------------------------------------
+// BUG-M3-NATIVE-004 — callback-parameter regression (arg0 is not a prop)
+//
+// FR-M3-004 / AC-M3-008. `TextInputProps.onSelectionChange` is declared as
+// `onSelectionChange?: (arg0: TextSelection) => void`; the paren-stripping
+// loop in `declaredPropNames` (check-props.js) must keep the callback
+// parameter name from parsing as a phantom top-level prop. Fixtures below
+// mirror the Button.icon removal test pattern (mkdtempSync + MANIFEST_PATH /
+// DTS_PATH env vars) with a minimal TextInput-like component.
+//
+// NOTE (known limitation, not a failing test): nested-callback shapes such
+// as `(cb: (opts: Opts) => void) => void` still leave a residual after one
+// stripping pass per nesting level is unwound by the loop — no current
+// manifest prop has that shape, so it is recorded here only.
+// ---------------------------------------------------------------------------
+
+function propsFixture({ extraDtsProp = '', extraManifestProp = {} } = {}) {
+  const dir = mkdtempSync(join(tmpdir(), 'muse-props-arg0-'));
+  const manifest = {
+    components: [
+      {
+        name: 'Button',
+        tier: 2,
+        native: 'MuseButton',
+        props: {
+          variant: { type: 'string', values: ['filled', 'tonal', 'outlined', 'text', 'elevated'] },
+          enabled: { type: 'boolean' },
+          icon: { type: 'slot' },
+        },
+      },
+      {
+        name: 'Card',
+        tier: 2,
+        native: 'MuseCard',
+        props: {
+          variant: { type: 'string', values: ['elevated', 'filled', 'outlined'] },
+        },
+      },
+      {
+        name: 'Chip',
+        tier: 2,
+        native: 'MuseChip',
+        props: {
+          variant: { type: 'string', values: ['assist', 'filter', 'input', 'suggestion'] },
+        },
+      },
+      {
+        name: 'TextInputLike',
+        tier: 2,
+        native: 'TextFieldEditCore',
+        props: {
+          value: { type: 'string' },
+          selection: { type: 'object' },
+          composing: { type: 'string' },
+          contentType: { type: 'string', values: ['plain', 'rich'] },
+          onSelectionChange: { type: 'function' },
+          ...extraManifestProp,
+        },
+      },
+    ],
+  };
+  const fixtureManifest = join(dir, 'manifest.json');
+  writeFileSync(fixtureManifest, JSON.stringify(manifest));
+  const dts = `export type TextSelection = { start: number; end: number };
+export type ButtonVariant = 'filled' | 'tonal' | 'outlined' | 'text' | 'elevated';
+export type CardVariant = 'elevated' | 'filled' | 'outlined';
+export type ChipVariant = 'assist' | 'filter' | 'input' | 'suggestion';
+export type ButtonProps = {
+  variant?: ButtonVariant;
+  enabled?: boolean;
+  icon?: unknown;
+};
+export type CardProps = {
+  variant?: CardVariant;
+};
+export type ChipProps = {
+  variant?: ChipVariant;
+};
+export type TextInputLikeProps = {
+  value?: string;
+  selection?: TextSelection;
+  composing?: string;
+  contentType?: 'plain' | 'rich';
+  onSelectionChange?: (arg0: TextSelection) => void;${extraDtsProp}
+};
+`;
+  const fixtureDts = join(dir, 'index.d.ts');
+  writeFileSync(fixtureDts, dts);
+  return { dir, fixtureManifest, fixtureDts };
+}
+
+test('callback parameter names are not parsed as props (BUG-M3-NATIVE-004 arg0)', () => {
+  const { fixtureManifest, fixtureDts } = propsFixture();
+  const res = runPropsCheck({ MANIFEST_PATH: fixtureManifest, DTS_PATH: fixtureDts });
+  const out = `${res.stdout ?? ''}${res.stderr ?? ''}`;
+  assert.equal(res.status, 0, `callback param must not fail the gate; output: ${out}`);
+  assert.ok(!out.includes('arg0'), `gate output must not name the phantom prop; got: ${out}`);
+});
+
+test('multi-param callback names are not parsed as props (arg0/arg1)', () => {
+  const { fixtureManifest, fixtureDts } = propsFixture({
+    extraDtsProp: '\n  onMultiParam?: (arg0: string, arg1: number) => void;',
+    extraManifestProp: { onMultiParam: { type: 'function' } },
+  });
+  const res = runPropsCheck({ MANIFEST_PATH: fixtureManifest, DTS_PATH: fixtureDts });
+  const out = `${res.stdout ?? ''}${res.stderr ?? ''}`;
+  assert.equal(res.status, 0, `multi-param callback must not fail the gate; output: ${out}`);
+  assert.ok(
+    !out.includes('arg0') && !out.includes('arg1'),
+    `gate output must not name phantom params; got: ${out}`,
+  );
+});
+
+// ---------------------------------------------------------------------------
 // TC-M3-008 (gallery half) — every manifest entry maps to stories whose
 // props cover the schema; an entry with no story fails the coverage test
 // (FR-M3-004, AC-M3-008).
