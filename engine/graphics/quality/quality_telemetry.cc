@@ -136,6 +136,23 @@ TelemetryRecord reportTier(QualityTier current, const char* reason) {
     rejected.timestampMs = TickCounter();
     return rejected;
   }
+  // Bounded scan: reject reasons longer than kMaxReasonLen without an
+  // unbounded NUL scan or copy. Reads at most kMaxReasonLen + 1 bytes.
+  {
+    std::size_t len = 0;
+    while (len <= kMaxReasonLen && reason[len] != '\0') {
+      ++len;
+    }
+    if (len > kMaxReasonLen) {
+      TelemetryRecord rejected;
+      rejected.tier = current;
+      rejected.tierName = TierNameFor(current);
+      rejected.status = Status::kInvalidArg;
+      rejected.sequence = SequenceCounter();
+      rejected.timestampMs = TickCounter();
+      return rejected;
+    }
+  }
   return EmitRecord(current, reason);
 }
 

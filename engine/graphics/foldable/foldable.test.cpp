@@ -144,6 +144,20 @@ int main() {
     }
     printf("PASS bad-bounds-never-throw\n");
   }
+  // 12. T9 re-verify (green leg): NaN / infinite hinge angles with valid
+  //     metrics map to UNKNOWN — untrusted-float guard holds.
+  {
+    assert(foldable::postureFrom(ValidMetrics(), FoldingVertical(),
+                                 std::numeric_limits<float>::quiet_NaN()) ==
+           FoldPosture::kUnknown);
+    assert(foldable::postureFrom(ValidMetrics(), FoldingVertical(),
+                                 std::numeric_limits<float>::infinity()) ==
+           FoldPosture::kUnknown);
+    assert(foldable::postureFrom(ValidMetrics(), FoldingVertical(),
+                                 -std::numeric_limits<float>::infinity()) ==
+           FoldPosture::kUnknown);
+    printf("PASS nan-inf-hinge-unknown-reverify\n");
+  }
   printf("ALL FOLDABLE TESTS PASSED\n");
   return 0;
 }

@@ -3,6 +3,7 @@
 #include "engine/graphics/memory/vram_budget.h"
 
 #include <algorithm>
+#include <limits>
 
 namespace vram_budget {
 
@@ -16,7 +17,12 @@ Status VramPool::allocate(uint32_t id, std::size_t bytes, bool visible) {
   }
   // Fail closed: never let usage exceed the profile bound; on rejection the
   // pool is unchanged (a replaced entry is restored below).
-  if (usedBytes() - old_bytes + bytes > bound_bytes_) {
+  // Checked arithmetic: compute `used - old + bytes` without wrapping.
+  // `base` is usage excluding the replaced entry; `bytes > bound - base`
+  // rejects without ever forming a wrapped sum.
+  const std::size_t used = usedBytes();
+  const std::size_t base = (used >= old_bytes) ? (used - old_bytes) : 0;
+  if (base > bound_bytes_ || bytes > bound_bytes_ - base) {
     return Status::kBudgetExceeded;
   }
   entries_[id] = Entry{bytes, visible};
@@ -28,6 +34,9 @@ std::size_t VramPool::boundBytes() const { return bound_bytes_; }
 std::size_t VramPool::usedBytes() const {
   std::size_t total = 0;
   for (const auto& kv : entries_) {
+    if (kv.second.bytes > (std::numeric_limits<std::size_t>::max)() - total) {
+      return (std::numeric_limits<std::size_t>::max)();
+    }
     total += kv.second.bytes;
   }
   return total;
@@ -37,6 +46,9 @@ std::size_t VramPool::visibleBytes() const {
   std::size_t total = 0;
   for (const auto& kv : entries_) {
     if (kv.second.visible) {
+      if (kv.second.bytes > (std::numeric_limits<std::size_t>::max)() - total) {
+        return (std::numeric_limits<std::size_t>::max)();
+      }
       total += kv.second.bytes;
     }
   }

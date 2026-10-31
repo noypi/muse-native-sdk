@@ -9,6 +9,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
+#include <limits>
 
 #include "engine/graphics/memory/vram_budget.h"
 
@@ -136,6 +137,34 @@ int main() {
       assert(pool.visibleCount() == visibleBefore);
     }
     printf("PASS visible-retention-invariant-all-tiers\n");
+  }
+  // 9. T9 hardening (SEC-MEDIUM): SIZE_MAX allocation is rejected fail-closed
+  //    — unchecked `used - old + bytes` must not wrap into an in-bound pass.
+  {
+    vram_budget::VramPool pool(64u * kMB);
+    SeedPool(pool);
+    std::size_t usedBefore = pool.usedBytes();
+    std::size_t visibleBefore = VisibleBefore(pool);
+    Status s = pool.allocate(99u, std::numeric_limits<std::size_t>::max(),
+                             /*visible=*/false);
+    assert(s == Status::kBudgetExceeded);
+    assert(pool.usedBytes() == usedBefore);
+    assert(pool.visibleCount() == visibleBefore);
+    printf("PASS sizemax-alloc-rejected-no-wrap\n");
+  }
+  // 10. T9 hardening (SEC-MEDIUM): replace-existing-id with wrap-around bytes
+  //     is rejected, pool unchanged.
+  {
+    vram_budget::VramPool pool(64u * kMB);
+    SeedPool(pool);
+    std::size_t usedBefore = pool.usedBytes();
+    std::size_t visibleBefore = VisibleBefore(pool);
+    Status s = pool.allocate(1u, std::numeric_limits<std::size_t>::max() - 100u,
+                             /*visible=*/false);
+    assert(s == Status::kBudgetExceeded);
+    assert(pool.usedBytes() == usedBefore);
+    assert(pool.visibleCount() == visibleBefore);
+    printf("PASS replace-wraparound-rejected-pool-unchanged\n");
   }
   printf("ALL VRAM BUDGET TESTS PASSED\n");
   return 0;

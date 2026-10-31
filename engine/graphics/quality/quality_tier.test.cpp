@@ -310,8 +310,9 @@ static void RunNamespacedContractTests() {
     }
     printf("PASS tier-table-monotonic\n");
   }
-  // 9. T9 fail-closed pin: configFor with an invalid ordinal clamps to the
-  //    safe LOW row (never zeros), for both VRS probe outcomes.
+  // 9. T9 fail-closed pin (HEAD/round-2 side): configFor with an invalid
+  //    ordinal clamps to the safe LOW row (never zeros), for both VRS probe
+  //    outcomes. Covers {99, -1, 4}.
   {
     const QualityTier kBad[] = {static_cast<QualityTier>(99),
                                 static_cast<QualityTier>(-1),
@@ -329,6 +330,26 @@ static void RunNamespacedContractTests() {
       }
     }
     printf("PASS config-for-invalid-clamps-to-low-row\n");
+  }
+  // 10. T9 hardening (c1208e5/SEC-LOW side): configFor with an invalid
+  //     ordinal returns the safe LOW row — never a zeroed/out-of-bounds
+  //     config. Covers {99, -1} plus the nonzero-msaa guard.
+  {
+    for (bool vrs : {false, true}) {
+      quality_tier::TierConfig expect =
+          quality_tier::configFor(QualityTier::kLow, vrs);
+      for (QualityTier bad :
+           {static_cast<QualityTier>(99), static_cast<QualityTier>(-1)}) {
+        quality_tier::TierConfig got = quality_tier::configFor(bad, vrs);
+        assert(got.blurPasses == expect.blurPasses);
+        assert(got.shadowQuality == expect.shadowQuality);
+        assert(got.shadingRate == expect.shadingRate);
+        assert(got.msaaSamples == expect.msaaSamples);
+        assert(got.vrsApplied == expect.vrsApplied);
+        assert(got.msaaSamples != 0);
+      }
+    }
+    printf("PASS configfor-invalid-tier-safe-low-row\n");
   }
   printf("ALL QUALITY TIER NAMESPACED-CONTRACT TESTS PASSED\n");
 }

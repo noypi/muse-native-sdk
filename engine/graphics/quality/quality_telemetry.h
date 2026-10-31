@@ -2,9 +2,14 @@
 #define ENGINE_GRAPHICS_QUALITY_QUALITY_TELEMETRY_H_
 
 #include <cstdint>
+#include <cstddef>
 #include <string>
 
 namespace quality_telemetry {
+
+// Fail-closed bound on `reportTier` reason length (bytes, excluding NUL).
+// Longer reasons are rejected with kInvalidArg and consume no sequence.
+constexpr std::size_t kMaxReasonLen = 1024;
 
 // Mirrors quality_tier::QualityTier enumerators (same four tiers).
 enum class QualityTier { kLow, kMedium, kHigh, kUltra };

@@ -169,6 +169,37 @@ int main() {
     assert(b.timestampMs >= a.timestampMs);
     printf("PASS timestamps-monotonic\n");
   }
+  // 12. T9 hardening (SEC-LOW): over-long reason (> kMaxReasonLen) is
+  //     rejected fail-closed (kInvalidArg, sequence unchanged).
+  {
+    TelemetryRecord before = quality_telemetry::lastRecord();
+    std::string big(64u * 1024u, 'r');
+    TelemetryRecord r =
+        quality_telemetry::reportTier(QualityTier::kHigh, big.c_str());
+    assert(r.status == Status::kInvalidArg);
+    assert(SameRecord(quality_telemetry::lastRecord(), before));
+    TelemetryRecord after =
+        quality_telemetry::reportTier(QualityTier::kHigh, "ok");
+    assert(after.status == Status::kOk);
+    assert(after.sequence == before.sequence + 1u);
+    printf("PASS overlong-reason-rejected-fail-closed\n");
+  }
+  // 13. T9 re-verify (green leg): rejected calls consume no sequence.
+  {
+    TelemetryRecord before = quality_telemetry::lastRecord();
+    TelemetryRecord badTier = quality_telemetry::reportTier(
+        static_cast<QualityTier>(99), "bogus");
+    assert(badTier.status == Status::kInvalidTier);
+    TelemetryRecord nullReason =
+        quality_telemetry::reportTier(QualityTier::kHigh, nullptr);
+    assert(nullReason.status == Status::kInvalidArg);
+    assert(SameRecord(quality_telemetry::lastRecord(), before));
+    TelemetryRecord after =
+        quality_telemetry::reportTier(QualityTier::kLow, "seq-check");
+    assert(after.status == Status::kOk);
+    assert(after.sequence == before.sequence + 1u);
+    printf("PASS rejected-calls-consume-no-sequence\n");
+  }
   printf("ALL QUALITY TELEMETRY TESTS PASSED\n");
   return 0;
 }
