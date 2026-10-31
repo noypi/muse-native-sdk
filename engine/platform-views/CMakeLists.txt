@@ -13,6 +13,13 @@ add_library(pviews
 target_include_directories(pviews PUBLIC include)
 target_compile_options(pviews PRIVATE -Wall -Wextra -Wpedantic)
 
+# Brownfield embed target (FR-PVIEWS-003 / AC-PVIEWS-004).
+add_library(pviews-embed
+  src/embed.cpp
+)
+target_include_directories(pviews-embed PUBLIC include)
+target_compile_options(pviews-embed PRIVATE -Wall -Wextra -Wpedantic)
+
 include(CTest)
 enable_testing()
 
@@ -25,3 +32,8 @@ add_executable(z_order_test tests/z_order_test.cpp)
 target_link_libraries(z_order_test PRIVATE pviews)
 target_compile_options(z_order_test PRIVATE -Wall -Wextra -Wpedantic)
 add_test(NAME z_order COMMAND z_order_test)
+
+add_executable(brownfield_embed_test tests/brownfield_embed_test.cpp)
+target_link_libraries(brownfield_embed_test PRIVATE pviews-embed)
+target_compile_options(brownfield_embed_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME brownfield_embed COMMAND brownfield_embed_test)
