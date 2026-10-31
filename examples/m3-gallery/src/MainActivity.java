@@ -346,22 +346,22 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
      * T1 completion hook (runs on the UI thread): fail-closed install of the
      * tree handle. Signature: void handleTreeBytes(byte[]).
      * Null/empty bytes or nativeLoadTree == 0 logs
-     * {@code tree-load: <reason>}, leaves {@code engineHandle} at 0, and
-     * never throws.
+     * {@code tree-load failed-closed: <null|empty|native-0>}, leaves
+     * {@code engineHandle} at 0, and never throws.
      */
     void handleTreeBytes(byte[] treeBytes) {
         try {
             if (treeBytes == null) {
-                Log.e("MainActivity", "tree-load: null asset bytes");
+                Log.e("MainActivity", "tree-load failed-closed: null");
                 return;
             }
             if (treeBytes.length == 0) {
-                Log.e("MainActivity", "tree-load: empty asset bytes");
+                Log.e("MainActivity", "tree-load failed-closed: empty");
                 return;
             }
             long handle = nativeLoadTree(treeBytes);
             if (handle == 0) {
-                Log.e("MainActivity", "tree-load: nativeLoadTree returned 0");
+                Log.e("MainActivity", "tree-load failed-closed: native-0");
                 return;
             }
             engineHandle = handle;
@@ -447,6 +447,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
 
     @Override
     protected void onDestroy() {
+        treeLoadGeneration++;
+        treeLoader.shutdownNow();
         if (engineHandle != 0) {
             nativeDetachSurface(engineHandle);
             nativeDestroy(engineHandle);
@@ -831,6 +833,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
 
     @Override
     public void surfaceDestroyed(SurfaceHolder holder) {
+        surfaceReady = false;
         // Release the native window before the framework frees it (the
         // presenter never outlives the host's invalidation call); the tree
         // handle itself survives for the next surface.
