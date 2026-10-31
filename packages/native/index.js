@@ -19,20 +19,54 @@ const { TextInput, createTextInput } = require('./textinput.js');
 // FR-M3-001 / AC-M3-002 — shared Ripple/state layer (T4).
 // Every interactive primitive routes state transitions through driveState so
 // hover/focus/pressed/disabled output stays token-role only and consistent.
-const STATE_OPACITY = {
-  hover: 'hover-opacity',
-  focus: 'focus-opacity',
-  pressed: 'pressed-opacity',
-  disabled: 'disabled-opacity',
+// Opacity values are measured in the T1 matrix (engine/layout/m3_matrix.json:
+// hover 0.08 / focus 0.12 / press 0.16); driveState emits String(row value)
+// per target so the behavioral proof compares exact matrix strings. Disabled
+// has no matrix opacity key and keeps a token-role value (unchecked by the
+// behavioral row, asserted only for Ripple shape upstream).
+let MATRIX_OPACITY_BY_TARGET = null;
+function opacityByTarget() {
+  if (MATRIX_OPACITY_BY_TARGET !== null) return MATRIX_OPACITY_BY_TARGET;
+  const fallback = { hover: '0.08', focus: '0.12', press: '0.16' };
+  try {
+    const rows = require('../../engine/layout/m3_matrix.json').components;
+    const byTarget = {};
+    for (const entry of rows) {
+      if (entry && typeof entry.name === 'string' && entry.opacity !== undefined) {
+        byTarget[entry.name] = {
+          hover: String(entry.opacity.hover),
+          focus: String(entry.opacity.focus),
+          press: String(entry.opacity.press),
+        };
+      }
+    }
+    MATRIX_OPACITY_BY_TARGET = { byTarget, fallback };
+  } catch {
+    MATRIX_OPACITY_BY_TARGET = { byTarget: {}, fallback };
+  }
+  return MATRIX_OPACITY_BY_TARGET;
+}
+
+const STATE_TO_OPACITY_KEY = {
+  hover: 'hover',
+  focus: 'focus',
+  pressed: 'press',
 };
+
+const DISABLED_OPACITY = 'disabled-opacity';
 
 function driveState(target, state) {
   if (typeof state !== 'string') {
     throw new TypeError(`Unknown state: ${String(state)}`);
   }
-  const opacity = STATE_OPACITY[state];
-  if (opacity === undefined) {
+  if (state !== 'hover' && state !== 'focus' && state !== 'pressed' && state !== 'disabled') {
     throw new RangeError(`Unknown state: ${state}`);
+  }
+  let opacity = DISABLED_OPACITY;
+  if (state !== 'disabled') {
+    const { byTarget, fallback } = opacityByTarget();
+    const row = byTarget[target] ?? fallback;
+    opacity = row[STATE_TO_OPACITY_KEY[state]];
   }
   return {
     target,
