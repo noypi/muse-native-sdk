@@ -56,6 +56,19 @@ MergeResult mergeSemantics(const NodeList& engineTree,
     }
   }
 
+  // AC-PVIEWS-011: each node exactly once — never silently truncate.
+  // A capacity shortfall is a typed denial with nothing published.
+  const std::size_t total = eSize + pSize;
+  if (total > out.capacity || (total > 0 && out.data == nullptr)) {
+    MergeResult r;
+    r.ok = false;
+    r.count = 0;
+    r.error = SemErrorCode::SEM_BUFFER_TOO_SMALL;
+    r.duplicateId = 0;
+    out.size = 0;
+    return r;
+  }
+
   // Engine-then-platform order into the caller-provided fixed buffer.
   std::size_t n = 0;
   if (out.data != nullptr) {

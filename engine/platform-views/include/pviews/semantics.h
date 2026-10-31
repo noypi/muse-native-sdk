@@ -22,6 +22,7 @@ struct MergedTree {
 enum class SemErrorCode {
   NONE = 0,
   SEM_DUPLICATE_NODE = 1,
+  SEM_BUFFER_TOO_SMALL = 2,
 };
 
 struct MergeResult {

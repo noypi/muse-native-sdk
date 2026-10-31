@@ -72,7 +72,7 @@ if not ok_share:
     print("FAIL: hostsShareEngine != true")
 elif not ok_iso:
     print("FAIL: uiIsolated != true")
-elif not isinstance(delta, (int, float)) or not isinstance(budget, (int, float)):
+elif isinstance(delta, bool) or not isinstance(delta, (int, float)) or isinstance(budget, bool) or not isinstance(budget, (int, float)):
     print("INVALID: coldStartDeltaMs/budgetMs must be numbers")
 elif delta > budget:
     print(f"COLD_START_OVER_BUDGET {{ deltaMs: {delta}, budgetMs: {budget} }}")

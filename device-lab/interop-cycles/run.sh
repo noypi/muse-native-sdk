@@ -69,29 +69,42 @@ if [[ ! -f "$EVIDENCE" ]]; then
   exit 1
 fi
 
-fail=0
-check_prop() {
-  local name="$1" expected="$2"
-  if grep -q "property name=\"$name\" value=\"$expected\"" "$EVIDENCE"; then
-    echo "run.sh: PASS — $name=$expected"
-  else
-    echo "run.sh: FAIL — $name != $expected (see $EVIDENCE)" >&2
-    fail=1
-  fi
-}
-
-if ! grep -q "<testsuite" "$EVIDENCE"; then
-  echo "run.sh: FAIL — invalid evidence xml: no <testsuite> in $EVIDENCE" >&2
+if ! command -v python3 >/dev/null 2>&1; then
+  echo "run.sh: FAIL — python3 required to validate evidence XML" >&2
   exit 1
 fi
 
-check_prop "cycles" "$CYCLES"
-check_prop "dispatchesPerEvent" "1"
-check_prop "leakedViews" "0"
-check_prop "talkbackDupes" "0"
-check_prop "zOrder" "correct"
-
-if [[ "$fail" -ne 0 ]]; then
+if ! python3 - "$EVIDENCE" "$CYCLES" <<'PY'; then
+import sys
+import xml.etree.ElementTree as ET
+path, cycles = sys.argv[1], sys.argv[2]
+try:
+    with open(path, "rb") as f:
+        raw = f.read()
+    root = ET.fromstring(raw)
+except Exception as e:
+    print(f"run.sh: FAIL — invalid evidence xml: malformed ({e}) (see {path})")
+    sys.exit(1)
+# Strict element check: require a real <testsuite> element (comments ignored by the parser).
+if root.tag != "testsuite" and root.find(".//testsuite") is None:
+    print(f"run.sh: FAIL — invalid evidence xml: no <testsuite> in {path}")
+    sys.exit(1)
+# Strict property matching over real <property> elements only (XML comments
+# are not elements, so comment-injected forgeries cannot satisfy a check).
+props = {}
+for p in root.iter("property"):
+    props[p.get("name")] = p.get("value")
+expected = {"cycles": cycles, "dispatchesPerEvent": "1", "leakedViews": "0",
+            "talkbackDupes": "0", "zOrder": "correct"}
+fail = 0
+for name, want in expected.items():
+    if props.get(name) == want:
+        print(f"run.sh: PASS — {name}={want}")
+    else:
+        print(f"run.sh: FAIL — {name} != {want} (see {path})")
+        fail = 1
+sys.exit(fail)
+PY
   echo "run.sh: FAIL — interop-cycles evidence check failed (cycles=$CYCLES)" >&2
   exit 1
 fi
