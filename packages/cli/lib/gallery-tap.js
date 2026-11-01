@@ -24,9 +24,9 @@ const USAGE = 'Usage: muse-native gallery-tap [--button <name>] [--tap-page] [--
 
 const KNOWN_FLAGS = ['--button', '--assert-once', '--assert-outside-silent', '--drag-no-fire', '--serial', '--tap-page', '--assert-zero-jni-faults'];
 
-const TAP_PAGE_USAGE = 'Usage: muse-native gallery-tap --tap-page [--assert-zero-jni-faults] [--device <serial>]';
+const TAP_PAGE_USAGE = 'Usage: muse-native gallery-tap --tap-page [--assert-zero-jni-faults] [--serial <serial>] [--device <serial>]';
 
-const TAP_PAGE_KNOWN_FLAGS = ['--tap-page', '--assert-zero-jni-faults', '--device'];
+const TAP_PAGE_KNOWN_FLAGS = ['--tap-page', '--assert-zero-jni-faults', '--serial', '--device'];
 
 function tapPageUsageError(message) {
   const err = new Error(message);
@@ -36,15 +36,21 @@ function tapPageUsageError(message) {
 }
 
 // Parse `muse-native gallery-tap --tap-page [--assert-zero-jni-faults]
-// [--device <serial>]`. The leading `gallery-tap` token is optional. Throws
-// on a missing `--tap-page` flag, unknown flags, or a missing `--device`
-// value (the CLI maps these to exit 2 with usage, never a silent pass).
+// [--serial <serial>] [--device <serial>]`. `--serial` is the spec-mandated
+// flag (TC-RUNTIME-036/037) and `--device` is the base-suite alias: both are
+// accepted, carry the same value, and either one satisfies the serial
+// requirement. When both are given with different values the parse fails
+// closed (exit 2 naming the conflict, never silently preferring one). The
+// leading `gallery-tap` token is optional. Throws on a missing `--tap-page`
+// flag, unknown flags, or a missing serial value (the CLI maps these to
+// exit 2 with usage, never a silent pass).
 // Mirrors the T3 `parseSurfaceContractArgs` shape.
 function parseTapPageArgs(argv) {
   const args = Array.isArray(argv) ? argv.slice() : [];
   if (args[0] === 'gallery-tap') args.shift();
   let tapPage = false;
   let assertZeroJniFaults = false;
+  let serial = null;
   let device = null;
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
@@ -52,12 +58,13 @@ function parseTapPageArgs(argv) {
       tapPage = true;
     } else if (arg === '--assert-zero-jni-faults') {
       assertZeroJniFaults = true;
-    } else if (arg === '--device') {
+    } else if (arg === '--device' || arg === '--serial') {
       const next = args[i + 1];
       if (typeof next !== 'string' || next.length === 0 || next.startsWith('-')) {
-        throw tapPageUsageError(`Error: --device requires a value. Expected ${TAP_PAGE_USAGE}`);
+        throw tapPageUsageError(`Error: ${arg} requires a value. Expected ${TAP_PAGE_USAGE}`);
       }
-      device = next;
+      if (arg === '--device') device = next;
+      else serial = next;
       i++;
     } else {
       throw tapPageUsageError(`Error: unknown option '${arg}'. Expected one of: ${TAP_PAGE_KNOWN_FLAGS.join(', ')}\n${TAP_PAGE_USAGE}`);
@@ -66,7 +73,10 @@ function parseTapPageArgs(argv) {
   if (!tapPage) {
     throw tapPageUsageError(`Error: missing required flag --tap-page. Expected ${TAP_PAGE_USAGE}`);
   }
-  return { tapPage: true, assertZeroJniFaults, device };
+  if (serial !== null && device !== null && serial !== device) {
+    throw tapPageUsageError(`Error: conflicting --serial '${serial}' and --device '${device}' values (must match). Expected ${TAP_PAGE_USAGE}`);
+  }
+  return { tapPage: true, assertZeroJniFaults, device: device !== null ? device : serial };
 }
 
 function toTapPageFailure(code, detail) {
@@ -256,13 +266,21 @@ async function runTapPage(opts = {}) {
   if (typeof driveSequence !== 'function'
     || typeof readLogcat !== 'function'
     || typeof readScreencap !== 'function') {
+    // Live device lane (AC-RUNTIME-036/037): without a fully injected
+    // runner, execute the real adb sequence via `runTapPageLane` (install,
+    // force-stop, logcat -c, am start, page-index read, tap Next at
+    // 930,250, page-index re-read, screencap, opt-in full-buffer
+    // zero-jni-faults scan). Without a serial, fail closed with
+    // NO-DEVICE-RUNNER (adb never invoked).
     const serial = resolveTapPageSerial(opts.device);
     if (!serial) {
       throw toTapPageFailure('NO-DEVICE-RUNNER', 'no device runner injected for gallery-tap --tap-page');
     }
-    if (typeof driveSequence !== 'function') driveSequence = defaultTapPageDriveSequence(serial);
-    if (typeof readLogcat !== 'function') readLogcat = defaultTapPageReadLogcat(serial);
-    if (typeof readScreencap !== 'function') readScreencap = defaultTapPageReadScreencap(serial);
+    runTapPageLane({ serial, assertZeroJniFaults: opts.assertZeroJniFaults });
+    // `runTapPageLane` already tabulated the verdict and set the process
+    // exit code; report through without touching them (the bin entry keeps
+    // a noop fulfillment handler, so the lane's exit code stands).
+    return { ok: process.exitCode === getExitCode('ok'), blank: false };
   }
 
   let driven;
@@ -607,7 +625,7 @@ function runDeviceLane(opts) {
 function runGalleryTap(rest) {
   const argv = Array.isArray(rest) ? rest.slice() : [];
   // Tap-page lane: `gallery-tap --tap-page [--assert-zero-jni-faults]
-  // [--device <serial>]` (FR-RUNTIME-012, AC-RUNTIME-036/037). Routed here
+  // [--serial <serial>] [--device <serial>]` (FR-RUNTIME-012, AC-RUNTIME-036/037). Routed here
   // (not the button lane) whenever `--tap-page` is present so the existing
   // button lane is untouched.
   if (argv.includes('--tap-page')) {
@@ -631,7 +649,11 @@ function runGalleryTap(rest) {
       }))
       .then(
         () => {
-          process.exitCode = getExitCode('ok');
+          // Preserve a lane-set verdict (the live adb lane tabulates and
+          // sets its own exit code); default to ok when nothing did.
+          if (process.exitCode === undefined || process.exitCode === null) {
+            process.exitCode = getExitCode('ok');
+          }
         },
         (err) => {
           const code = (err && typeof err.code === 'string' && err.code.length > 0) ? err.code : 'TAP-PAGE-FAIL';
