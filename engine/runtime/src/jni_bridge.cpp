@@ -47,6 +47,16 @@
 #include <android/native_window_jni.h>
 #endif
 
+// BUG-M3-FIDELITY-012 T8: provenance macros baked by engine/runtime
+// CMakeLists.txt (T7). Safe "unknown" defaults so this TU compiles even
+// when the macros are absent (non-git configure, other build lanes).
+#ifndef ENGINE_GIT_SHA
+#define ENGINE_GIT_SHA "unknown"
+#endif
+#ifndef GALLERY_PRESENT_SHA
+#define GALLERY_PRESENT_SHA "unknown"
+#endif
+
 // The shared Runtime target builds with CXX_VISIBILITY_PRESET hidden, so JNI
 // entry points resolved by name lookup must opt back into default visibility.
 #define MUSE_JNI_EXPORT __attribute__((visibility("default")))
@@ -1077,6 +1087,13 @@ extern "C" MUSE_JNI_EXPORT jlong Java_com_muse_host_MainActivity_nativeLoadTree(
                   g->parseError.empty() ? "" : " parseWarn=",
                   g->parseError.empty() ? "" : g->parseError.c_str());
     MuseLogInfo(msg);
+    {
+      char prov[192];
+      std::snprintf(prov, sizeof(prov),
+                    "nativeProvenance: engine-sha=%s gallery_present-sha=%s",
+                    ENGINE_GIT_SHA, GALLERY_PRESENT_SHA);
+      MuseLogInfo(prov);
+    }
     {
       // Proof marker: device's own parsed row count. The window is not
       // attached yet at load, so the pager height is unknown here — the

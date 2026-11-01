@@ -39,6 +39,37 @@ target_include_directories(runtime PUBLIC include)
 target_include_directories(runtime PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../input/include)
 target_compile_options(runtime PRIVATE -Wall -Wextra -Wpedantic)
 
+# BUG-M3-FIDELITY-012 T7: device-side provenance decider. Bake engine-sha
+# (git rev-parse --short HEAD) + gallery_present content-sha
+# (git hash-object --short of src/gallery_present.cpp) at configure time as
+# string macros for the runtime target (and the Runtime shared target below).
+# Non-git exports / absent git fall back to "unknown" and never fail
+# configure. Compile-definitions route only (no generated header).
+execute_process(
+  COMMAND git rev-parse --short HEAD
+  WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+  OUTPUT_VARIABLE MUSE_ENGINE_GIT_SHA
+  OUTPUT_STRIP_TRAILING_WHITESPACE
+  ERROR_QUIET
+)
+if(NOT MUSE_ENGINE_GIT_SHA)
+  set(MUSE_ENGINE_GIT_SHA "unknown")
+endif()
+execute_process(
+  COMMAND git hash-object src/gallery_present.cpp
+  WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+  OUTPUT_VARIABLE MUSE_GALLERY_PRESENT_SHA
+  OUTPUT_STRIP_TRAILING_WHITESPACE
+  ERROR_QUIET
+)
+if(NOT MUSE_GALLERY_PRESENT_SHA)
+  set(MUSE_GALLERY_PRESENT_SHA "unknown")
+endif()
+target_compile_definitions(runtime PRIVATE
+  "ENGINE_GIT_SHA=\"${MUSE_ENGINE_GIT_SHA}\""
+  "GALLERY_PRESENT_SHA=\"${MUSE_GALLERY_PRESENT_SHA}\""
+)
+
 # BUG-M3-FIDELITY-005 T5: gallery emission shapes through the engine text
 # stack (shapeRunWithFallback over the T2 chain, RichBuffer-owned text, T3
 # atlas, measureLine sizing), so the text TUs gallery_present.cpp consumes
@@ -152,6 +183,11 @@ if(DEFINED ANDROID_ABI AND NOT TARGET Runtime)
     target_include_directories(Runtime PUBLIC ${JNI_INCLUDE_DIRS})
   endif()
   target_compile_options(Runtime PRIVATE -Wall -Wextra -Wpedantic)
+  # BUG-M3-FIDELITY-012 T7: same provenance macros for the shared target.
+  target_compile_definitions(Runtime PRIVATE
+    "ENGINE_GIT_SHA=\"${MUSE_ENGINE_GIT_SHA}\""
+    "GALLERY_PRESENT_SHA=\"${MUSE_GALLERY_PRESENT_SHA}\""
+  )
   # Gallery bring-up: ANativeWindow raster + logcat diagnostics live in
   # jni_bridge/gallery_present, so the shared target links the NDK android
   # and log libs (Android lane only; host lane untouched).
