@@ -69,6 +69,8 @@ foreach(TEST_SRC
     tests/reactive_query_test.cpp
     tests/store_open_test.cpp
     tests/cronet_api_test.cpp
+    tests/cronet_default_test.cpp
+    tests/cronet_size_delta_test.cpp
     tests/transport_policy_test.cpp
     tests/connectivity_state_test.cpp
     tests/quic_fallback_test.cpp

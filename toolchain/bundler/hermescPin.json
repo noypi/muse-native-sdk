@@ -1,0 +1,12 @@
+{
+  "version": "0.73.9",
+  "invocation": {
+    "binary": "hermesc",
+    "versionFlag": "--version",
+    "args": ["-emit-binary", "-out", "<out.hbc>", "<entry.js>"],
+    "inputFlag": "<entry.js>",
+    "outputFlag": "-out <out.hbc>"
+  },
+  "bytecodeTarget": "hbc-v1",
+  "notes": "NFR-BUILD-020 pin: release bytecode must be emitted by this exact hermesc invocation; any version/contract drift fails the bundler gate before any artifact ships. NFR-BUILD-012 untouched."
+}
