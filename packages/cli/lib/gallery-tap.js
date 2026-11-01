@@ -116,29 +116,34 @@ function tapPageAdb(serial, args, opts) {
 const tapPagePreDriveShots = new Map();
 
 function defaultTapPageDriveSequence(serial) {
-  return async function drive() {
-    tapPageAdb(serial, ['shell', 'am', 'force-stop', 'com.muse.host']);
-    tapPageAdb(serial, ['logcat', '-c']);
-    tapPageAdb(serial, ['shell', 'am', 'start', '-n', 'com.muse.host/.MainActivity']);
+  return async function drive(callArgs) {
+    // Honor the call-time {device} when provided, else the bound serial.
+    const s = (callArgs && typeof callArgs.device === 'string'
+      && callArgs.device.length > 0 && !callArgs.device.startsWith('-'))
+      ? callArgs.device
+      : serial;
+    tapPageAdb(s, ['shell', 'am', 'force-stop', 'com.muse.host']);
+    tapPageAdb(s, ['logcat', '-c']);
+    tapPageAdb(s, ['shell', 'am', 'start', '-n', 'com.muse.host/.MainActivity']);
     await new Promise((r) => setTimeout(r, 9000));
     // Best-effort pre-drive shot for the frozen-frame comparison; failures
     // here must not fail the drive itself.
     try {
-      const pre = tapPageAdb(serial, ['exec-out', 'screencap', '-p'], { encoding: 'buffer' });
+      const pre = tapPageAdb(s, ['exec-out', 'screencap', '-p'], { encoding: 'buffer' });
       if (pre && pre.stdout && pre.stdout.length > 0) {
-        tapPagePreDriveShots.set(serial, Buffer.from(pre.stdout));
+        tapPagePreDriveShots.set(s, Buffer.from(pre.stdout));
       }
     } catch (_) {
       // ignore — post-drive blank check still applies the size floor.
     }
-    tapPageAdb(serial, ['shell', 'input', 'tap', '150', '250']);
+    tapPageAdb(s, ['shell', 'input', 'tap', '150', '250']);
     await new Promise((r) => setTimeout(r, 1500));
-    tapPageAdb(serial, ['shell', 'am', 'broadcast', '-a', 'muse.native.PROOF_ADVANCE_PAGE']);
+    tapPageAdb(s, ['shell', 'am', 'broadcast', '-a', 'muse.native.PROOF_ADVANCE_PAGE']);
     await new Promise((r) => setTimeout(r, 1500));
-    tapPageAdb(serial, ['shell', 'am', 'broadcast', '-a', 'muse.native.PROOF_ADVANCE_PAGE']);
+    tapPageAdb(s, ['shell', 'am', 'broadcast', '-a', 'muse.native.PROOF_ADVANCE_PAGE']);
     await new Promise((r) => setTimeout(r, 1500));
     await new Promise((r) => setTimeout(r, 6000));
-    const dump = tapPageAdb(serial, ['logcat', '-d']);
+    const dump = tapPageAdb(s, ['logcat', '-d']);
     const text = String(dump.stdout || '');
     const pages = [];
     const re = /GalleryPage.*?page=(\d+)/g;
@@ -146,42 +151,65 @@ function defaultTapPageDriveSequence(serial) {
     while ((m = re.exec(text)) !== null) {
       pages.push(Number(m[1]));
     }
-    if (pages.length === 0) {
-      const err = new Error(
-        `device unreachable via adb against serial '${serial}': no GalleryPage page= indices in logcat`,
-      );
-      err.code = 'DEVICE-UNREACHABLE';
-      err.detail = err.message;
-      throw err;
+    // Observed static-root fallback marker (authoritative host marker family:
+    // STATIC-ROOT / "static root" / "fallback ... static"). Linear scan.
+    const fallbackToStaticRoot = /static[^a-z]*root|fallback[^a-z]*static/i.test(text);
+    if (pages.length < 2) {
+      // Fail closed: fewer than 2 page markers cannot prove advance; return
+      // NaN/NaN so the gate's `pageAfter > pageBefore` check rejects with
+      // PAGE-NOT-ADVANCED.
+      return { pageBefore: NaN, pageAfter: NaN, fallbackToStaticRoot };
     }
+    // Genuine observed boundary: first vs last observed index. A stuck pager
+    // (pages=[0,0,0]) yields pageBefore=0 pageAfter=0 so the gate's
+    // `pageAfter > pageBefore` check rejects with PAGE-NOT-ADVANCED.
+    // Note on identical screenshots: a byte-identical post shot can never
+    // pass this gate — readScreencap marks identical-to-pre as blank (throws
+    // BLANK-VIEWPORT), and even a non-blank identical frame still needs a
+    // distinct page advance here, which a frozen pager cannot produce.
+    const pageBefore = pages[0];
     const pageAfter = pages[pages.length - 1];
-    const pageBefore = pages[0] - 1;
-    return { pageBefore, pageAfter, fallbackToStaticRoot: false };
+    return { pageBefore, pageAfter, fallbackToStaticRoot };
   };
 }
 
 function defaultTapPageReadLogcat(serial) {
-  return async function read() {
-    const dump = tapPageAdb(serial, ['logcat', '-d']);
+  return async function read(callArgs) {
+    const s = (callArgs && typeof callArgs.device === 'string'
+      && callArgs.device.length > 0 && !callArgs.device.startsWith('-'))
+      ? callArgs.device
+      : serial;
+    const dump = tapPageAdb(s, ['logcat', '-d']);
     return String(dump.stdout || '').slice(0, 200000);
   };
 }
 
 function defaultTapPageReadScreencap(serial) {
-  return async function read() {
-    const res = tapPageAdb(serial, ['exec-out', 'screencap', '-p'], { encoding: 'buffer' });
+  return async function read(callArgs) {
+    const s = (callArgs && typeof callArgs.device === 'string'
+      && callArgs.device.length > 0 && !callArgs.device.startsWith('-'))
+      ? callArgs.device
+      : serial;
+    const res = tapPageAdb(s, ['exec-out', 'screencap', '-p'], { encoding: 'buffer' });
     const bytes = res && res.stdout ? Buffer.from(res.stdout) : Buffer.alloc(0);
+    // Debug PNG via a private temp dir, always cleaned up.
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'muse-tap-'));
     try {
-      const out = path.join(os.tmpdir(), `gallery-tap-${Date.now()}.png`);
-      fs.writeFileSync(out, bytes);
-    } catch (_) {
-      // ignore — verdict is in-memory.
+      fs.writeFileSync(path.join(dir, 'post.png'), bytes);
+    } finally {
+      try {
+        fs.rmSync(dir, { force: true, recursive: true });
+      } catch (_) {
+        // ignore — hygiene only, verdict is in-memory.
+      }
     }
     // Coarse blank basis: tiny PNGs (<8192 bytes) are blank placeholders,
     // and a post-drive shot byte-identical to the pre-drive shot means the
     // tap rendered nothing new. Exact pixel-variance stays with the injected
     // `deps.readScreencap` seam (isBlankViewport).
-    const pre = tapPagePreDriveShots.get(serial);
+    const pre = tapPagePreDriveShots.get(s);
+    // Consume the entry per run so a reused serial never compares across runs.
+    tapPagePreDriveShots.delete(s);
     const blank = bytes.length < 8192 || (pre != null && pre.length > 0 && bytes.equals(pre));
     return { blank };
   };

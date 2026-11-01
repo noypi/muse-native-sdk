@@ -72,8 +72,10 @@ function resolveSurfaceSerial(explicit) {
   return candidate;
 }
 
-function surfaceAdb(serial, args) {
-  const res = spawnSync('adb', ['-s', serial, ...args], { encoding: 'utf8' });
+function surfaceAdb(serial, args, opts) {
+  const res = spawnSync('adb', ['-s', serial, ...args], {
+    encoding: (opts && opts.encoding) || 'utf8',
+  });
   if (res.error || res.status !== 0) {
     const detail = res.error
       ? String((res.error && res.error.message) || res.error)
@@ -88,27 +90,49 @@ function surfaceAdb(serial, args) {
   return res;
 }
 
+// Pre-drive screencap bytes keyed by serial, captured best-effort inside the
+// default driveSequence so a frozen frame (post byte-identical to pre) fails
+// the drive instead of passing as a contract hold.
+const surfacePreDriveShots = new Map();
+
 function defaultSurfaceDriveSequence(serial) {
-  return async function drive() {
-    surfaceAdb(serial, ['shell', 'am', 'force-stop', 'com.muse.host']);
-    surfaceAdb(serial, ['logcat', '-c']);
-    surfaceAdb(serial, ['shell', 'am', 'start', '-n', 'com.muse.host/.MainActivity']);
+  return async function drive(callArgs) {
+    // Honor the call-time {device} when provided, else the bound serial.
+    const s = (callArgs && typeof callArgs.device === 'string'
+      && callArgs.device.length > 0 && !callArgs.device.startsWith('-'))
+      ? callArgs.device
+      : serial;
+    surfaceAdb(s, ['shell', 'am', 'force-stop', 'com.muse.host']);
+    surfaceAdb(s, ['logcat', '-c']);
+    surfaceAdb(s, ['shell', 'am', 'start', '-n', 'com.muse.host/.MainActivity']);
     await new Promise(r => setTimeout(r, 9000));
-    surfaceAdb(serial, ['shell', 'input', 'tap', '150', '250']);
+    // Best-effort pre-drive shot for the frozen-frame comparison; failures
+    // here must not fail the drive itself.
+    try {
+      const pre = surfaceAdb(s, ['exec-out', 'screencap', '-p'], { encoding: 'buffer' });
+      if (pre && pre.stdout && pre.stdout.length > 0) {
+        surfacePreDriveShots.set(s, Buffer.from(pre.stdout));
+      }
+    } catch (_) {
+      // ignore — repaint evidence still gates the drive.
+    }
+    surfaceAdb(s, ['shell', 'input', 'tap', '150', '250']);
     await new Promise(r => setTimeout(r, 1500));
-    surfaceAdb(serial, ['shell', 'input', 'swipe', '150', '400', '150', '100']);
+    surfaceAdb(s, ['shell', 'input', 'swipe', '150', '400', '150', '100']);
     await new Promise(r => setTimeout(r, 1500));
-    try { surfaceAdb(serial, ['shell', 'cmd', 'uimode', 'night', 'yes']); } catch (_) { /* best-effort: logcat markers matter */ }
+    // A device without `cmd uimode` is not a device we can prove insets on:
+    // let adb failures throw DEVICE-UNREACHABLE (no swallow).
+    surfaceAdb(s, ['shell', 'cmd', 'uimode', 'night', 'yes']);
     await new Promise(r => setTimeout(r, 2500));
-    try { surfaceAdb(serial, ['shell', 'cmd', 'uimode', 'night', 'no']); } catch (_) { /* best-effort: logcat markers matter */ }
+    surfaceAdb(s, ['shell', 'cmd', 'uimode', 'night', 'no']);
     await new Promise(r => setTimeout(r, 2500));
-    surfaceAdb(serial, ['shell', 'am', 'broadcast', '-a', 'muse.native.NATIVE_SET_THEME', '--ei', 'night', '1']);
+    surfaceAdb(s, ['shell', 'am', 'broadcast', '-a', 'muse.native.NATIVE_SET_THEME', '--ei', 'night', '1']);
     await new Promise(r => setTimeout(r, 1500));
-    surfaceAdb(serial, ['shell', 'am', 'broadcast', '-a', 'muse.native.NATIVE_SET_THEME', '--ei', 'night', '0']);
+    surfaceAdb(s, ['shell', 'am', 'broadcast', '-a', 'muse.native.NATIVE_SET_THEME', '--ei', 'night', '0']);
     await new Promise(r => setTimeout(r, 1500));
-    surfaceAdb(serial, ['shell', 'input', 'keyevent', '4']);
+    surfaceAdb(s, ['shell', 'input', 'keyevent', '4']);
     await new Promise(r => setTimeout(r, 6000));
-    const dump = surfaceAdb(serial, ['logcat', '-d', '-s', 'muse-host']);
+    const dump = surfaceAdb(s, ['logcat', '-d', '-s', 'muse-host']);
     const text = String(dump.stdout || '');
     const steps = [];
     const re = /SEAM-STEP:(\w+):(ok|fail)/g;
@@ -127,24 +151,72 @@ function defaultSurfaceDriveSequence(serial) {
       err.detail = err.message;
       throw err;
     }
-    return { steps, fallbackToStaticRoot: false };
+    // Observed static-root fallback marker (authoritative host marker family:
+    // STATIC-ROOT / "static root" / "fallback ... static"). Linear scan.
+    const fallbackToStaticRoot = /static[^a-z]*root|fallback[^a-z]*static/i.test(text);
+    // Repaint evidence: at least one repaint=1 line must be observed, else
+    // the run presented nothing and is not a contract hold.
+    const repaintMatches = text.match(/repaint=1/g);
+    const framesAdvanced = Boolean(repaintMatches && repaintMatches.length > 0);
+    if (!framesAdvanced) {
+      const err = new Error('seam step failed on device: no repaint=1 evidence observed (present-less run)');
+      err.code = 'SEAM-STEP-FAIL';
+      err.step = 'render';
+      err.detail = err.message;
+      throw err;
+    }
+    // Frozen-frame check: post shot byte-identical to the pre shot means the
+    // drive rendered nothing new. Best-effort (missing shots do not fail).
+    try {
+      const post = surfaceAdb(s, ['exec-out', 'screencap', '-p'], { encoding: 'buffer' });
+      const pre = surfacePreDriveShots.get(s);
+      surfacePreDriveShots.delete(s);
+      const postBytes = post && post.stdout ? Buffer.from(post.stdout) : null;
+      if (pre && pre.length > 0 && postBytes && postBytes.length > 0 && postBytes.equals(pre)) {
+        const err = new Error('seam step failed on device: frozen frame (post-drive shot identical to pre-drive shot)');
+        err.code = 'SEAM-STEP-FAIL';
+        err.step = 'render';
+        err.detail = err.message;
+        throw err;
+      }
+    } catch (err) {
+      if (err && err.code === 'SEAM-STEP-FAIL') throw err;
+      // ignore post-shot capture failures — repaint evidence already gated.
+    }
+    return { steps, fallbackToStaticRoot, framesAdvanced };
   };
 }
 
 function defaultSurfaceReadLogcat(serial) {
-  return async function read() {
-    const dump = surfaceAdb(serial, ['logcat', '-d']);
+  return async function read(callArgs) {
+    const s = (callArgs && typeof callArgs.device === 'string'
+      && callArgs.device.length > 0 && !callArgs.device.startsWith('-'))
+      ? callArgs.device
+      : serial;
+    const dump = surfaceAdb(s, ['logcat', '-d']);
     return String(dump.stdout || '').slice(0, 200000);
   };
 }
 
 function defaultSurfaceReadFrameStats(serial) {
-  return async function read() {
-    const dump = surfaceAdb(serial, ['logcat', '-d']);
+  return async function read(callArgs) {
+    const s = (callArgs && typeof callArgs.device === 'string'
+      && callArgs.device.length > 0 && !callArgs.device.startsWith('-'))
+      ? callArgs.device
+      : serial;
+    // Tag-filtered dump so stale system-buffer lines never count.
+    const dump = surfaceAdb(s, ['logcat', '-d', '-s', 'muse-host']);
     const text = String(dump.stdout || '');
-    const matches = text.match(/repaint=1|Fully drawn|Displayed/g);
-    const presented = matches ? matches.length : 0;
-    return { presented, dropped: 0, deadlineMissed: 0 };
+    // Count only OUR package's lines (belt-and-braces on top of -s), and
+    // only repaint=1 + Fully drawn/Displayed within those lines.
+    let presented = 0;
+    for (const line of text.split('\n')) {
+      if (!/muse-host|com\.muse\.host/.test(line)) continue;
+      const matches = line.match(/repaint=1|Fully drawn|Displayed/g);
+      if (matches) presented += matches.length;
+    }
+    // Return { presented } only — no hardcoded dropped/deadlineMissed claims.
+    return { presented };
   };
 }
 
@@ -197,6 +269,9 @@ async function runSurfaceContract(opts = {}) {
   }
 
   const steps = driven && Array.isArray(driven.steps) ? driven.steps : [];
+  if (driven && driven.framesAdvanced === false) {
+    throw toFailure('SEAM-STEP-FAIL', 'render: no repaint evidence observed (present-less run is not a contract hold)');
+  }
   if (driven && driven.fallbackToStaticRoot) {
     throw toFailure('STATIC-ROOT-FALLBACK', 'fallback-to-static-root reported during surface-contract sequence');
   }
