@@ -447,7 +447,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     @Override
     protected void onResume() {
         super.onResume();
-        // FR-SAMPLE-014: advanceReceiver above is neutralized (never pages);
+        // FR-SAMPLE-014: advanceReceiver above is scoped (pages only for
+        // shell-chrome/key/deep-link origins; all else fail-closed no-op);
         // both receivers stay registered so the harness/theme entries exist.
         if (probeField != null) {
             try {

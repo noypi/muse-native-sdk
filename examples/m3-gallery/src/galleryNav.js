@@ -238,7 +238,17 @@ function isPagingGesture(origin, gesture) {
 // `globalThis.__museTestBroadcasts` (an array) is present, one record
 // `{ action, direction, origin }` with
 // `action === 'muse.native.NATIVE_ADVANCE_PAGE'` is appended per allowed
-// call. When the sink is absent the real bridge is used.
+// call. When the sink is absent the injected host entry
+// `globalThis.__museHostAdvance(direction, origin)` is called (same
+// convention as `__museHostSetTheme` in App.tsx).
+//
+// Fallback semantics (fail-closed): `true` always means "a
+// native-observable advance was issued" — either the hermetic sink record
+// or the host entry was invoked without throwing/denying. Sink absent +
+// no host entry → `false` (no-op), never a bare `true` with no effect.
+// A host entry that throws or returns exactly `false` is treated as
+// denied → `false`; any other host return (including `undefined`) counts
+// as issued → `true`.
 const SHELL_ADVANCE_GESTURES = {
   'shell-chrome': 'tap',
   key: 'key',
@@ -261,8 +271,25 @@ function requestShellAdvance(direction, origin) {
       direction,
       origin,
     });
+    return true;
   }
-  return true;
+  // Production path: injected host advance entry when present; fail closed
+  // (return false) when absent, so `true` always implies an observable
+  // native advance was issued.
+  try {
+    const host = typeof globalThis !== 'undefined' ? globalThis.__museHostAdvance : undefined;
+    if (typeof host === 'function') {
+      const issued = host(direction, origin);
+      if (issued === false) {
+        return false;
+      }
+      return true;
+    }
+  } catch (err) {
+    void err;
+    return false;
+  }
+  return false;
 }
 
 // Shell chrome entry points (bound by App.tsx outside the story surface).

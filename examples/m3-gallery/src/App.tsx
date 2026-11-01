@@ -239,7 +239,7 @@ export default function App() {
     return () => {
       window.removeEventListener('keydown', onKeyDown);
     };
-  }, [stories.length]);
+  }, [stories.length, clampedIndex]);
   // Deep-link movement delegates to galleryNav (single storyIdOf rule:
   // story.id || story.component): bare gallery://story/<id> and seeded
   // ?seed=<n> links agree with galleryNav.openStoryLink, and unknown ids

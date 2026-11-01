@@ -53,6 +53,19 @@ function clearSink() {
   delete globalThis.__museTestBroadcasts;
 }
 
+function clearHost() {
+  delete globalThis.__museHostAdvance;
+}
+
+function installHostStub(impl) {
+  const calls = [];
+  globalThis.__museHostAdvance = (direction, origin) => {
+    calls.push({ direction, origin });
+    return impl ? impl(direction, origin) : undefined;
+  };
+  return calls;
+}
+
 describe('T1 requestShellAdvance shell-chrome→native bridge (AC-SAMPLE-039)', () => {
   beforeEach(() => {
     installSink();
@@ -238,6 +251,81 @@ describe('T1 requestShellAdvance shell-chrome→native bridge (AC-SAMPLE-039)', 
       assert.equal(nav.isPagingGesture('inside-surface', 'tap'), false);
     } finally {
       clearSink();
+    }
+  });
+
+  it('sink absent + host stub present: host called once with (direction, origin), returns true', () => {
+    clearSink();
+    clearHost();
+    const nav = freshRequireNav();
+    const calls = installHostStub();
+    try {
+      const ok = nav.requestShellAdvance(1, 'shell-chrome');
+      assert.equal(ok, true);
+      assert.equal(calls.length, 1, 'host stub must be called exactly once');
+      assert.equal(calls[0].direction, 1);
+      assert.equal(calls[0].origin, 'shell-chrome');
+    } finally {
+      clearSink();
+      clearHost();
+    }
+  });
+
+  it('sink absent + no host: returns false fail-closed', () => {
+    clearSink();
+    clearHost();
+    const nav = freshRequireNav();
+    try {
+      assert.equal(nav.requestShellAdvance(1, 'shell-chrome'), false);
+      assert.equal(nav.requestShellAdvance(-1, 'key'), false);
+    } finally {
+      clearSink();
+      clearHost();
+    }
+  });
+
+  it('sink absent + host throws: returns false', () => {
+    clearSink();
+    clearHost();
+    const nav = freshRequireNav();
+    installHostStub(() => {
+      throw new Error('host boom');
+    });
+    try {
+      assert.equal(nav.requestShellAdvance(1, 'shell-chrome'), false);
+    } finally {
+      clearSink();
+      clearHost();
+    }
+  });
+
+  it('sink absent + host returns false: returns false', () => {
+    clearSink();
+    clearHost();
+    const nav = freshRequireNav();
+    const calls = installHostStub(() => false);
+    try {
+      assert.equal(nav.requestShellAdvance(-1, 'deep-link'), false);
+      assert.equal(calls.length, 1);
+    } finally {
+      clearSink();
+      clearHost();
+    }
+  });
+
+  it('sink absent + validation denial with host present: returns false, host never called', () => {
+    clearSink();
+    clearHost();
+    const nav = freshRequireNav();
+    const calls = installHostStub();
+    try {
+      assert.equal(nav.requestShellAdvance(1, 'story-surface'), false);
+      assert.equal(nav.requestShellAdvance(0, 'shell-chrome'), false);
+      assert.equal(nav.requestShellAdvance(1, 'broadcast'), false);
+      assert.equal(calls.length, 0, 'validation denial must never invoke the host');
+    } finally {
+      clearSink();
+      clearHost();
     }
   });
 });
