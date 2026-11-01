@@ -275,6 +275,15 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             long handle, int action, float x, float y, int pointerId, long timestampMs);
 
     /**
+     * Batch 3 T5 (AC-RUNTIME-009/012, FR-RUNTIME-011): commit IME bytes to
+     * the focused engine row (native `ime_commit` seam, committed
+     * `commit_text` write path) — never to the hidden 1x1 EditTexts.
+     * Returns 0 committed-or-empty-noop, 1 no-focus/unknown-row (nothing
+     * touched), -1 environment failure. Fail-closed, never throws.
+     */
+    private static native int nativeCommitEngineRowText(long handle, String text);
+
+    /**
      * FR-RUNTIME-011 T1 single Surface host seam (reference-client binding).
      * The gallery host migrates to this seam exclusively: attach/tree→handle,
      * renderFrame, raw dispatchTouch (integer/float fields only), in-place
@@ -615,6 +624,16 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         inputViewMuseField.setVisibility(View.VISIBLE);
         inputViewMuseField.setContentDescription("MuseField IME probe input view");
         inputViewMuseField.setTag("MuseField");
+        // Batch 3 T5 (AC-RUNTIME-009/012, FR-RUNTIME-011): forward IME
+        // commits to the focused engine row. The 1x1 views above are only the
+        // IME's required editor connection — committed text is forwarded
+        // delta-by-delta to nativeCommitEngineRowText (the focused engine row
+        // is bound natively when the tap chain claims the probe row) and the
+        // hidden sink is cleared, so commits never accumulate in the hidden
+        // views. Fail-closed: any failure leaves the hidden text cleared and
+        // never breaks the editor connection.
+        attachEngineRowForwarder((EditText) inputViewTextInput);
+        attachEngineRowForwarder((EditText) inputViewMuseField);
         FrameLayout.LayoutParams imeParams = new FrameLayout.LayoutParams(1, 1);
         root.addView(inputViewTextInput, imeParams);
         root.addView(inputViewMuseField, imeParams);
@@ -1018,12 +1037,87 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     }
 
     /**
+     * Batch 3 T5 (AC-RUNTIME-009/012, FR-RUNTIME-011): pass-through
+     * forwarder from one hidden 1x1 editor to the focused engine row. The
+     * view stays the IME's editor connection (focusable, VISIBLE,
+     * non-touch-consuming — untouched); user-committed deltas are forwarded
+     * to nativeCommitEngineRowText and the hidden sink is cleared so the
+     * commit never accumulates outside the engine row. Deletions and
+     * programmatic clears only reset the delta cursor. Fail-closed, never
+     * throws.
+     */
+    private void attachEngineRowForwarder(EditText field) {
+        if (field == null) {
+            return;
+        }
+        final boolean[] forwarding = new boolean[1];
+        final int[] forwarded = new int[1];
+        field.addTextChangedListener(new TextWatcher() {
+            @Override
+            public void beforeTextChanged(CharSequence s, int start, int count, int after) {
+            }
+
+            @Override
+            public void onTextChanged(CharSequence s, int start, int before, int count) {
+            }
+
+            @Override
+            public void afterTextChanged(Editable s) {
+                if (forwarding[0]) {
+                    return;
+                }
+                try {
+                    if (engineHandle == 0 || s == null) {
+                        return;
+                    }
+                    String cur = s.toString();
+                    if (cur.length() > forwarded[0]) {
+                        String delta = cur.substring(forwarded[0]);
+                        forwarded[0] = cur.length();
+                        try {
+                            nativeCommitEngineRowText(engineHandle, delta);
+                        } catch (Throwable ignored) {
+                            // Fail-closed: a failed forward never breaks typing.
+                        }
+                        // Route the commit to the engine row only: clear the
+                        // hidden sink under the re-entrancy guard.
+                        forwarding[0] = true;
+                        try {
+                            s.clear();
+                        } finally {
+                            forwarding[0] = false;
+                        }
+                        forwarded[0] = 0;
+                    } else if (cur.isEmpty()) {
+                        forwarded[0] = 0;
+                    }
+                } catch (Throwable ignored) {
+                    // Fail-closed: observation/forwarding never breaks input.
+                }
+            }
+        });
+    }
+
+    /**
      * Focus the TextInput + MuseField-backed input view after a claimed tap
      * (L7 probe row) and ask InputMethodManager to show — the IME summon
      * leg (AC-RUNTIME-009). Runs strictly after nativeDispatchTouch claimed
      * the gesture, so native-first routing is preserved.
      */
     private void requestImeForProbeTap() {
+        try {
+            // Batch 3 T5: start the new focus session with empty hidden
+            // sinks — the forwarder above routes every fresh commit to the
+            // focused engine row, so the hidden views never hold content.
+            if (inputViewTextInput instanceof EditText) {
+                ((EditText) inputViewTextInput).setText("");
+            }
+            if (inputViewMuseField instanceof EditText) {
+                ((EditText) inputViewMuseField).setText("");
+            }
+        } catch (Throwable ignored) {
+            // Fail-closed: a stale view never blocks the IME summon.
+        }
         if (inputViewTextInput != null) {
             inputViewTextInput.requestFocus();
         }
