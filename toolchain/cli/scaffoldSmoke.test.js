@@ -42,13 +42,28 @@ afterEach(() => {
   }
 });
 
-// Minimal fake template stand-in: manifest + placeholder bundle inputs for T2.
+// Minimal fake template stand-in: the fixed nine-member TEMPLATE_FILES set
+// from packages/cli/lib/init.js:11-21 (read-only reference — DO NOT modify
+// init.js). Placeholder content suffices per plan A5: scaffoldProject copies
+// bytes verbatim except the single `APP_NAME =` Makefile line rewrite, so the
+// smoke composition asserts existence, not template content. (The pre-T3
+// 3-file fixture had no Makefile and hence no APP_NAME handling to mirror —
+// the placeholder `APP_NAME =` line below exists only so the rewrite has a
+// line to target.)
 function writeTemplate(root) {
   fs.mkdirSync(root, { recursive: true });
   fs.writeFileSync(path.join(root, 'muse-native.yaml'), 'name: fake-app-not-real\n');
   fs.writeFileSync(path.join(root, 'package.json'), '{"name":"fake-app-not-real"}\n');
+  fs.writeFileSync(path.join(root, 'tsconfig.json'), '{}\n');
+  fs.writeFileSync(path.join(root, 'README.md'), '# fake-app-not-real\n');
+  fs.writeFileSync(path.join(root, 'Makefile'), 'APP_NAME = fake-app-not-real\n');
+  fs.writeFileSync(path.join(root, 'AndroidManifest.xml'), '<manifest/>\n');
   fs.mkdirSync(path.join(root, 'src'), { recursive: true });
   fs.writeFileSync(path.join(root, 'src', 'App.tsx'), 'export default function App() {}\n');
+  fs.mkdirSync(path.join(root, 'proxy'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'proxy', 'proxy.config.json'), '{}\n');
+  fs.mkdirSync(path.join(root, 'res', 'values'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'res', 'values', 'strings.xml'), '<resources></resources>\n');
   return root;
 }
 
@@ -235,7 +250,7 @@ describe('T6 composition — scaffold→signed-AAB→mount→symbols (batch 3)',
     fs.mkdirSync(workDir, { recursive: true });
     assert.throws(
       () => runScaffoldSmoke({ templateDir, workDir, packName: '' }),
-      (err) => err instanceof Error && /^smoke-failed: \S/.test(err.message)
+      (err) => err instanceof Error && /^smoke-failed: delivery: \S/.test(err.message)
     );
   });
 
