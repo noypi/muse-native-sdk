@@ -2391,6 +2391,55 @@ int GalleryPressedNode() noexcept {
   }
 }
 
+// DOWN y -> pressed row id (i + 1) against the page's row layout. Geometry
+// mirrors the windowed emitter + viewport rebase in PresentDeviceGalleryPage:
+// rows of the page slice [starts[page], starts[page+1]) stack at
+// cursor + kHeaderH (cursor from kPad, rh + kGap steps), rebased to the
+// viewport origin by (cursorFirst - kPad). Device y is in window px while
+// the layout is in kPresentH canvas px, so the coordinate is scaled by
+// viewportH / kPresentH (the same linear map the window sink paints with).
+// A y landing in no row band, or any bad input, returns -1: the caller
+// clears instead of engaging, so the wash never lands on a coincidental row.
+int GalleryResolvePressedRow(float yDevicePx,
+                              const std::vector<GalleryRow>& rows, int page,
+                              int viewportH) noexcept {
+  try {
+    if (!std::isfinite(yDevicePx) || yDevicePx < 0.0f) return -1;
+    if (rows.empty() || viewportH <= 0) return -1;
+    const int pages = GalleryPageCount(rows, viewportH);
+    if (pages <= 0 || page < 0 || page >= pages) return -1;
+    const std::vector<int> starts = PageStarts(rows, viewportH);
+    const int first = starts[static_cast<std::size_t>(page)];
+    const int last = starts[static_cast<std::size_t>(page) + 1] - 1;
+    if (last < first) return -1;
+    const float scale =
+        static_cast<float>(viewportH) / static_cast<float>(kPresentH);
+    if (!(scale > 0.0f) || !std::isfinite(scale)) return -1;
+    const float canvasY = yDevicePx / scale;
+    if (!std::isfinite(canvasY) || canvasY < 0.0f) return -1;
+    float cursorFirst = static_cast<float>(kPad);
+    for (int i = 0; i < first; ++i) {
+      cursorFirst += static_cast<float>(
+                         RowHeight(rows[static_cast<std::size_t>(i)])) +
+                     static_cast<float>(kGap);
+    }
+    const float rebaseDy = cursorFirst - static_cast<float>(kPad);
+    float cursor = cursorFirst;
+    for (int i = first; i <= last; ++i) {
+      const int rh =
+          RowHeight(rows[static_cast<std::size_t>(i)]);
+      const float by = cursor + static_cast<float>(kHeaderH) - rebaseDy;
+      if (canvasY >= by && canvasY < by + static_cast<float>(rh)) {
+        return i + 1;
+      }
+      cursor += static_cast<float>(rh + kGap);
+    }
+    return -1;
+  } catch (...) {
+    return -1;
+  }
+}
+
 // Emit retained DrawCmds for exactly the realized window [firstVisible,
 // lastVisible] through the 006 vocabulary (same row geometry as
 // PresentGallery: kPresentW canvas, kPad/kGap/kHeaderH metrics). This is the

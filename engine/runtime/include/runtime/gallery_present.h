@@ -207,8 +207,11 @@ DismissResult onScrimTap(bool scrimHit, bool isDrag,
 // The native tap chain claims only on the UP slop verdict, so no pressed
 // state ever engages mid-hold and the wash has nothing to render. The
 // device host closes that gap through this seam: on ACTION_DOWN it resolves
-// the hit target and calls GallerySetPressedNode(target) (provisional claim,
-// target is the 1-based row node id, i + 1); on ACTION_MOVE it keeps the
+// the hit target and translates it to the pressed row's 1-based id (i + 1)
+// via GalleryResolvePressedRow (DOWN y against the page's row layout,
+// fail-closed to clear when the target/coordinate maps to no row), then
+// calls GallerySetPressedNode(row) (provisional claim); on ACTION_MOVE it
+// keeps the
 // node while displacement stays within slop and calls
 // GalleryClearPressedNode() past slop; on ACTION_UP / cancel it calls
 // GalleryClearPressedNode(). The host must request a frame after engaging
@@ -221,6 +224,18 @@ DismissResult onScrimTap(bool scrimHit, bool isDrag,
 void GallerySetPressedNode(int nodeId) noexcept;
 void GalleryClearPressedNode() noexcept;
 int GalleryPressedNode() noexcept;
+
+// DOWN-to-row translation for the pressed seam above: maps a DOWN
+// y-coordinate (device/window px) geometrically against the row layout of
+// `page` under `viewportH` to the pressed row's 1-based id (i + 1, the same
+// numbering EmitGalleryWindowCmds matches the wash against). The structural
+// tap-tree ids (root/scrim/button) are unrelated to row numbering and must
+// never be stored as the pressed node. Returns -1 (fail-closed, caller
+// clears) when the coordinate maps to no row: empty rows, bad viewport,
+// out-of-range page, or a y outside every row band. Never throws.
+int GalleryResolvePressedRow(float yDevicePx,
+                              const std::vector<GalleryRow>& rows, int page,
+                              int viewportH) noexcept;
 
 // Plan T62 `Interface:` line (verbatim): maps a state token to its numeric
 // M3 state-layer opacity (0.08 hover / 0.12 focus / 0.16 pressed / 0.38

@@ -1416,10 +1416,22 @@ extern "C" MUSE_JNI_EXPORT jint Java_com_muse_host_MainActivity_nativeDispatchTo
         }
         // P2: provisional pressed engagement on the hit target; a miss
         // clears any stale engagement. Enqueue decision below, outside mu.
+        // The structural tap-tree hit (root/scrim/button ids) is unrelated
+        // to row numbering, so the DOWN y is translated geometrically
+        // against the current page's row layout to the pressed row's
+        // 1-based id (GalleryResolvePressedRow, fail-closed to clear when
+        // the coordinate maps to no row); the tap-tree hit only gates
+        // finger-on-content vs miss.
         const int pressedBefore = ::runtime::GalleryPressedNode();
         const int32_t downTarget = ResolveTapTarget(g->tapTree, x, y);
         if (downTarget >= 0) {
-          ::runtime::GallerySetPressedNode(static_cast<int>(downTarget));
+          const int pressedRow = ::runtime::GalleryResolvePressedRow(
+              y, g->rows, g->page, g->lastViewportH);
+          if (pressedRow > 0) {
+            ::runtime::GallerySetPressedNode(pressedRow);
+          } else {
+            ::runtime::GalleryClearPressedNode();
+          }
         } else {
           ::runtime::GalleryClearPressedNode();
         }
