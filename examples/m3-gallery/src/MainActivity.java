@@ -191,6 +191,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                 if (seamSurfaceHandle != 0) {
                     try {
                         nativeSeamSetTheme(seamSurfaceHandle, nightMode);
+                        Log.i("muse-host", "SEAM-STEP:theme:ok");
                     } catch (Throwable ignored) {
                     }
                 }
@@ -365,12 +366,15 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             if (status == 0) {
                 seamSurfaceHandle = nativeSeamLastHandle();
                 seamAttached = seamSurfaceHandle != 0;
+                Log.i("muse-host", "SEAM-STEP:attach:ok:handle=" + seamSurfaceHandle);
             } else {
                 seamSurfaceHandle = 0;
                 seamAttached = false;
+                Log.i("muse-host", "SEAM-STEP:attach:fail:status=" + status);
             }
         } catch (Throwable ignored) {
             // Fail-closed: seam attach never breaks the surface path.
+            Log.i("muse-host", "SEAM-STEP:attach:fail:thrown");
             seamSurfaceHandle = 0;
             seamAttached = false;
         }
@@ -386,6 +390,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     private void detachSeamSurface() {
         if (seamSurfaceHandle != 0) {
             nativeSeamDetach(seamSurfaceHandle);
+            Log.i("muse-host", "SEAM-STEP:detach:ok");
             seamSurfaceHandle = 0;
         }
         seamAttached = false;
@@ -399,7 +404,10 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     private void destroySeamSurface() {
         if (seamSurfaceHandle != 0) {
             nativeSeamDestroy(seamSurfaceHandle);
+            Log.i("muse-host", "SEAM-STEP:destroy:ok");
             seamSurfaceHandle = 0;
+        } else {
+            Log.i("muse-host", "SEAM-STEP:destroy:ok:already-released");
         }
         seamAttached = false;
     }
@@ -524,6 +532,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                             event.getX(index),
                             event.getY(index),
                             event.getEventTime());
+                    Log.i("muse-host", "SEAM-STEP:touch:ok");
                 } catch (Throwable ignored) {
                     // Fail-closed: seam touch never breaks the tap path.
                 }
@@ -549,6 +558,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                 if (seamSurfaceHandle != 0) {
                     try {
                         nativeSeamRenderFrame(seamSurfaceHandle);
+                        Log.i("muse-host", "SEAM-STEP:render:ok");
                     } catch (Throwable ignored) {
                     }
                 }
@@ -567,6 +577,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                 if (seamSurfaceHandle != 0) {
                     try {
                         nativeSeamRenderFrame(seamSurfaceHandle);
+                        Log.i("muse-host", "SEAM-STEP:render:ok");
                     } catch (Throwable ignored) {
                     }
                 }
@@ -731,6 +742,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         if (seamSurfaceHandle != 0) {
             try {
                 nativeSeamRenderFrame(seamSurfaceHandle);
+                Log.i("muse-host", "SEAM-STEP:render:ok");
             } catch (Throwable ignored) {
             }
         }
@@ -1152,7 +1164,9 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             if (seamSurfaceHandle != 0) {
                 try {
                     nativeSeamSetImeBottom(seamSurfaceHandle, (int) imeBottomPx);
+                    Log.i("muse-host", "SEAM-STEP:ime:ok");
                     nativeSeamRenderFrame(seamSurfaceHandle);
+                    Log.i("muse-host", "SEAM-STEP:render:ok");
                 } catch (Throwable ignored) {
                 }
             }
