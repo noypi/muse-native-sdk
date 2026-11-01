@@ -21,6 +21,7 @@
 #include "egl_blit.cpp"
 
 #include <atomic>
+#include <cmath>
 #include <condition_variable>
 #include <cstdint>
 #include <cstdio>
@@ -35,6 +36,7 @@
 #include <vector>
 
 #include "runtime/gallery_present.h"
+#include "runtime/input.h"
 #include "runtime/input_chain.h"
 
 #include "gesture_arena.h"
@@ -338,6 +340,13 @@ struct GalleryHandle {
   // node). Guarded by mu like the rest of the handle.
   HitTestTree tapTree;
   GestureArena tapArena;
+  // FR-GRAPHICS-015 T5 (P2 pressed-state wiring): last ACTION_DOWN origin
+  // for the MOVE slop verdict (slop is measured against the DOWN origin,
+  // not the last MOVE position). Guarded by mu like the rest of the handle.
+  float downX = 0.0f;
+  float downY = 0.0f;
+  int32_t downPointer = -1;
+  bool hasDown = false;
   // BUG-INPUT-001 T3 (AC-M3-022 scrim clause): live overlay count for the
   // layering page (paintLayeringPage presents the scrim + five contents, so
   // the stack opens at 5) and the last viewport height RenderLocked presented
@@ -1363,6 +1372,8 @@ extern "C" MUSE_JNI_EXPORT jint Java_com_muse_host_MainActivity_nativeDispatchTo
     // in jni_touch_dispatch_shape_test.cpp).
     constexpr jint kActionDown = 0;
     constexpr jint kActionUp = 1;
+    constexpr jint kActionMove = 2;
+    constexpr jint kActionCancel = 3;
     input::AxisState axes{};
     axes.x = x;
     axes.y = y;
@@ -1373,8 +1384,13 @@ extern "C" MUSE_JNI_EXPORT jint Java_com_muse_host_MainActivity_nativeDispatchTo
     // FR-STARTUP-003 T2: gather tap verdict under g->mu, then enqueue the
     // repaint outside the mu critical section (no inline RenderLocked on the
     // calling thread; the single render thread locks mu per frame).
+    // FR-GRAPHICS-015 T5 (P2 pressed-state wiring): DOWN/MOVE/CANCEL manage
+    // the provisional pressed node for the state-layer wash here; every
+    // EnqueueFrame below runs outside mu (never hold the gallery lock across
+    // the queue). DOWN/MOVE never fire (return -1).
     int firedTarget = -1;
     bool firedPosted = false;
+    bool enqueueAfter = false;
     {
       std::lock_guard<std::mutex> lock(g->mu);
       if (action == kActionDown) {
@@ -1388,20 +1404,50 @@ extern "C" MUSE_JNI_EXPORT jint Java_com_muse_host_MainActivity_nativeDispatchTo
 #endif
         RecordTapDown(pointerId, x, y);
         g->tapArena.AddPointer(ev, g->tapTree);
-        return -1;
-      }
-      if (action == kActionUp) {
+        // P2: record the DOWN origin for the MOVE slop verdict (fail-closed:
+        // untrusted coordinates leave no origin, so MOVE clears).
+        if (x >= 0.0f && y >= 0.0f) {
+          g->downX = x;
+          g->downY = y;
+          g->downPointer = pointerId;
+          g->hasDown = true;
+        } else {
+          g->hasDown = false;
+        }
+        // P2: provisional pressed engagement on the hit target; a miss
+        // clears any stale engagement. Enqueue decision below, outside mu.
+        // The structural tap-tree hit (root/scrim/button ids) is unrelated
+        // to row numbering, so the DOWN y is translated geometrically
+        // against the current page's row layout to the pressed row's
+        // 1-based id (GalleryResolvePressedRow, fail-closed to clear when
+        // the coordinate maps to no row); the tap-tree hit only gates
+        // finger-on-content vs miss.
+        const int pressedBefore = ::runtime::GalleryPressedNode();
+        const int32_t downTarget = ResolveTapTarget(g->tapTree, x, y);
+        if (downTarget >= 0) {
+          const int pressedRow = ::runtime::GalleryResolvePressedRow(
+              y, g->rows, g->page, g->lastViewportH);
+          if (pressedRow > 0) {
+            ::runtime::GallerySetPressedNode(pressedRow);
+          } else {
+            ::runtime::GalleryClearPressedNode();
+          }
+        } else {
+          ::runtime::GalleryClearPressedNode();
+        }
+        enqueueAfter = (::runtime::GalleryPressedNode() != pressedBefore);
+      } else if (action == kActionUp) {
+        // P2: the UP fire path below is unchanged; clear the provisional
+        // pressed state first so the resting frame carries no wash. When the
+        // tap fires, its existing EnqueueFrame repaints; on a miss the wash
+        // still needs one frame to clear (enqueueAfter).
+        const int upPressedBefore = ::runtime::GalleryPressedNode();
+        ::runtime::GalleryClearPressedNode();
+        g->hasDown = false;
         const int32_t target = ResolveTapTarget(g->tapTree, x, y);
-        if (target < 0) {
-          return -1;
-        }
-        const ArenaAction claim = ClaimTap(g->tapArena, pointerId, target);
-        if (!claim.claimed) {
-          return -1;
-        }
-        if (!FireTapHandler(target)) {
-          return -1;
-        }
+        if (target >= 0) {
+          const ArenaAction claim = ClaimTap(g->tapArena, pointerId, target);
+          if (claim.claimed && FireTapHandler(target)) {
         // BUG-INPUT-001 T3 (AC-M3-022 scrim clause): layering-page scrim-tap
         // routing. scrimHit rides the T2 scrim hit-target (node 20, child of
         // root 10 with content 21 above it, so button taps never read as
@@ -1437,11 +1483,42 @@ extern "C" MUSE_JNI_EXPORT jint Java_com_muse_host_MainActivity_nativeDispatchTo
         const bool posted = RepaintWithinOneFrame(target);
         firedTarget = static_cast<int>(target);
         firedPosted = posted;
+          }  // if (claim.claimed && FireTapHandler(target))
+        }  // if (target >= 0)
+        if (firedTarget < 0) {
+          enqueueAfter = (upPressedBefore >= 0);
+        }
+      } else if (action == kActionMove) {
+        // P2: keep the arena displacement current so the UP slop verdict
+        // measures the full gesture; keep pressed iff within slop of the
+        // DOWN origin, else clear. Enqueue ONLY on a pressed-state change;
+        // never fire.
+        g->tapArena.AddPointer(ev, g->tapTree);
+        bool withinSlop = false;
+        if (g->hasDown && pointerId == g->downPointer && x >= 0.0f &&
+            y >= 0.0f) {
+          const float dx = x - g->downX;
+          const float dy = y - g->downY;
+          withinSlop = (std::hypot(dx, dy) <
+                        ::runtime::touch_detail::kTouchSlopPx);
+        }
+        if (!withinSlop) {
+          const int pressedBefore = ::runtime::GalleryPressedNode();
+          ::runtime::GalleryClearPressedNode();
+          enqueueAfter = (::runtime::GalleryPressedNode() != pressedBefore);
+        }
+      } else if (action == kActionCancel) {
+        // P2: cancelled gesture carries no wash; repaint only if one was
+        // engaged.
+        g->tapArena.AddPointer(ev, g->tapTree);
+        const int pressedBefore = ::runtime::GalleryPressedNode();
+        ::runtime::GalleryClearPressedNode();
+        g->hasDown = false;
+        enqueueAfter = (pressedBefore >= 0);
       } else {
-        // MOVE and other actions: keep the arena displacement current so the
+        // Other actions: keep the arena displacement current so the
         // UP slop verdict measures the full gesture; never fires.
         g->tapArena.AddPointer(ev, g->tapTree);
-        return -1;
       }
     }
     if (action == kActionUp && firedTarget >= 0) {
@@ -1457,6 +1534,13 @@ extern "C" MUSE_JNI_EXPORT jint Java_com_muse_host_MainActivity_nativeDispatchTo
       }
 #endif
       return static_cast<jint>(firedTarget);
+    }
+    if (enqueueAfter) {
+#ifdef __ANDROID__
+      // P2 pressed-state repaint (DOWN engage, MOVE change, UP-miss/cancel
+      // clear): same single-owner queue, outside the mu critical section.
+      EnqueueFrame(g);
+#endif
     }
     return -1;
   } catch (...) {

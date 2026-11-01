@@ -1,0 +1,14 @@
+11-01 12:15:46.954  7897  7923 I GalleryPage: gallery-rows=121 gallery-pages=9
+11-01 12:15:46.954  7897  7923 I GalleryPage: gallery-page=2/9
+11-01 12:15:46.954  7897  7897 I muse-host: nativeSetTheme: mode=dark framesMeasured=14 frameTimeMs=232.037 clock=clock_gettime-CLOCK_MONOTONIC vsyncMs=16.6667 page=2
+11-01 12:15:46.954  7897  7897 I GalleryPage: gallery-theme=dark gallery-page=2 framesMeasured=14
+11-01 12:15:46.954  7897  7897 I muse-host: SEAM-STEP:theme:ok
+11-01 12:15:47.008  7897  7923 I GalleryPage: [layering] slice page=1 rows=[13,27] comps={Button|Button|Button|IconButton|Fab|ExtendedFab|Card|Card|Card|Chip|Chip|Chip|Chip|Checkbox|Checkbox} labels={Outlined action|Text action|Elevated action|IconButton variant=filled icon=favorite|Fab size=medium icon=add|Compose|Card variant=elevated|Card variant=filled|Card variant=outlined|Assist chip|Filter chip|Input chip|Suggestion chip|Checkbox|Checkbox}
+11-01 12:15:47.603  7897  7923 I GalleryPage: gallery-rows=121 gallery-pages=9
+11-01 12:15:47.603  7897  7923 I GalleryPage: gallery-page=2/9
+11-01 12:15:48.211  7897  7897 I muse-host: nativeSetTheme: mode=light framesMeasured=1 frameTimeMs=0.009 clock=clock_gettime-CLOCK_MONOTONIC vsyncMs=16.6667 page=2
+11-01 12:15:48.211  7897  7897 I GalleryPage: gallery-theme=light gallery-page=2 framesMeasured=1
+11-01 12:15:48.211  7897  7897 I muse-host: SEAM-STEP:theme:ok
+11-01 12:15:48.263  7897  7923 I GalleryPage: [layering] slice page=1 rows=[13,27] comps={Button|Button|Button|IconButton|Fab|ExtendedFab|Card|Card|Card|Chip|Chip|Chip|Chip|Checkbox|Checkbox} labels={Outlined action|Text action|Elevated action|IconButton variant=filled icon=favorite|Fab size=medium icon=add|Compose|Card variant=elevated|Card variant=filled|Card variant=outlined|Assist chip|Filter chip|Input chip|Suggestion chip|Checkbox|Checkbox}
+11-01 12:15:48.859  7897  7923 I GalleryPage: gallery-rows=121 gallery-pages=9
+11-01 12:15:48.859  7897  7923 I GalleryPage: gallery-page=2/9

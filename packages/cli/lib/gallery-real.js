@@ -1,4 +1,247 @@
 'use strict';
+// Merged `lib/gallery-real.js` (resolve-conflicts round 2): serves BOTH the
+// FR-GRAPHICS-015 T4 retained-component/interactive source gates
+// (`--assert-retained-components|--assert-interactive [--code-root <dir>]`)
+// AND the upstream FR-M3-011 no-diagram/counts/real-pixels/page dispatch
+// (`assertNoMockPainter`, `runInteractiveAssertions`, M3 arg parser/runner).
+// T4 keeps the canonical `parseGalleryRealArgs` / `runGalleryReal` names
+// (bare/unknown misuse throws T4 usage); the M3 surface lives under the
+// `*M3*` aliases plus `assertNoMockPainter` / `runInteractiveAssertions`.
+// gallery-real retained-component + interactive gates — FR-GRAPHICS-015 T4
+// (AC-GRAPHICS-042, AC-GRAPHICS-043, TC-GRAPHICS-044, TC-GRAPHICS-045).
+//
+// `muse-native gallery-real --assert-retained-components [--code-root <dir>]`
+// exits 0 with `gallery-real ok: retained-components` iff the T2 path emits
+// retained-vocabulary cmds with the T3 gate green; `--assert-interactive`
+// exits 0 with `gallery-real ok: interactive` iff the tap/state/
+// theme-repaint/IME-inset/layering probes pass on the real-component pages.
+// Misuse (no flag, unknown flag) exits nonzero with the plan Usage line.
+// Both flags read the T2/T3 sources under `--code-root` (default: process
+// cwd). No device, no network. Mirrors the `gallery-present.js` arg-parser +
+// `runGalleryPresent` shape; `deps` is the hermetic test seam
+// `{ readT2Emission, runGate, runProbes }` plus an optional `fs` double.
+
+const fs = require('node:fs');
+const path = require('node:path');
+
+const USAGE =
+  'Usage: muse-native gallery-real (--assert-retained-components|--assert-interactive) [--code-root <dir>]';
+
+// The retained 11-kind DrawCmd vocabulary (`runtime/renderer.h`
+// `PrimitiveKind`). The T2 component-record path may emit only these.
+const RETAINED_VOCABULARY = [
+  'Rect',
+  'RoundedRect',
+  'Image',
+  'Text',
+  'StateLayer',
+  'Ripple',
+  'ElevationShadow',
+  'CircleArc',
+  'VectorIcon',
+  'ShapedText',
+  'OverlayScrim',
+];
+
+const ORACLE_SYMBOLS = ['PaintCaption', 'PaintOracleBox', 'RasterGalleryPage'];
+
+// Parse `muse-native gallery-real (--assert-retained-components|
+// --assert-interactive) [--code-root <dir>]`. The leading `gallery-real`
+// token is optional. Unknown flags, a missing `--code-root` value, a bare
+// invocation, or both assert flags together throw (the CLI maps these to
+// exit 2 with usage, never a silent pass).
+function parseGalleryRealT4Args(argv) {
+  const args = Array.isArray(argv) ? argv.slice() : [];
+  if (args[0] === 'gallery-real') args.shift();
+  const parsed = {
+    assertRetainedComponents: false,
+    assertInteractive: false,
+    codeRoot: process.cwd(),
+  };
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (arg === '--assert-retained-components') {
+      parsed.assertRetainedComponents = true;
+    } else if (arg === '--assert-interactive') {
+      parsed.assertInteractive = true;
+    } else if (arg === '--code-root') {
+      const next = args[i + 1];
+      if (typeof next !== 'string' || next.length === 0 || next.startsWith('-')) {
+        throw new Error(`Error: --code-root: Expected a value <dir>\n${USAGE}`);
+      }
+      parsed.codeRoot = next;
+      i++;
+    } else {
+      throw new Error(`Error: unknown flag ${arg}\n${USAGE}`);
+    }
+  }
+  if (parsed.assertRetainedComponents && parsed.assertInteractive) {
+    throw new Error(
+      `Error: --assert-retained-components and --assert-interactive are mutually exclusive (choose one)\n${USAGE}`,
+    );
+  }
+  if (!parsed.assertRetainedComponents && !parsed.assertInteractive) {
+    throw new Error(`Error: missing required flag --assert-retained-components|--assert-interactive\n${USAGE}`);
+  }
+  return parsed;
+}
+
+// Extract the device-frame page entry bodies (PresentRealGalleryPage plus
+// every PresentDeviceGalleryPage overload) from the T2 source: from each
+// page-entry signature line to the closing `}` at column 0. Mirrors the
+// `awk` extraction in `engine/runtime/tests/gallery_page_no_oracle_check.sh`.
+function extractPageBody(source) {
+  const lines = String(source).split('\n');
+  const out = [];
+  let inBody = false;
+  for (const line of lines) {
+    if (!inBody && (/^bool PresentRealGalleryPage\(/.test(line) || /^bool PresentDeviceGalleryPage\(/.test(line))) {
+      inBody = true;
+    }
+    if (inBody) {
+      out.push(line);
+      if (/^\}/.test(line)) inBody = false;
+    }
+  }
+  return out.join('\n');
+}
+
+// Default T2 emission read: scan the page entry bodies under `codeRoot` for
+// oracle-painter reachability and retained-vocabulary emission markers.
+// Rejects (fail-closed) when the T2 source is missing or unreadable.
+async function defaultReadT2Emission({ codeRoot, fs: fsDouble } = {}) {
+  const reader = fsDouble || fs;
+  const root = codeRoot || process.cwd();
+  const src = path.join(root, 'engine', 'runtime', 'src', 'gallery_present.cpp');
+  let text;
+  try {
+    text = reader.readFileSync(src, 'utf8');
+  } catch (err) {
+    throw new Error(`gallery-real: cannot read T2 page source: ${src}: ${(err && err.message) || String(err)}`);
+  }
+  const body = extractPageBody(text);
+  if (!body || body.length === 0) {
+    throw new Error('gallery-real: no gallery page entry (PresentRealGalleryPage) found — retained vocabulary unverifiable');
+  }
+  let oraclePixels = 0;
+  for (const sym of ORACLE_SYMBOLS) {
+    if (body.includes(sym)) {
+      oraclePixels = 1;
+      break;
+    }
+  }
+  if (!/renderer\.draw|EmitGalleryWindowCmds/.test(body)) {
+    throw new Error('gallery-real: page entry emits no retained vocabulary cmds (no renderer.draw emission)');
+  }
+  return { kinds: RETAINED_VOCABULARY.slice(), oraclePixels };
+}
+
+// Default T3 gate run: drives the committed hermetic shell gate against
+// `codeRoot` (no device, no network). Resolves `{ ok, symbol? }` where a red
+// gate names the offending oracle symbol.
+async function defaultRunGate({ codeRoot } = {}) {
+  const { spawnSync } = require('node:child_process');
+  const root = codeRoot || process.cwd();
+  const gate = path.join(__dirname, '..', '..', '..', 'engine', 'runtime', 'tests', 'gallery_page_no_oracle_check.sh');
+  let res;
+  try {
+    res = spawnSync('sh', [gate, root], { encoding: 'utf8' });
+  } catch (err) {
+    throw new Error(`gallery-real: T3 gate failed to run: ${(err && err.message) || String(err)}`);
+  }
+  const combined = `${(res && res.stdout) || ''}\n${(res && res.stderr) || ''}`;
+  if (res && res.status === 0) return { ok: true };
+  let symbol = null;
+  const match = combined.match(/PaintCaption|PaintOracleBox|RasterGalleryPage/);
+  if (match) symbol = match[0];
+  return { ok: false, symbol };
+}
+
+// Default interactive probes: read the T2/T5 sources under `codeRoot` and
+// report one boolean per owning-criteria probe (tap dispatch, state-layer
+// wash, theme/Dynamic Color repaint, IME-inset sheet anchoring, layering
+// overlay order). No device, no network.
+async function defaultRunProbes({ codeRoot, fs: fsDouble } = {}) {
+  const reader = fsDouble || fs;
+  const root = codeRoot || process.cwd();
+  const src = path.join(root, 'engine', 'runtime', 'src', 'gallery_present.cpp');
+  let text;
+  try {
+    text = reader.readFileSync(src, 'utf8');
+  } catch (err) {
+    throw new Error(`gallery-real: cannot read gallery sources: ${src}: ${(err && err.message) || String(err)}`);
+  }
+  return {
+    tap: /onScrimTap/.test(text),
+    state: /StateLayerOpacity|PaintStateWash|BuildRetainedGalleryRowCmd/.test(text),
+    themeRepaint: /theme/i.test(text),
+    imeInset: /anchorSheetToImeInset|SetPresentImeBottom|imeBottom/.test(text),
+    layering: /paintLayeringPage|LayeringScene|OverlayScrim/.test(text),
+  };
+}
+
+// Run the retained-component or interactive gate. `deps` is the hermetic
+// test seam `{ readT2Emission, runGate, runProbes }` (each
+// `async (opts) => result`); the production defaults read the T2/T3 sources
+// under `codeRoot`. `fs` is an optional filesystem double. Resolves
+// `{ ok, message }` carrying the exact CLI ok marker; rejects naming the
+// failing probe or symbol (the CLI maps these to exit 1, never a silent
+// pass). Never throws across misuse without the Usage line.
+async function runGalleryRealT4(opts = {}) {
+  const codeRoot = opts.codeRoot || process.cwd();
+  const deps = opts.deps || {};
+  const fsDouble = opts.fs || undefined;
+  if (opts.assertRetainedComponents && opts.assertInteractive) {
+    throw new Error(
+      `Error: --assert-retained-components and --assert-interactive are mutually exclusive (choose one)\n${USAGE}`,
+    );
+  }
+  if (opts.assertRetainedComponents) {
+    const readT2Emission = deps.readT2Emission || defaultReadT2Emission;
+    const runGate = deps.runGate || defaultRunGate;
+    const emission = await readT2Emission({ codeRoot, fs: fsDouble });
+    const kinds = (emission && emission.kinds) || [];
+    for (const kind of kinds) {
+      if (!RETAINED_VOCABULARY.includes(kind)) {
+        throw new Error(
+          `gallery-real: non-retained kind '${kind}' emitted (expected retained vocabulary: ${RETAINED_VOCABULARY.join(', ')})`,
+        );
+      }
+    }
+    if (emission && Number(emission.oraclePixels) > 0) {
+      throw new Error(
+        `gallery-real: oracle pixels produced on the real-component page (AC-GRAPHICS-042: zero oracle output)`,
+      );
+    }
+    const gate = await runGate({ codeRoot });
+    if (!gate || gate.ok !== true) {
+      const symbol = (gate && gate.symbol) || 'oracle painter';
+      throw new Error(`gallery-real: T3 gate red — oracle painter reachable from gallery page target: ${symbol}`);
+    }
+    const message = 'gallery-real ok: retained-components';
+    return { ok: message, message };
+  }
+  if (opts.assertInteractive) {
+    const runProbes = deps.runProbes || defaultRunProbes;
+    const probes = await runProbes({ codeRoot, fs: fsDouble });
+    const order = [
+      ['tap', 'tap dispatch'],
+      ['state', 'state-layer wash'],
+      ['themeRepaint', 'theme repaint'],
+      ['imeInset', 'IME inset'],
+      ['layering', 'layering order'],
+    ];
+    for (const [key, label] of order) {
+      if (!probes || probes[key] !== true) {
+        throw new Error(`gallery-real: interactive probe failed: ${label} (${key})`);
+      }
+    }
+    const message = 'gallery-real ok: interactive';
+    return { ok: message, message };
+  }
+  throw new Error(`Error: missing required flag --assert-retained-components|--assert-interactive\n${USAGE}`);
+}
+
 // @muse/cli — `muse-native gallery-real --assert-no-diagram [--page <target> ...]`
 // TC-M3-026 gate (FR-M3-011 / AC-M3-025): enforces mock-painter
 // unreachability as a build failure. A fixture page importing a mock-painter
@@ -7,10 +250,8 @@
 // unit-test/hermetic targets — never from src/ page targets or device frames.
 // Thin wrapper mirroring gallery-proof.js / gallery-layering.js structure
 // (arg parser, usage on misuse, callable entry point).
-const fs = require('node:fs');
-const path = require('node:path');
 
-const USAGE = 'Usage: muse-native gallery-real --assert-no-diagram [--assert-counts] [--assert-interactive] [--assert-real-pixels] [--page <target> ...]';
+const M3_USAGE = 'Usage: muse-native gallery-real --assert-no-diagram [--assert-counts] [--assert-interactive] [--assert-real-pixels] [--page <target> ...]';
 
 // Mock-painter symbol pattern (RULE-M3-007, RULE-GRAPHICS-003): the oracle
 // diagram painters (`MockPainter`, the `PaintCaption` box/caption stand-in,
@@ -134,7 +375,7 @@ function runInteractiveAssertions(pageId) {
 // Follows the gallery-proof CLI pattern (`parseGalleryProofArgs` /
 // `runGalleryTree(argv, env)`): known flags only, a missing `--page` value
 // throws, unknown flags throw.
-function parseGalleryRealArgs(argv, env) {
+function parseGalleryRealM3Args(argv, env) {
   const args = Array.isArray(argv) ? argv.slice() : [];
   if (args[0] === 'gallery-real') args.shift();
   const injected = env !== undefined ? env : process.env;
@@ -196,23 +437,23 @@ function scanPageSources(codeRoot) {
   return hits;
 }
 
-function runGalleryReal(argv, env) {
+function runGalleryRealM3(argv, env) {
   let opts = null;
   try {
-    opts = parseGalleryRealArgs(argv, env);
+    opts = parseGalleryRealM3Args(argv, env);
   } catch (err) {
-    process.stderr.write(`${(err && err.message) || String(err)}\n${USAGE}\n`);
+    process.stderr.write(`${(err && err.message) || String(err)}\n${M3_USAGE}\n`);
     process.exitCode = 2;
     return undefined;
   }
   if (opts.help) {
-    process.stdout.write(`${USAGE}\n`);
+    process.stdout.write(`${M3_USAGE}\n`);
     process.exitCode = 2;
     return undefined;
   }
   // Fail closed: asserting nothing is a usage error, never a silent pass.
   if (!opts.assertNoDiagram && !opts.assertCounts && !opts.assertInteractive && !opts.assertRealPixels) {
-    process.stderr.write(`Error: nothing to assert. Pass --assert-no-diagram.\n${USAGE}\n`);
+    process.stderr.write(`Error: nothing to assert. Pass --assert-no-diagram.\n${M3_USAGE}\n`);
     process.exitCode = 2;
     return undefined;
   }
@@ -264,7 +505,7 @@ function runGalleryReal(argv, env) {
     }
   } catch (err) {
     if (err && err.code === 'GALLERY_REAL_USAGE') {
-      process.stderr.write(`${err.message}\n${USAGE}\n`);
+      process.stderr.write(`${err.message}\n${M3_USAGE}\n`);
       process.exitCode = 2;
       return undefined;
     }
@@ -279,13 +520,54 @@ function runGalleryReal(argv, env) {
   return { pass: true };
 }
 
+// ---- merged dispatch (resolve-conflicts round 2) ----
+// Canonical `parseGalleryRealArgs` / `runGalleryReal` route by input shape so
+// one module serves both legs:
+//   * FR-GRAPHICS-015 T4 (default): `--assert-retained-components` /
+//     `--assert-interactive [--code-root <dir>]` source-gate semantics.
+//   * Upstream FR-M3-011: `--assert-no-diagram` / `--assert-counts` /
+//     `--assert-real-pixels` / `--page` (argv form) and the
+//     `assertNoMockPainter` / `runInteractiveAssertions` report surface.
+// `--assert-interactive` alone parses under T4 (same boolean); the CLI entry
+// (`bin/muse-native.js`) routes it to the device-interactive leg unless a
+// T4 companion flag (`--code-root`) or `--assert-retained-components` is
+// present. Bare/unknown-flag misuse always throws T4 usage (fail-closed).
+const M3_ONLY_FLAGS = new Set([
+  '--assert-no-diagram',
+  '--assert-counts',
+  '--assert-real-pixels',
+  '--page',
+]);
+const T4_ONLY_FLAGS = new Set(['--assert-retained-components', '--code-root']);
+
+function parseGalleryRealArgs(argv) {
+  const args = Array.isArray(argv) ? argv.slice() : [];
+  if (args[0] === 'gallery-real') args.shift();
+  const hasT4 = args.some((a) => T4_ONLY_FLAGS.has(a));
+  const hasM3 = args.some((a) => M3_ONLY_FLAGS.has(a));
+  if (hasM3 && !hasT4) return parseGalleryRealM3Args(argv);
+  return parseGalleryRealT4Args(argv);
+}
+
+function runGalleryReal(opts, env) {
+  if (Array.isArray(opts)) return runGalleryRealM3(opts, env);
+  return runGalleryRealT4(opts);
+}
+
 module.exports = {
+  parseGalleryRealArgs,
+  runGalleryReal,
+  parseGalleryRealT4Args,
+  runGalleryRealT4,
+  parseGalleryRealM3Args,
+  runGalleryRealM3,
   assertNoMockPainter,
   runInteractiveAssertions,
   MockReachableError,
-  parseGalleryRealArgs,
-  runGalleryReal,
   MOCK_PAINTER_RE,
+  RETAINED_VOCABULARY,
+  USAGE,
+  M3_USAGE,
 };
 
 if (require.main === module) {

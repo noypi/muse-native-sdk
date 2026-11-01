@@ -552,3 +552,19 @@ add_executable(surface_interactive_test tests/surface_interactive_test.cpp)
 target_link_libraries(surface_interactive_test PRIVATE runtime)
 target_compile_options(surface_interactive_test PRIVATE -Wall -Wextra -Wpedantic)
 add_test(NAME surface_interactive_test COMMAND surface_interactive_test)
+
+# FR-GRAPHICS-015 batch 1 (T1+T2): retained component-record presenter seam.
+# Test owned by code-unit-tester; binds only to the T1/T2 `Interface:` lines.
+add_executable(present_real_components_test tests/present_real_components_test.cpp)
+target_link_libraries(present_real_components_test PRIVATE runtime)
+target_compile_options(present_real_components_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME present_real_components_test COMMAND present_real_components_test)
+
+# FR-GRAPHICS-015 batch 2 (T3): RULE-GRAPHICS-003 oracle-painter
+# reachability gate. Hermetic shell case (grep/nm over the page-target
+# objects, mirroring the jni_contract_test.sh pattern); no device, no
+# network. Fails naming the offending symbol when an oracle painter is
+# reachable from the device-frame page path.
+add_test(NAME gallery_page_no_oracle_check
+  COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/gallery_page_no_oracle_check.sh"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../..")

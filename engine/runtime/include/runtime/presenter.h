@@ -109,6 +109,26 @@ PresenterError CreateSurfaceAndSwapchain(const BackendProbe& probe);
 //     swapchain)                         -> kOk (frame presented).
 PresenterError PresentFrame(const DrawCmds& cmds);
 
+// Present the DAG-recorded current-frame component set (FR-GRAPHICS-015 /
+// AC-GRAPHICS-042). Component-record path beside the oracle path above;
+// same fail-closed shape and same currency via NoteFrameRecorded() as
+// PresentFrame: no new IDL, no Attach/Detach/swapchain semantics change.
+//   - no live swapchain                  -> kNoSwapchain (+ diagnostic).
+//   - cmds is not the DAG-recorded
+//     current-frame set                  -> kNoCurrentFrame (+ diagnostic).
+//   - otherwise (cmds is the DAG-recorded current-frame component set on a
+//     live swapchain)                    -> kOk (frame presented).
+// Never throws.
+inline PresenterError PresentRealComponents(const std::vector<DrawCmd>& cmds) {
+  try {
+    return PresentFrame(cmds);
+  } catch (...) {
+    return {PresenterCode::kNoCurrentFrame,
+            "PresentRealComponents: exception during present; frame not "
+            "presented"};
+  }
+}
+
 // DAG currency seam (test-owned). The DAG record path calls
 // NoteFrameRecorded() after recording the current-frame DrawCmds; only then
 // may PresentFrame return kOk. Hand-built lists that were never DAG-recorded

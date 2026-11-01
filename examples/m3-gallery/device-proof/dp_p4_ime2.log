@@ -1,0 +1,11 @@
+11-01 12:18:37.637  8725  8725 D MainActivity: touch x=200.0 y=236.99902 claimed=-1
+11-01 12:18:37.637  8725  8725 D MainActivity: touch x=200.0 y=236.99902 claimed=20
+11-01 12:18:37.637  8725  8725 I ImeTracker: com.muse.host:82aabba5: onRequestShow at ORIGIN_CLIENT reason SHOW_SOFT_INPUT fromUser true
+11-01 12:18:37.637  8725  8725 I ImeTracker: com.muse.host:82aabba5: onFailed at PHASE_CLIENT_VIEW_SERVED
+11-01 12:18:37.645  8725  8739 D EGL_emulation: app_time_stats: avg=461.24ms min=383.95ms max=500.36ms count=3
+11-01 12:18:39.011  1762  2945 D PickerSyncLockManager: Trying to acquire lock com.android.providers.media.photopicker.sync.CloseableReentrantLock@4366a33[Unlocked]. Lock Name = CLOUD_PROVIDER_LOCK. Threads that may be waiting to acquire this lock = [] with timeout.
+11-01 12:18:39.011  1762  2945 D PickerSyncLockManager: Trying to acquire lock com.android.providers.media.photopicker.sync.CloseableReentrantLock@4366a33[Unlocked]. Lock Name = CLOUD_PROVIDER_LOCK. Threads that may be waiting to acquire this lock = [] with timeout.
+11-01 12:18:39.012  1762  2945 D PickerSyncLockManager: Trying to acquire lock com.android.providers.media.photopicker.sync.CloseableReentrantLock@4366a33[Unlocked]. Lock Name = CLOUD_PROVIDER_LOCK. Threads that may be waiting to acquire this lock = [] with timeout.
+11-01 12:18:39.013  1762  2945 D PickerSyncLockManager: Trying to acquire lock com.android.providers.media.photopicker.sync.CloseableReentrantLock@4366a33[Unlocked]. Lock Name = CLOUD_PROVIDER_LOCK. Threads that may be waiting to acquire this lock = [] with timeout.
+11-01 12:18:39.013  1762  2945 D PickerSyncLockManager: Trying to acquire lock com.android.providers.media.photopicker.sync.CloseableReentrantLock@4366a33[Unlocked]. Lock Name = CLOUD_PROVIDER_LOCK. Threads that may be waiting to acquire this lock = [] with timeout.
+11-01 12:18:39.144  8725  8739 D EGL_emulation: app_time_stats: avg=499.87ms min=499.00ms max=500.82ms count=3

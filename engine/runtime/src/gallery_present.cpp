@@ -2344,6 +2344,102 @@ RealizedWindow ComputeRealizedWindow(int scrollOffsetPx, int viewportPx,
   }
 }
 
+// ---- Device-path pressed engagement (FR-GRAPHICS-015 P2) ----
+//
+// Process-wide pressed node for the state-layer wash on the device path
+// (see gallery_present.h): engaged by the host on ACTION_DOWN (provisional
+// claim), kept on within-slop MOVE, cleared on UP / past-slop MOVE /
+// cancel. Relaxed atomic: a single int needs atomicity only, no
+// happens-before edge (same shape as the live IME inset holder below).
+// Default -1 (disengaged) preserves every hermetic expectation.
+namespace {
+std::atomic<int>& GalleryPressedHolder() {
+  static std::atomic<int> pressed{-1};
+  return pressed;
+}
+}  // namespace
+
+// Forward declaration (defined with the T62 wash below): the shared
+// pressed resolver for the device-path wash overlay.
+DrawCmd PaintStateWash(const DrawCmd& base, const std::string& kind,
+                       const std::string& state);
+
+void GallerySetPressedNode(int nodeId) noexcept {
+  try {
+    if (nodeId <= 0) {
+      GalleryPressedHolder().store(-1, std::memory_order_relaxed);
+      return;
+    }
+    GalleryPressedHolder().store(nodeId, std::memory_order_relaxed);
+  } catch (...) {
+    // Keep the last good engagement on failure; never throws.
+  }
+}
+
+void GalleryClearPressedNode() noexcept {
+  try {
+    GalleryPressedHolder().store(-1, std::memory_order_relaxed);
+  } catch (...) {
+  }
+}
+
+int GalleryPressedNode() noexcept {
+  try {
+    return GalleryPressedHolder().load(std::memory_order_relaxed);
+  } catch (...) {
+    return -1;
+  }
+}
+
+// DOWN y -> pressed row id (i + 1) against the page's row layout. Geometry
+// mirrors the windowed emitter + viewport rebase in PresentDeviceGalleryPage:
+// rows of the page slice [starts[page], starts[page+1]) stack at
+// cursor + kHeaderH (cursor from kPad, rh + kGap steps), rebased to the
+// viewport origin by (cursorFirst - kPad). Device y is in window px while
+// the layout is in kPresentH canvas px, so the coordinate is scaled by
+// viewportH / kPresentH (the same linear map the window sink paints with).
+// A y landing in no row band, or any bad input, returns -1: the caller
+// clears instead of engaging, so the wash never lands on a coincidental row.
+int GalleryResolvePressedRow(float yDevicePx,
+                              const std::vector<GalleryRow>& rows, int page,
+                              int viewportH) noexcept {
+  try {
+    if (!std::isfinite(yDevicePx) || yDevicePx < 0.0f) return -1;
+    if (rows.empty() || viewportH <= 0) return -1;
+    const int pages = GalleryPageCount(rows, viewportH);
+    if (pages <= 0 || page < 0 || page >= pages) return -1;
+    const std::vector<int> starts = PageStarts(rows, viewportH);
+    const int first = starts[static_cast<std::size_t>(page)];
+    const int last = starts[static_cast<std::size_t>(page) + 1] - 1;
+    if (last < first) return -1;
+    const float scale =
+        static_cast<float>(viewportH) / static_cast<float>(kPresentH);
+    if (!(scale > 0.0f) || !std::isfinite(scale)) return -1;
+    const float canvasY = yDevicePx / scale;
+    if (!std::isfinite(canvasY) || canvasY < 0.0f) return -1;
+    float cursorFirst = static_cast<float>(kPad);
+    for (int i = 0; i < first; ++i) {
+      cursorFirst += static_cast<float>(
+                         RowHeight(rows[static_cast<std::size_t>(i)])) +
+                     static_cast<float>(kGap);
+    }
+    const float rebaseDy = cursorFirst - static_cast<float>(kPad);
+    float cursor = cursorFirst;
+    for (int i = first; i <= last; ++i) {
+      const int rh =
+          RowHeight(rows[static_cast<std::size_t>(i)]);
+      const float by = cursor + static_cast<float>(kHeaderH) - rebaseDy;
+      if (canvasY >= by && canvasY < by + static_cast<float>(rh)) {
+        return i + 1;
+      }
+      cursor += static_cast<float>(rh + kGap);
+    }
+    return -1;
+  } catch (...) {
+    return -1;
+  }
+}
+
 // Emit retained DrawCmds for exactly the realized window [firstVisible,
 // lastVisible] through the 006 vocabulary (same row geometry as
 // PresentGallery: kPresentW canvas, kPad/kGap/kHeaderH metrics). This is the
@@ -2370,6 +2466,8 @@ void EmitGalleryWindowCmds(const std::vector<GalleryRow>& rows,
                 static_cast<float>(kGap);
     }
     int bw = kPresentW - 2 * kPad;
+    // P2 snapshot: one relaxed load per present (the host engages on DOWN).
+    const int pressedNode = GalleryPressedNode();
     for (long long i = first; i <= last; ++i) {
       const GalleryRow& row = rows[static_cast<std::size_t>(i)];
       int rh = RowHeight(row);
@@ -2379,6 +2477,33 @@ void EmitGalleryWindowCmds(const std::vector<GalleryRow>& rows,
         EmitTextRowCmds(row, kPad, by, bw, rh, node, out);
       } else {
         EmitComponentRowCmds(row, kPad, by, bw, rh, node, out);
+      }
+      // P2 device-path pressed wash: the engaged row paints one pressed
+      // overlay through the shared resolver (primary-role, theme-matched,
+      // pressed 0.16), so a mid-hold repaint is pixel-distinct from the
+      // resting frame. Staged like every other cmd (callers draw into a
+      // staging swapchain first: nothing committed on a diagnostic).
+      // Fail-closed: disengaged (-1), out-of-window, or degenerate geometry
+      // paints nothing and the window is byte-identical to the resting one.
+      // Layering slices are untouched (that lane returns before this path).
+      try {
+        if (pressedNode == static_cast<int>(node) && bw > 16 && rh > 60) {
+          DrawCmd washBase;
+          washBase.kind = PrimitiveKind::StateLayer;
+          washBase.bounds = {static_cast<float>(kPad + 8),
+                             static_cast<float>(by + 8),
+                             static_cast<float>(bw - 16),
+                             static_cast<float>(rh - 52)};
+          washBase.radius = 18.0f;
+          washBase.nodeId = node;
+          washBase.opacity = 1.0f;
+          washBase.payload.stateColor =
+              row.dark ? kDarkPrimary : kLightPrimary;
+          washBase.payload.stateOpacity = 1.0f;
+          out.push_back(PaintStateWash(washBase, "Surface", "pressed"));
+        }
+      } catch (...) {
+        // Fail closed: keep the window without the wash overlay.
       }
       cursor += static_cast<float>(rh + kGap);
     }
@@ -2746,6 +2871,25 @@ bool IsLayeringPageSlice(const std::vector<GalleryRow>& rows, int first,
   const int n = static_cast<int>(rows.size());
   if (first >= n || last >= n) return false;
   const int len = last - first + 1;
+  // FR-GRAPHICS-015 P5 marker leg first: the live pager windows the layering
+  // scene into slices longer than the 9-row scene (e.g. device page 7 rows
+  // [99,112], 14 rows), which the shape legs below reject on length. Any
+  // window containing a layering-scene marker still routes: a
+  // "Layering "-prefixed label (title / dimmed content / IME probe / dialog
+  // / snackbar / tooltip — literals that exist only in the LayeringPage
+  // lowerer output) or a scrim Surface (tone=scrim, likewise layering-only;
+  // every other page carries tone=tonal Surfaces). Flat pages carry neither
+  // marker, so they keep returning false and scrim-region taps there keep
+  // claiming without dismissing. Fail-closed bounds above are untouched.
+  for (int i = first; i <= last; ++i) {
+    const GalleryRow& row = rows[static_cast<std::size_t>(i)];
+    if (row.label.compare(0, 9, "Layering ") == 0) return true;
+    if (row.comp == "Surface" &&
+        (row.label.find("tone=scrim") != std::string::npos ||
+         row.desc.find("tone=scrim") != std::string::npos)) {
+      return true;
+    }
+  }
   if (len < 1 || len > 9) return false;
   static const char* kExpComp[9] = {"", "", "", "TextInput", "Dialog",
                                     "BottomSheet", "Menu", "SnackbarHost",
@@ -2985,6 +3129,117 @@ bool PresentDeviceGalleryPage(const std::vector<GalleryRow>& rows, int page,
           cmd.payload.glyphRunId, cmd.bounds, cmd.payload.textColor);
       if (!coverage.ok()) {
         SetPresentError(error, "shaped run rasterization failed");
+        return false;
+      }
+    }
+    for (const auto& cmd : staged.cmds) target.submit(cmd);
+    return true;
+  } catch (...) {
+    SetPresentError(error, "present failed (exception)");
+    return false;
+  }
+}
+
+// Real-component page (FR-GRAPHICS-015 / AC-GRAPHICS-042, RULE-GRAPHICS-003):
+// rows from ParseGalleryRows descriptors instantiate real components through
+// the retained emission helpers (EmitGalleryWindowCmds over the requested
+// page slice), so output is only the retained 11-kind vocabulary via
+// renderer.draw. The CPU oracle painters (RasterGalleryPage/PaintCaption)
+// stay compiled for gallery_present_test/golden tooling only and are never
+// called here. Staged draw (nothing committed on a non-None result), same
+// shaping gate and Text->ShapedText promotion as the device lane.
+bool PresentRealGalleryPage(const std::vector<GalleryRow>& rows, int page,
+                            Renderer& renderer, Swapchain& target,
+                            std::string* error) {
+  try {
+    if (rows.empty()) {
+      SetPresentError(error, "real gallery page: no gallery rows");
+      return false;
+    }
+    if (page < 0) {
+      SetPresentError(error, "real gallery page: page out of range");
+      return false;
+    }
+    const int pages = GalleryPageCount(rows, kPresentH);
+    if (page >= pages) {
+      SetPresentError(error, "real gallery page: page out of range");
+      return false;
+    }
+    // Fail-closed shaping gate (mirrors PresentGallery): every non-empty
+    // label must resolve to a nonzero engine-stack run handle before any
+    // cmd is emitted; a 0 handle records nothing, never a bitmap.
+    for (const GalleryRow& row : rows) {
+      const std::string& label =
+          row.comp.empty() ? row.label : ShortCaption(row);
+      if (label.empty()) continue;
+      if (LabelHasNoncharacter(label) || ShapeGalleryLabel(label) == 0) {
+        SetPresentError(error,
+                        "real gallery page: label shaping failed "
+                        "(fail-closed: no bitmap)");
+        return false;
+      }
+    }
+    const std::vector<int> starts = PageStarts(rows, kPresentH);
+    RealizedWindow window;
+    window.firstVisible = starts[static_cast<std::size_t>(page)];
+    window.lastVisible = starts[static_cast<std::size_t>(page) + 1] - 1;
+    window.prefetchAhead = 0;
+    // T5 (FR-GRAPHICS-015 / AC-GRAPHICS-043, TC-GRAPHICS-045): the
+    // layering-page slice presents through the owning-criteria path —
+    // paintLayeringPage (composited scrim + five contents in submission
+    // order, shell-chrome-only paging untouched) with the sheet bound per
+    // frame to the live FR-LAYOUT-012 inset via anchorSheetToImeInset.
+    // Tap dispatch (onScrimTap), state wash (StateLayerOpacity/PaintStateWash
+    // via EmitComponentRowCmds), and theme repaint ride the same shared
+    // paths as the device lane; no oracle pixels on any leg. Fail-closed:
+    // a paint diagnostic returns false with nothing committed.
+    if (IsLayeringPageSlice(rows, window.firstVisible, window.lastVisible)) {
+      LayeringScene scene;
+      scene.valid = true;
+      scene.overlayCount = 5;
+      const float live_inset_px =
+          PresentDeps().insets.imeBottom.load(std::memory_order_relaxed);
+      anchorSheetToImeInset(scene, live_inset_px);
+      paintLayeringPage(scene, renderer, target, error);
+      if (error != nullptr && !error->empty()) return false;
+      return true;
+    }
+    std::vector<DrawCmd> cmds;
+    cmds.reserve(rows.size() * 2 + 2);
+    EmitGalleryWindowCmds(rows, window, cmds);
+    // Rebase the slice to the viewport origin (page 0 is a zero shift).
+    float cursorFirst = static_cast<float>(kPad);
+    for (int i = 0; i < window.firstVisible; ++i) {
+      cursorFirst += static_cast<float>(
+                         RowHeight(rows[static_cast<std::size_t>(i)])) +
+                     static_cast<float>(kGap);
+    }
+    const float rebaseDy = cursorFirst - static_cast<float>(kPad);
+    if (rebaseDy != 0.0f) {
+      for (auto& cmd : cmds) cmd.bounds.y -= rebaseDy;
+    }
+    for (auto& cmd : cmds) {
+      if (cmd.kind == PrimitiveKind::Text && cmd.payload.glyphRunId != 0) {
+        cmd.kind = PrimitiveKind::ShapedText;
+      }
+    }
+    StagingSwapchain staged;
+    const DrawError derr = renderer.draw(cmds, staged);
+    if (derr != DrawError::None) {
+      if (derr == DrawError::UnsupportedBaseline &&
+          !renderer.lastError().empty()) {
+        if (error != nullptr) *error = renderer.lastError();
+      } else {
+        SetPresentError(error, "real gallery page: retained present rejected");
+      }
+      return false;
+    }
+    for (const auto& cmd : staged.cmds) {
+      if (cmd.kind != PrimitiveKind::ShapedText) continue;
+      const muse::text::StatusOr<CoverageMask> coverage = RasterizeShapedText(
+          cmd.payload.glyphRunId, cmd.bounds, cmd.payload.textColor);
+      if (!coverage.ok()) {
+        SetPresentError(error, "real gallery page: shaped run failed");
         return false;
       }
     }

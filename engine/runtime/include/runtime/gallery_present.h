@@ -42,6 +42,17 @@ int RasterGalleryPage(const std::vector<GalleryRow>& rows, int page,
 // Page count for the given viewport (same row metrics as RasterGalleryPage).
 int GalleryPageCount(const std::vector<GalleryRow>& rows, int height);
 
+// Real-component page entry (FR-GRAPHICS-015 / AC-GRAPHICS-042,
+// RULE-GRAPHICS-003): rows from ParseGalleryRows descriptors instantiate
+// real components emitting only the retained 11-kind vocabulary via
+// renderer.draw into target (no CPU oracle box/caption pixels). Returns true
+// with *error untouched on success; false + a non-blank diagnostic (nothing
+// recorded) on empty rows, out-of-range/negative page, shaping failure, or a
+// non-None draw result. Never throws; error == nullptr is tolerated.
+bool PresentRealGalleryPage(const std::vector<GalleryRow>& rows, int page,
+                            Renderer& renderer, Swapchain& target,
+                            std::string* error);
+
 // Retained entry point (FR-GRAPHICS-010 / AC-GRAPHICS-030): parse the MUI1
 // envelope with the existing ParseGalleryRows gate, then emit every row as
 // one or more DrawCmds from the 11-kind vocabulary through renderer.draw
@@ -188,6 +199,44 @@ struct DismissResult {
 // Never throws.
 DismissResult onScrimTap(bool scrimHit, bool isDrag,
                          int overlayCount) noexcept;
+
+// ---- Device-path pressed engagement (FR-GRAPHICS-015 P2 / AC-GRAPHICS-043)
+// ----
+//
+// Slop-aware DOWN/MOVE trigger for the state-layer wash on the device path.
+// The native tap chain claims only on the UP slop verdict, so no pressed
+// state ever engages mid-hold and the wash has nothing to render. The
+// device host closes that gap through this seam: on ACTION_DOWN it resolves
+// the hit target and translates it to the pressed row's 1-based id (i + 1)
+// via GalleryResolvePressedRow (DOWN y against the page's row layout,
+// fail-closed to clear when the target/coordinate maps to no row), then
+// calls GallerySetPressedNode(row) (provisional claim); on ACTION_MOVE it
+// keeps the
+// node while displacement stays within slop and calls
+// GalleryClearPressedNode() past slop; on ACTION_UP / cancel it calls
+// GalleryClearPressedNode(). The host must request a frame after engaging
+// so the mid-hold repaint carries the wash. The present path
+// (EmitGalleryWindowCmds) paints exactly one pressed wash overlay for the
+// engaged node via the shared PaintStateWash resolver, staged like every
+// other cmd (nothing committed on a diagnostic). Fail-closed: a negative or
+// zero node id clears (never engages); an engaged id outside the presented
+// window paints nothing; the default state is disengaged (-1). Never throws.
+void GallerySetPressedNode(int nodeId) noexcept;
+void GalleryClearPressedNode() noexcept;
+int GalleryPressedNode() noexcept;
+
+// DOWN-to-row translation for the pressed seam above: maps a DOWN
+// y-coordinate (device/window px) geometrically against the row layout of
+// `page` under `viewportH` to the pressed row's 1-based id (i + 1, the same
+// numbering EmitGalleryWindowCmds matches the wash against). The structural
+// tap-tree ids (root/scrim/button) are unrelated to row numbering and must
+// never be stored as the pressed node. Returns -1 (fail-closed, caller
+// clears) when the coordinate maps to no row: empty rows, bad viewport,
+// out-of-range page, or a y outside every row band. Never throws.
+int GalleryResolvePressedRow(float yDevicePx,
+                              const std::vector<GalleryRow>& rows, int page,
+                              int viewportH) noexcept;
+
 // Plan T62 `Interface:` line (verbatim): maps a state token to its numeric
 // M3 state-layer opacity (0.08 hover / 0.12 focus / 0.16 pressed / 0.38
 // disabled baseline per D1). Unknown/empty input returns the 0.0f no-wash

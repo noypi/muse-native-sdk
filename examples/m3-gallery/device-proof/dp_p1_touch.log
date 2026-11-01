@@ -1,0 +1,8 @@
+11-01 12:15:42.031  7897  7897 I muse-host: SEAM-STEP:touch:ok
+11-01 12:15:42.031  7897  7897 D MainActivity: touch x=839.999 y=56.999023 claimed=-1
+11-01 12:15:42.031  7897  7897 I muse-host: SEAM-STEP:touch:ok
+11-01 12:15:42.031  7897  7897 D MainActivity: touch x=839.999 y=56.999023 claimed=-1
+11-01 12:15:43.263  7897  7897 I muse-host: SEAM-STEP:touch:ok
+11-01 12:15:43.263  7897  7897 D MainActivity: touch x=200.0 y=236.99902 claimed=-1
+11-01 12:15:43.264  7897  7897 I muse-host: SEAM-STEP:touch:ok
+11-01 12:15:43.264  7897  7897 D MainActivity: touch x=200.0 y=236.99902 claimed=20
