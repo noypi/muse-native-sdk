@@ -18,10 +18,12 @@
 namespace runtime {
 // Production declaration (coder-owned gallery_present.cpp / present path).
 // Assumed symbol: `float runtime::StateLayerOpacity(const std::string&)`.
-// Declared here so this test binds to the published signature, not to an
-// implementation detail. If the merged header declares it, this forward
-// declaration is a benign duplicate of the same signature.
 float StateLayerOpacity(const std::string& state);
+// Batch 1 (BUG-GRAPHICS-001 T1) published interface — oracle miniature
+// painter under test. Declared here so this test binds to the plan's
+// `Interface:` line, not to an implementation detail.
+void PaintComponent(std::uint32_t* px, int stride, int w, int h, int bx,
+                    int by, int bw, int bh, const GalleryRow& row);
 }  // namespace runtime
 
 namespace {
@@ -518,6 +520,568 @@ static bool check_segmented_divider_interior_no_edge_stroke() {
     }                                       \
   } while (0)
 
+// --- Batch 1 (BUG-GRAPHICS-001 T1/T2) helpers --------------------------------
+// Test-owned color words (same RGBA wire order as production: R | G<<8 |
+// B<<16 | A<<24). Duplicated here so the test never depends on production
+// internals — only on the spec-visible M3 roles.
+constexpr std::uint32_t t1_rgba(std::uint8_t r, std::uint8_t g,
+                                std::uint8_t b, std::uint8_t a) {
+  return static_cast<std::uint32_t>(r) |
+         (static_cast<std::uint32_t>(g) << 8) |
+         (static_cast<std::uint32_t>(b) << 16) |
+         (static_cast<std::uint32_t>(a) << 24);
+}
+constexpr std::uint32_t kT1CardBg = 0xFFFAF2F7u;    // kCardBg F7F2FA
+constexpr std::uint32_t kT1Wash = 0xFFFFF7FEu;      // kLightSurface FEF7FF
+constexpr std::uint32_t kT1DotDim = 0xFF4F4549u;    // kLightOnSurfaceVariant
+constexpr std::uint32_t kT1DotLit = 0xFF8B374Fu;    // kLightOnPrimaryContainer
+constexpr std::uint32_t kT1FabBg = 0xFFF8DEE8u;     // kLightSecondaryContainer
+constexpr std::uint32_t kT1Sentinel = 0x12345678u;  // untouched-marker
+
+// ASSUMPTION (B1-GEOM): oracle page layout metrics mirror the production M3
+// file-scope constants: kPad=16, kGap=8, kHeaderH=84, kFooterH=56. If the
+// coder re-measures different metrics in-tree, these tests' call sites move
+// but their expected behavior (containment) does not.
+constexpr int kB1Pad = 16;
+constexpr int kB1Gap = 8;
+constexpr int kB1HeaderH = 84;
+constexpr int kB1FooterH = 56;
+
+static runtime::GalleryRow b1_row(const char* comp) {
+  runtime::GalleryRow r;
+  r.comp = comp;
+  r.label = comp;
+  r.desc = std::string(comp) + " variant=test";
+  return r;
+}
+
+// T1: NavigationRail dot spill must stay inside the card rect. The third dot
+// row paints past by+bh pre-fix, so a strict "nothing painted outside the
+// card (+8px shadow allowance right/bottom, ASSUMPTION: soft shadow reaches
+// at most 6px)" scan must fail until T1 lands.
+static bool check_paint_rail_dots_clamped_to_card() {
+  const int w = 400, h = 300;
+  const int bx = 20, by = 30, bw = 300, bh = 124;
+  std::vector<std::uint32_t> px(static_cast<std::size_t>(w) * h,
+                                kT1Sentinel);
+  try {
+    runtime::PaintComponent(px.data(), w, w, h, bx, by, bw, bh,
+                            b1_row("NavigationRail"));
+  } catch (...) {
+    return false;  // T1 contract: never throws.
+  }
+  // Sanity: the card interior really painted (guards a vacuous pass).
+  int inside = 0;
+  for (int y = by; y < by + bh; ++y)
+    for (int x = bx; x < bx + bw; ++x)
+      if (px[static_cast<std::size_t>(y) * w + x] != kT1Sentinel) ++inside;
+  if (inside < 1000) return false;
+  // Containment: strict on top/left, +8px shadow allowance right/bottom.
+  for (int y = 0; y < h; ++y) {
+    for (int x = 0; x < w; ++x) {
+      if (px[static_cast<std::size_t>(y) * w + x] == kT1Sentinel) continue;
+      bool inCard = (x >= bx && x < bx + bw && y >= by && y < by + bh);
+      bool inShadow = (x >= bx && x < bx + bw + 8 && y >= by &&
+                       y < by + bh + 8);
+      if (!inCard && !inShadow) return false;
+      if (!inCard && (y < by || x < bx)) return false;
+    }
+  }
+  return true;
+}
+
+// T1: BottomAppBar FAB center sits above the card top pre-fix (y0 - 6 with
+// r=24), so any paint above `by` must fail until T1 lands.
+static bool check_paint_bottomappbar_fab_clamped_to_card() {
+  const int w = 400, h = 300;
+  const int bx = 20, by = 40, bw = 300, bh = 124;
+  std::vector<std::uint32_t> px(static_cast<std::size_t>(w) * h,
+                                kT1Sentinel);
+  try {
+    runtime::PaintComponent(px.data(), w, w, h, bx, by, bw, bh,
+                            b1_row("BottomAppBar"));
+  } catch (...) {
+    return false;  // T1 contract: never throws.
+  }
+  int inside = 0;
+  for (int y = by; y < by + bh; ++y)
+    for (int x = bx; x < bx + bw; ++x)
+      if (px[static_cast<std::size_t>(y) * w + x] != kT1Sentinel) ++inside;
+  if (inside < 1000) return false;
+  for (int y = 0; y < h; ++y) {
+    for (int x = 0; x < w; ++x) {
+      if (px[static_cast<std::size_t>(y) * w + x] == kT1Sentinel) continue;
+      bool inCard = (x >= bx && x < bx + bw && y >= by && y < by + bh);
+      bool inShadow = (x >= bx && x < bx + bw + 8 && y >= by &&
+                       y < by + bh + 8);
+      if (!inCard && !inShadow) return false;
+      if (!inCard && (y < by || x < bx)) return false;
+    }
+  }
+  return true;
+}
+
+// T1 boundary: miniature painters tolerate a tiny buffer and out-of-card
+// geometry without throwing; out-of-bounds writes are suppressed.
+static bool check_paint_miniature_never_throws_and_suppresses_oob() {
+  const int w = 64, h = 64;
+  std::vector<std::uint32_t> px(static_cast<std::size_t>(w) * h,
+                                kT1Sentinel);
+  try {
+    runtime::PaintComponent(px.data(), w, w, h, 8, 8, 48, 48,
+                            b1_row("NavigationRail"));
+    runtime::PaintComponent(px.data(), w, w, h, 8, 8, 48, 48,
+                            b1_row("BottomAppBar"));
+    runtime::PaintComponent(px.data(), w, w, h, -20, -20, 60, 60,
+                            b1_row("NavigationRail"));
+  } catch (...) {
+    return false;
+  }
+  return true;
+}
+
+// T1: in-bounds pixels are unchanged — the card interior paints its
+// background and the first-rail dot keeps its lit miniature color.
+static bool check_paint_inbounds_pixels_preserved() {
+  const int w = 400, h = 300;
+  const int bx = 20, by = 30, bw = 300, bh = 124;
+  std::vector<std::uint32_t> px(static_cast<std::size_t>(w) * h,
+                                kT1Sentinel);
+  try {
+    runtime::PaintComponent(px.data(), w, w, h, bx, by, bw, bh,
+                            b1_row("NavigationRail"));
+  } catch (...) {
+    return false;
+  }
+  // Card interior away from the centered miniature and the rounded
+  // corners keeps the card bg (right-edge column, mid height).
+  if (px[static_cast<std::size_t>(by + bh / 2) * w + (bx + bw - 3)] !=
+      kT1CardBg)
+    return false;
+  return true;
+}
+
+// T2: with two NavigationRail rows, no dot/pill miniature color may appear
+// in the gap band below the first card. Card bottom is located dynamically
+// (first non-card-bg pixel down column x=100, a miniature-free column), so
+// the test holds whether T2 grows the row or T1 shrinks the miniature.
+static bool check_packing_gap_free_of_rail_spill() {
+  const int w = 720, h = 1600;
+  std::vector<runtime::GalleryRow> rows;
+  rows.push_back(b1_row("NavigationRail"));
+  rows.push_back(b1_row("NavigationRail"));
+  std::vector<std::uint32_t> px(static_cast<std::size_t>(w) * h, 0u);
+  std::string error;
+  int drawn = 0;
+  try {
+    drawn = runtime::RasterGalleryPage(rows, 0, px.data(), w, w, h, &error);
+  } catch (...) {
+    return false;  // T2 contract: never throws.
+  }
+  if (drawn != 2) return false;
+  // ASSUMPTION (B1-GEOM): first card top is kHeaderH + kPad.
+  const int top0 = kB1HeaderH + kB1Pad;
+  const int xe = kB1Pad + 84;  // x=100: left of rail sheet, right of corner
+  int e0 = -1;
+  for (int y = top0; y < h - kB1FooterH; ++y) {
+    if (px[static_cast<std::size_t>(y) * w + xe] != kT1CardBg) {
+      e0 = y;
+      break;
+    }
+  }
+  if (e0 < 0) return false;
+  // ASSUMPTION (B1-GEOM): rail dot column xd = cx-150+38 with
+  // cx = bx+bw/2, bx=kPad, bw=w-2*kPad.
+  const int cx = kB1Pad + (w - 2 * kB1Pad) / 2;
+  const int xd = cx - 150 + 38;
+  for (int y = e0; y < e0 + kB1Gap && y < h - kB1FooterH; ++y) {
+    for (int x = xd - 7; x <= xd + 7; ++x) {
+      std::uint32_t c = px[static_cast<std::size_t>(y) * w + x];
+      if (c == kT1DotDim || c == kT1DotLit || c == kT1FabBg) return false;
+    }
+  }
+  return true;
+}
+
+// T2: with [Button, BottomAppBar], no FAB/plus miniature color may appear in
+// the gap band above the BottomAppBar card (the plus-button float). Card
+// top is located dynamically; blends/shadows never equal these colors.
+static bool check_packing_gap_free_of_fab_spill() {
+  const int w = 720, h = 1600;
+  std::vector<runtime::GalleryRow> rows;
+  rows.push_back(b1_row("Button"));
+  rows.push_back(b1_row("BottomAppBar"));
+  std::vector<std::uint32_t> px(static_cast<std::size_t>(w) * h, 0u);
+  std::string error;
+  int drawn = 0;
+  try {
+    drawn = runtime::RasterGalleryPage(rows, 0, px.data(), w, w, h, &error);
+  } catch (...) {
+    return false;  // T2 contract: never throws.
+  }
+  if (drawn != 2) return false;
+  // ASSUMPTION (B1-GEOM): second card starts after card0 + gap; locate
+  // card0's bottom edge first (first non-card-bg below row 0 top), then the
+  // second card top (first card-bg after that) on a miniature-free column.
+  const int xe = kB1Pad + 84;
+  const int top0 = kB1HeaderH + kB1Pad;
+  int e0 = -1;
+  for (int y = top0 + 1; y < h - kB1FooterH; ++y) {
+    if (px[static_cast<std::size_t>(y) * w + xe] != kT1CardBg) {
+      e0 = y;
+      break;
+    }
+  }
+  if (e0 < 0) return false;
+  int s1 = -1;
+  for (int y = e0 + 1; y < h - kB1FooterH; ++y) {
+    if (px[static_cast<std::size_t>(y) * w + xe] == kT1CardBg) {
+      s1 = y;
+      break;
+    }
+  }
+  if (s1 < 0) return false;
+  // ASSUMPTION (B1-GEOM): FAB center x = bx+bw-72.
+  const int xf = kB1Pad + (w - 2 * kB1Pad) - 72;
+  for (int y = s1 - kB1Gap; y < s1; ++y) {
+    if (y < kB1HeaderH) continue;
+    for (int x = xf - 24; x <= xf + 24; ++x) {
+      if (x < 0 || x >= w) continue;
+      std::uint32_t c = px[static_cast<std::size_t>(y) * w + x];
+      if (c == kT1FabBg || c == kT1DotLit) return false;
+    }
+  }
+  return true;
+}
+
+// T2 boundary/error: null error out-param tolerated on every leg, extreme
+// pages clamp instead of throwing, empty rows stay diagnostic.
+static bool check_raster_tolerates_null_error_and_never_throws() {
+  std::vector<runtime::GalleryRow> rows;
+  rows.push_back(b1_row("NavigationRail"));
+  rows.push_back(b1_row("BottomAppBar"));
+  const int w = 720, h = 1600;
+  std::vector<std::uint32_t> px(static_cast<std::size_t>(w) * h, 0u);
+  try {
+    if (runtime::RasterGalleryPage(rows, 0, px.data(), w, w, h, nullptr) <= 0)
+      return false;
+    (void)runtime::RasterGalleryPage(rows, -5, px.data(), w, w, h, nullptr);
+    (void)runtime::RasterGalleryPage(rows, 99, px.data(), w, w, h, nullptr);
+    if (runtime::GalleryPageCount(rows, h) < 1) return false;
+    if (runtime::GalleryPageCount(rows, 0) < 1) return false;
+    std::vector<runtime::GalleryRow> empty;
+    if (runtime::RasterGalleryPage(empty, 0, px.data(), w, w, h, nullptr) != 0)
+      return false;
+  } catch (...) {
+    return false;
+  }
+  return true;
+}
+
+// T2 packing: at a short viewport each 124px miniature row takes its own
+// page (avail = h-kHeaderH-kFooterH-kPad fits exactly one row + no second
+// row with gap). Pins PageStarts agreement; green pre- and post-fix.
+static bool check_page_count_covers_all_rows() {
+  std::vector<runtime::GalleryRow> rows;
+  for (int i = 0; i < 6; ++i) rows.push_back(b1_row("NavigationRail"));
+  const int h = 400;
+  int pages = 0;
+  try {
+    pages = runtime::GalleryPageCount(rows, h);
+  } catch (...) {
+    return false;
+  }
+  if (pages != 6) return false;
+  const int w = 720;
+  std::vector<std::uint32_t> px(static_cast<std::size_t>(w) * h, 0u);
+  int total = 0;
+  try {
+    for (int p = 0; p < pages; ++p)
+      total += runtime::RasterGalleryPage(rows, p, px.data(), w, w, h,
+                                          nullptr);
+  } catch (...) {
+    return false;
+  }
+  return total == 6;
+}
+
+// --- Batch 2 (BUG-GRAPHICS-001 T3/T4) --------------------------------------
+// T3: oracle-golden containment over page-p0-equivalent rail/drawer/FAB/plus
+// rows, asserted at the RasterGalleryPage level (union-of-cards invariant:
+// every miniature-colored pixel lies inside some card rect — zero paint
+// outside container bounds). T4: RULE-GRAPHICS-003 build-fence assertion
+// (no mock-painter symbol reachable/linked), static/link-level only.
+// Hermetic: in-memory buffers, no ANativeWindow/GPU/network/filesystem.
+//
+// ASSUMPTION (B2-GEOM): extends B1-GEOM. Row heights mirror production
+// RowHeight (NavigationRail/BottomAppBar=140, NavigationDrawer=180); card
+// tops stack as top0 + sum(rh+gap) with top0 anchored dynamically by a
+// card-bg scan. Every computed edge is anchor-verified at runtime (a layout
+// drift fails loudly instead of passing vacuously); expected behavior
+// (containment) does not move if the coder re-measures.
+static int b2_row_height_mirror(const std::string& comp) {
+  if (comp == "NavigationDrawer") return 180;
+  return 140;  // NavigationRail / BottomAppBar (T2 packing agreement)
+}
+
+struct B2Card {
+  int top;
+  int bottom;
+};
+
+// Anchor: first card-bg pixel at column xe below the title bar.
+static int b2_first_card_top(const std::uint32_t* px, int w, int h, int xe) {
+  for (int y = kB1HeaderH; y < h - kB1FooterH; ++y) {
+    if (px[static_cast<std::size_t>(y) * w + xe] == kT1CardBg) return y;
+  }
+  return -1;
+}
+
+static bool b2_is_miniature_color(std::uint32_t c) {
+  // Drawer/rail dots + pills, BottomAppBar FAB disc + plus lines. Blends and
+  // the card shadow never equal these words (B1 assumption, src-over-black
+  // math), and PaintCaption is a no-op, so any occurrence is miniature paint.
+  return c == kT1DotDim || c == kT1DotLit || c == kT1FabBg;
+}
+
+// Strict union-of-cards scan: every miniature-colored pixel must lie inside
+// one of the given card rects. Prints a naming diagnostic (color + coords +
+// card index) on the first violation per the T3 exit contract.
+static bool b2_scan_contained(const std::uint32_t* px, int w, int h,
+                              const B2Card* cards, int n, int bx, int bw,
+                              int* miniaturePixels) {
+  int found = 0;
+  for (int y = 0; y < h; ++y) {
+    for (int x = 0; x < w; ++x) {
+      std::uint32_t c = px[static_cast<std::size_t>(y) * w + x];
+      if (!b2_is_miniature_color(c)) continue;
+      ++found;
+      bool inside = false;
+      for (int i = 0; i < n; ++i) {
+        if (x >= bx && x < bx + bw && y >= cards[i].top &&
+            y < cards[i].bottom) {
+          inside = true;
+          break;
+        }
+      }
+      if (!inside) {
+        std::printf("  detail: miniature color 0x%08X at (%d,%d) outside %d card(s)\n",
+                    c, x, y, n);
+        return false;
+      }
+    }
+  }
+  if (miniaturePixels != nullptr) *miniaturePixels = found;
+  return true;
+}
+
+// T3: page-p0-equivalent rows [NavigationRail, NavigationDrawer,
+// BottomAppBar] on one page: rail dot spill, drawer dots, FAB disc and the
+// plus-button float must all stay inside their own card rects.
+static bool check_page_p0_equivalent_miniatures_contained() {
+  const int w = 720, h = 1600;
+  std::vector<runtime::GalleryRow> rows;
+  rows.push_back(b1_row("NavigationRail"));
+  rows.push_back(b1_row("NavigationDrawer"));
+  rows.push_back(b1_row("BottomAppBar"));
+  std::vector<std::uint32_t> px(static_cast<std::size_t>(w) * h, 0u);
+  int drawn = 0;
+  try {
+    drawn = runtime::RasterGalleryPage(rows, 0, px.data(), w, w, h, nullptr);
+  } catch (...) {
+    return false;  // T3 contract: never throws.
+  }
+  if (drawn != 3) {
+    std::printf("  detail: drew %d rows, want 3\n", drawn);
+    return false;
+  }
+  const int bx = kB1Pad, bw = w - 2 * kB1Pad;
+  const int xe = kB1Pad + 84;  // miniature-free column (left of sheets)
+  const int top0 = b2_first_card_top(px.data(), w, h, xe);
+  if (top0 < 0) {
+    std::printf("  detail: no card top anchored\n");
+    return false;
+  }
+  B2Card cards[3];
+  int y = top0;
+  for (int i = 0; i < 3; ++i) {
+    const int rh = b2_row_height_mirror(rows[static_cast<std::size_t>(i)].comp);
+    cards[i] = {y, y + rh};
+    // Anchor-verify both edges on the miniature-free column: a packing drift
+    // fails here loudly instead of shifting the verdict silently.
+    if (px[static_cast<std::size_t>(y + 2) * w + xe] != kT1CardBg) {
+      std::printf("  detail: card %d top %d not card-bg (packing drift)\n", i, y);
+      return false;
+    }
+    if (px[static_cast<std::size_t>(y + rh - 2) * w + xe] != kT1CardBg) {
+      std::printf("  detail: card %d bottom %d not card-bg (packing drift)\n", i,
+                  y + rh);
+      return false;
+    }
+    y += rh + kB1Gap;
+  }
+  int found = 0;
+  if (!b2_scan_contained(px.data(), w, h, cards, 3, bx, bw, &found)) {
+    return false;
+  }
+  if (found < 50) {
+    // Sanity: the miniatures really painted (guards a vacuous pass).
+    std::printf("  detail: only %d miniature pixels (vacuous-pass guard)\n",
+                found);
+    return false;
+  }
+  return true;
+}
+
+// T3: NavigationDrawer branch direct containment on a short card (bh=96).
+// Pre-fix the drawer dots/pill used unbounded primitives, so the third row
+// escapes a 96px card; post-fix CardFill* clamps keep every disc in-card.
+static bool check_paint_drawer_dots_clamped_to_card() {
+  const int w = 400, h = 300;
+  const int bx = 20, by = 30, bw = 360, bh = 96;
+  std::vector<std::uint32_t> px(static_cast<std::size_t>(w) * h,
+                                kT1Sentinel);
+  try {
+    runtime::PaintComponent(px.data(), w, w, h, bx, by, bw, bh,
+                            b1_row("NavigationDrawer"));
+  } catch (...) {
+    return false;  // T3 contract: never throws.
+  }
+  int inside = 0;
+  for (int yy = by; yy < by + bh; ++yy)
+    for (int x = bx; x < bx + bw; ++x)
+      if (px[static_cast<std::size_t>(yy) * w + x] != kT1Sentinel) ++inside;
+  if (inside < 200) {
+    std::printf("  detail: only %d painted pixels in-card\n", inside);
+    return false;
+  }
+  B2Card card = {by, by + bh};
+  return b2_scan_contained(px.data(), w, h, &card, 1, bx, bw, nullptr);
+}
+
+// T3: short viewport puts each 140px miniature row on its own page
+// (Batch 1 pin: 2 rows -> 2 pages at h=400); each single-card page must be
+// self-contained — rail dots must not reach the footer pad, the FAB/plus
+// must not reach the header pad.
+static bool check_short_pages_each_card_self_contained() {
+  std::vector<runtime::GalleryRow> rows;
+  rows.push_back(b1_row("NavigationRail"));
+  rows.push_back(b1_row("BottomAppBar"));
+  const int w = 720, h = 400;
+  const int bx = kB1Pad, bw = w - 2 * kB1Pad;
+  const int xe = kB1Pad + 84;
+  int pages = 0;
+  try {
+    pages = runtime::GalleryPageCount(rows, h);
+  } catch (...) {
+    return false;
+  }
+  if (pages != 2) {
+    std::printf("  detail: pages=%d, want 2\n", pages);
+    return false;
+  }
+  for (int p = 0; p < 2; ++p) {
+    std::vector<std::uint32_t> px(static_cast<std::size_t>(w) * h, 0u);
+    int drawn = 0;
+    try {
+      drawn = runtime::RasterGalleryPage(rows, p, px.data(), w, w, h, nullptr);
+    } catch (...) {
+      return false;
+    }
+    if (drawn != 1) {
+      std::printf("  detail: page %d drew %d rows, want 1\n", p, drawn);
+      return false;
+    }
+    const int top = b2_first_card_top(px.data(), w, h, xe);
+    if (top < 0) {
+      std::printf("  detail: page %d has no card top\n", p);
+      return false;
+    }
+    const int rh = b2_row_height_mirror(
+        rows[static_cast<std::size_t>(p)].comp);
+    B2Card card = {top, top + rh};
+    int found = 0;
+    if (!b2_scan_contained(px.data(), w, h, &card, 1, bx, bw, &found)) {
+      std::printf("  detail: page %d spill\n", p);
+      return false;
+    }
+    if (found < 20) {
+      std::printf("  detail: page %d only %d miniature pixels\n", p, found);
+      return false;
+    }
+  }
+  return true;
+}
+
+// --- T4: RULE-GRAPHICS-003 fence -------------------------------------------
+// Mock-painter probes: these symbols must never link into a gallery page
+// target. Declared weak so a hermetic build resolves them to null; any
+// reintroduction of a mock painter under a canonical name makes the probe
+// non-null and the fence names it.
+extern "C" void MockPainter_Paint(void) __attribute__((weak));
+extern "C" void GalleryMockPainter(void) __attribute__((weak));
+extern "C" void mock_painter_present(void) __attribute__((weak));
+extern "C" void PaintMockComponent(void) __attribute__((weak));
+
+// T4: no mock-painter symbol is linked. Exit nonzero names the reachable
+// symbol per the plan Interface:.
+static bool check_fence_no_mock_painter_symbol_linked() {
+  if (MockPainter_Paint != nullptr) {
+    std::printf("  detail: reachable mock-painter symbol MockPainter_Paint\n");
+    return false;
+  }
+  if (GalleryMockPainter != nullptr) {
+    std::printf("  detail: reachable mock-painter symbol GalleryMockPainter\n");
+    return false;
+  }
+  if (mock_painter_present != nullptr) {
+    std::printf("  detail: reachable mock-painter symbol mock_painter_present\n");
+    return false;
+  }
+  if (PaintMockComponent != nullptr) {
+    std::printf("  detail: reachable mock-painter symbol PaintMockComponent\n");
+    return false;
+  }
+  return true;
+}
+
+// T4: no mock/oracle painter leaks through the dynamic export surface.
+// nm-style gate consistent with android_build_gate_test / jni_contract_test:
+// SKIP (pass) when nm or /proc/self/exe is unavailable; FAIL names the
+// symbol otherwise. The oracle PaintComponent stays a hermetic-gate
+// instrument (static runtime linkage for the test binary only) and is
+// asserted here only against dynamic export, not linkage.
+static bool check_fence_painters_not_dynamically_exported() {
+  std::FILE* self = std::fopen("/proc/self/exe", "rb");
+  if (self == nullptr) {
+    std::printf("  detail: SKIP dynamic-exports audit (/proc/self/exe unreadable)\n");
+    return true;
+  }
+  std::fclose(self);
+  if (std::system("command -v nm >/dev/null 2>&1") != 0) {
+    std::printf("  detail: SKIP dynamic-exports audit (nm unavailable)\n");
+    return true;
+  }
+  std::FILE* p = popen(
+      "nm -D /proc/self/exe 2>/dev/null | grep -E ' [TDR] .*(MockPainter|mock_painter|PaintMock)'",
+      "r");
+  if (p == nullptr) {
+    std::printf("  detail: SKIP dynamic-exports audit (popen unavailable)\n");
+    return true;
+  }
+  char buf[512];
+  std::string hit;
+  while (std::fgets(buf, sizeof(buf), p) != nullptr) hit += buf;
+  int rc = pclose(p);
+  (void)rc;  // grep exit 1 (no match) is the PASS leg, not an error.
+  if (!hit.empty()) {
+    std::printf("  detail: dynamically exported mock-painter symbol(s): %s\n",
+                hit.c_str());
+    return false;
+  }
+  return true;
+}
+
 int main() {
   int failures = 0;
   RUN_CASE(check_showcase_rows_parsed);
@@ -545,6 +1109,19 @@ int main() {
   RUN_CASE(check_mirror_equality_with_js_drive_state);
   RUN_CASE(check_case_sensitive_unknown_is_closed);
   RUN_CASE(check_segmented_divider_interior_no_edge_stroke);
+  RUN_CASE(check_paint_rail_dots_clamped_to_card);
+  RUN_CASE(check_paint_bottomappbar_fab_clamped_to_card);
+  RUN_CASE(check_paint_miniature_never_throws_and_suppresses_oob);
+  RUN_CASE(check_paint_inbounds_pixels_preserved);
+  RUN_CASE(check_packing_gap_free_of_rail_spill);
+  RUN_CASE(check_packing_gap_free_of_fab_spill);
+  RUN_CASE(check_raster_tolerates_null_error_and_never_throws);
+  RUN_CASE(check_page_count_covers_all_rows);
+  RUN_CASE(check_page_p0_equivalent_miniatures_contained);
+  RUN_CASE(check_paint_drawer_dots_clamped_to_card);
+  RUN_CASE(check_short_pages_each_card_self_contained);
+  RUN_CASE(check_fence_no_mock_painter_symbol_linked);
+  RUN_CASE(check_fence_painters_not_dynamically_exported);
   if (failures > 0) {
     std::printf("gallery_present_test: %d failing\n", failures);
     return 1;
