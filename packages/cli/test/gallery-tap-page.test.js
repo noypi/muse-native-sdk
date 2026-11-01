@@ -597,9 +597,13 @@ describe('T1 — gallery-tap page CLI exit codes (usage errors exit 2)', () => {
 // `sh` stub prepended to PATH (real adb never runs). Each test owns its
 // tmp roots (no shared mutable state).
 // ASSUMPTIONS (contract genuinely silent, most defensible behavior tested):
-// - A1: the page tap reuses the existing device-lane tap coordinates
-//   (150,250) — the argv `input tap 150 250` must appear in the recorded
-//   sequence; a right-edge fallback tap is NOT asserted here.
+// - A1: the page tap hits the top-row RIGHT side (930,250) — the Next
+//   control. Live finding #3 (2026-11-01, serial 127.0.0.1:6569,
+//   1080x2280): the old (150,250) lane tap = left side = Prev (disabled on
+//   page 1/9), so the page never advanced; probes tap 930,250 →
+//   gallery-page=2/9 and tap 900,200 → 3/9. The argv
+//   `input tap 930 250` must appear in the recorded sequence; a left-side
+//   (150,250) tap is NOT asserted here.
 // - A2: page-index detection reads the UNFILTERED logcat dump
 //   (`adb -s <s> logcat -d`, no `-s muse-host` filter) before/after the tap,
 //   backed by a screencap non-blank assertion (`adb -s <s> exec-out screencap -p`).
@@ -683,7 +687,8 @@ function t2ReadLog(log) {
 }
 
 // Asserts the recorded argv lines contain the tap-page adb steps in order:
-// install → force-stop → logcat -c → am start → input tap (150,250) →
+// install → force-stop → logcat -c → am start → input tap (930,250,
+// top-row right side = Next; live finding #3: left-side 150,250 = Prev) →
 // UNFILTERED logcat -d (no `-s muse-host`) → screencap. Extra invocations
 // beyond the two page-index reads are allowed here; order is what matters
 // (the exact-count assertion lives in the unfiltered-read test below —
@@ -696,7 +701,7 @@ function t2AssertStepOrder(lines) {
     /force-stop/,
     /logcat.*-c/,
     /am.*start/,
-    /input.*tap.*150.*250/,
+    /input.*tap.*930.*250/,
     /logcat.*-d/,
     /screencap/,
   ];

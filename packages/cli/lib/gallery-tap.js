@@ -437,7 +437,7 @@ function findJniFaultLine(text) {
 
 // Tap-page lane: shell the device-lane adb argv-array pattern against
 // --serial (install -r, force-stop, logcat -c, am start, page-index read via
-// logcat -d -s muse-host, input tap at (150,250), page-index re-read,
+// logcat -d -s muse-host, input tap at (930,250), page-index re-read,
 // exec-out screencap -p piped to a blank check); argv arrays only, never
 // interpolated into shell strings. Exit 0 iff the page index advances AND
 // the post-tap screencap is non-blank; otherwise exit 1 with the tap-page
@@ -484,7 +484,7 @@ function runTapPageLane(opts) {
     failClosed(before.error.args, before.error.detail);
     return;
   }
-  const tapArgs = ['-s', serial, 'shell', 'input', 'tap', '150', '250'];
+  const tapArgs = ['-s', serial, 'shell', 'input', 'tap', '930', '250'];
   {
     const res = spawnSync('adb', tapArgs, { encoding: 'utf8' });
     if (res.error || res.status !== 0) {
