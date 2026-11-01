@@ -44,6 +44,7 @@ Dependencies
    lookup in engine/text/src/font_discovery_android.cpp; the bundled last-resort face covers
    first paint where no system face resolves. No downloads; the downloadable-font provider
    stays nullable and is never consulted by the lookup.)
+28. Cronet — Licence: BSD-3-Clause — Owner: net — Link: dynamic
 
 Licence texts and pointers
 --------------------------
