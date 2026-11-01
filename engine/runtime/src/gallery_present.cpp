@@ -2996,6 +2996,97 @@ bool PresentDeviceGalleryPage(const std::vector<GalleryRow>& rows, int page,
   }
 }
 
+// Real-component page (FR-GRAPHICS-015 / AC-GRAPHICS-042, RULE-GRAPHICS-003):
+// rows from ParseGalleryRows descriptors instantiate real components through
+// the retained emission helpers (EmitGalleryWindowCmds over the requested
+// page slice), so output is only the retained 11-kind vocabulary via
+// renderer.draw. The CPU oracle painters (RasterGalleryPage/PaintCaption)
+// stay compiled for gallery_present_test/golden tooling only and are never
+// called here. Staged draw (nothing committed on a non-None result), same
+// shaping gate and Text->ShapedText promotion as the device lane.
+bool PresentRealGalleryPage(const std::vector<GalleryRow>& rows, int page,
+                            Renderer& renderer, Swapchain& target,
+                            std::string* error) {
+  try {
+    if (rows.empty()) {
+      SetPresentError(error, "real gallery page: no gallery rows");
+      return false;
+    }
+    if (page < 0) {
+      SetPresentError(error, "real gallery page: page out of range");
+      return false;
+    }
+    const int pages = GalleryPageCount(rows, kPresentH);
+    if (page >= pages) {
+      SetPresentError(error, "real gallery page: page out of range");
+      return false;
+    }
+    // Fail-closed shaping gate (mirrors PresentGallery): every non-empty
+    // label must resolve to a nonzero engine-stack run handle before any
+    // cmd is emitted; a 0 handle records nothing, never a bitmap.
+    for (const GalleryRow& row : rows) {
+      const std::string& label =
+          row.comp.empty() ? row.label : ShortCaption(row);
+      if (label.empty()) continue;
+      if (LabelHasNoncharacter(label) || ShapeGalleryLabel(label) == 0) {
+        SetPresentError(error,
+                        "real gallery page: label shaping failed "
+                        "(fail-closed: no bitmap)");
+        return false;
+      }
+    }
+    const std::vector<int> starts = PageStarts(rows, kPresentH);
+    RealizedWindow window;
+    window.firstVisible = starts[static_cast<std::size_t>(page)];
+    window.lastVisible = starts[static_cast<std::size_t>(page) + 1] - 1;
+    window.prefetchAhead = 0;
+    std::vector<DrawCmd> cmds;
+    cmds.reserve(rows.size() * 2 + 2);
+    EmitGalleryWindowCmds(rows, window, cmds);
+    // Rebase the slice to the viewport origin (page 0 is a zero shift).
+    float cursorFirst = static_cast<float>(kPad);
+    for (int i = 0; i < window.firstVisible; ++i) {
+      cursorFirst += static_cast<float>(
+                         RowHeight(rows[static_cast<std::size_t>(i)])) +
+                     static_cast<float>(kGap);
+    }
+    const float rebaseDy = cursorFirst - static_cast<float>(kPad);
+    if (rebaseDy != 0.0f) {
+      for (auto& cmd : cmds) cmd.bounds.y -= rebaseDy;
+    }
+    for (auto& cmd : cmds) {
+      if (cmd.kind == PrimitiveKind::Text && cmd.payload.glyphRunId != 0) {
+        cmd.kind = PrimitiveKind::ShapedText;
+      }
+    }
+    StagingSwapchain staged;
+    const DrawError derr = renderer.draw(cmds, staged);
+    if (derr != DrawError::None) {
+      if (derr == DrawError::UnsupportedBaseline &&
+          !renderer.lastError().empty()) {
+        if (error != nullptr) *error = renderer.lastError();
+      } else {
+        SetPresentError(error, "real gallery page: retained present rejected");
+      }
+      return false;
+    }
+    for (const auto& cmd : staged.cmds) {
+      if (cmd.kind != PrimitiveKind::ShapedText) continue;
+      const muse::text::StatusOr<CoverageMask> coverage = RasterizeShapedText(
+          cmd.payload.glyphRunId, cmd.bounds, cmd.payload.textColor);
+      if (!coverage.ok()) {
+        SetPresentError(error, "real gallery page: shaped run failed");
+        return false;
+      }
+    }
+    for (const auto& cmd : staged.cmds) target.submit(cmd);
+    return true;
+  } catch (...) {
+    SetPresentError(error, "present failed (exception)");
+    return false;
+  }
+}
+
 // ---- Layering page (L2: BUG-M3-FIDELITY-008 / FR-M3-010 / AC-M3-022) ----
 //
 // Single-OverlayHost scene: one dim scrim plus the five overlay contents in

@@ -42,6 +42,17 @@ int RasterGalleryPage(const std::vector<GalleryRow>& rows, int page,
 // Page count for the given viewport (same row metrics as RasterGalleryPage).
 int GalleryPageCount(const std::vector<GalleryRow>& rows, int height);
 
+// Real-component page entry (FR-GRAPHICS-015 / AC-GRAPHICS-042,
+// RULE-GRAPHICS-003): rows from ParseGalleryRows descriptors instantiate
+// real components emitting only the retained 11-kind vocabulary via
+// renderer.draw into target (no CPU oracle box/caption pixels). Returns true
+// with *error untouched on success; false + a non-blank diagnostic (nothing
+// recorded) on empty rows, out-of-range/negative page, shaping failure, or a
+// non-None draw result. Never throws; error == nullptr is tolerated.
+bool PresentRealGalleryPage(const std::vector<GalleryRow>& rows, int page,
+                            Renderer& renderer, Swapchain& target,
+                            std::string* error);
+
 // Retained entry point (FR-GRAPHICS-010 / AC-GRAPHICS-030): parse the MUI1
 // envelope with the existing ParseGalleryRows gate, then emit every row as
 // one or more DrawCmds from the 11-kind vocabulary through renderer.draw
