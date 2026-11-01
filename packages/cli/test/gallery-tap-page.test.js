@@ -600,12 +600,18 @@ describe('T1 — gallery-tap page CLI exit codes (usage errors exit 2)', () => {
 // - A1: the page tap reuses the existing device-lane tap coordinates
 //   (150,250) — the argv `input tap 150 250` must appear in the recorded
 //   sequence; a right-edge fallback tap is NOT asserted here.
-// - A2: page-index detection reads the `muse-host` logcat tag
-//   (`adb -s <s> logcat -d -s muse-host`) before/after the tap, backed by a
-//   screencap non-blank assertion (`adb -s <s> exec-out screencap -p`).
-//   Stub logcat emits `muse-host: page-index <N>` lines; the parser is
-//   expected to match /page[-_ ]?index\s*[:= ]\s*(\d+)/i (with a
-//   /page\s+(\d+)/ fallback). Non-blank screencap = non-empty stdout;
+// - A2: page-index detection reads the UNFILTERED logcat dump
+//   (`adb -s <s> logcat -d`, no `-s muse-host` filter) before/after the tap,
+//   backed by a screencap non-blank assertion (`adb -s <s> exec-out screencap -p`).
+//   Live finding #2 (2026-11-01): the paging signal is
+//   `GalleryPage: gallery-page=N/9` under tag GalleryPage — a filtered
+//   `logcat -d -s muse-host` dump shows NO gallery-page lines, so the lane
+//   must read the unfiltered dump (consistent with the fault scan's
+//   full-buffer read). Stub logcat emits both `muse-host: page-index <N>`
+//   and `GalleryPage: gallery-page=<N>/9` lines verbatim via d1/d2; the parser is
+//   expected to match /page[-_ ]?index\s*[:= ]\s*(\d+)/i,
+//   /gallery[-_\/ ]?page\s*[:= ]\s*(\d+)/i (numerator = index), with a
+//   /page\s+(\d+)/ fallback. Non-blank screencap = non-empty stdout;
 //   blank = empty stdout (screencap fallback for advance is NOT required
 //   here — an unchanged index fails even with a non-blank frame).
 
@@ -620,11 +626,17 @@ function t2mkTmp(prefix) {
 }
 
 // Stateful stubbed `adb`: records every argv line to <bin>/adb.log and
-// serves canned outputs. `logcat -d` calls are counted: the 1st dump
-// prints d1, the 2nd and later print d2 (pre/post page-index reads).
+// serves canned outputs. UNFILTERED `logcat -d` calls (no `muse-host`) are
+// counted: the 1st dump prints d1, the 2nd and later print d2 (pre/post
+// page-index reads, serving GalleryPage gallery-page lines verbatim).
+// FILTERED `logcat -d -s muse-host` prints empty (live finding #2: the
+// filtered dump carries no gallery-page signal, so a lane that reads the
+// page index through `-s muse-host` sees null/null and fails page-advanced).
 // `exec-out screencap` prints `png` verbatim (empty string = blank).
 // When `failOn` (substring of "$*") matches, exits `failExit` (default 1)
 // printing `failOut` — models an unreachable serial / failing step.
+// NOTE: unfiltered reads chosen over dual-tag (`-s muse-host GalleryPage`)
+// deliberately — consistent with the fault scan's full-buffer read.
 function writeTapPageAdbStub({ d1, d2, png, failOn, failExit, failOut }) {
   const bin = t2mkTmp('muse-tap-page-bin-');
   const log = path.join(bin, 'adb.log');
@@ -644,6 +656,7 @@ function writeTapPageAdbStub({ d1, d2, png, failOn, failExit, failOut }) {
     'printf \'%s\\n\' "$*" >> "$LOG"',
     'if [ -n "$FAIL_ON" ]; then case "$*" in *"$FAIL_ON"*) [ -n "$FAIL_OUT" ] && printf \'%s\\n\' "$FAIL_OUT"; exit "$FAIL_EXIT";; esac; fi',
     'case "$*" in',
+    '(*"muse-host"*) exit 0;;',
     '(*"logcat"*" -d"*)',
     '  N=$(cat "$COUNT_FILE" 2>/dev/null || echo 0); N=$((N + 1)); printf \'%s\' "$N" > "$COUNT_FILE";',
     '  if [ "$N" = "1" ]; then printf \'%s\\n\' "$D1"; else printf \'%s\\n\' "$D2"; fi; exit 0;;',
@@ -671,8 +684,12 @@ function t2ReadLog(log) {
 
 // Asserts the recorded argv lines contain the tap-page adb steps in order:
 // install → force-stop → logcat -c → am start → input tap (150,250) →
-// logcat -d → screencap. Extra invocations (e.g. a second logcat -d
-// re-read) are allowed; order is what matters.
+// UNFILTERED logcat -d (no `-s muse-host`) → screencap. Extra invocations
+// beyond the two page-index reads are allowed here; order is what matters
+// (the exact-count assertion lives in the unfiltered-read test below —
+// without the fault flag there must be exactly 2 `logcat -d` lines; the
+// fault-scan full dump is a separate third `logcat -d` only with
+// `--assert-zero-jni-faults`, covered by T3).
 function t2AssertStepOrder(lines) {
   const need = [
     /install/,
@@ -743,13 +760,28 @@ describe('T2 — tap-page device sequence (FR-RUNTIME-012, AC-RUNTIME-036)', () 
   });
 
   it('tap-page run shells install/force-stop/logcat-c/start/tap/logcat-d/screencap in order', () => {
-    const { bin, log } = writeTapPageAdbStub({ d1: T2_PAGE_BEFORE, d2: T2_PAGE_AFTER, png: T2_PNG });
+    const { bin, log } = writeTapPageAdbStub({ d1: T2_GALLERY_PAGE_BEFORE, d2: T2_GALLERY_PAGE_AFTER, png: T2_PNG });
     const res = runCli(
       ['gallery-tap', '--tap-page', '--serial', T2_SERIAL],
       t2WithPath(bin, { cwd: t2mkTmp('muse-tap-page-cwd-') }),
     );
     assert.equal(res.status, 0, `expected exit 0, got ${res.status}; out: ${`${res.stdout}\n${res.stderr}`.slice(0, 800)}`);
     t2AssertStepOrder(t2ReadLog(log));
+  });
+
+  it('page-index reads are unfiltered logcat -d (no -s muse-host); exactly 2 without the fault flag', () => {
+    const { bin, log } = writeTapPageAdbStub({ d1: T2_GALLERY_PAGE_BEFORE, d2: T2_GALLERY_PAGE_AFTER, png: T2_PNG });
+    const res = runCli(
+      ['gallery-tap', '--tap-page', '--serial', T2_SERIAL],
+      t2WithPath(bin, { cwd: t2mkTmp('muse-tap-page-cwd-') }),
+    );
+    assert.equal(res.status, 0, `expected exit 0, got ${res.status}; out: ${`${res.stdout}\n${res.stderr}`.slice(0, 800)}`);
+    const lines = t2ReadLog(log);
+    const dumps = lines.filter((l) => /logcat.*-d/.test(l));
+    assert.equal(dumps.length, 2, `without the fault flag there must be exactly 2 logcat -d reads (fault-scan third dump only with --assert-zero-jni-faults); got:\n${lines.join('\n')}`);
+    for (const d of dumps) {
+      assert.ok(!/muse-host/.test(d), `page-index read must be unfiltered logcat -d with no -s muse-host filter; got: ${d}`);
+    }
   });
 
   it('unchanged page index exits 1 naming the page-advanced row', () => {
@@ -829,13 +861,15 @@ describe('T2 — tap-page device sequence (FR-RUNTIME-012, AC-RUNTIME-036)', () 
 //   no-device (fail closed, never touches adb); default lane never shells adb.
 // Scope: stubbed-adb CLI runs only. No T1/T2 rewrite (16 cases stay green).
 // Hermetic: node:test + node:assert/strict + stdlib only; adb is a tmp-bin
-// `sh` stub prepended to PATH (real adb never runs). Full-buffer scan reads
-// the unfiltered `logcat -d` dump (no `-s muse-host` filter); tagged
-// `logcat -d -s muse-host` reads still serve the page index.
+// `sh` stub prepended to PATH (real adb never runs). The full-buffer scan
+// reads the third plain unfiltered `logcat -d` dump (no `-s muse-host`
+// filter); the 1st/2nd plain dumps serve the page index in both the
+// `muse-host` and `GalleryPage` forms.
 // ASSUMPTIONS (contract genuinely silent, most defensible behavior tested):
 // - A3: the fault scan covers the full buffer from this run's `logcat -c`
-//   (pre-run history cannot leak in); the stub models this by serving FULL
-//   verbatim for the unfiltered dump.
+//   (pre-run history cannot leak in); the stub models this by serving the
+//   page index (both muse-host + GalleryPage forms) on the 1st/2nd plain
+//   `logcat -d` dumps and FULL verbatim on the 3rd+ dump.
 // - A4: tap-page needs a serial — `--tap-page` without `--serial` fails
 //   closed (exit 1 naming no-device) without invoking adb, with or without
 //   the fault flag (nfr-audit Checks must not hang).
@@ -848,9 +882,15 @@ function t3mkTmp(prefix) {
 }
 
 // Stateful stubbed `adb` for T3: records every argv line to <bin>/adb.log.
-// - `logcat -d -s muse-host` (tagged): 1st call prints d1, 2nd+ print d2
-//   (pre/post page-index reads, `muse-host: page-index <N>`).
-// - plain `logcat -d` (no muse-host): prints FULL verbatim (fault buffer).
+// Post-lane-fix all 3 logcat dumps are plain unfiltered `logcat -d`
+// (before/page, after/page, fault/FULL) — the lane no longer issues tagged
+// `logcat -d -s muse-host` reads. The stub counts every `logcat -d` dump
+// (tagged or plain, single counter): the 1st dump prints d1 and the 2nd
+// prints d2 (pre/post page-index reads, each carrying BOTH the
+// `muse-host: page-index <N>` and `GalleryPage: gallery-page=<N>/9` forms);
+// the 3rd and later dumps print FULL verbatim (fault buffer — reached only
+// by fault-flag runs, which issue the third dump; no-flag runs issue exactly
+// 2 plain dumps so FULL is never served and the scan is skipped).
 // - `exec-out screencap`: prints `png` verbatim (empty = blank).
 // - `failOn` substring match: exits `failExit` printing `failOut`.
 function writeFaultGateAdbStub({ d1, d2, png, full, failOn, failExit, failOut }) {
@@ -873,10 +913,9 @@ function writeFaultGateAdbStub({ d1, d2, png, full, failOn, failExit, failOut })
     'printf \'%s\\n\' "$*" >> "$LOG"',
     'if [ -n "$FAIL_ON" ]; then case "$*" in *"$FAIL_ON"*) [ -n "$FAIL_OUT" ] && printf \'%s\\n\' "$FAIL_OUT"; exit "$FAIL_EXIT";; esac; fi',
     'case "$*" in',
-    '(*"muse-host"*"logcat"*|*"logcat"*"muse-host"*)',
+    '(*"logcat"*" -d"*)',
     '  N=$(cat "$COUNT_FILE" 2>/dev/null || echo 0); N=$((N + 1)); printf \'%s\' "$N" > "$COUNT_FILE";',
-    '  if [ "$N" = "1" ]; then printf \'%s\\n\' "$D1"; else printf \'%s\\n\' "$D2"; fi; exit 0;;',
-    '(*"logcat"*" -d"*) printf \'%s\\n\' "$FULL"; exit 0;;',
+    '  if [ "$N" = "1" ]; then printf \'%s\\n\' "$D1"; elif [ "$N" = "2" ]; then printf \'%s\\n\' "$D2"; else printf \'%s\\n\' "$FULL"; fi; exit 0;;',
     '(*"exec-out"*"screencap"*) printf \'%s\' "$PNG"; exit 0;;',
     '(*) exit 0;;',
     'esac',
@@ -900,8 +939,8 @@ function t3ReadLog(log) {
 }
 
 const T3_SERIAL = 'emulator-5554';
-const T3_PAGE_BEFORE = 'muse-host: page-index 2\n';
-const T3_PAGE_AFTER = 'muse-host: page-index 3\n';
+const T3_PAGE_BEFORE = 'muse-host: page-index 2\nGalleryPage: gallery-page=2/9\n';
+const T3_PAGE_AFTER = 'muse-host: page-index 3\nGalleryPage: gallery-page=3/9\n';
 const T3_PNG = `PNGFAKEDATA-${'A'.repeat(200)}`;
 const T3_CLEAN = 'muse-host: page-index 3\nI/ActivityManager: clean run\n';
 const T3_JNI = `I/muse-host: page-index 3\nE/AndroidRuntime: java.lang.UnsatisfiedLinkError: No implementation found for void com.muse.host.Native.tick()${'B'.repeat(400)}\n`;

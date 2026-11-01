@@ -469,7 +469,7 @@ function runTapPageLane(opts) {
     }
   }
   const readPageIndex = () => {
-    const args = ['-s', serial, 'logcat', '-d', '-s', 'muse-host'];
+    const args = ['-s', serial, 'logcat', '-d'];
     const res = spawnSync('adb', args, { encoding: 'utf8' });
     if (res.error || res.status !== 0) {
       const detail = res.error
