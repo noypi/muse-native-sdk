@@ -118,6 +118,60 @@ bool check_unknown_route_nav_error_and_home_degrade() {
   return b.snapshotForPersist() == fresh.snapshotForPersist();
 }
 
+// (e) AC-NAV-033 envelope robustness (security-reviewer): an aliasing
+// envelope whose nested params string smuggles `"route":"settings"`
+// resolves to the top-level route home — or fails closed — and never
+// commits settings.
+bool check_aliasing_envelope_never_commits_smuggled_route() {
+  RouterBridge b(kRoutes);
+  BridgeResult r = b.invoke(
+      "navigate",
+      "{\"params\":{\"x\":\"\\\"route\\\":\\\"settings\\\"\"},"
+      "\"route\":\"home\"}");
+  std::string after = b.snapshotForPersist();
+  if (contains(after, "settings")) return false;
+  if (r.ok) {
+    return r.error == BridgeError::NONE &&
+           r.json == "{\"route\":\"home\"}" && contains(after, "home");
+  }
+  return r.error == BridgeError::BAD_ARGS;
+}
+
+// (f) AC-NAV-017 envelope robustness (security-reviewer, mirrors the
+// JS-side array passthrough guard): array-literal params at the bridge
+// is malformed and yields BAD_ARGS denial, never a commit.
+bool check_array_literal_params_denied() {
+  RouterBridge b(kRoutes);
+  std::string before = b.snapshotForPersist();
+  BridgeResult r = b.invoke(
+      "navigate", "{\"route\":\"details\",\"params\":[1]}");
+  return !r.ok && r.error == BridgeError::BAD_ARGS &&
+         b.snapshotForPersist() == before;
+}
+
+// (g) Route echo safety (security-reviewer): the post-commit echo
+// (`{"route":"<id>"}`) is only reached for routes in routes_, so a
+// quote/backslash-bearing route id can never produce a malformed echo
+// envelope — the commit is denied with no echo, and a legitimate commit
+// echoes exactly one well-formed envelope.
+bool check_malicious_route_id_produces_no_echo() {
+  RouterBridge b(kRoutes);
+  RouterBridge fresh(kRoutes);
+  BridgeResult q = b.invoke(
+      "navigate", "{\"route\":\"set\\\"tings\",\"params\":{}}");
+  if (q.ok || q.error != BridgeError::NAV_ERROR || !q.json.empty())
+    return false;
+  BridgeResult s = b.invoke(
+      "navigate", "{\"route\":\"home\\\\x\",\"params\":{}}");
+  if (s.ok || s.error != BridgeError::NAV_ERROR || !s.json.empty())
+    return false;
+  if (b.snapshotForPersist() != fresh.snapshotForPersist()) return false;
+  BridgeResult good =
+      b.invoke("navigate", "{\"route\":\"home\",\"params\":{}}");
+  return good.ok && good.error == BridgeError::NONE &&
+         good.json == "{\"route\":\"home\"}";
+}
+
 }  // namespace
 
 int main() {
@@ -134,6 +188,12 @@ int main() {
               "non-object params denied BAD_ARGS");
   EXPECT_TRUE(check_unknown_route_nav_error_and_home_degrade(),
               "unknown route NAV_ERROR and home degrade");
+  EXPECT_TRUE(check_aliasing_envelope_never_commits_smuggled_route(),
+              "aliasing envelope never commits smuggled route");
+  EXPECT_TRUE(check_array_literal_params_denied(),
+              "array-literal params denied BAD_ARGS");
+  EXPECT_TRUE(check_malicious_route_id_produces_no_echo(),
+              "malicious route id produces no echo; legit echo well-formed");
   std::printf(failures == 0 ? "ALL PASS\n" : "FAILURES %d\n", failures);
   return failures == 0 ? 0 : 1;
 }
