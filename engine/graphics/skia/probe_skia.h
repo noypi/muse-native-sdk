@@ -26,4 +26,18 @@ struct SkiaProbeResult {
 // Never throws; `reason` is a static string naming the select/skip trigger.
 SkiaProbeResult ProbeSkia(const SkiaProbeInput& input) noexcept;
 
+// FR-GRAPHICS-016 / AC-GRAPHICS-045: standardized Skia backend variant is
+// Graphite (selection-only; no raster/perf change). Single-variant enum so
+// the selection leg names the Graphite backend without touching Skia SDK,
+// GPU context, or AC-039 probe semantics.
+enum class SkiaBackendVariant {
+  kGraphite,
+};
+
+// Returns `kGraphite` whenever `ProbeSkia(input).selected` is true; error
+// shape: never throws, no sentinel needed (unselected input yields
+// `kGraphite` pending-selection value; callers must still gate on
+// `ProbeSkia().selected`). Deterministic pure function of `input`.
+SkiaBackendVariant SelectSkiaBackendVariant(const SkiaProbeInput& input) noexcept;
+
 #endif  // GRAPHICS_SKIA_PROBE_SKIA_H_

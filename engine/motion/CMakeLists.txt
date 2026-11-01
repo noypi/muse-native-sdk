@@ -19,6 +19,7 @@ add_library(motion
   src/trace.cpp
   src/determinism.cpp
   src/asset.cpp
+  src/vector_importer.cpp
   src/asset_prepare.cpp
   src/asset_scale.cpp
   src/svg_import.cpp
@@ -132,6 +133,11 @@ add_executable(asset_import_test tests/asset_import_test.cpp)
 target_link_libraries(asset_import_test PRIVATE motion)
 target_compile_options(asset_import_test PRIVATE -Wall -Wextra -Wpedantic)
 add_test(NAME asset_import_test COMMAND asset_import_test)
+
+add_executable(vector_importer_test tests/vector_importer_test.cpp)
+target_link_libraries(vector_importer_test PRIVATE motion)
+target_compile_options(vector_importer_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME vector_importer_test COMMAND vector_importer_test)
 
 add_executable(record_replay_test tests/record_replay_test.cpp)
 target_link_libraries(record_replay_test PRIVATE motion)
