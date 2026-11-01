@@ -78,10 +78,10 @@ class TestDepsDataModule(unittest.TestCase):
                 )
 
     def test_allowlist_size_pinned(self):
-        """Allow-list holds exactly the 26 committed entries; shrinkage is a regression (AC-DEPS-004)."""
+        """Allow-list holds exactly the 27 committed entries; shrinkage is a regression (AC-DEPS-004; 27th entry Cronet per FR-DEPS-010/AC-DEPS-025)."""
         from tools.deps._deps_data import get_allowlist
 
-        self.assertEqual(len(get_allowlist()), 26)
+        self.assertEqual(len(get_allowlist()), 27)
 
     def test_denylist_boost_cites_four_reasons(self):
         """Boost deny entry states all four auditable reasons (AC-DEPS-008)."""
