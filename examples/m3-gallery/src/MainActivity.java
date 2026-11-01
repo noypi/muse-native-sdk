@@ -186,6 +186,15 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                     && engineHandle != 0) {
                 int nightMode = intent.getIntExtra("night_mode", 0);
                 nativeSetTheme(engineHandle, nightMode);
+                // FR-RUNTIME-011 T4 seam theme (Stage 3 fix, MAJOR 1): apply
+                // the same in-place switch through the seam. Fail-closed.
+                if (seamSurfaceHandle != 0) {
+                    try {
+                        nativeSeamSetTheme(seamSurfaceHandle, nightMode);
+                        Log.i("muse-host", "SEAM-STEP:theme:ok");
+                    } catch (Throwable ignored) {
+                    }
+                }
             }
         }
     };
@@ -261,6 +270,148 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     private static native int nativeDispatchTouch(
             long handle, int action, float x, float y, int pointerId, long timestampMs);
 
+    /**
+     * FR-RUNTIME-011 T1 single Surface host seam (reference-client binding).
+     * The gallery host migrates to this seam exclusively: attach/tree→handle,
+     * renderFrame, raw dispatchTouch (integer/float fields only), in-place
+     * setTheme/setImeBottom, idempotent detach/destroy. No View/MotionEvent
+     * object crosses; no gallery concept (pages, stories, Prev/Next) appears
+     * in any seam-adjacent signature. Fail-closed per PresenterCode, never
+     * throws across the VM boundary.
+     * Attach the evaluated tree to the opaque window handle. Returns the
+     * PresenterCode ordinal as int (0=ok; non-zero=fail-closed status with a
+     * logcat diagnostic, never a throw). The usable SurfaceHandle is retained
+     * natively; Java keeps only the opaque slot below.
+     */
+    private static native int nativeSeamAttachSurface(
+            long windowHandle, String rootKind, boolean unknownKind);
+
+    /**
+     * Handle getter (FR-RUNTIME-011 Stage 3 fix, adjudication A1): the T2
+     * contract keeps {@code nativeSeamAttachSurface -> int32 status}, so the
+     * usable SurfaceHandle is published out-of-band here — last attached
+     * handle, or 0 when none. Fail-closed, never throws.
+     */
+    private static native long nativeSeamLastHandle();
+
+    /**
+     * Dispatch raw touch fields across the seam (action, pointerId, x/y in
+     * px, event time in ms). Float/int fields only — exactly the T1 order.
+     * Fail-closed when no live surface exists (diagnostic, no throw).
+     */
+    private static native void nativeSeamDispatchTouch(
+            long surfaceHandle, int action, int pointerId,
+            float xPx, float yPx, long eventTimeMs);
+
+    /**
+     * Render one frame for the seam surface. Returns the PresenterCode
+     * ordinal as int (0=ok; non-zero=fail-closed status, never a throw).
+     */
+    private static native int nativeSeamRenderFrame(long handle);
+
+    /**
+     * Apply the theme in place (nightMode in {0,1}). Returns the
+     * PresenterCode ordinal as int, never throws.
+     */
+    private static native int nativeSeamSetTheme(long handle, int nightMode);
+
+    /**
+     * Apply the IME bottom inset in place (px). Returns the PresenterCode
+     * ordinal as int, never throws.
+     */
+    private static native int nativeSeamSetImeBottom(long handle, int bottomPx);
+
+    /** Release the seam surface without destroying the handle (always kOk). */
+    private static native int nativeSeamDetach(long handle);
+
+    /** Destroy the seam surface (always kOk, safe to repeat). */
+    private static native int nativeSeamDestroy(long handle);
+
+    /**
+     * Stats accessor: lifetime presented count for the surface, or -1
+     * fail-closed (unknown handle, never a throw).
+     */
+    private static native long nativeSeamGetFrameStats(long handle);
+
+    /**
+     * T1 SurfaceHandle for this host (0 = no live seam surface). Retained
+     * opaquely: Java never dereferences it, and the engine owns its lifetime
+     * until detach/destroy (RULE-RUNTIME-006: exactly one presenter per
+     * window). Reset to 0 on every detach/destroy path, including repeats.
+     */
+    private long seamSurfaceHandle = 0;
+
+    /** Whether the seam surface above is currently attached (idempotency guard). */
+    private boolean seamAttached = false;
+
+    /**
+     * FR-RUNTIME-011 T4 seam attach (Stage 3 fix, MAJOR 1 / adjudication A1):
+     * attaches the surface through the T1 seam and stores the usable handle
+     * via the {@code nativeSeamLastHandle} getter (the attach entry itself
+     * returns only the int32 status per the T2 contract). The opaque window
+     * token is derived from the Surface identity (stable per Surface object,
+     * forced into the plausible-address range); it is never dereferenced as
+     * a View — validation lives in the presenter. Fail-closed: any non-ok
+     * status leaves {@code seamSurfaceHandle} at 0 and never throws.
+     */
+    private void attachSeamSurface(android.view.Surface surface) {
+        if (seamAttached && seamSurfaceHandle != 0) {
+            return;
+        }
+        try {
+            long windowToken = surface != null
+                    ? (((long) System.identityHashCode(surface)) & 0xffffffffL) | 0x7e110000L
+                    : 0L;
+            int status = nativeSeamAttachSurface(windowToken, "gallery", false);
+            if (status == 0) {
+                seamSurfaceHandle = nativeSeamLastHandle();
+                seamAttached = seamSurfaceHandle != 0;
+                Log.i("muse-host", "SEAM-STEP:attach:ok:handle=" + seamSurfaceHandle);
+            } else {
+                seamSurfaceHandle = 0;
+                seamAttached = false;
+                Log.i("muse-host", "SEAM-STEP:attach:fail:status=" + status);
+            }
+        } catch (Throwable ignored) {
+            // Fail-closed: seam attach never breaks the surface path.
+            Log.i("muse-host", "SEAM-STEP:attach:fail:thrown");
+            seamSurfaceHandle = 0;
+            seamAttached = false;
+        }
+    }
+
+    /**
+     * Idempotent seam detach (T1 detachSurface semantics: always kOk, safe to
+     * repeat). Resets the opaque slot so a second call is a no-op. The native
+     * seam detach entry lands with the remaining T1 JNI bindings; until then
+     * this keeps the Java-side slot consistent with the legacy detach path
+     * (which already releases swapchain-before-window per RULE-RUNTIME-006).
+     */
+    private void detachSeamSurface() {
+        if (seamSurfaceHandle != 0) {
+            nativeSeamDetach(seamSurfaceHandle);
+            Log.i("muse-host", "SEAM-STEP:detach:ok");
+            seamSurfaceHandle = 0;
+        }
+        seamAttached = false;
+    }
+
+    /**
+     * Idempotent seam destroy (T1 destroySurface semantics: always kOk, safe
+     * to repeat). Same slot reset as detach; teardown order stays
+     * swapchain-before-window with the tree handle untouched.
+     */
+    private void destroySeamSurface() {
+        if (seamSurfaceHandle != 0) {
+            nativeSeamDestroy(seamSurfaceHandle);
+            Log.i("muse-host", "SEAM-STEP:destroy:ok");
+            seamSurfaceHandle = 0;
+        } else {
+            Log.i("muse-host", "SEAM-STEP:destroy:ok:already-released");
+        }
+        seamAttached = false;
+    }
+
     /** Release the attached surface without destroying the handle. */
     private static native void nativeDetachSurface(long handle);
 
@@ -325,6 +476,16 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         // shell chrome (Prev/Next buttons, ArrowLeft/ArrowRight, and
         // gallery://story/<id> deep links). A drag-release never turns
         // the page (AC-INPUT-020 drag-no-fire).
+        // FR-RUNTIME-011 T4 seam touch shape: every sample below forwards raw
+        // MotionEvent fields only (action, pointerId, x/y in px, event time in
+        // ms) in the T1 dispatchTouch order — no View object crosses, and the
+        // px values cross raw with no Java-side conversion (plan A2: the
+        // boundary converts dp→px exactly once; MotionEvent already reports
+        // px, so the tap path performs zero conversions). The seam entry is
+        // nativeSeamDispatchTouch (declared above); the legacy claim-returning
+        // entry below stays only until the seam tap-chain routing (arena fire
+        // + layering scrim dismiss) lands natively — see the ASSUMPTION in
+        // the T4 report. Shell-chrome paging stays geometry-only.
         surfaceView.setOnTouchListener((v, event) -> {
             if (engineHandle == 0) {
                 return false;
@@ -358,6 +519,24 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                     event.getY(index),
                     event.getPointerId(index),
                     event.getEventTime());
+            // FR-RUNTIME-011 T4 seam touch (Stage 3 fix, MAJOR 1): forward the
+            // same raw fields through the T1 seam in its (action, pointerId,
+            // x/y px, eventTimeMs) order. Fail-closed when no seam surface is
+            // live; never throws across the VM.
+            if (seamSurfaceHandle != 0) {
+                try {
+                    nativeSeamDispatchTouch(
+                            seamSurfaceHandle,
+                            action,
+                            event.getPointerId(index),
+                            event.getX(index),
+                            event.getY(index),
+                            event.getEventTime());
+                    Log.i("muse-host", "SEAM-STEP:touch:ok");
+                } catch (Throwable ignored) {
+                    // Fail-closed: seam touch never breaks the tap path.
+                }
+            }
             // T6 calibration line (T7): raw tap geometry plus the
             // claimed node id per tap; left-chrome and surface samples are
             // expected here with no page following.
@@ -374,6 +553,15 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                 // the existing dispatch/render path below with no page.
                 nativeAdvancePage(engineHandle);
                 nativeRenderFrame(engineHandle);
+                // FR-RUNTIME-011 T4 seam present (Stage 3 fix, MAJOR 1):
+                // present the seam frame alongside the legacy frame.
+                if (seamSurfaceHandle != 0) {
+                    try {
+                        nativeSeamRenderFrame(seamSurfaceHandle);
+                        Log.i("muse-host", "SEAM-STEP:render:ok");
+                    } catch (Throwable ignored) {
+                    }
+                }
             } else if (action == MotionEvent.ACTION_UP) {
                 // FR-SAMPLE-014: no outside-tap fallback — an unclaimed
                 // tap renders the frame but never advances the page.
@@ -385,6 +573,14 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                     requestImeForProbeTap();
                 }
                 nativeRenderFrame(engineHandle);
+                // FR-RUNTIME-011 T4 seam present (Stage 3 fix, MAJOR 1).
+                if (seamSurfaceHandle != 0) {
+                    try {
+                        nativeSeamRenderFrame(seamSurfaceHandle);
+                        Log.i("muse-host", "SEAM-STEP:render:ok");
+                    } catch (Throwable ignored) {
+                    }
+                }
             }
             return true;
         });
@@ -542,6 +738,14 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         }
         nativeAttachSurface(engineHandle, holder.getSurface());
         nativeRenderFrame(engineHandle);
+        // FR-RUNTIME-011 T4 seam first frame (Stage 3 fix, MAJOR 1).
+        if (seamSurfaceHandle != 0) {
+            try {
+                nativeSeamRenderFrame(seamSurfaceHandle);
+                Log.i("muse-host", "SEAM-STEP:render:ok");
+            } catch (Throwable ignored) {
+            }
+        }
         maybeReportFullyDrawn();
     }
 
@@ -617,6 +821,9 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             nativeDestroy(engineHandle);
             engineHandle = 0;
         }
+        // T1 idempotent teardown: safe to repeat (kOk on repeats); the slot
+        // reset makes a second destroy a no-op with no native call.
+        destroySeamSurface();
         super.onDestroy();
     }
 
@@ -938,6 +1145,10 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
      * Paces one layering present per changed frame (F1): forwards the
      * value then renders, throttled by a last-value guard so an
      * unchanged frame is a no-op.
+     * T1 conformance: setImeBottom applies in place (no re-attach) and is
+     * applied within one frame; the theme switch above is likewise in place
+     * (same activity, same page, no restart). Both ride the seam in-place
+     * entries once the remaining T1 JNI bindings land.
      */
     void onInsetsFrame(float imeBottomPx) {
         if (engineHandle != 0) {
@@ -947,6 +1158,18 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             lastImeBottomPx = imeBottomPx;
             nativeSetImeBottom(engineHandle, imeBottomPx);
             nativeRenderFrame(engineHandle);
+            // FR-RUNTIME-011 T4 seam IME/render (Stage 3 fix, MAJOR 1): feed
+            // the same inset in place through the seam and present the seam
+            // frame. Fail-closed; never throws.
+            if (seamSurfaceHandle != 0) {
+                try {
+                    nativeSeamSetImeBottom(seamSurfaceHandle, (int) imeBottomPx);
+                    Log.i("muse-host", "SEAM-STEP:ime:ok");
+                    nativeSeamRenderFrame(seamSurfaceHandle);
+                    Log.i("muse-host", "SEAM-STEP:render:ok");
+                } catch (Throwable ignored) {
+                }
+            }
         }
     }
 
@@ -984,6 +1207,9 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     public void surfaceCreated(SurfaceHolder holder) {
         pendingHolder = holder;
         surfaceReady = true;
+        // FR-RUNTIME-011 T4 seam lifecycle (Stage 3 fix, MAJOR 1): attach the
+        // surface through the seam and store the handle via the getter.
+        attachSeamSurface(holder != null ? holder.getSurface() : null);
         maybeRenderFirstFrame();
     }
 
@@ -991,6 +1217,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     public void surfaceChanged(SurfaceHolder holder, int format, int width, int height) {
         pendingHolder = holder;
         surfaceReady = true;
+        // Re-attach guard: a no-op when the seam is already attached.
+        attachSeamSurface(holder != null ? holder.getSurface() : null);
         maybeRenderFirstFrame();
     }
 
@@ -999,9 +1227,11 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         surfaceReady = false;
         // Release the native window before the framework frees it (the
         // presenter never outlives the host's invalidation call); the tree
-        // handle itself survives for the next surface.
+        // handle itself survives for the next surface. T1 detach is
+        // idempotent: a repeat detach (e.g. destroy-after-destroy) is kOk.
         if (engineHandle != 0) {
             nativeDetachSurface(engineHandle);
         }
+        detachSeamSurface();
     }
 }

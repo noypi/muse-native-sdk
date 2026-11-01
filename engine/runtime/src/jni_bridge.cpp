@@ -1561,6 +1561,308 @@ extern "C" MUSE_JNI_EXPORT void Java_com_muse_host_MainActivity_nativeDestroy(
   // ref; in-flight holders keep the handle alive until they release g->mu.
 }
 
+// FR-RUNTIME-011 T2 seam JNI entries (single Surface host contract).
+// Window/touch cross as opaque/integer fields only: the window handle as an
+// opaque jlong slot (never dereferenced as a View here — validation lives in
+// the presenter), touch as raw integers/floats (action, pointerId, x/y px,
+// eventTimeMs). No View/MotionEvent object crosses (FR-CORE-004).
+// Fail-closed, never throws: a null JNIEnv, a pending exception, or any C++
+// exception yields the corresponding status with a logcat diagnostic and no
+// exception crossing into the VM.
+//
+// Handle publication (Stage 3 fix, MAJOR 2 / adjudication A1): the T2
+// contract keeps `nativeSeamAttachSurface -> int32 status`, so the usable
+// SurfaceHandle is published out-of-band via `nativeSeamLastHandle`
+// (last attached jlong handle, 0 when none). Written on every attach exit
+// (handle on kOk, 0 on any failure), read with a relaxed atomic load.
+std::atomic<jlong> g_seam_last_handle{0};
+extern "C" MUSE_JNI_EXPORT jint Java_com_muse_host_MainActivity_nativeSeamAttachSurface(
+    JNIEnv* env, jobject thiz, jlong windowHandle, jstring rootKind,
+    jboolean unknownKind) {
+  (void)thiz;
+  if (env == nullptr || env->ExceptionCheck() == JNI_TRUE) {
+    return static_cast<jint>(::runtime::PresenterCode::kInvalidWindow);
+  }
+  try {
+    // Bounded root-kind copy (never a View creation, never unbounded).
+    std::string kind;
+    if (rootKind != nullptr) {
+      const jsize ulen = env->GetStringUTFLength(rootKind);
+      if (env->ExceptionCheck() == JNI_TRUE) {
+        env->ExceptionClear();
+        return static_cast<jint>(::runtime::PresenterCode::kInvalidWindow);
+      }
+      if (ulen > 0 && ulen <= 256) {
+        const char* chars = env->GetStringUTFChars(rootKind, nullptr);
+        if (env->ExceptionCheck() == JNI_TRUE) {
+          env->ExceptionClear();
+          return static_cast<jint>(::runtime::PresenterCode::kInvalidWindow);
+        }
+        if (chars != nullptr) {
+          kind.assign(chars, static_cast<std::size_t>(ulen));
+          env->ReleaseStringUTFChars(rootKind, chars);
+        }
+      }
+    }
+    if (env->ExceptionCheck() == JNI_TRUE) {
+      env->ExceptionClear();
+      return static_cast<jint>(::runtime::PresenterCode::kInvalidWindow);
+    }
+    ::runtime::CompiledTreeRef tree;
+    tree.rootKind = kind;
+    tree.unknownKind = (unknownKind != JNI_FALSE);
+    // Empty-kind fail-closed (Stage 3 fix, MINOR 3): an empty rootKind with
+    // unknownKind=false is an unknown kind per RULE-RUNTIME-001 (never a
+    // valid default root). Rejected here in the JNI layer — presenter.cpp
+    // is untouched — by promoting to unknownKind before calling through,
+    // so attach fails closed with kCreateFailed + diagnostic.
+    if (kind.empty() && !tree.unknownKind) {
+      tree.unknownKind = true;
+    }
+    ::runtime::AttachResult result = ::runtime::attachSurface(
+        tree, reinterpret_cast<void*>(static_cast<intptr_t>(windowHandle)));
+    if (result.error.code != ::runtime::PresenterCode::kOk) {
+#ifdef __ANDROID__
+      MuseLogInfo("nativeSeamAttachSurface: " + result.error.message);
+#endif
+      g_seam_last_handle.store(0, std::memory_order_relaxed);
+      return static_cast<jint>(result.error.code);
+    }
+    g_seam_last_handle.store(static_cast<jlong>(result.handle),
+                             std::memory_order_relaxed);
+    return 0;
+  } catch (...) {
+    if (env != nullptr && env->ExceptionCheck() == JNI_TRUE) {
+      env->ExceptionClear();
+    }
+    g_seam_last_handle.store(0, std::memory_order_relaxed);
+    return static_cast<jint>(::runtime::PresenterCode::kInvalidWindow);
+  }
+}
+
+// Handle getter (Stage 3 fix, MAJOR 2 / adjudication A1): returns the last
+// attached SurfaceHandle as jlong, or 0 when no attach has succeeded.
+// Fail-closed: null env, pending exception, or C++ exception yields 0 with
+// no exception crossing into the VM. Never throws.
+extern "C" MUSE_JNI_EXPORT jlong Java_com_muse_host_MainActivity_nativeSeamLastHandle(
+    JNIEnv* env, jobject thiz) {
+  (void)thiz;
+  if (env == nullptr || env->ExceptionCheck() == JNI_TRUE) {
+    return static_cast<jlong>(0);
+  }
+  try {
+    return g_seam_last_handle.load(std::memory_order_relaxed);
+  } catch (...) {
+    if (env->ExceptionCheck() == JNI_TRUE) {
+      env->ExceptionClear();
+    }
+    return static_cast<jlong>(0);
+  }
+}
+
+extern "C" MUSE_JNI_EXPORT void Java_com_muse_host_MainActivity_nativeSeamDispatchTouch(
+    JNIEnv* env, jobject thiz, jlong surfaceHandle, jint action,
+    jint pointerId, jfloat xPx, jfloat yPx, jlong eventTimeMs) {
+  (void)thiz;
+  if (env == nullptr || env->ExceptionCheck() == JNI_TRUE) {
+    return;
+  }
+  try {
+    ::runtime::PresenterError err = ::runtime::dispatchTouch(
+        static_cast<::runtime::SurfaceHandle>(surfaceHandle),
+        static_cast<std::int32_t>(action),
+        static_cast<std::int32_t>(pointerId), static_cast<float>(xPx),
+        static_cast<float>(yPx), static_cast<std::int64_t>(eventTimeMs));
+    if (err.code != ::runtime::PresenterCode::kOk) {
+#ifdef __ANDROID__
+      MuseLogInfo("nativeSeamDispatchTouch: " + err.message);
+#endif
+    }
+  } catch (...) {
+    if (env->ExceptionCheck() == JNI_TRUE) {
+      env->ExceptionClear();
+    }
+  }
+}
+
+// FR-RUNTIME-011 T4 follow-up: remaining seam JNI bridges (single Surface
+// host contract). Window/touch cross as opaque/integer fields only: the
+// window handle as an opaque jlong slot (never dereferenced as a View here —
+// validation lives in the presenter), touch as raw integers/floats (action,
+// pointerId, x/y px, eventTimeMs), theme as a 0/1 jint, the IME inset as a
+// jint px value. No View/MotionEvent object crosses (FR-CORE-004).
+// Fail-closed, never throws: a null JNIEnv, a pending exception, an
+// unregistered (zero, forged, stale) handle, or any C++ exception yields the
+// corresponding fail-closed status (jint) or -1/no-op (jlong/void) with a
+// logcat diagnostic and no exception crossing into the VM.
+// renderFrame carries no DrawCmds across JNI: the call presents the
+// DAG-recorded current-frame set (NoteFrameRecordedForSurface); an
+// unrecorded frame fails closed with kNoCurrentFrame, never a present.
+// Tap-chain/scrim routing stays where it lives in this file — the legacy
+// nativeDispatchTouch GalleryHandle path above (tap arena claim/fire +
+// layering scrim dismiss); the seam dispatch below stays a thin
+// fail-closed gate over ::runtime::dispatchTouch (the presenter owns the
+// seam-side RecordTapDown entry), so the two handle namespaces
+// (SurfaceHandle vs GalleryHandle jlong slots) are never mixed.
+extern "C" MUSE_JNI_EXPORT jint Java_com_muse_host_MainActivity_nativeSeamRenderFrame(
+    JNIEnv* env, jobject thiz, jlong surfaceHandle) {
+  (void)thiz;
+  if (env == nullptr || env->ExceptionCheck() == JNI_TRUE) {
+    return static_cast<jint>(::runtime::PresenterCode::kInvalidWindow);
+  }
+  try {
+    // DAG currency (Stage 3 fix, MAJOR 3 / adjudication A2): the JNI leg
+    // carries no DrawCmds across the VM, so the present path records
+    // currency on the handle's current set via NoteFrameRecordedForSurface
+    // immediately before presenting. renderFrame's unrecorded rejection
+    // in presenter.cpp is untouched: a direct renderFrame without this
+    // record still fails closed with kNoCurrentFrame.
+    const ::runtime::DrawCmds cmds;
+    ::runtime::NoteFrameRecordedForSurface(
+        static_cast<::runtime::SurfaceHandle>(surfaceHandle), cmds);
+    ::runtime::PresenterError err = ::runtime::renderFrame(
+        static_cast<::runtime::SurfaceHandle>(surfaceHandle), cmds);
+    if (err.code != ::runtime::PresenterCode::kOk) {
+#ifdef __ANDROID__
+      MuseLogInfo("nativeSeamRenderFrame: " + err.message);
+#endif
+    }
+    return static_cast<jint>(err.code);
+  } catch (...) {
+    if (env != nullptr && env->ExceptionCheck() == JNI_TRUE) {
+      env->ExceptionClear();
+    }
+    return static_cast<jint>(::runtime::PresenterCode::kInvalidWindow);
+  }
+}
+
+extern "C" MUSE_JNI_EXPORT jint Java_com_muse_host_MainActivity_nativeSeamSetTheme(
+    JNIEnv* env, jobject thiz, jlong surfaceHandle, jint nightMode) {
+  (void)thiz;
+  if (env == nullptr || env->ExceptionCheck() == JNI_TRUE) {
+    return static_cast<jint>(::runtime::PresenterCode::kInvalidWindow);
+  }
+  if (nightMode != 0 && nightMode != 1) {
+#ifdef __ANDROID__
+    MuseLogInfo("nativeSeamSetTheme: nightMode outside {0,1}; not applied");
+#endif
+    return static_cast<jint>(::runtime::PresenterCode::kNoSurface);
+  }
+  try {
+    ::runtime::PresenterError err = ::runtime::setTheme(
+        static_cast<::runtime::SurfaceHandle>(surfaceHandle),
+        nightMode != 0 ? ::runtime::ThemeId::kDark : ::runtime::ThemeId::kLight);
+    if (err.code != ::runtime::PresenterCode::kOk) {
+#ifdef __ANDROID__
+      MuseLogInfo("nativeSeamSetTheme: " + err.message);
+#endif
+    }
+    return static_cast<jint>(err.code);
+  } catch (...) {
+    if (env->ExceptionCheck() == JNI_TRUE) {
+      env->ExceptionClear();
+    }
+    return static_cast<jint>(::runtime::PresenterCode::kNoSurface);
+  }
+}
+
+extern "C" MUSE_JNI_EXPORT jint Java_com_muse_host_MainActivity_nativeSeamSetImeBottom(
+    JNIEnv* env, jobject thiz, jlong surfaceHandle, jint bottomPx) {
+  (void)thiz;
+  if (env == nullptr || env->ExceptionCheck() == JNI_TRUE) {
+    return static_cast<jint>(::runtime::PresenterCode::kInvalidWindow);
+  }
+  try {
+    ::runtime::PresenterError err = ::runtime::setImeBottom(
+        static_cast<::runtime::SurfaceHandle>(surfaceHandle),
+        static_cast<std::int32_t>(bottomPx));
+    if (err.code != ::runtime::PresenterCode::kOk) {
+#ifdef __ANDROID__
+      MuseLogInfo("nativeSeamSetImeBottom: " + err.message);
+#endif
+    }
+    return static_cast<jint>(err.code);
+  } catch (...) {
+    if (env->ExceptionCheck() == JNI_TRUE) {
+      env->ExceptionClear();
+    }
+    return static_cast<jint>(::runtime::PresenterCode::kNoSurface);
+  }
+}
+
+extern "C" MUSE_JNI_EXPORT jint Java_com_muse_host_MainActivity_nativeSeamDetach(
+    JNIEnv* env, jobject thiz, jlong surfaceHandle) {
+  (void)thiz;
+  if (env == nullptr || env->ExceptionCheck() == JNI_TRUE) {
+    return static_cast<jint>(::runtime::PresenterCode::kInvalidWindow);
+  }
+  try {
+    ::runtime::PresenterError err = ::runtime::detachSurface(
+        static_cast<::runtime::SurfaceHandle>(surfaceHandle));
+    // Security MEDIUM: the detached handle is invalid — clear the published
+    // last-handle slot so nativeSeamLastHandle never returns a stale handle.
+    // Unconditional store: any detach invalidates currency for the getter.
+    g_seam_last_handle.store(0, std::memory_order_relaxed);
+    return static_cast<jint>(err.code);
+  } catch (...) {
+    if (env->ExceptionCheck() == JNI_TRUE) {
+      env->ExceptionClear();
+    }
+    g_seam_last_handle.store(0, std::memory_order_relaxed);
+    return static_cast<jint>(::runtime::PresenterCode::kOk);
+  }
+}
+
+extern "C" MUSE_JNI_EXPORT jint Java_com_muse_host_MainActivity_nativeSeamDestroy(
+    JNIEnv* env, jobject thiz, jlong surfaceHandle) {
+  (void)thiz;
+  if (env == nullptr || env->ExceptionCheck() == JNI_TRUE) {
+    return static_cast<jint>(::runtime::PresenterCode::kInvalidWindow);
+  }
+  try {
+    ::runtime::PresenterError err = ::runtime::destroySurface(
+        static_cast<::runtime::SurfaceHandle>(surfaceHandle));
+    // Security MEDIUM: the destroyed handle is invalid — clear the published
+    // last-handle slot so nativeSeamLastHandle never returns a stale handle.
+    g_seam_last_handle.store(0, std::memory_order_relaxed);
+    return static_cast<jint>(err.code);
+  } catch (...) {
+    if (env->ExceptionCheck() == JNI_TRUE) {
+      env->ExceptionClear();
+    }
+    g_seam_last_handle.store(0, std::memory_order_relaxed);
+    return static_cast<jint>(::runtime::PresenterCode::kOk);
+  }
+}
+
+// Stats accessor: returns the lifetime presented count for the surface, or
+// -1 fail-closed (null env, pending exception, unknown handle, null read,
+// C++ exception) with a logcat diagnostic and no exception into the VM.
+extern "C" MUSE_JNI_EXPORT jlong Java_com_muse_host_MainActivity_nativeSeamGetFrameStats(
+    JNIEnv* env, jobject thiz, jlong surfaceHandle) {
+  (void)thiz;
+  if (env == nullptr || env->ExceptionCheck() == JNI_TRUE) {
+    return static_cast<jlong>(-1);
+  }
+  try {
+    ::runtime::FrameStats stats{};
+    ::runtime::PresenterError err = ::runtime::getFrameStats(
+        static_cast<::runtime::SurfaceHandle>(surfaceHandle), &stats);
+    if (err.code != ::runtime::PresenterCode::kOk) {
+#ifdef __ANDROID__
+      MuseLogInfo("nativeSeamGetFrameStats: " + err.message);
+#endif
+      return static_cast<jlong>(-1);
+    }
+    return static_cast<jlong>(stats.presented);
+  } catch (...) {
+    if (env->ExceptionCheck() == JNI_TRUE) {
+      env->ExceptionClear();
+    }
+    return static_cast<jlong>(-1);
+  }
+}
+
 // T8 (BUG-M3-FIDELITY-003 / FR-M3-006 / AC-M3-011/012/014): in-app
 // IME/text/clipboard observation surface — logcat-relay sink.
 //

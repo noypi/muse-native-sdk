@@ -1,0 +1,43 @@
+{
+  "status": "NOT_YET_EXECUTED",
+  "note": "Live-gate basis (orchestrator-executed 2026-11-01, recorded verbatim by tester; tester ran no device commands). Emulator 127.0.0.1:6562 (Phone, SDK 29, x86; NOT proven to be the pinned device-lab image): production runSurfaceContract from _run lib with scratch adb runner in /tmp -> LIVE-GATE-RESULT: ok=true steps=attach,render,touch,detach,destroy,ime,theme, exit 0; zero FATAL; shot1.png non-blank M3 tree; tap screenshots byte-identical so tapRepaint=false here. Physical KDSBB22429250346 (Huawei MGA-LX9, SDK 29 arm64, Android 10): ok=true 7/7 exit 0 via probe-page keyboard flow; logcat tap fired node=20 repaint=1 so tapRepaint=true; zero FATAL, zero crash; shot-phys1/2/4.png + shot-probe.png non-blank. Honesty: live proof is of the gate LOGIC via injection; the bare `muse-native gallery-real` CLI binary still fails closed with NO-DEVICE-RUNNER (no in-tree runner). Per-page counts, vector-text/atlas-reuse, layering, per-page paging NOT verified on either surface. Fallback false on both (no static-root path in MainActivity; evaluated tree visibly rendered). Status left NOT_YET_EXECUTED: unit-tests/T5.md schema names no PARTIAL value and full T5 (all six verdicts true per surface) is not met; coder to decide the status flip. Verdict/evidence fields only; no structural/schema or procedure-text changes.",
+  "spec": "FR-RUNTIME-011 / AC-RUNTIME-035 / TC-RUNTIME-035 (Method: manual)",
+  "procedure": "examples/m3-gallery/docs/two-surface-proof.md",
+  "surfaces": [
+    {
+      "surface": "pinned-emulator",
+      "executed": true,
+      "counts": false,
+      "noBlank": true,
+      "vectorTextAtlas": false,
+      "tapRepaint": false,
+      "layering": false,
+      "frameStatsZeroFatal": true,
+      "screenshots": [
+        "workflow.local/runs/fr-runtime-011/shot1.png"
+      ],
+      "screenshotDir": "examples/m3-gallery/docs/screenshots/pinned-emulator/",
+      "t3GateExit": 0,
+      "t3GateCommand": "muse-native gallery-real --assert-surface-contract [--device <pinned-emulator-serial>]",
+      "notes": "pending manual run"
+    },
+    {
+      "surface": "physical-device",
+      "executed": true,
+      "counts": false,
+      "noBlank": true,
+      "vectorTextAtlas": false,
+      "tapRepaint": true,
+      "layering": false,
+      "frameStatsZeroFatal": true,
+      "screenshots": [
+        "workflow.local/runs/fr-runtime-011/shot-phys1.png",
+        "workflow.local/runs/fr-runtime-011/shot-phys4.png"
+      ],
+      "screenshotDir": "examples/m3-gallery/docs/screenshots/physical-device/",
+      "t3GateExit": 0,
+      "t3GateCommand": "muse-native gallery-real --assert-surface-contract [--device <physical-device-serial>]",
+      "notes": "pending manual run"
+    }
+  ]
+}

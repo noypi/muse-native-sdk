@@ -15,6 +15,7 @@
 // build tree + stdout). Shell-outs use argv arrays only — no user-string
 // interpolation into shell (serial/button travel as argv elements).
 const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const { getExitCode } = require('./exit-codes.js');
@@ -22,6 +23,284 @@ const { getExitCode } = require('./exit-codes.js');
 const USAGE = 'Usage: muse-native gallery-tap --button <name> --assert-once --assert-outside-silent --drag-no-fire [--serial <serial>]';
 
 const KNOWN_FLAGS = ['--button', '--assert-once', '--assert-outside-silent', '--drag-no-fire', '--serial'];
+
+const TAP_PAGE_USAGE = 'Usage: muse-native gallery-tap --tap-page [--assert-zero-jni-faults] [--device <serial>]';
+
+const TAP_PAGE_KNOWN_FLAGS = ['--tap-page', '--assert-zero-jni-faults', '--device'];
+
+function tapPageUsageError(message) {
+  const err = new Error(message);
+  err.name = 'OptionError';
+  err.code = 'GALLERY_TAP_PAGE_USAGE';
+  return err;
+}
+
+// Parse `muse-native gallery-tap --tap-page [--assert-zero-jni-faults]
+// [--device <serial>]`. The leading `gallery-tap` token is optional. Throws
+// on a missing `--tap-page` flag, unknown flags, or a missing `--device`
+// value (the CLI maps these to exit 2 with usage, never a silent pass).
+// Mirrors the T3 `parseSurfaceContractArgs` shape.
+function parseTapPageArgs(argv) {
+  const args = Array.isArray(argv) ? argv.slice() : [];
+  if (args[0] === 'gallery-tap') args.shift();
+  let tapPage = false;
+  let assertZeroJniFaults = false;
+  let device = null;
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (arg === '--tap-page') {
+      tapPage = true;
+    } else if (arg === '--assert-zero-jni-faults') {
+      assertZeroJniFaults = true;
+    } else if (arg === '--device') {
+      const next = args[i + 1];
+      if (typeof next !== 'string' || next.length === 0 || next.startsWith('-')) {
+        throw tapPageUsageError(`Error: --device requires a value. Expected ${TAP_PAGE_USAGE}`);
+      }
+      device = next;
+      i++;
+    } else {
+      throw tapPageUsageError(`Error: unknown option '${arg}'. Expected one of: ${TAP_PAGE_KNOWN_FLAGS.join(', ')}\n${TAP_PAGE_USAGE}`);
+    }
+  }
+  if (!tapPage) {
+    throw tapPageUsageError(`Error: missing required flag --tap-page. Expected ${TAP_PAGE_USAGE}`);
+  }
+  return { tapPage: true, assertZeroJniFaults, device };
+}
+
+function toTapPageFailure(code, detail) {
+  const err = new Error(`TAP-PAGE-FAIL: ${code}: ${detail}`);
+  err.code = code;
+  err.detail = detail;
+  return err;
+}
+
+function defaultTapPageEmit(line) {
+  process.stdout.write(`${line}\n`);
+}
+
+// Serial resolution for default (non-injected) runners: explicit opts.device,
+// else process.env.ANDROID_SERIAL, else null (fail closed NO-DEVICE-RUNNER).
+// Never guesses among multiple devices; rejects empty/dash values like the
+// usage-reject for --device.
+function resolveTapPageSerial(explicit) {
+  const candidate = explicit || process.env.ANDROID_SERIAL || null;
+  if (typeof candidate !== 'string' || candidate.length === 0 || candidate.startsWith('-')) {
+    return null;
+  }
+  return candidate;
+}
+
+function tapPageAdb(serial, args, opts) {
+  const res = spawnSync('adb', ['-s', serial, ...args], {
+    encoding: (opts && opts.encoding) || 'utf8',
+  });
+  if (res.error || res.status !== 0) {
+    const detail = res.error
+      ? String((res.error && res.error.message) || res.error)
+      : String(res.stderr || res.stdout || '').trim().slice(0, 300);
+    const err = new Error(
+      `device unreachable via adb against serial '${serial}' (adb -s ${serial} ${args.join(' ')})${detail ? `: ${detail}` : ''}`,
+    );
+    err.code = 'DEVICE-UNREACHABLE';
+    err.detail = err.message;
+    throw err;
+  }
+  return res;
+}
+
+// Pre-drive screencap bytes keyed by serial, captured best-effort inside the
+// default driveSequence so the default readScreencap can detect a frozen
+// frame (byte-identical to the pre-drive shot).
+const tapPagePreDriveShots = new Map();
+
+function defaultTapPageDriveSequence(serial) {
+  return async function drive(callArgs) {
+    // Honor the call-time {device} when provided, else the bound serial.
+    const s = (callArgs && typeof callArgs.device === 'string'
+      && callArgs.device.length > 0 && !callArgs.device.startsWith('-'))
+      ? callArgs.device
+      : serial;
+    tapPageAdb(s, ['shell', 'am', 'force-stop', 'com.muse.host']);
+    tapPageAdb(s, ['logcat', '-c']);
+    tapPageAdb(s, ['shell', 'am', 'start', '-n', 'com.muse.host/.MainActivity']);
+    await new Promise((r) => setTimeout(r, 9000));
+    // Best-effort pre-drive shot for the frozen-frame comparison; failures
+    // here must not fail the drive itself.
+    try {
+      const pre = tapPageAdb(s, ['exec-out', 'screencap', '-p'], { encoding: 'buffer' });
+      if (pre && pre.stdout && pre.stdout.length > 0) {
+        tapPagePreDriveShots.set(s, Buffer.from(pre.stdout));
+      }
+    } catch (_) {
+      // ignore — post-drive blank check still applies the size floor.
+    }
+    tapPageAdb(s, ['shell', 'input', 'tap', '150', '250']);
+    await new Promise((r) => setTimeout(r, 1500));
+    tapPageAdb(s, ['shell', 'am', 'broadcast', '-a', 'muse.native.PROOF_ADVANCE_PAGE']);
+    await new Promise((r) => setTimeout(r, 1500));
+    tapPageAdb(s, ['shell', 'am', 'broadcast', '-a', 'muse.native.PROOF_ADVANCE_PAGE']);
+    await new Promise((r) => setTimeout(r, 1500));
+    await new Promise((r) => setTimeout(r, 6000));
+    const dump = tapPageAdb(s, ['logcat', '-d']);
+    const text = String(dump.stdout || '');
+    const pages = [];
+    const re = /GalleryPage.*?page=(\d+)/g;
+    let m;
+    while ((m = re.exec(text)) !== null) {
+      pages.push(Number(m[1]));
+    }
+    // Observed static-root fallback marker (authoritative host marker family:
+    // STATIC-ROOT / "static root" / "fallback ... static"). Linear scan.
+    const fallbackToStaticRoot = /static[^a-z]*root|fallback[^a-z]*static/i.test(text);
+    if (pages.length < 2) {
+      // Fail closed: fewer than 2 page markers cannot prove advance; return
+      // NaN/NaN so the gate's `pageAfter > pageBefore` check rejects with
+      // PAGE-NOT-ADVANCED.
+      return { pageBefore: NaN, pageAfter: NaN, fallbackToStaticRoot };
+    }
+    // Genuine observed boundary: first vs last observed index. A stuck pager
+    // (pages=[0,0,0]) yields pageBefore=0 pageAfter=0 so the gate's
+    // `pageAfter > pageBefore` check rejects with PAGE-NOT-ADVANCED.
+    // Note on identical screenshots: a byte-identical post shot can never
+    // pass this gate — readScreencap marks identical-to-pre as blank (throws
+    // BLANK-VIEWPORT), and even a non-blank identical frame still needs a
+    // distinct page advance here, which a frozen pager cannot produce.
+    const pageBefore = pages[0];
+    const pageAfter = pages[pages.length - 1];
+    return { pageBefore, pageAfter, fallbackToStaticRoot };
+  };
+}
+
+function defaultTapPageReadLogcat(serial) {
+  return async function read(callArgs) {
+    const s = (callArgs && typeof callArgs.device === 'string'
+      && callArgs.device.length > 0 && !callArgs.device.startsWith('-'))
+      ? callArgs.device
+      : serial;
+    const dump = tapPageAdb(s, ['logcat', '-d']);
+    return String(dump.stdout || '').slice(0, 200000);
+  };
+}
+
+function defaultTapPageReadScreencap(serial) {
+  return async function read(callArgs) {
+    const s = (callArgs && typeof callArgs.device === 'string'
+      && callArgs.device.length > 0 && !callArgs.device.startsWith('-'))
+      ? callArgs.device
+      : serial;
+    const res = tapPageAdb(s, ['exec-out', 'screencap', '-p'], { encoding: 'buffer' });
+    const bytes = res && res.stdout ? Buffer.from(res.stdout) : Buffer.alloc(0);
+    // Debug PNG via a private temp dir, always cleaned up.
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'muse-tap-'));
+    try {
+      fs.writeFileSync(path.join(dir, 'post.png'), bytes);
+    } finally {
+      try {
+        fs.rmSync(dir, { force: true, recursive: true });
+      } catch (_) {
+        // ignore — hygiene only, verdict is in-memory.
+      }
+    }
+    // Coarse blank basis: tiny PNGs (<8192 bytes) are blank placeholders,
+    // and a post-drive shot byte-identical to the pre-drive shot means the
+    // tap rendered nothing new. Exact pixel-variance stays with the injected
+    // `deps.readScreencap` seam (isBlankViewport).
+    const pre = tapPagePreDriveShots.get(s);
+    // Consume the entry per run so a reused serial never compares across runs.
+    tapPagePreDriveShots.delete(s);
+    const blank = bytes.length < 8192 || (pre != null && pre.length > 0 && bytes.equals(pre));
+    return { blank };
+  };
+}
+
+// JNI-fault patterns scanned across the tap-page run logcat when
+// `--assert-zero-jni-faults` is set (AC-RUNTIME-037).
+const JNI_FAULT_RE = /UnsatisfiedLinkError|SIGSEGV|signal\s*11|FATAL/;
+
+// Blank-viewport verdict for the newly rendered page. Hermetic callers inject
+// `deps.readScreencap` returning `{ blank: boolean }` (the unit-test seam);
+// a live runner may instead return raw pixels (`{ pixels, width, height }`
+// or `{ variance }`) which is judged by the same pixel-variance idea as the
+// T4 instruments: near-zero variance means a blank viewport.
+function isBlankViewport(shot) {
+  if (shot && typeof shot.blank === 'boolean') return shot.blank;
+  if (shot && typeof shot.variance === 'number') return shot.variance < 1e-6;
+  if (shot && Array.isArray(shot.pixels) && shot.pixels.length > 0) {
+    const pixels = shot.pixels;
+    let mean = 0;
+    for (const p of pixels) mean += p;
+    mean /= pixels.length;
+    let variance = 0;
+    for (const p of pixels) variance += (p - mean) * (p - mean);
+    variance /= pixels.length;
+    return variance < 1e-6;
+  }
+  return false;
+}
+
+// Run the tap-page gate. `deps` is the hermetic test seam
+// `{ driveSequence, readLogcat, readScreencap }`; production defaults fail
+// closed with NO-DEVICE-RUNNER when no device runner is injected (T3
+// pattern — the live adb runner belongs to device execution, not unit
+// tests). `emit` is an optional line sink for the tap-page PASS line
+// (defaults to stdout).
+async function runTapPage(opts = {}) {
+  const deps = opts.deps || {};
+  const emit = typeof opts.emit === 'function' ? opts.emit : defaultTapPageEmit;
+  let driveSequence = deps.driveSequence;
+  let readLogcat = deps.readLogcat;
+  let readScreencap = deps.readScreencap;
+
+  if (typeof driveSequence !== 'function'
+    || typeof readLogcat !== 'function'
+    || typeof readScreencap !== 'function') {
+    const serial = resolveTapPageSerial(opts.device);
+    if (!serial) {
+      throw toTapPageFailure('NO-DEVICE-RUNNER', 'no device runner injected for gallery-tap --tap-page');
+    }
+    if (typeof driveSequence !== 'function') driveSequence = defaultTapPageDriveSequence(serial);
+    if (typeof readLogcat !== 'function') readLogcat = defaultTapPageReadLogcat(serial);
+    if (typeof readScreencap !== 'function') readScreencap = defaultTapPageReadScreencap(serial);
+  }
+
+  let driven;
+  try {
+    driven = await driveSequence({ device: opts.device || null });
+  } catch (err) {
+    const code = (err && typeof err.code === 'string' && err.code.length > 0)
+      ? err.code
+      : 'DEVICE-UNREACHABLE';
+    const detail = (err && typeof err.code === 'string' && err.code.length > 0)
+      ? ((err && err.detail) || (err && err.message) || String(err))
+      : `device unreachable via adb against serial '${opts.device || 'unknown'}': ${(err && err.message) || String(err)}`;
+    throw toTapPageFailure(code, detail);
+  }
+
+  const pageBefore = driven && typeof driven.pageBefore === 'number' ? driven.pageBefore : NaN;
+  const pageAfter = driven && typeof driven.pageAfter === 'number' ? driven.pageAfter : NaN;
+  if (!(pageAfter > pageBefore)) {
+    throw toTapPageFailure('PAGE-NOT-ADVANCED', `page index did not advance after tap (before=${pageBefore} after=${pageAfter})`);
+  }
+
+  const shot = await readScreencap({ device: opts.device || null });
+  if (isBlankViewport(shot)) {
+    throw toTapPageFailure('BLANK-VIEWPORT', `blank viewport on the new page (page=${pageAfter})`);
+  }
+
+  const logcat = await readLogcat({ device: opts.device || null });
+  if (opts.assertZeroJniFaults && typeof logcat === 'string') {
+    const match = logcat.match(JNI_FAULT_RE);
+    if (match) {
+      const snippet = logcat.slice(Math.max(0, logcat.indexOf(match[0]) - 40), logcat.indexOf(match[0]) + 120).trim();
+      throw toTapPageFailure('JNI-FAULT', `JNI fault in logcat: ${snippet.slice(0, 200)}`);
+    }
+  }
+
+  emit(`tap-page: page ${pageBefore} -> ${pageAfter} PASS`);
+  return { ok: true, pageBefore, pageAfter, blank: false };
+}
 
 function usageError(message) {
   const err = new Error(message);
@@ -156,6 +435,45 @@ function runDeviceLane(opts) {
 }
 
 function runGalleryTap(rest) {
+  const argv = Array.isArray(rest) ? rest.slice() : [];
+  // Tap-page lane: `gallery-tap --tap-page [--assert-zero-jni-faults]
+  // [--device <serial>]` (FR-RUNTIME-012, AC-RUNTIME-036/037). Routed here
+  // (not the button lane) whenever `--tap-page` is present so the existing
+  // button lane is untouched.
+  if (argv.includes('--tap-page')) {
+    if (argv.includes('-h') || argv.includes('--help')) {
+      process.stdout.write(`${TAP_PAGE_USAGE}\n`);
+      process.exitCode = getExitCode('ok');
+      return;
+    }
+    let tapOpts;
+    try {
+      tapOpts = parseTapPageArgs(argv);
+    } catch (err) {
+      process.stderr.write(`${(err && err.message) || String(err)}\n${TAP_PAGE_USAGE}\n`);
+      process.exitCode = getExitCode('config');
+      return;
+    }
+    Promise.resolve()
+      .then(() => runTapPage({
+        device: tapOpts.device || process.env.ANDROID_SERIAL || null,
+        assertZeroJniFaults: tapOpts.assertZeroJniFaults,
+      }))
+      .then(
+        () => {
+          process.exitCode = getExitCode('ok');
+        },
+        (err) => {
+          const code = (err && typeof err.code === 'string' && err.code.length > 0) ? err.code : 'TAP-PAGE-FAIL';
+          const detail = (err && typeof err.detail === 'string' && err.detail.length > 0)
+            ? err.detail
+            : ((err && err.message) || String(err));
+          process.stderr.write(`TAP-PAGE-FAIL: ${code}: ${detail}\n`);
+          process.exitCode = getExitCode('compile');
+        },
+      );
+    return;
+  }
   // Lane split: hermetic default shells ctest -R tap_handler_repaint|touch_dispatch;
   // the --serial device lane shells the adb sequence against that serial.
   let opts;
@@ -186,3 +504,5 @@ function runGalleryTap(rest) {
 module.exports = runGalleryTap;
 module.exports.run = runGalleryTap;
 module.exports.parseGalleryTapArgs = parseGalleryTapArgs;
+module.exports.parseTapPageArgs = parseTapPageArgs;
+module.exports.runTapPage = runTapPage;

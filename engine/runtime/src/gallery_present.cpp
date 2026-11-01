@@ -350,6 +350,12 @@ struct GalleryShaper {
   // RasterizeShapedText resolves real runs (no synthesis, no second shape).
   std::map<std::uint32_t, muse::text::ShapedRun> runData;
   std::uint32_t next = 0x1000u;
+  // FR-RUNTIME-011 T4: glyph-atlas reuse counter. Incremented on every
+  // run-cache hit (an identical label resolving to one shared run id across
+  // rows/frames); read via GalleryAtlasReuseHits() as the T4 "atlas reuse
+  // counter > 0" evidence. Relaxed ordering suffices: a monotonic hit count
+  // needs atomicity only, no happens-before edge.
+  std::atomic<std::uint64_t> reuse_hits{0};
 };
 
 GalleryShaper& GalleryShaperState() {
@@ -473,7 +479,11 @@ std::uint32_t ShapeGalleryLabel(const std::string& label) {
   key.scale_bits = GalleryScaleBits(kGalleryFontScale);
   key.glyphs = run.glyph_ids;
   const auto it = shaper.runs.find(key);
-  if (it != shaper.runs.end()) return it->second;
+  if (it != shaper.runs.end()) {
+    // T4 atlas-reuse evidence: identical labels share one cached run id.
+    shaper.reuse_hits.fetch_add(1, std::memory_order_relaxed);
+    return it->second;
+  }
   std::uint32_t id = shaper.next;
   ++shaper.next;
   if (shaper.next == 0u) shaper.next = 0x1000u;  // Never hand out 0.
@@ -2680,6 +2690,16 @@ bool IsLayeringPageSlice(const std::vector<GalleryRow>& rows, int first,
   return false;
 }
 
+// FR-RUNTIME-011 T4 conformance instruments (defined at file end): per-page
+// node count, pixel-variance no-blank predicate, layering z-order predicate,
+// and the atlas-reuse hit counter.
+int GalleryPageNodeCount(const std::vector<GalleryRow>& rows, int page,
+                         int viewportH) noexcept;
+bool GalleryPixelsHaveVariance(const std::uint32_t* pixels,
+                               std::size_t count) noexcept;
+bool GalleryLayeringZOrderOk(const std::vector<DrawCmd>& cmds) noexcept;
+std::uint64_t GalleryAtlasReuseHits() noexcept;
+
 // T10 reference-viewport lane (kPresentH): preserved so the committed T10
 // hermetic suite stays green unmodified; new callers use the viewportH lane
 // with the real window height.
@@ -2745,6 +2765,18 @@ bool PresentDeviceGalleryPage(const std::vector<GalleryRow>& rows, int page,
     window.lastVisible =
         starts[static_cast<std::size_t>(page) + 1] - 1;
     window.prefetchAhead = 0;
+    // T4 per-page count conformance: the emitted slice length matches the
+    // manifest slice from an independent PageStarts evaluation (a second
+    // call, not the `starts` vector sliced above). Mismatch fails closed.
+    // (Stage 3 fix, MINOR 1: the check no longer compares the slice against
+    // itself — GalleryPageNodeCount re-derives the pager independently — so
+    // a manifest/pager divergence is observable here; the T5 manual per-page
+    // counts remain the owning leg.)
+    if (GalleryPageNodeCount(rows, page, viewportH) !=
+        window.lastVisible - window.firstVisible + 1) {
+      SetPresentError(error, "present window: page slice mismatch");
+      return false;
+    }
     {
       std::string compList;
       std::string labelList;
@@ -2939,6 +2971,14 @@ void paintLayeringPage(const LayeringScene& scene, Renderer& renderer,
       content.payload.stateOpacity = 1.0f;
       cmds.push_back(content);
     }
+    // T4 z-order conformance: scrim first, overlay contents in strictly
+    // increasing submission order (later draws above). Violation fails
+    // closed (unreachable by construction — emission above appends the scrim
+    // then contents 2+i in order).
+    if (!GalleryLayeringZOrderOk(cmds)) {
+      if (error != nullptr) *error = "layering z-order violated";
+      return;
+    }
     DrawError derr = renderer.draw(cmds, target);
     if (derr != DrawError::None) {
       if (error != nullptr) *error = "layering present rejected primitive";
@@ -3022,6 +3062,88 @@ DismissResult onScrimTap(bool scrimHit, bool isDrag,
     out.remaining = 0;
     out.reason = "miss";
     return out;
+  }
+}
+
+// ---- FR-RUNTIME-011 T4 reference-client conformance instruments ----
+//
+// The gallery host calls the T1 seam (presenter.h attachSurface/renderFrame/
+// dispatchTouch/setTheme/setImeBottom/detachSurface/destroySurface) and
+// exposes no new callable surface. These instruments assert the T4 contract
+// behaviors against that seam without widening any interface (no header
+// change; oracle painters stay test-only):
+//   per-page node counts match the manifest slice (PageStarts),
+//   no-blank viewports (pixel-variance predicate for the T5 screenshot leg),
+//   vector text with glyph-atlas reuse (ShapeGalleryLabel cache + counter),
+//   tap→repaint (seam dispatch + single-owner frame queue; device-measured),
+//   z-order layering (submission order: scrim first, strictly increasing
+//   node ids after). Pure and never throws; the T5 manual proof consumes
+//   them (forward declarations at the T5 call site — no gallery concept
+//   enters any interface-adjacent signature).
+
+// T4 atlas-reuse evidence: run-cache hits since process start (> 0 once any
+// label repeats across rows/frames). Never throws.
+std::uint64_t GalleryAtlasReuseHits() noexcept {
+  try {
+    return GalleryShaperState().reuse_hits.load(std::memory_order_relaxed);
+  } catch (...) {
+    return 0;
+  }
+}
+
+// T4 per-page node count: rows in the page slice [starts[page],
+// starts[page+1]) for the real viewport height. Fail-closed: 0 on bad
+// input or out-of-range page. Never throws.
+int GalleryPageNodeCount(const std::vector<GalleryRow>& rows, int page,
+                         int viewportH) noexcept {
+  try {
+    if (rows.empty() || viewportH <= 0) return 0;
+    const std::vector<int> starts = PageStarts(rows, viewportH);
+    const int pages = static_cast<int>(starts.size()) - 1;
+    if (pages < 1 || page < 0 || page >= pages) return 0;
+    const int count = starts[static_cast<std::size_t>(page) + 1] -
+                      starts[static_cast<std::size_t>(page)];
+    return count < 0 ? 0 : count;
+  } catch (...) {
+    return 0;
+  }
+}
+
+// T4 no-blank predicate: true iff the presented pixel buffer carries
+// variance (more than one distinct pixel value), i.e. the viewport is not
+// a solid fill. Fail-closed: false on null/tiny buffers. Never throws.
+bool GalleryPixelsHaveVariance(const std::uint32_t* pixels,
+                               std::size_t count) noexcept {
+  try {
+    if (pixels == nullptr || count < 2) return false;
+    const std::uint32_t first = pixels[0];
+    for (std::size_t i = 1; i < count; ++i) {
+      if (pixels[i] != first) return true;
+    }
+    return false;
+  } catch (...) {
+    return false;
+  }
+}
+
+// T4 layering z-order predicate: true iff cmds open with exactly one
+// OverlayScrim followed by contents in strictly increasing node-id
+// (submission) order — later submissions draw above. Fail-closed: false
+// on an empty list or any order violation. Never throws.
+// (Stage 3 fix, MINOR 2: the order check starts at index 1 with the
+// kind-aware rule — cmds[1] is now ordered against cmds[0] — so a
+// second scrim or an out-of-order first content node fails closed.)
+bool GalleryLayeringZOrderOk(const std::vector<DrawCmd>& cmds) noexcept {
+  try {
+    if (cmds.empty()) return false;
+    if (cmds[0].kind != PrimitiveKind::OverlayScrim) return false;
+    for (std::size_t i = 1; i < cmds.size(); ++i) {
+      if (cmds[i].kind == PrimitiveKind::OverlayScrim) return false;
+      if (cmds[i].nodeId <= cmds[i - 1].nodeId) return false;
+    }
+    return true;
+  } catch (...) {
+    return false;
   }
 }
 
