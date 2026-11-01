@@ -315,6 +315,57 @@ describe('T4 — forged marker cannot bypass tarball re-verification', () => {
     assert.equal(fs.existsSync(path.join(outDir, 'payload.txt')), false);
   });
 });
+describe('T4 — device-node tar member rejected before extraction', () => {
+  it('(16) tarball with a block/character-device member throws ETHIRDPARTYENTRY', () => {
+    // Hermetic mint: pure-stdlib ustar header with typeflag '3' (char) / '4'
+    // (block), gzipped in-process. No mknod privilege needed; GNU tar lists
+    // the members back as 'c'/'b' leaders (verified against tar 1.35).
+    const zlib = require('node:zlib');
+    function deviceTarball(tarballPath, name, typeflag) {
+      const header = Buffer.alloc(512, 0);
+      header.write(name, 0);
+      header.write('0000000', 100);
+      header.write('0000000', 108);
+      header.write('00000000000', 124);
+      const mtime = Math.floor(Date.now() / 1000).toString(8).padStart(11, '0') + ' ';
+      header.write(mtime, 136);
+      header[156] = typeflag.charCodeAt(0);
+      header.write('000001 ', 329);
+      header.write('000005 ', 337);
+      header.write('ustar', 257);
+      header.write('00', 263);
+      let sum = 256;
+      for (let i = 0; i < 512; i++) {
+        if (i >= 148 && i < 156) {
+          continue;
+        }
+        sum += header[i];
+      }
+      header.write(sum.toString(8).padStart(6, '0') + '\0 ', 148);
+      const blocks = Buffer.concat([header, Buffer.alloc(1024, 0)]);
+      fs.writeFileSync(tarballPath, zlib.gzipSync(blocks));
+    }
+    for (const [kind, typeflag] of [['char', '3'], ['block', '4']]) {
+      const dir = mkTmp('tp-dir-');
+      const file = `dep-dev-${kind}.tar.gz`;
+      deviceTarball(path.join(dir, file), 'devnode', typeflag);
+      const sha256 = sha256Of(path.join(dir, file));
+      const pinsPath = path.join(mkTmp('tp-pins-'), 'pins.json');
+      fs.writeFileSync(pinsPath, JSON.stringify({ [`dep-dev-${kind}`]: { file, sha256 } }));
+      process.env[VAR_NAME] = dir;
+      const buildTree = mkTmp('tp-build-');
+      assert.throws(() => resolveThirdParty(`dep-dev-${kind}`, { pinsPath, buildTree }), (err) => {
+        assert.equal(err.code, 'ETHIRDPARTYENTRY');
+        expectVarHelp(err);
+        return true;
+      });
+      // Gate fires before mkdir/extract: no output dir, no marker, no device node.
+      const outDir = path.join(buildTree, 'third-party', `dep-dev-${kind}`);
+      assert.equal(fs.existsSync(path.join(outDir, 'devnode')), false);
+      assert.equal(fs.existsSync(path.join(outDir, '.third-party-pin.json')), false);
+    }
+  });
+});
 describe('T4 — tar-slip guard rejects unsafe members', () => {
   it('(11) tarball with a ../evil member throws ETHIRDPARTYENTRY', () => {
     const dir = mkTmp('tp-dir-');
