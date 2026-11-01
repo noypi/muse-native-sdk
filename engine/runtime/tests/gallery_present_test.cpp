@@ -510,6 +510,126 @@ static bool check_segmented_divider_interior_no_edge_stroke() {
   return true;
 }
 
+// --- BUG-GRAPHICS-003 T3 cases (FR-GRAPHICS-015 / AC-GRAPHICS-044) ----------
+// Oracle Image painter geometry at bh=104 (Image rows use the RowHeight
+// default 104, so ih = bh-64 = 40). Hermetic: one Image row rasterized into
+// an in-memory buffer; no filesystem, ANativeWindow, GPU, or network.
+// The mountain polyline + sun are the only kLightOnSurfaceVariant
+// (RGBA(0x49,0x45,0x4F,0xFF)) pixels: the outline box uses
+// kLightOutlineVariant and PaintCaption is a no-op.
+// ASSUMPTION (plan A2): relief minimum 8px, sun clearance minimum 4px —
+// plan constants, not spec values.
+
+namespace gfx003 {
+// Little-endian word for RGBA(0x49,0x45,0x4F,0xFF).
+constexpr std::uint32_t kInk = 0xFF4F4549u;
+
+struct Scan {
+  bool ok = false;
+  int sunCx = 0;
+  int sunCy = 0;
+  int polyMinY = 0;
+  int polyMaxY = 0;
+  double minClear = 0.0;
+};
+
+Scan scan_image_ink() {
+  Scan s;
+  runtime::GalleryRow row;
+  row.label = "gallery-hero";
+  row.comp = "Image";
+  row.desc = "Image";
+  std::vector<runtime::GalleryRow> rows(1, row);
+  const int w = 720;
+  const int h = 1600;
+  std::vector<std::uint32_t> px(static_cast<std::size_t>(w) * h, 0u);
+  std::string err;
+  int drawn = runtime::RasterGalleryPage(rows, 0, px.data(), w, w, h, &err);
+  if (drawn != 1) {
+    std::printf("  [gfx003] raster drew %d rows err=%s\n", drawn,
+                err.c_str());
+    return s;
+  }
+  std::vector<int> xs;
+  std::vector<int> ys;
+  for (int y = 0; y < h; ++y) {
+    for (int x = 0; x < w; ++x) {
+      if (px[static_cast<std::size_t>(y) * w + x] == kInk) {
+        xs.push_back(x);
+        ys.push_back(y);
+      }
+    }
+  }
+  if (xs.empty()) {
+    std::printf("  [gfx003] no Image ink pixels found\n");
+    return s;
+  }
+  // Sun center = ink pixel with the densest 25x25 neighborhood (the filled
+  // disc; the thin polyline never packs that densely).
+  int best = -1;
+  int bestCount = -1;
+  for (std::size_t i = 0; i < xs.size(); ++i) {
+    int c = 0;
+    for (std::size_t j = 0; j < xs.size(); ++j) {
+      int dx = xs[j] - xs[i];
+      if (dx < -12 || dx > 12) continue;
+      int dy = ys[j] - ys[i];
+      if (dy < -12 || dy > 12) continue;
+      ++c;
+    }
+    if (c > bestCount) {
+      bestCount = c;
+      best = static_cast<int>(i);
+    }
+  }
+  if (best < 0 || bestCount < 150) {
+    std::printf("  [gfx003] no filled sun disc found bestCount=%d\n",
+                bestCount);
+    return s;
+  }
+  s.sunCx = xs[static_cast<std::size_t>(best)];
+  s.sunCy = ys[static_cast<std::size_t>(best)];
+  bool first = true;
+  double minClear = 1e9;
+  for (std::size_t i = 0; i < xs.size(); ++i) {
+    double dx = static_cast<double>(xs[i] - s.sunCx);
+    double dy = static_cast<double>(ys[i] - s.sunCy);
+    double d = std::sqrt(dx * dx + dy * dy);
+    if (d <= 13.0) continue;  // sun disc (r=12 + 1px tolerance)
+    if (first) {
+      s.polyMinY = s.polyMaxY = ys[i];
+      first = false;
+    } else {
+      if (ys[i] < s.polyMinY) s.polyMinY = ys[i];
+      if (ys[i] > s.polyMaxY) s.polyMaxY = ys[i];
+    }
+    double edge = d - 12.0;
+    if (edge < minClear) minClear = edge;
+  }
+  if (first) {
+    std::printf("  [gfx003] no polyline pixels outside sun disc\n");
+    return s;
+  }
+  s.minClear = minClear;
+  s.ok = true;
+  std::printf("  [gfx003] sun=(%d,%d) relief=%d clear=%.2f\n", s.sunCx,
+              s.sunCy, s.polyMaxY - s.polyMinY, s.minClear);
+  return s;
+}
+}  // namespace gfx003
+
+static bool check_image_mountain_relief_bh104_peak_above_base() {
+  gfx003::Scan s = gfx003::scan_image_ink();
+  if (!s.ok) return false;
+  return (s.polyMaxY - s.polyMinY) >= 8;
+}
+
+static bool check_image_sun_clears_ridge_bh104() {
+  gfx003::Scan s = gfx003::scan_image_ink();
+  if (!s.ok) return false;
+  return s.minClear >= 4.0;
+}
+
 #define RUN_CASE(name)                      \
   do {                                      \
     if (!(name)()) {                        \
@@ -1094,6 +1214,8 @@ int main() {
   RUN_CASE(check_present_gallery_bad_envelope_diagnostic_never_blank);
   RUN_CASE(check_present_gallery_null_error_ptr_never_throws);
   RUN_CASE(check_present_gallery_no_rows_diagnostic_never_blank);
+  RUN_CASE(check_image_mountain_relief_bh104_peak_above_base);
+  RUN_CASE(check_image_sun_clears_ridge_bh104);
   RUN_CASE(check_harness_entry_reached);
   RUN_CASE(check_all_green_returns_zero);
   RUN_CASE(check_failure_protocol_shape);

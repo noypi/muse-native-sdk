@@ -1478,12 +1478,29 @@ void PaintComponent(std::uint32_t* px, int stride, int w, int h, int bx,
       int ih = bh - 64;
       StrokeRoundedRect(px, stride, w, h, cx - 60 - iw / 2, ymid - ih / 2, iw,
                         ih, 16, 2, kLightOutlineVariant, kLightSurfaceVariant);
-      FillCircle(px, stride, w, h, cx - 60 - 40, ymid - 14, 12,
-                 kLightOnSurfaceVariant);
-      DrawLine(px, stride, w, h, cx - 60 - iw / 2 + 24, ymid + ih / 2 - 24,
-               cx - 60 - 10, ymid - 6, 5, kLightOnSurfaceVariant);
-      DrawLine(px, stride, w, h, cx - 60 - 10, ymid - 6, cx - 60 + 30,
-               ymid + ih / 2 - 24, 5, kLightOnSurfaceVariant);
+      // Mountain geometry scales with ih: base near the box bottom, peak
+      // near the box top, leaving an 8px inset at each end. At bh=104
+      // (ih=40) the centerline relief is 24px (was a fixed 2px kink).
+      const int kInset = 8;
+      int baseY = ymid + ih / 2 - kInset;
+      int peakY = ymid - ih / 2 + kInset;
+      int sunX = cx - 60 - 40;
+      // Sun rides above the box top so it clears the ridge; the clamp keeps
+      // a full sun-radius-plus-gap clearance even for tiny ih.
+      int sunY = ymid - ih / 2 - 6;
+      if (baseY - peakY < 8) {
+        // Too short for relief: straight horizontal ridge, never a kink.
+        DrawLine(px, stride, w, h, cx - 60 - iw / 2 + 24, ymid, cx - 60 + 30,
+                 ymid, 5, kLightOnSurfaceVariant);
+        if (sunY > ymid - 19) sunY = ymid - 19;
+      } else {
+        DrawLine(px, stride, w, h, cx - 60 - iw / 2 + 24, baseY, cx - 60 - 10,
+                 peakY, 5, kLightOnSurfaceVariant);
+        DrawLine(px, stride, w, h, cx - 60 - 10, peakY, cx - 60 + 30, baseY,
+                 5, kLightOnSurfaceVariant);
+        if (sunY > peakY - 19) sunY = peakY - 19;
+      }
+      FillCircle(px, stride, w, h, sunX, sunY, 12, kLightOnSurfaceVariant);
     }
     PaintCaption(px, stride, w, h, bx, by, bw, bh, c);
     return;
