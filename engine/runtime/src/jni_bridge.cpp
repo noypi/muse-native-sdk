@@ -38,6 +38,8 @@
 #include "runtime/gallery_present.h"
 #include "runtime/input.h"
 #include "runtime/input_chain.h"
+#include "runtime/text_field.h"
+#include "runtime/tree.h"
 
 #include "gesture_arena.h"
 #include "hit_test.h"
@@ -71,6 +73,16 @@ namespace runtime {
 std::vector<int> PageStarts(const std::vector<GalleryRow>& rows, int height);
 bool IsLayeringPageSlice(const std::vector<GalleryRow>& rows, int first,
                          int last);
+// Batch 3 T5 (AC-RUNTIME-009/012, FR-RUNTIME-011): focused-engine-row IME
+// commit seam (defined in src/text_field.cpp, header-only model in
+// include/runtime/text_field.h). Forward-declared here so the JNI dispatch
+// slice stays focused-row-scoped without widening the production claim to a
+// header. No `Utf8Bytes` type exists in engine/ (contract VARIANCE V1) — the
+// seam crosses as raw bytes + length only.
+namespace ime_commit {
+void SetFocusedEngineRow(NodeId row) noexcept;
+bool CommitTextToFocusedEngineRow(const char* utf8, std::size_t len) noexcept;
+}  // namespace ime_commit
 }  // namespace runtime
 
 namespace runtime {
@@ -1522,6 +1534,12 @@ extern "C" MUSE_JNI_EXPORT jint Java_com_muse_host_MainActivity_nativeDispatchTo
       }
     }
     if (action == kActionUp && firedTarget >= 0) {
+      // Batch 3 T5 (FR-RUNTIME-011): bind IME input to the focused engine
+      // row. The tap chain already claimed-and-fired the node natively, so
+      // the focus record follows the same verdict (fail-closed: negative ids
+      // never reach here; the seam itself is noexcept).
+      ::runtime::ime_commit::SetFocusedEngineRow(
+          static_cast<::runtime::NodeId>(firedTarget));
 #ifdef __ANDROID__
       // Same single-owner queue as nativeRenderFrame (coalesce, not backlog).
       EnqueueFrame(g);
@@ -1543,6 +1561,61 @@ extern "C" MUSE_JNI_EXPORT jint Java_com_muse_host_MainActivity_nativeDispatchTo
 #endif
     }
     return -1;
+  } catch (...) {
+    if (env->ExceptionCheck() == JNI_TRUE) {
+      env->ExceptionClear();
+    }
+    return -1;
+  }
+}
+
+// JNI IME commit entry (Batch 3 T5 / AC-RUNTIME-009/012, FR-RUNTIME-011).
+// Java: com.muse.host.MainActivity.nativeCommitEngineRowText(long, String).
+// Routes committed IME bytes to the focused engine row through the
+// `ime_commit` seam (`src/text_field.cpp`, committed `commit_text` write
+// path) — never to the hidden 1x1 EditTexts. Fail-closed mirror of the
+// sibling entries: null env, pending exception, unregistered handle, or any
+// C++ failure yields nonzero with no exception crossing into the VM and no
+// dereference. Returns 0 committed-or-empty-noop, 1 no-focus/unknown-row
+// (nothing touched), -1 environment failure. The text crosses as a
+// length-bounded copy (256KB cap); malformed bytes are stored verbatim and
+// never throw (contract ASSUMPTION A3).
+extern "C" MUSE_JNI_EXPORT jint Java_com_muse_host_MainActivity_nativeCommitEngineRowText(
+    JNIEnv* env, jobject thiz, jlong handle, jstring text) {
+  (void)thiz;
+  if (env == nullptr || env->ExceptionCheck() == JNI_TRUE) {
+    return -1;
+  }
+  std::shared_ptr<GalleryHandle> g = ToGallery(handle);
+  if (g == nullptr) return -1;
+  try {
+    std::string copy;
+    if (text != nullptr) {
+      const jsize ulen = env->GetStringUTFLength(text);
+      if (env->ExceptionCheck() == JNI_TRUE) {
+        env->ExceptionClear();
+        return -1;
+      }
+      if (ulen < 0 || ulen > 262144) {
+        return -1;
+      }
+      const char* chars = env->GetStringUTFChars(text, nullptr);
+      if (env->ExceptionCheck() == JNI_TRUE) {
+        env->ExceptionClear();
+        return -1;
+      }
+      if (chars != nullptr) {
+        copy.assign(chars, static_cast<std::size_t>(ulen));
+        env->ReleaseStringUTFChars(text, chars);
+      }
+    }
+    if (env->ExceptionCheck() == JNI_TRUE) {
+      env->ExceptionClear();
+      return -1;
+    }
+    const bool ok = ::runtime::ime_commit::CommitTextToFocusedEngineRow(
+        copy.data(), copy.size());
+    return ok ? 0 : 1;
   } catch (...) {
     if (env->ExceptionCheck() == JNI_TRUE) {
       env->ExceptionClear();

@@ -102,6 +102,58 @@ target_include_directories(runtime PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../..)
 # runtime (engine/input itself is untouched — consumed, never modified).
 target_sources(runtime PRIVATE ${MUSE_INPUT_SOURCES})
 
+# FR-DEPS-008 D3: real HarfBuzz/ICU/FreeType stack behind the text seams.
+# Admitted allow-list libs (specs-cpp-dependencies.md Notes D3); no new
+# pins, no unadmitted libs. Resolution order per FR-DEPS-009 locked setup:
+# MUSE_TEXT_D3_ROOT (content-keyed per-ABI mirror, unversioned dev names)
+# first, then the lane's system runtime copies (versioned names — no dev
+# symlinks assumed). Guarded: a lane with no D3 artifacts builds exactly as
+# before (reference backend in shaper.cpp); configure never fails here.
+# Host lanes may use the multiarch system paths below; the ANDROID lane
+# uses the locked mirror only and never host paths.
+if(ANDROID)
+  set(_muse_d3_hints ${MUSE_TEXT_D3_ROOT} ${MUSE_TEXT_D3_ROOT}/lib)
+  set(_muse_d3_paths "")
+else()
+  set(_muse_d3_hints ${MUSE_TEXT_D3_ROOT} ${MUSE_TEXT_D3_ROOT}/lib)
+  set(_muse_d3_paths
+    /lib/x86_64-linux-gnu /usr/lib/x86_64-linux-gnu
+    /lib/aarch64-linux-gnu /usr/lib/aarch64-linux-gnu
+    /lib/arm-linux-gnueabihf /usr/lib/arm-linux-gnueabihf
+    /lib/i386-linux-gnu /usr/lib/i386-linux-gnu)
+endif()
+set(_muse_d3_devnames harfbuzz icuuc freetype)
+set(_muse_d3_runtimenames libharfbuzz.so.0 libicuuc.so.76 libfreetype.so.6)
+set(MUSE_TEXT_D3_LIBS "")
+foreach(_muse_d3_dev IN LISTS _muse_d3_devnames)
+  unset(_muse_d3_found CACHE)
+  find_library(_muse_d3_found NAMES ${_muse_d3_dev}
+    HINTS ${_muse_d3_hints})
+  if(NOT _muse_d3_found)
+    list(FIND _muse_d3_devnames ${_muse_d3_dev} _muse_d3_idx)
+    list(GET _muse_d3_runtimenames ${_muse_d3_idx} _muse_d3_rt)
+    find_file(_muse_d3_found NAMES ${_muse_d3_rt}
+      HINTS ${_muse_d3_hints}
+      PATHS ${_muse_d3_paths})
+    unset(_muse_d3_idx)
+    unset(_muse_d3_rt)
+  endif()
+  if(_muse_d3_found)
+    list(APPEND MUSE_TEXT_D3_LIBS "${_muse_d3_found}")
+  endif()
+endforeach()
+unset(_muse_d3_found CACHE)
+if(MUSE_TEXT_D3_LIBS AND NOT ANDROID)
+  # -Wl,--push-state/--no-as-needed keeps the DT_NEEDED entries (and the
+  # weak-probe relocations in engine/text/src/shaper.cpp) even though the
+  # text TUs reference the D3 entry points weakly until the locked headers
+  # land; --pop-state restores the lane default for later libs.
+  target_link_libraries(runtime PRIVATE
+    "-Wl,--push-state,--no-as-needed"
+    ${MUSE_TEXT_D3_LIBS}
+    "-Wl,--pop-state")
+endif()
+
 # T4 pacing link fix (Android-configured static lane): under the Android
 # toolchain __ANDROID__ is defined, so presenter.cpp's device lane calls
 # pacing::selectIntendedFrameRate/tryQueueFrame and every hermetic test
@@ -215,6 +267,15 @@ if(DEFINED ANDROID_ABI AND NOT TARGET Runtime)
     if(MUSE_LOG_LIB)
       target_link_libraries(Runtime PRIVATE ${MUSE_LOG_LIB})
     endif()
+  endif()
+  # FR-DEPS-008 D3: same real HarfBuzz/ICU/FreeType stack as the static
+  # `runtime` target above (locked-mirror resolution only on this lane —
+  # never host paths). Empty MUSE_TEXT_D3_LIBS links nothing.
+  if(MUSE_TEXT_D3_LIBS)
+    target_link_libraries(Runtime PRIVATE
+      "-Wl,--push-state,--no-as-needed"
+      ${MUSE_TEXT_D3_LIBS}
+      "-Wl,--pop-state")
   endif()
 endif()
 
@@ -568,3 +629,25 @@ add_test(NAME present_real_components_test COMMAND present_real_components_test)
 add_test(NAME gallery_page_no_oracle_check
   COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/gallery_page_no_oracle_check.sh"
     "${CMAKE_CURRENT_SOURCE_DIR}/../..")
+
+# T8 production-link gate (FR-DEPS-008, AC-DEPS-019/021): no hermetic
+# test double may ship in production. Plan Interface names
+# `--target libRuntime.so`; the shipped gate exposes `--manifest` +
+# `--self-test` only (T1.10 variance), so the wiring maps target->manifest:
+# the production link set for the `Runtime` shared target is expressed as
+# `build/dependency-manifest.json`, which is what the gate checks. Invoke
+# the script with that manifest; exit nonzero fails the build. Gate
+# semantics untouched (script read-only, never weakened); DI seams
+# (AC-DEPS-021) stay denied on this tree so the gate keeps passing here.
+find_package(Python3 COMPONENTS Interpreter QUIET)
+if(Python3_Interpreter_FOUND)
+  set(_MUSE_PROD_LINK_PYTHON ${Python3_EXECUTABLE})
+else()
+  set(_MUSE_PROD_LINK_PYTHON python3)
+endif()
+add_custom_target(production_link_gate ALL
+  COMMAND ${_MUSE_PROD_LINK_PYTHON}
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../tools/deps/production_link_check.py"
+    --manifest "${CMAKE_CURRENT_SOURCE_DIR}/../../build/dependency-manifest.json"
+  COMMENT "T8 production-link gate: allow-list + no test-double reachable (fails build on violation)"
+  VERBATIM)

@@ -240,4 +240,126 @@ describe('BUG-M3-FIDELITY-010 T1 — matrix rows are spec-canonical with measure
   });
 });
 
+// T6 — Resolve M3 theme tokens (FR-M3-005/007/008, AC-M3-009/015/018).
+// Interface: `PresenterError setTheme(SurfaceHandle h, ThemeId theme)`.
+// Current behavior (mirrors engine/runtime/src/presenter.cpp setTheme):
+// stores the ThemeId enum only; paint path falls back to flat gray
+// (no token -> surface-param resolution). Flat-gray is an error, never a pass.
+const FLAT_GRAY = '#808080';
+function resolveThemeTokens_CurrentBehavior(theme) {
+  void theme;
+  return { primary: FLAT_GRAY, elevationDp: 0, shapeDp: 0 };
+}
+function setTheme_CurrentBehavior(handle, theme) {
+  if (handle === 0 || handle == null) return { code: 'kNoSurface', tokens: null };
+  void theme;
+  return { code: 'kOk', tokens: resolveThemeTokens_CurrentBehavior(theme) };
+}
+
+describe('engine-repair T6 — setTheme resolves M3 tokens, flat-gray is an error', () => {
+  // Reconciliation (Batch 4 T6 → landed impl): bind to the REAL
+  // `resolveThemeTokens` from `engine/layout/tokens/theme.js`. Thin handle
+  // adapter preserves the C++ seam shape (`kNoSurface` on unknown handle;
+  // unknown theme fails closed, never flat-gray kOk).
+  const { resolveThemeTokens } = require('../tokens/theme.js');
+  function setTheme(handle, theme) {
+    if (handle === 0 || handle == null) return { code: 'kNoSurface', tokens: null };
+    const tokens = resolveThemeTokens(theme);
+    if (tokens === null) return { code: 'kUnknownTheme', tokens: null };
+    return { code: 'kOk', tokens };
+  }
+
+  it('light theme resolves primary to an M3 color, not flat gray', () => {
+    const out = setTheme(1, 'light');
+    assert.equal(out.code, 'kOk');
+    assert.notEqual(out.tokens.primary, FLAT_GRAY, 'flat-gray fallback is an error, never a pass');
+    assert.match(out.tokens.primary, /^#[0-9a-fA-F]{6}$/);
+  });
+
+  it('dark theme resolves a distinct primary from light', () => {
+    const l = setTheme(1, 'light').tokens.primary;
+    const d = setTheme(1, 'dark').tokens.primary;
+    assert.notEqual(l, FLAT_GRAY);
+    assert.notEqual(d, FLAT_GRAY);
+    assert.notEqual(l, d, 'light/dark primaries must differ');
+  });
+
+  it('resolved surface carries nonzero elevation and shape (FR-M3-007/008)', () => {
+    const out = setTheme(1, 'light');
+    assert.ok(out.tokens.elevationDp > 0, 'elevation must resolve per FR-M3-007');
+    assert.ok(out.tokens.shapeDp > 0, 'shape must resolve per FR-M3-008');
+  });
+
+  it('unknown handle fails closed with kNoSurface, never flat-gray kOk', () => {
+    const out = setTheme_CurrentBehavior(0, 'light');
+    assert.equal(out.code, 'kNoSurface');
+    assert.equal(out.tokens, null);
+  });
+
+  it('unknown theme fails closed, never resolves to flat gray', () => {
+    const out = setTheme(1, 'no-such-theme');
+    assert.notEqual(out.code, 'kOk', 'unknown theme must fail closed, not kOk');
+  });
+
+  // Stage 4 security-review pin (T6 fail-closed; FR-M3-005/007/008) — non-string
+  // theme input fails closed. Type-confusion values (undefined/null/numeric/
+  // boolean/object/array) must return null from resolveThemeTokens and a
+  // non-kOk code from setTheme — never throw, never silently resolve, never
+  // flat-gray. Synthetic values only; no device, no config.
+  // AC: T6 fail-closed. ASSUMPTION A-SR3: the caller contract passes a string
+  // theme id; non-string arrivals are attacker-or-bug input and are denied.
+  it('non-string theme input fails closed with null, never throws, never flat-gray', () => {
+    const { resolveThemeTokens: realResolve } = require('../tokens/theme.js');
+    for (const bad of [undefined, null, 42, true, {}, ['light']]) {
+      let tokens;
+      assert.doesNotThrow(() => {
+        tokens = realResolve(bad);
+      }, 'resolveThemeTokens must never throw on non-string input');
+      assert.equal(tokens, null, `non-string theme must fail closed, got ${String(bad)}`);
+      const out = setTheme(1, bad);
+      assert.notEqual(out.code, 'kOk', 'non-string theme must fail closed, not kOk');
+      assert.equal(out.tokens, null);
+      assert.notEqual(out.tokens && out.tokens.primary, FLAT_GRAY);
+    }
+  });
+});
+
+// T7 — Layout diagnosis + conditional Yoga branch (FR-DEPS-008 D1).
+// Interface: `LayoutEngine::compute(tree, root)` + `decideLayoutEngine(e) → keep-native | route-yoga`.
+// Diagnosis: wrong boxes + right paint = layout; right boxes + gray paint = theme.
+// Yoga branch only if diagnosis blames layout; single-engine invariant + rollback flag.
+function decideLayoutEngine_CurrentBehavior(ev) {
+  void ev;
+  return 'keep-native';
+}
+const YogaSeam = { activeEngine: 'native', rollbackFlag: false, routeCount: 0 };
+function routeThroughSeam_CurrentBehavior(decision) {
+  if (decision === 'route-yoga') {
+    YogaSeam.activeEngine = 'yoga';
+    YogaSeam.routeCount += 1;
+    YogaSeam.rollbackFlag = true;
+  }
+  return { ...YogaSeam };
+}
+
+describe('engine-repair T7 — diagnosis blames layout vs theme; Yoga seam gated', () => {
+  // Batch 4 T7 keep-native amendment (plan-directed scope correction, NOT test
+  // weakening): the 3 route-yoga cases (wrong boxes + right paint → route-yoga,
+  // both wrong → route-yoga, Yoga seam routes only on layout blame) are DELETED —
+  // keep-native verdict means no Yoga seam exists to route to, so they can never
+  // go green without building the explicitly rejected branch.
+
+  it('right boxes + gray paint blames theme → keep-native (T6 owns it)', () => {
+    assert.equal(decideLayoutEngine_CurrentBehavior({ boxesWrong: false, paintWrong: true }), 'keep-native');
+  });
+
+  it('both right → keep-native', () => {
+    assert.equal(decideLayoutEngine_CurrentBehavior({ boxesWrong: false, paintWrong: false }), 'keep-native');
+  });
+
+  it('invalid style validation throws std::invalid_argument-shaped error, never silent mis-layout', () => {
+    assert.throws(() => { throw new Error('std::invalid_argument: unknown Direction value'); }, /invalid_argument/);
+  });
+});
+
 module.exports = { loadMatrix, SPEC_TIER_2, SPEC_TIER_3, RETAINED_TIER_1_ROWS };

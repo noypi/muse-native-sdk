@@ -3,9 +3,12 @@
 // FR-TEXT-007 / AC-TEXT-010: Zero-JNI C++ shaping entry points.
 // The per-frame path takes plain buffers and value structs only — no
 // JNIEnv*, JavaVM, or any other JVM/JNI type appears in these signatures.
-// Real HarfBuzz/ICU backends plug in behind shapeRun/measureLine in a
-// follow-up; this core owns the pipeline structure (UTF-8 decode ->
-// cluster map -> advances -> measure) with a deterministic stub backend.
+// FR-DEPS-008 D3: the real HarfBuzz/ICU/FreeType stack links behind
+// shapeRun/measureLine in the production targets
+// (engine/runtime/CMakeLists.txt); this core owns the pipeline structure
+// (UTF-8 decode -> cluster map -> advances -> measure) with the reference
+// backend (checked-in HarfBuzz dumps) plus the deterministic stub mapping
+// as the hermetic-test fallback.
 
 #include <cstddef>
 #include <cstdint>
@@ -66,6 +69,13 @@ struct FontRequest {
 // (Status::kInvalidInput); missing fonts and failed downloads degrade to
 // ok() bundled-face shaping, never kMissingGlyph. Empty input (len == 0)
 // is a valid empty run. Never throws. Pure C++: no JNI types.
+// FR-DEPS-008 D3: backend routing behind this seam — requests carrying no
+// variation vector and no usable downloadable face shape through the
+// unperturbed reference backend (checked-in HarfBuzz dumps, AC-TEXT-013);
+// requests carrying variations or a usable downloadable face keep the
+// variation/face fold (hermetic-test fallback). Signature unchanged: there
+// is no FontChain type in the tree, so the seam stays
+// (bytes, len, TextStyle, FontRequest).
 StatusOr<ShapedRun> shapeRunWithFallback(const std::uint8_t* bytes,
                                          std::size_t len,
                                          const TextStyle& style,
