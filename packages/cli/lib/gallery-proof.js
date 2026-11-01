@@ -670,6 +670,81 @@ async function defaultReadViewport({ serial, attempts, sleepMs, sleep } = {}) {
   return null;
 }
 
+// Read the baked `assets/tree.mui.bin` bytes from a candidate APK (ZIP).
+// Supports stored (method 0) and deflated (method 8) entries. Returns the
+// entry bytes, or null when the entry is absent or the archive is
+// unparseable (callers treat both as a stale/missing baked asset).
+function readApkBakedTreeBytes(apkPath) {
+  const data = fs.readFileSync(apkPath);
+  const TARGET = 'assets/tree.mui.bin';
+  // Sequential local-header scan: every ZIP writer (including minimal test
+  // fixtures and aapt2-built APKs) emits spec-correct local headers, while
+  // central-directory layouts vary — so entries are located here, never via
+  // the central directory.
+  let pos = 0;
+  while (pos + 30 <= data.length) {
+    const sig = data.readUInt32LE(pos);
+    if (sig === 0x06054B50 || sig === 0x02014B50) break;
+    if (sig !== 0x04034B50) return null;
+    const flags = data.readUInt16LE(pos + 6);
+    const method = data.readUInt16LE(pos + 8);
+    const compSize = data.readUInt32LE(pos + 18);
+    const nameLen = data.readUInt16LE(pos + 26);
+    const extraLen = data.readUInt16LE(pos + 28);
+    const nameStart = pos + 30;
+    if (nameStart + nameLen > data.length) return null;
+    const name = data.subarray(nameStart, nameStart + nameLen).toString('utf8');
+    const bodyStart = nameStart + nameLen + extraLen;
+    if (flags & 0x08) return null;
+    if (bodyStart + compSize > data.length) return null;
+    if (name === TARGET) {
+      const body = data.subarray(bodyStart, bodyStart + compSize);
+      if (method === 0) return Buffer.from(body);
+      if (method === 8) {
+        try {
+          return require('node:zlib').inflateRawSync(Buffer.from(body));
+        } catch (_) {
+          return null;
+        }
+      }
+      return null;
+    }
+    pos = bodyStart + compSize;
+  }
+  return null;
+}
+
+// Freshness gate (FR-PACKAGING-005, AC-PACKAGING-011): the candidate APK's
+// baked `assets/tree.mui.bin` must hash-match the post-sync
+// `dist/tree.mui.bin` bytes. Content-hash comparison only — never
+// timestamp-only. Fail-closed with a `stale-asset` error naming the APK path
+// and both hashes (no device serial or toolchain path, so no secret leak).
+function assertApkTreeFreshness({ apkPath, galleryDir }) {
+  const { src } = resolveAssetSyncPaths({ galleryDir });
+  let builtBytes = null;
+  try {
+    builtBytes = fs.readFileSync(src);
+  } catch (_) {
+    failWith('io-error', `gallery tree missing at ${src}; run muse-native build first`);
+  }
+  const crypto = require('node:crypto');
+  const builtHash = crypto.createHash('sha256').update(builtBytes).digest('hex');
+  let bakedBytes = null;
+  try {
+    bakedBytes = readApkBakedTreeBytes(apkPath);
+  } catch (_) {
+    bakedBytes = null;
+  }
+  if (!bakedBytes) {
+    failWith('stale-asset', `${apkPath} baked tree missing != built tree ${builtHash} — rebuild required`);
+  }
+  const bakedHash = crypto.createHash('sha256').update(bakedBytes).digest('hex');
+  if (bakedHash !== builtHash) {
+    failWith('stale-asset', `${apkPath} baked tree ${bakedHash} != built tree ${builtHash} — rebuild required`);
+  }
+  return { bakedHash, builtHash };
+}
+
 async function runGalleryProof({ serial, androidJar, outDir, readCounts, capture, advance, readIndex, sync, galleryDir, apkPath, install, launch, clearLogcat, waitForMarkers, sleep, settleMs, readViewport }) {
   const deviceSerial = serial || process.env.ANDROID_SERIAL;
   if (!deviceSerial) {
@@ -706,6 +781,16 @@ async function runGalleryProof({ serial, androidJar, outDir, readCounts, capture
     const installFn = install || ((args) => defaultInstallApk(args));
     const launchFn = launch || ((args) => defaultLaunchApp(args));
     const waitFn = waitForMarkers || ((args) => waitForGalleryMarkers(args));
+    // Stale-asset gate: the candidate APK must embed the post-sync tree
+    // bytes. Fail closed before any install (never timestamp-only, never a
+    // rebuild that silently swaps the artifact under the caller).
+    try {
+      const candidateApk = apkPath || resolveGalleryApkPath({ galleryDir, apkPath });
+      assertApkTreeFreshness({ apkPath: candidateApk, galleryDir });
+    } catch (err) {
+      if (err && (err.code === 'stale-asset' || err.code === 'io-error')) throw err;
+      failWith('stale-asset', `${apkPath || galleryDir || 'gallery APK'} baked tree unreadable — rebuild required`);
+    }
     try {
       await installFn({ serial: deviceSerial, apkPath, galleryDir });
     } catch (err) {
