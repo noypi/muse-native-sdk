@@ -468,6 +468,9 @@ function runTapPageLane(opts) {
       return;
     }
   }
+  // Settle wait: gallery logs gallery-page ~1-3s after `am start`
+  // (nativeLoadTree), so let the before-read observe it.
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 4000);
   const readPageIndex = () => {
     const args = ['-s', serial, 'logcat', '-d'];
     const res = spawnSync('adb', args, { encoding: 'utf8' });
@@ -495,6 +498,8 @@ function runTapPageLane(opts) {
       return;
     }
   }
+  // Settle wait: let the tap take effect before the after-read.
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 2000);
   const after = readPageIndex();
   if (after.error) {
     failClosed(after.error.args, after.error.detail);
