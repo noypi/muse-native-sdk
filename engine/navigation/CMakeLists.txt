@@ -158,6 +158,11 @@ target_link_libraries(back_dispatch_test PRIVATE navigation)
 target_compile_options(back_dispatch_test PRIVATE -Wall -Wextra -Wpedantic)
 add_test(NAME back_dispatch_test COMMAND back_dispatch_test)
 
+add_executable(arbitrary_navigate_test tests/arbitrary_navigate_test.cpp)
+target_link_libraries(arbitrary_navigate_test PRIVATE navigation)
+target_compile_options(arbitrary_navigate_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME arbitrary_navigate_test COMMAND arbitrary_navigate_test)
+
 # FR-NAV-006 T2 (NAV-APPLINKS codegen invocation — documentation only, no new
 # engine target added here):
 #   Generate: python3 ../../toolchain/applinks/codegen.py
