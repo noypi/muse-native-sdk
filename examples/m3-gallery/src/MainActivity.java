@@ -222,13 +222,16 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     /**
      * BUG-SAMPLE-007 T6: shell-chrome Next-region predicate (forward-only
      * contract per user ruling 2026-11-01). Pure function of its inputs, no
-     * JNI. Returns true iff the (x, y, claimed) sample hits the calibrated
-     * shell-chrome Next region. A Next-region ACTION_UP issues exactly one
+     * JNI. Returns true iff the (x, y) sample hits the calibrated
+     * shell-chrome Next region (GEOMETRY-ONLY — the claimed value is
+     * IGNORED for eligibility and kept only as a logged forensic). A Next-region ACTION_UP issues exactly one
      * direct forward step; Prev-region (left-chrome) taps fall through with
      * no page and no emit — there is no step-back entry (nativeAdvancePage
      * takes no direction), so backward paging stays unpaged until a trusted
-     * count plus proven wrap exist. Surface taps, outside-region samples,
-     * and unclaimed gestures (claimed == -1) all return false.
+     * count plus proven wrap exist. Surface taps and outside-region samples
+     * return false for any claimed value (claimed measures engine-node
+     * acceptance only — the engine Next node never accepts, so Next-region
+     * taps report claimed == -1 by construction).
      *
      * Tunable bounds (T7 calibrates on device 720x1600): the chrome strip
      * occupies the top band of the display and the Next control sits in the
@@ -245,9 +248,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         // dp/px mapping in the method doc above — T7 owns calibration).
         final float NEXT_X_MIN = 600f;
         final float NEXT_Y_MAX = 200f;
-        if (claimed < 0) {
-            return false;
-        }
+        // GEOMETRY-ONLY (A6 calibration 2026-11-01): claimed is forensics-only,
+        // never an eligibility gate — retained in the signature for logging.
         return x >= NEXT_X_MIN && y <= NEXT_Y_MAX;
     }
 

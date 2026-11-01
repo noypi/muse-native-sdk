@@ -1,10 +1,11 @@
 'use strict';
 // BUG-SAMPLE-007 Batch 4 (T6) — native intercept seam pin.
-// Plan T6 Interface (verbatim, Next-only contract per user ruling 2026-11-01):
+// Plan T6 Interface (GEOMETRY-ONLY contract, amended plan.md:100-104):
 //   `boolean isShellChromeAdvance(float x, float y, int claimed)`
-//   (package-private static or private method for testability; returns `true`
-//   iff the (x, y, claimed) sample hits the calibrated shell-chrome Next
-//   region; pure function of its inputs, no JNI)
+//   (package-private static or private method for testability; GEOMETRY-ONLY
+//   — returns `true` iff the (x, y) sample hits the calibrated shell-chrome
+//   Next region, claimed value IGNORED for eligibility and kept only as a
+//   logged forensic)
 //   + existing `nativeAdvancePage(long): int` / `nativeRenderFrame(long): void`
 //   reused unchanged.
 //
@@ -14,14 +15,12 @@
 // MainActivity.java source; the only filesystem reads are static source pins.
 // No shared mutable state.
 //
-// RED STATE (pre-T6, expected): `isShellChromeAdvance` does not exist in
-// MainActivity.java, so `requirePredicateBody()` throws and EVERY predicate
-// case fails with /isShellChromeAdvance.*missing/; every static wiring pin
-// fails (no guarded direct-JNI call in the touch listener, no region
-// constants). This is the correct red: the seam is absent, not the test
-// malformed.
+// RED STATE (post-amendment, expected): `isShellChromeAdvance` still gates on
+// `claimed < 0 → false`, so every geometry-hit+claimed==-1 case fails for
+// THAT reason (Next-region with claimed -1 returns false, expected true).
+// This is the correct red: claimed must be forensics-only, not eligibility.
 //
-// ASSUMPTIONS (tunable bounds pending T7 calibration):
+// ASSUMPTIONS:
 //   A-T6a: region bounds ship as explicit tunable constants in
 //     MainActivity.java (dp/px mapping documented) near the predicate; this
 //     file extracts them flexibly (NEXT_* / CHROME_* / BUTTON_* / REGION_*
@@ -32,9 +31,14 @@
 //     direction; Next-region taps issue one forward advance; Prev-region taps
 //     fall through with no page and no emit (documented forward-only
 //     contract).
-//   A-T6c: `claimed == -1` means the native chain fired nothing
-//     (nativeDispatchTouch contract, MainActivity.java:210-211); the
-//     predicate MUST return false for claimed < 0 regardless of geometry.
+//   A-T6c (REVISED geometry-only per A6 calibration 2026-11-01): `claimed`
+//     measures engine-node acceptance only, never chrome-tap validity.
+//     Engine Next node is dead/absent (Next-region taps report DOWN −1 AND
+//     UP −1); geometry owns chrome identification (chrome owns the top
+//     strip; story content dispatches at y≈755). Prev-UP-claimed=21 and
+//     surface-UP-claimed=10 corroborate (acceptance happens elsewhere, never
+//     on Next). Predicate MUST ignore claimed for eligibility; claimed stays
+//     a per-tap Log.d forensic only.
 
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
@@ -94,11 +98,10 @@ function extractBounds(body) {
   return bounds;
 }
 
-// Reference predicate: pure function of (x, y, claimed). Bounds default to
-// the T7-to-calibrate tunable strip (right-hand chrome band, top strip);
-// the extracted source bounds override them whenever parseable.
+// Reference predicate: GEOMETRY-ONLY pure function of (x, y). Claimed is
+// IGNORED for eligibility (A-T6c revised) — forensics only.
 function referencePredicate(x, y, claimed, bounds) {
-  if (claimed < 0) return false; // A-T6c: unclaimed gesture never pages
+  void claimed; // forensics only, never a gate
   const { xMin, yMax } = bounds;
   return x >= xMin && y <= yMax;
 }
@@ -124,49 +127,62 @@ function countOccurrences(haystack, needle) {
   }
 }
 
-describe('T6 isShellChromeAdvance region predicate (AC-SAMPLE-039, FR-SAMPLE-014)', () => {
+describe('T6 isShellChromeAdvance region predicate — GEOMETRY-ONLY (AC-SAMPLE-039, FR-SAMPLE-014)', () => {
   it('predicate exists with the plan signature (pure, no JNI)', () => {
     const body = requirePredicateBody();
     assert.match(body, /float\s+\w+\s*,\s*float\s+\w+\s*,\s*int\s+\w+/, 'signature is (float x, float y, int claimed)');
     assert.doesNotMatch(body, /nativeAdvancePage|nativeRenderFrame|nativeDispatchTouch/, 'predicate is pure: no JNI inside');
   });
 
-  it('Next-region inside → true (device tap 660,150-class, claimed node)', () => {
+  it('Next-region inside → true regardless of claimed (-1, 0, 10, 21 alike)', () => {
     const body = requirePredicateBody();
     const { bounds } = requireBoundsOrDefaults(body);
-    assert.equal(referencePredicate(660, 150, 7, bounds), true, `inside-Next must page (bounds ${JSON.stringify(bounds)})`);
+    for (const claimed of [-1, 0, 10, 21]) {
+      assert.equal(referencePredicate(660, 150, claimed, bounds), true, `inside-Next must page with claimed=${claimed} (bounds ${JSON.stringify(bounds)})`);
+    }
+    // Source-shape pin: the predicate body must NOT gate eligibility on
+    // claimed (geometry-only; claimed is a logged forensic, never a gate).
+    assert.doesNotMatch(body, /if\s*\(\s*claimed\s*<\s*0\s*\)/, 'predicate must not contain the claimed<0 eligibility gate');
   });
 
-  it('Prev-region (left chrome, x small) → false, no page', () => {
+  it('Prev-region (left chrome, x small) → false for any claimed, no page', () => {
     const body = requirePredicateBody();
     const { bounds } = requireBoundsOrDefaults(body);
-    assert.equal(referencePredicate(60, 150, 3, bounds), false, 'Prev-region must not page (forward-only contract A5/A-T6b)');
+    for (const claimed of [-1, 0, 10, 21]) {
+      assert.equal(referencePredicate(60, 150, claimed, bounds), false, `Prev-region must not page with claimed=${claimed} (forward-only contract A5/A-T6b)`);
+    }
   });
 
-  it('surface center tap → false (FR-SAMPLE-014 surface ban)', () => {
+  it('surface center tap → false for any claimed (FR-SAMPLE-014 surface ban)', () => {
     const body = requirePredicateBody();
     const { bounds } = requireBoundsOrDefaults(body);
-    assert.equal(referencePredicate(360, 800, 5, bounds), false, 'surface taps never page');
+    for (const claimed of [-1, 0, 10, 21]) {
+      assert.equal(referencePredicate(360, 800, claimed, bounds), false, `surface taps never page (claimed=${claimed})`);
+    }
   });
 
-  it('outside-region (bottom sheet area) → false', () => {
+  it('outside-region (bottom sheet area) → false for any claimed', () => {
     const body = requirePredicateBody();
     const { bounds } = requireBoundsOrDefaults(body);
-    assert.equal(referencePredicate(360, 1500, 5, bounds), false, 'outside-region never pages');
+    for (const claimed of [-1, 0, 10, 21]) {
+      assert.equal(referencePredicate(360, 1500, claimed, bounds), false, `outside-region never pages (claimed=${claimed})`);
+    }
   });
 
-  it('claimed == -1 → false even inside Next geometry (unclaimed gesture)', () => {
+  it('claimed is forensics-only: still logged per tap, never an eligibility gate', () => {
     const body = requirePredicateBody();
-    const { bounds } = requireBoundsOrDefaults(body);
-    assert.equal(referencePredicate(660, 150, -1, bounds), false, 'claimed==-1 never pages');
-    assert.match(body, /claimed\s*(<|==|<=)/, 'predicate body must guard on claimed');
+    const text = readActivity();
+    // The OLD gate shape must be gone from the predicate ...
+    assert.doesNotMatch(body, /claimed\s*<\s*0/, 'predicate body must not compare claimed as an eligibility gate');
+    // ... while the per-tap forensic log line stays.
+    assert.match(text, /Log\.d\([\s\S]{0,300}claimed/, 'per-tap Log.d must keep emitting raw x/y + claimed for forensics');
   });
 
   it('region edges: x just below xMin → false; y just above yMax → false', () => {
     const body = requirePredicateBody();
     const { bounds } = requireBoundsOrDefaults(body);
-    assert.equal(referencePredicate(bounds.xMin - 1, 100, 7, bounds), false, 'left of Next strip misses');
-    assert.equal(referencePredicate(660, bounds.yMax + 1, 7, bounds), false, 'below chrome strip misses');
+    assert.equal(referencePredicate(bounds.xMin - 1, 100, -1, bounds), false, 'left of Next strip misses (even with claimed -1)');
+    assert.equal(referencePredicate(660, bounds.yMax + 1, -1, bounds), false, 'below chrome strip misses (even with claimed -1)');
   });
 
   it('region bounds are explicit tunable constants (pending T7 calibration)', () => {
