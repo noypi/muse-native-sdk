@@ -143,9 +143,27 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     private final BroadcastReceiver advanceReceiver = new BroadcastReceiver() {
         @Override
         public void onReceive(Context context, Intent intent) {
-            // FR-SAMPLE-014: neutralized — no broadcast paginates
-            // (AC-SAMPLE-039). The receiver entry is kept for the proof
-            // harness, but it intentionally never calls nativeAdvancePage.
+            // BUG-SAMPLE-007 T4: scoped paging — shell-chrome/deep-link/key
+            // origins only (AC-SAMPLE-039/AC-M3-020). Every other
+            // action/origin (including missing origin, story-surface,
+            // surface tap) is a fail-closed no-op that never pages.
+            if (intent == null) {
+                return;
+            }
+            if (!ACTION_NATIVE_ADVANCE_PAGE.equals(intent.getAction())) {
+                return;
+            }
+            String origin = intent.getStringExtra("origin");
+            if (!("shell-chrome".equals(origin)
+                    || "key".equals(origin)
+                    || "deep-link".equals(origin))) {
+                return;
+            }
+            if (engineHandle == 0) {
+                return;
+            }
+            nativeAdvancePage(engineHandle);
+            nativeRenderFrame(engineHandle);
         }
     };
 
@@ -201,6 +219,40 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     /** Destroy the engine handle. */
     private static native void nativeDestroy(long handle);
 
+    /**
+     * BUG-SAMPLE-007 T6: shell-chrome Next-region predicate (forward-only
+     * contract per user ruling 2026-11-01). Pure function of its inputs, no
+     * JNI. Returns true iff the (x, y) sample hits the calibrated
+     * shell-chrome Next region (GEOMETRY-ONLY — the claimed value is
+     * IGNORED for eligibility and kept only as a logged forensic). A Next-region ACTION_UP issues exactly one
+     * direct forward step; Prev-region (left-chrome) taps fall through with
+     * no page and no emit — there is no step-back entry (nativeAdvancePage
+     * takes no direction), so backward paging stays unpaged until a trusted
+     * count plus proven wrap exist. Surface taps and outside-region samples
+     * return false for any claimed value (claimed measures engine-node
+     * acceptance only — the engine Next node never accepts, so Next-region
+     * taps report claimed == -1 by construction).
+     *
+     * Tunable bounds (T7 calibrates on device 720x1600): the chrome strip
+     * occupies the top band of the display and the Next control sits in the
+     * right-hand band. Raw MotionEvent pixels are density-dependent: on the
+     * 720x1600 reference device 1dp ~= 2px at 320dpi (xhdpi), so a 300dp
+     * right-hand band maps to ~= 600px and a 100dp top strip maps to ~=
+     * 200px. Evidence anchor: device tap request (660,150) dispatched as
+     * (660.0,105.0) — inside the band/Strip under these defaults. Adjust
+     * NEXT_X_MIN / NEXT_Y_MAX from the per-tap Log.d line below when T7
+     * measures the true chrome geometry and the y offset mapping.
+     */
+    static boolean isShellChromeAdvance(float x, float y, int claimed) {
+        // T6 tunable region constants (px on the reference device; see the
+        // dp/px mapping in the method doc above — T7 owns calibration).
+        final float NEXT_X_MIN = 600f;
+        final float NEXT_Y_MAX = 200f;
+        // GEOMETRY-ONLY (A6 calibration 2026-11-01): claimed is forensics-only,
+        // never an eligibility gate — retained in the signature for logging.
+        return x >= NEXT_X_MIN && y <= NEXT_Y_MAX;
+    }
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -255,7 +307,23 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                     event.getY(index),
                     event.getPointerId(index),
                     event.getEventTime());
-            if (action == MotionEvent.ACTION_UP) {
+            // T6 calibration line (T7): raw tap geometry plus the
+            // claimed node id per tap; left-chrome and surface samples are
+            // expected here with no page following.
+            Log.d("MainActivity",
+                    "touch x=" + event.getX(index)
+                            + " y=" + event.getY(index)
+                            + " claimed=" + claimed);
+            if (action == MotionEvent.ACTION_UP
+                    && engineHandle != 0
+                    && isShellChromeAdvance(event.getX(index), event.getY(index), claimed)) {
+                // T6 Next-only direct driver: exactly one forward step plus
+                // one frame, never via broadcast. Region-miss samples
+                // (left-chrome, surface, outside, unclaimed) fall through to
+                // the existing dispatch/render path below with no page.
+                nativeAdvancePage(engineHandle);
+                nativeRenderFrame(engineHandle);
+            } else if (action == MotionEvent.ACTION_UP) {
                 // FR-SAMPLE-014: no outside-tap fallback — an unclaimed
                 // tap renders the frame but never advances the page.
                 if (claimed >= 0) {
@@ -429,7 +497,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     @Override
     protected void onResume() {
         super.onResume();
-        // FR-SAMPLE-014: advanceReceiver above is neutralized (never pages);
+        // FR-SAMPLE-014: advanceReceiver above is scoped (pages only for
+        // shell-chrome/key/deep-link origins; all else fail-closed no-op);
         // both receivers stay registered so the harness/theme entries exist.
         if (probeField != null) {
             try {
