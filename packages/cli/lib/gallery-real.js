@@ -10,7 +10,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 
-const USAGE = 'Usage: muse-native gallery-real --assert-no-diagram [--assert-interactive] [--assert-real-pixels] [--page <target> ...]';
+const USAGE = 'Usage: muse-native gallery-real --assert-no-diagram [--assert-counts] [--assert-interactive] [--assert-real-pixels] [--page <target> ...]';
 
 // Mock-painter symbol pattern (RULE-M3-007, RULE-GRAPHICS-003): the oracle
 // diagram painters (`MockPainter`, the `PaintCaption` box/caption stand-in,
@@ -140,16 +140,17 @@ function parseGalleryRealArgs(argv, env) {
   const injected = env !== undefined ? env : process.env;
   const envObj = injected && typeof injected === 'object' ? injected : {};
   void envObj;
-  const known = new Set(['--assert-no-diagram', '--assert-interactive', '--assert-real-pixels', '--page', '-h', '--help']);
-  const parsed = { assertNoDiagram: false, assertInteractive: false, assertRealPixels: false, pages: [], help: false };
+  const known = new Set(['--assert-no-diagram', '--assert-counts', '--assert-interactive', '--assert-real-pixels', '--page', '-h', '--help']);
+  const parsed = { assertNoDiagram: false, assertCounts: false, assertInteractive: false, assertRealPixels: false, pages: [], help: false };
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
     if (!known.has(arg)) {
-      const err = new Error(`Error: unknown option '${String(arg).slice(0, 64)}'. Expected one of: --assert-no-diagram, --assert-interactive, --page <target>`);
+      const err = new Error(`Error: unknown option '${String(arg).slice(0, 64)}'. Expected one of: --assert-no-diagram, --assert-counts, --assert-interactive, --assert-real-pixels, --page <target>`);
       err.code = 'GALLERY_REAL_USAGE';
       throw err;
     }
     if (arg === '--assert-no-diagram') parsed.assertNoDiagram = true;
+    else if (arg === '--assert-counts') parsed.assertCounts = true;
     else if (arg === '--assert-interactive') parsed.assertInteractive = true;
     else if (arg === '--assert-real-pixels') parsed.assertRealPixels = true;
     else if (arg === '-h' || arg === '--help') parsed.help = true;
@@ -210,7 +211,7 @@ function runGalleryReal(argv, env) {
     return undefined;
   }
   // Fail closed: asserting nothing is a usage error, never a silent pass.
-  if (!opts.assertNoDiagram && !opts.assertInteractive && !opts.assertRealPixels) {
+  if (!opts.assertNoDiagram && !opts.assertCounts && !opts.assertInteractive && !opts.assertRealPixels) {
     process.stderr.write(`Error: nothing to assert. Pass --assert-no-diagram.\n${USAGE}\n`);
     process.exitCode = 2;
     return undefined;
