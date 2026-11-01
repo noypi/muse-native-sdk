@@ -362,6 +362,38 @@ describe('T6 — gallery-tap CLI exit contract (TC-RUNTIME-036/037 Check)', () =
     assert.equal(result.ok, true);
   });
 
+  // Hardening re-check pin A1 (round-5 `## Security Tests Requested`, row 2):
+  // call-time `{device}` overrides the bound serial. Hermetic: injected
+  // `deps` observe the received `{device}` — no adb, no device, no network.
+  // Pins CURRENT accepted behavior; MUST stay green (no production change).
+  it('call-time device parity: runTapPage forwards call-time {device} to injected deps (overrides bound serial)', async () => {
+    assert.ok(galleryTap, 'lib/gallery-tap.js must load');
+    const seen = {};
+    const capture = (name) => async (callArgs) => {
+      seen[name] = callArgs && callArgs.device;
+      if (name === 'drive') return { pageBefore: -1, pageAfter: 3 };
+      if (name === 'screencap') return { blank: false };
+      return 'I/MuseHost: tap dispatched page=3\nI/MuseHost: frame presented\n';
+    };
+    const result = await galleryTap.runTapPage({
+      device: 'call-time-serial-override',
+      assertZeroJniFaults: true,
+      deps: {
+        driveSequence: capture('drive'),
+        readLogcat: capture('logcat'),
+        readScreencap: capture('screencap'),
+      },
+      emit: () => {},
+    });
+    assert.equal(result.ok, true);
+    assert.equal(seen.drive, 'call-time-serial-override',
+      `driveSequence must receive the call-time device, got ${String(seen.drive)}`);
+    assert.equal(seen.screencap, 'call-time-serial-override',
+      `readScreencap must receive the call-time device, got ${String(seen.screencap)}`);
+    assert.equal(seen.logcat, 'call-time-serial-override',
+      `readLogcat must receive the call-time device, got ${String(seen.logcat)}`);
+  });
+
   // Security-requested T6 addendum pin (CLEARED WITH NOTES, review round 4:
   // accepted risk, do NOT change production to fail-closed).
   it('inconclusive-shape note (accepted risk): unknown-shape screencap defaults that leg to PASS', async () => {
@@ -381,5 +413,38 @@ describe('T6 — gallery-tap CLI exit contract (TC-RUNTIME-036/037 Check)', () =
       });
       assert.equal(result.ok, true, `unknown-shape screencap must currently PASS, got shot=${String(shot)}`);
     }
+  });
+});
+
+describe('T6 — hardening re-check pin A2 (accepted risk, test-device-only cosmetic)', () => {
+  // Hardening re-check pin A2 (round-5 `## Security Tests Requested`, row 1
+  // LOW: `uimode night yes` → `no` has no `finally` restore).
+  // ACCEPTED RISK — do NOT change production to restore the prior value:
+  // the surface-contract drive unconditionally flips night-mode to `yes`
+  // mid-run and flips it back to `no` at the end, so a device that entered
+  // in night-`yes` leaves in night-`no`. Test-device-only cosmetic (no code
+  // execution / privilege / data consequence); the security-relevant theme
+  // assertions ride the NATIVE_SET_THEME broadcasts, not the uimode lines.
+  // Static source-order pin (hermetic, no adb): the drive issues
+  // `uimode night yes` before `uimode night no`, with no pre-run value
+  // capture/restore. MUST stay green under current code.
+  it('uimode restore (accepted risk, test-device-only cosmetic): drive ends with night-mode no, not the prior value', () => {
+    const fs = require('node:fs');
+    const src = fs.readFileSync(
+      path.join(CLI_DIR, 'lib', 'gallery-surface-contract.js'), 'utf8');
+    const yesIdx = src.indexOf("'uimode', 'night', 'yes'");
+    const altYesIdx = src.indexOf('"uimode", "night", "yes"');
+    const noIdx = src.indexOf("'uimode', 'night', 'no'");
+    const altNoIdx = src.indexOf('"uimode", "night", "no"');
+    const firstYes = [yesIdx, altYesIdx].filter((i) => i >= 0).sort((a, b) => a - b)[0];
+    const firstNo = [noIdx, altNoIdx].filter((i) => i >= 0).sort((a, b) => a - b)[0];
+    assert.ok(firstYes !== undefined && firstYes >= 0, 'drive must toggle uimode night yes');
+    assert.ok(firstNo !== undefined && firstNo >= 0, 'drive must restore uimode night no');
+    assert.ok(firstYes < firstNo,
+      'drive must end with night-mode no (restores the toggled value, not the prior value)');
+    // No prior-value restore: no pre-run capture of the night mode.
+    assert.ok(!/settings get secure ui_night_mode|cmd",?\s*"?uimode"?\s*,?\s*"?night"?\s*\]/.test(src)
+      || !/restore.*prior|pre-run.*uimode|saveUimode/i.test(src),
+      'accepted risk: no prior-value capture/restore exists (ends in no)');
   });
 });
