@@ -7,6 +7,12 @@
 #include "runtime/presenter.h"
 #include "runtime/egl_blit.h"
 #include "runtime/renderer_preference.h"
+// FR-GRAPHICS-014 T2 (review MAJOR 2): shared Skia-leg declaration. The
+// block-scope forward declaration is replaced by the real header so the
+// `PresentSkiaFrameWithFallback` call below binds to the AC-GRAPHICS-039
+// contract in `engine/graphics/skia/present_skia.h` (same shape as the
+// `egl_blit.h` header above); no signature drift possible.
+#include "engine/graphics/skia/present_skia.h"
 // FR-GRAPHICS-012 T3: single-definition compile of the fallback branch.
 // `src/egl_blit.cpp` is not listed in any CMake target (header-only project
 // pattern, see that TU's note); including it here compiles the
@@ -822,6 +828,15 @@ void RenderLocked(GalleryHandle* g) {
   // staged->locked copy); no EGL/Skia failure can blank or crash the frame
   // per AC-GRAPHICS-034, and every downgrade is logged with requested vs
   // effective reported separately.
+  // Stub scope (adjudicated MAJOR 1): `requestedRenderer`, `eglAvailable`,
+  // and `skiaAvailable` below are stubbed defaults — no native preference
+  // source exists in-tree (CLI-side per FR-WORKFLOW-006; device probing per
+  // Q-GRAPHICS-006 is unsettled, and plumbing it in is out-of-scope new
+  // interface work, so no preference source is invented here). The egl/skia
+  // dispatch below is therefore armed-but-unreached until preference
+  // plumbing lands (follow-up: wire the requested renderer + availability
+  // probes into this gate); until then every frame takes the proven CPU
+  // push with the observational EGL attempt preserved.
   // FR-GRAPHICS-012 T3: EGL blit-present attempt with automatic in-process
   // CPU fallback. Observational until T4 proves EGL pixels: the proven CPU
   // copy below always posts, so a failed (or dormant — EGL never initialized
@@ -848,11 +863,28 @@ void RenderLocked(GalleryHandle* g) {
     if (std::strcmp(effectiveRenderer, "egl") == 0) {
       std::string eglFallback;
       PresentFrameWithFallback(g->staged.data(), w, h, &eglFallback);
+      if (!eglFallback.empty()) {
+        MuseLogInfo(eglFallback);
+      }
     } else if (std::strcmp(effectiveRenderer, "skia") == 0) {
-      bool PresentSkiaFrameWithFallback(const uint32_t*, int, int,
-                                        std::string*);
       std::string skiaFallback;
       PresentSkiaFrameWithFallback(g->staged.data(), w, h, &skiaFallback);
+      if (!skiaFallback.empty()) {
+        MuseLogInfo(skiaFallback);
+      }
+    } else {
+      // FR-GRAPHICS-012 T3 observational leg restored (review MAJOR 3):
+      // the base code attempted `PresentFrameWithFallback` unconditionally
+      // when presented; the effective-`cpu` path preserves that attempt
+      // here. Observational only — the proven CPU staged->locked copy below
+      // still posts the frame, so a failed (or dormant) EGL lane can never
+      // blank it. A non-empty EGL trigger surfaces via MuseLogInfo (review
+      // MINOR: captured triggers were discarded).
+      std::string eglFallback;
+      PresentFrameWithFallback(g->staged.data(), w, h, &eglFallback);
+      if (!eglFallback.empty()) {
+        MuseLogInfo(eglFallback);
+      }
     }
   }
   // T3: staged->locked copy gated on presented — when false the locked bits
