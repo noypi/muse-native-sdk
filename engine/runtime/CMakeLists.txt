@@ -544,3 +544,11 @@ add_executable(surface_contract_test tests/surface_contract_test.cpp)
 target_link_libraries(surface_contract_test PRIVATE runtime)
 target_compile_options(surface_contract_test PRIVATE -Wall -Wextra -Wpedantic)
 add_test(NAME surface_contract_test COMMAND surface_contract_test)
+
+# AC-M3-026 / AC-GRAPHICS-043 / AC-RUNTIME-033 T1: Surface-seam interactive
+# path (attach -> touch -> render -> theme/inset -> detach). Hermetic host
+# lane; binds only to the T1 Interface line in presenter.h.
+add_executable(surface_interactive_test tests/surface_interactive_test.cpp)
+target_link_libraries(surface_interactive_test PRIVATE runtime)
+target_compile_options(surface_interactive_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME surface_interactive_test COMMAND surface_interactive_test)

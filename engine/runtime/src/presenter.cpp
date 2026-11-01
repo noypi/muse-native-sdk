@@ -534,7 +534,7 @@ AttachResult attachSurface(const CompiledTreeRef& tree, void* opaque_window) {
     // Unknown component kind fails closed (RULE-RUNTIME-001): no usable
     // handle, never a default fallback box. Checked before window binding
     // so a bad tree never disturbs live-surface state.
-    if (tree.unknownKind) {
+    if (tree.unknownKind || tree.rootKind.empty()) {
       SeamLog("attachSurface: unknown component kind; rejected fail-closed");
       return {0, {PresenterCode::kCreateFailed,
                   "attachSurface: unknown component kind; surface not "
