@@ -1,0 +1,25 @@
+11-01 19:04:56.691  3468  3468 E AndroidRuntime: 	at android.app.servertransaction.TransactionExecutor.executeNonLifecycleItem(TransactionExecutor.java:174)
+11-01 19:04:56.691  3468  3468 E AndroidRuntime: 	at android.app.servertransaction.TransactionExecutor.executeTransactionItems(TransactionExecutor.java:109)
+11-01 19:04:56.691  3468  3468 E AndroidRuntime: 	at android.app.servertransaction.TransactionExecutor.execute(TransactionExecutor.java:81)
+11-01 19:04:56.691  3468  3468 E AndroidRuntime: 	at android.app.ActivityThread$H.handleMessage(ActivityThread.java:2636)
+11-01 19:04:56.691  3468  3468 E AndroidRuntime: 	at android.os.Handler.dispatchMessage(Handler.java:107)
+11-01 19:04:56.691  3468  3468 E AndroidRuntime: 	at android.os.Looper.loopOnce(Looper.java:232)
+11-01 19:04:56.691  3468  3468 E AndroidRuntime: 	at android.os.Looper.loop(Looper.java:317)
+11-01 19:04:56.691  3468  3468 E AndroidRuntime: 	at android.app.ActivityThread.main(ActivityThread.java:8705)
+11-01 19:04:56.691  3468  3468 E AndroidRuntime: 	at java.lang.reflect.Method.invoke(Native Method)
+11-01 19:04:56.691  3468  3468 E AndroidRuntime: 	at com.android.internal.os.RuntimeInit$MethodAndArgsCaller.run(RuntimeInit.java:580)
+11-01 19:04:56.691  3468  3468 E AndroidRuntime: 	at com.android.internal.os.ZygoteInit.main(ZygoteInit.java:886)
+11-01 19:04:56.691  3468  3468 E AndroidRuntime: Caused by: java.lang.ClassNotFoundException: Didn't find class "com.muse.host.MainActivity" on path: DexPathList[[zip file "/data/app/~~lsnKpn-oFQ4p5YgTM4fktA==/com.muse.host--8GU0ePImGgtIFgXfhfOyQ==/base.apk"],nativeLibraryDirectories=[/data/app/~~lsnKpn-oFQ4p5YgTM4fktA==/com.muse.host--8GU0ePImGgtIFgXfhfOyQ==/lib/x86_64, /data/app/~~lsnKpn-oFQ4p5YgTM4fktA==/com.muse.host--8GU0ePImGgtIFgXfhfOyQ==/base.apk!/lib/x86_64, /system/lib64]]
+11-01 19:04:56.691  3468  3468 E AndroidRuntime: 	at dalvik.system.BaseDexClassLoader.findClass(BaseDexClassLoader.java:259)
+11-01 19:04:56.691  3468  3468 E AndroidRuntime: 	at java.lang.ClassLoader.loadClass(ClassLoader.java:637)
+11-01 19:04:56.691  3468  3468 E AndroidRuntime: 	at java.lang.ClassLoader.loadClass(ClassLoader.java:573)
+11-01 19:04:56.691  3468  3468 E AndroidRuntime: 	at android.app.AppComponentFactory.instantiateActivity(AppComponentFactory.java:95)
+11-01 19:04:56.691  3468  3468 E AndroidRuntime: 	at android.app.Instrumentation.newActivity(Instrumentation.java:1448)
+11-01 19:04:56.691  3468  3468 E AndroidRuntime: 	at android.app.ActivityThread.performLaunchActivity(ActivityThread.java:3941)
+11-01 19:04:56.691  3468  3468 E AndroidRuntime: 	... 13 more
+11-01 19:04:56.692   889   904 W ActivityTaskManager:   Force finishing activity com.muse.host/.MainActivity
+11-01 19:04:56.694   889   909 I ActivityManager: Showing crash dialog for package com.muse.host u0
+11-01 19:04:56.714   889   909 D CoreBackPreview: Window{98f7c0b u0 Application Error: com.muse.host}: Setting back callback OnBackInvokedCallbackInfo{mCallback=android.window.WindowOnBackInvokedDispatcher$OnBackInvokedCallbackWrapper@4d94d7e, mPriority=0, mIsAnimationCallback=false}
+11-01 19:04:57.193   889   911 W ActivityTaskManager: Activity top resumed state loss timeout for ActivityRecord{6c2b9c3 u0 com.muse.host/.MainActivity t216 f}}
+11-01 19:04:57.193   889   911 W ActivityTaskManager: Activity pause timeout for ActivityRecord{6c2b9c3 u0 com.muse.host/.MainActivity t216 f}}
+11-01 19:04:57.202   889   908 V WindowManager:         {WCT{RemoteToken{a0f9b22 Task{554b240 #216 type=standard A=10117:com.muse.host}}} m=CLOSE f=NONE leash=Surface(name=Task=216)/@0x19fe317 sb=Rect(0, 0 - 1080, 2280) eb=Rect(0, 0 - 1080, 2280) d=0 taskParent=-1}
