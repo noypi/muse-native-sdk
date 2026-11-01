@@ -130,6 +130,7 @@ if(DEFINED ANDROID_ABI AND NOT TARGET Runtime)
     ../text/src/glyph_atlas.cpp
     ../text/src/rich_buffer.cpp
     ../graphics/vector/tile_raster.cc
+    ../graphics/skia/present_skia.cpp
     ${MUSE_INPUT_SOURCES}
     ../graphics/pacing/frame_rate.cc
     ../graphics/pacing/render_ahead.cc
