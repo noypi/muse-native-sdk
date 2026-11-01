@@ -1,0 +1,38 @@
+{
+  "status": "NOT_YET_EXECUTED",
+  "note": "Template/skeleton for TC-RUNTIME-035 (TC-035). No device runs performed from this environment. All verdicts are false/pending placeholders. Flip a verdict to true only on observed passing evidence per examples/m3-gallery/docs/two-surface-proof.md. Do not fabricate passing verdicts.",
+  "spec": "FR-RUNTIME-011 / AC-RUNTIME-035 / TC-RUNTIME-035 (Method: manual)",
+  "procedure": "examples/m3-gallery/docs/two-surface-proof.md",
+  "surfaces": [
+    {
+      "surface": "pinned-emulator",
+      "executed": false,
+      "counts": false,
+      "noBlank": false,
+      "vectorTextAtlas": false,
+      "tapRepaint": false,
+      "layering": false,
+      "frameStatsZeroFatal": false,
+      "screenshots": [],
+      "screenshotDir": "examples/m3-gallery/docs/screenshots/pinned-emulator/",
+      "t3GateExit": null,
+      "t3GateCommand": "muse-native gallery-real --assert-surface-contract [--device <pinned-emulator-serial>]",
+      "notes": "pending manual run"
+    },
+    {
+      "surface": "physical-device",
+      "executed": false,
+      "counts": false,
+      "noBlank": false,
+      "vectorTextAtlas": false,
+      "tapRepaint": false,
+      "layering": false,
+      "frameStatsZeroFatal": false,
+      "screenshots": [],
+      "screenshotDir": "examples/m3-gallery/docs/screenshots/physical-device/",
+      "t3GateExit": null,
+      "t3GateCommand": "muse-native gallery-real --assert-surface-contract [--device <physical-device-serial>]",
+      "notes": "pending manual run"
+    }
+  ]
+}
