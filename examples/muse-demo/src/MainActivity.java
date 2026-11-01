@@ -22,6 +22,9 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
 
     private long engineHandle = 0;
 
+    /** Documented max tree-asset size: 16 MiB (lower end of review's 16–32 MB bound). */
+    private static final int MAX_TREE_BYTES = 16 * 1024 * 1024;
+
     /** Instantiate the engine tree from raw tree bytes. Returns opaque handle or 0. */
     private static native long nativeLoadTree(byte[] treeBytes);
 
@@ -53,6 +56,9 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             byte[] buf = new byte[8192];
             int n;
             while ((n = in.read(buf)) != -1) {
+                if (out.size() + n > MAX_TREE_BYTES) {
+                    throw new IOException("tree-too-large: tree asset exceeds 16 MiB bound");
+                }
                 out.write(buf, 0, n);
             }
             return out.toByteArray();
