@@ -196,3 +196,145 @@ describe('T2 staged tree-asset freshness (AC-PACKAGING-011)', () => {
     assert.equal(verdict.gate, 'pass', 'matching staged tree must proceed through the gate');
   });
 });
+
+// Batch 4 / T6 (FR-PACKAGING-004 AC-PACKAGING-010; FR-PACKAGING-005 AC-PACKAGING-011).
+// Scope: gallery-Makefile gate parity (examples/m3-gallery/Makefile).
+// Mirrors the T2 authority (A-S1) for the gallery Makefile's four ABI slots +
+// its tree-asset sync line `mkdir -p assets && cp dist/tree.mui.bin
+// assets/tree.mui.bin`. Hermetic: the gallery Makefile is read as text only;
+// `make`/adb/NDK are never invoked.
+// ASSUMPTION A-S1 (reused from T2): freshness authority is SHA-256 equality
+// with the fresh engine output OR presence of REQUIRED_EXPORT.
+// ASSUMPTION A-S3: gate-error naming mirrors T4 — `stale-lib: <abi>
+// <sdkSoPath> …` / `stale-asset: …`, evaluated before any `aapt2 link`
+// (nonzero exit, no partial APK — asserted textually via ordering).
+
+const GALLERY_MAKEFILE = path.join(ROOT, 'examples', 'm3-gallery', 'Makefile');
+const GALLERY_ABIS = ['arm64-v8a', 'armeabi-v7a', 'x86_64', 'x86'];
+
+function readGalleryMakefile() {
+  assert.ok(fs.existsSync(GALLERY_MAKEFILE), `expected gallery Makefile at ${GALLERY_MAKEFILE}`);
+  return fs.readFileSync(GALLERY_MAKEFILE, 'utf8');
+}
+
+describe('T6 gallery Makefile libRuntime.so freshness parity (AC-PACKAGING-010)', () => {
+  it('gallery apk gate fails closed on a stale-but-nonempty SDK .so, naming the stale ABI path', () => {
+    const text = readGalleryMakefile();
+    assert.ok(
+      /stale-lib/.test(text),
+      'gallery Makefile apk target must fail closed with a `stale-lib` error',
+    );
+    assert.ok(
+      text.includes('android-arm64-v8a/libRuntime.so'),
+      'gallery stale-lib error must name the stale ABI path',
+    );
+  });
+
+  it('gallery freshness authority is pinned: engine-output hash or the required export', () => {
+    const text = readGalleryMakefile();
+    assert.ok(
+      text.includes(REQUIRED_EXPORT) || /build-android-.+\/libRuntime\.so/.test(text),
+      `gallery Makefile must pin freshness to engine-output hash compare or the ${REQUIRED_EXPORT} export`,
+    );
+  });
+
+  it('gallery gate covers all four ABI slots of the gallery Makefile', () => {
+    const text = readGalleryMakefile();
+    for (const abi of GALLERY_ABIS) {
+      assert.ok(
+        text.includes(`android-${abi}/libRuntime.so`),
+        `gallery Makefile gate must cover ABI slot ${abi}`,
+      );
+    }
+  });
+
+  it('emulated gallery apk gate rejects a stale-but-nonempty .so that passes test -s', () => {
+    assert.ok(STALE_SO.length > 0, 'stale fixture must be nonempty (passes current test -s)');
+    assert.ok(!STALE_SO.includes(REQUIRED_EXPORT), 'stale fixture must lack the required export');
+    const verdict = evaluateSoGate(readGalleryMakefile(), {
+      abi: 'arm64-v8a',
+      candidateBytes: STALE_SO,
+      engineBytes: FRESH_SO,
+    });
+    assert.equal(verdict.gate, 'reject', 'stale-but-nonempty .so must fail the gallery freshness gate');
+    assert.match(verdict.reason, /stale-lib: arm64-v8a/);
+    assert.match(verdict.reason, /android-arm64-v8a\/libRuntime\.so/);
+  });
+
+  it('emulated gallery apk gate passes a fresh .so carrying the required export', () => {
+    const verdict = evaluateSoGate(readGalleryMakefile(), {
+      abi: 'arm64-v8a',
+      candidateBytes: FRESH_SO,
+      engineBytes: FRESH_SO,
+    });
+    assert.equal(verdict.gate, 'pass', 'fresh .so must proceed through the gallery gate');
+  });
+
+  it('gallery empty or missing .so bytes are still rejected (presence floor preserved)', () => {
+    const text = readGalleryMakefile();
+    assert.ok(
+      /test -s.*libRuntime\.so/.test(text),
+      'gallery Makefile must keep the nonempty presence gate for every ABI lib',
+    );
+    const verdict = evaluateSoGate(text, {
+      abi: 'x86_64',
+      candidateBytes: Buffer.alloc(0),
+      engineBytes: FRESH_SO,
+    });
+    assert.notEqual(verdict.gate, 'pass', 'empty .so must never pass, gate or no gate');
+  });
+
+  it('gallery freshness gates run before any aapt2 link (nonzero exit, no partial APK)', () => {
+    const text = readGalleryMakefile();
+    const linkAt = text.indexOf('aapt2 link');
+    assert.ok(linkAt !== -1, 'gallery Makefile must contain the aapt2 link line');
+    const staleLibAt = text.indexOf('stale-lib');
+    assert.ok(staleLibAt !== -1 && staleLibAt < linkAt, 'stale-lib gate must precede aapt2 link');
+    const gateSlice = text.slice(0, linkAt);
+    assert.ok(/exit 1/.test(gateSlice), 'pre-link freshness gates must exit nonzero on staleness');
+  });
+});
+
+describe('T6 gallery staged tree-asset freshness parity (AC-PACKAGING-011)', () => {
+  it('gallery apk gate fails closed when assets/tree.mui.bin mismatches dist/tree.mui.bin', () => {
+    const text = readGalleryMakefile();
+    assert.ok(
+      /stale-asset/.test(text),
+      'gallery Makefile must fail closed with a `stale-asset` error on tree mismatch',
+    );
+    assert.ok(
+      text.includes('assets/tree.mui.bin') && text.includes('dist/tree.mui.bin'),
+      'gallery asset gate must compare assets/tree.mui.bin against dist/tree.mui.bin',
+    );
+  });
+
+  it('gallery keeps the tree-asset sync line and gates post-sync bytes by hash', () => {
+    const text = readGalleryMakefile();
+    assert.ok(
+      text.includes('mkdir -p assets && cp dist/tree.mui.bin assets/tree.mui.bin'),
+      'gallery Makefile must keep the tree-asset sync line `mkdir -p assets && cp dist/tree.mui.bin assets/tree.mui.bin`',
+    );
+    assert.ok(/sha256sum/.test(text), 'gallery asset gate must compare post-sync bytes by hash');
+    const syncAt = text.indexOf('mkdir -p assets && cp dist/tree.mui.bin assets/tree.mui.bin');
+    const assetAt = text.indexOf('stale-asset');
+    const linkAt = text.indexOf('aapt2 link');
+    assert.ok(assetAt > syncAt, 'stale-asset gate must run after the tree-asset sync line');
+    assert.ok(assetAt !== -1 && assetAt < linkAt, 'stale-asset gate must precede aapt2 link');
+  });
+
+  it('emulated gallery asset gate rejects staged bytes that differ from the built tree', () => {
+    const built = Buffer.from('MUI1-fresh-121-row-tree-bytes');
+    const staged = Buffer.from('MUI1-stale-110-row-tree-bytes');
+    const verdict = evaluateAssetGate(readGalleryMakefile(), { builtBytes: built, stagedBytes: staged });
+    assert.equal(verdict.gate, 'reject', 'mismatched staged tree must fail the gallery asset gate');
+    assert.match(verdict.reason, /stale-asset/);
+    assert.ok(verdict.reason.includes(sha256Hex(built)), 'rejection names the built-tree hash');
+    assert.ok(verdict.reason.includes(sha256Hex(staged)), 'rejection names the staged-tree hash');
+  });
+
+  it('emulated gallery asset gate passes staged bytes equal to the built tree', () => {
+    const built = Buffer.from('MUI1-fresh-121-row-tree-bytes');
+    const verdict = evaluateAssetGate(readGalleryMakefile(), { builtBytes: built, stagedBytes: Buffer.from(built) });
+    assert.equal(verdict.gate, 'pass', 'matching staged tree must proceed through the gallery gate');
+  });
+});
