@@ -19,7 +19,7 @@ CXX_STD = -std=c++17
 WARN = -Wall -Wextra -Werror
 INCLUDES = -I .
 
-.PHONY: all host select_present clean
+.PHONY: all host select_present backend_select clean
 
 all: host select_present
 
@@ -30,6 +30,11 @@ select_present:
 	mkdir -p build
 	g++ $(CXX_STD) $(WARN) -O2 $(INCLUDES) $(SRC) present_skia.cpp $(TEST_SRC) -o $(TEST_OUT)
 	./$(TEST_OUT)
+
+backend_select:
+	mkdir -p build
+	g++ $(CXX_STD) $(WARN) -O2 $(INCLUDES) $(SRC) tests/backend_select.test.cpp -o build/backend_select
+	./build/backend_select
 
 clean:
 	rm -f $(HOST_OUT) $(TEST_OUT)

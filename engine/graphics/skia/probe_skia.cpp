@@ -29,3 +29,12 @@ SkiaProbeResult ProbeSkia(const SkiaProbeInput& input) noexcept {
   }
   return {true, kSelectedReason};
 }
+
+// FR-GRAPHICS-016 / AC-GRAPHICS-045: Graphite variant selector
+// (selection-only). Returns kGraphite for every input; the selected vs
+// pending distinction stays with ProbeSkia().selected, which callers gate
+// on. Never throws; deterministic.
+SkiaBackendVariant SelectSkiaBackendVariant(const SkiaProbeInput& input) noexcept {
+  (void)ProbeSkia(input);
+  return SkiaBackendVariant::kGraphite;
+}
