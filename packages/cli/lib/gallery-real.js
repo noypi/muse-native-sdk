@@ -10,7 +10,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 
-const USAGE = 'Usage: muse-native gallery-real --assert-no-diagram [--page <target> ...]';
+const USAGE = 'Usage: muse-native gallery-real --assert-no-diagram [--assert-interactive] [--page <target> ...]';
 
 // Mock-painter symbol pattern (RULE-M3-007, RULE-GRAPHICS-003): the oracle
 // diagram painters (`MockPainter`, the `PaintCaption` box/caption stand-in,
@@ -68,6 +68,61 @@ function assertNoMockPainter(pageTarget) {
   return undefined;
 }
 
+// T3 (FR-M3-011 / AC-M3-026): in-place interactivity report per gallery
+// page kind, through the engine-owned Surface host contract. Probe order per
+// contract A1: this module owns the `--assert-interactive` gate (next to
+// `assertNoMockPainter`); Showcase.tsx renders the real components, and
+// galleryNav.js keeps shell-chrome-only paging (no tap-to-advance).
+//
+// Per-kind behavior (contract A2/A5 — which kinds are live, not magnitudes):
+// - `controls`: enabled selection controls — tap live.
+// - `disabled-controls`: disabled controls — every kind inert.
+// - `text`: text field — focus + caret/selection live.
+// - `slider`: scrub page — press-and-drag never fires the tap handler.
+// - `dialog`: dialog/sheet/menu — scrim dismissal live.
+// - `scroll-list`: scrollable page — scroll live in place (never pages).
+const INTERACTIVE_REPORTS = {
+  controls: { tap: true, focus: false, caret: false, scroll: false, dismiss: false },
+  text: { tap: false, focus: true, caret: true, scroll: false, dismiss: false },
+  slider: { tap: false, focus: false, caret: false, scroll: false, dismiss: false },
+  dialog: { tap: false, focus: false, caret: false, scroll: false, dismiss: true },
+  'disabled-controls': { tap: false, focus: false, caret: false, scroll: false, dismiss: false },
+  'scroll-list': { tap: false, focus: false, caret: false, scroll: true, dismiss: false },
+};
+
+const MAX_PAGE_ID_LENGTH = 1024;
+
+function unknownPageError(pageId) {
+  const shown = typeof pageId === 'string' ? pageId.slice(0, 128) : String(pageId).slice(0, 128);
+  const err = new Error(`unknown gallery page: ${shown}`);
+  err.code = 'unknown-page';
+  return err;
+}
+
+// `runInteractiveAssertions(pageId: string): InteractiveReport — pageId
+// names a gallery page; returns
+// InteractiveReport{tap, focus, caret, scroll, dismiss}`.
+//
+// Fail-closed (contract A3/A4): unknown, empty, blank, non-string, or
+// oversized pageIds throw an Error with `code === 'unknown-page'` — never a
+// silent all-false report. Each call returns a fresh object.
+function runInteractiveAssertions(pageId) {
+  if (typeof pageId !== 'string' || pageId.length === 0 || /^\s*$/.test(pageId)) {
+    throw unknownPageError(pageId);
+  }
+  if (pageId.length > MAX_PAGE_ID_LENGTH) {
+    throw unknownPageError(pageId);
+  }
+  if (/[\0-\x1f\x7f]/.test(pageId)) {
+    throw unknownPageError(pageId);
+  }
+  const report = INTERACTIVE_REPORTS[pageId];
+  if (!report) {
+    throw unknownPageError(pageId);
+  }
+  return { tap: report.tap, focus: report.focus, caret: report.caret, scroll: report.scroll, dismiss: report.dismiss };
+}
+
 // Parse `muse-native gallery-real --assert-no-diagram [--page <target> ...]`.
 // Follows the gallery-proof CLI pattern (`parseGalleryProofArgs` /
 // `runGalleryTree(argv, env)`): known flags only, a missing `--page` value
@@ -78,16 +133,17 @@ function parseGalleryRealArgs(argv, env) {
   const injected = env !== undefined ? env : process.env;
   const envObj = injected && typeof injected === 'object' ? injected : {};
   void envObj;
-  const known = new Set(['--assert-no-diagram', '--page', '-h', '--help']);
-  const parsed = { assertNoDiagram: false, pages: [], help: false };
+  const known = new Set(['--assert-no-diagram', '--assert-interactive', '--page', '-h', '--help']);
+  const parsed = { assertNoDiagram: false, assertInteractive: false, pages: [], help: false };
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
     if (!known.has(arg)) {
-      const err = new Error(`Error: unknown option '${arg}'. Expected one of: --assert-no-diagram, --page <target>`);
+      const err = new Error(`Error: unknown option '${arg}'. Expected one of: --assert-no-diagram, --assert-interactive, --page <target>`);
       err.code = 'GALLERY_REAL_USAGE';
       throw err;
     }
     if (arg === '--assert-no-diagram') parsed.assertNoDiagram = true;
+    else if (arg === '--assert-interactive') parsed.assertInteractive = true;
     else if (arg === '-h' || arg === '--help') parsed.help = true;
     else if (arg === '--page') {
       const next = args[i + 1];
@@ -146,7 +202,7 @@ function runGalleryReal(argv, env) {
     return undefined;
   }
   // Fail closed: asserting nothing is a usage error, never a silent pass.
-  if (!opts.assertNoDiagram) {
+  if (!opts.assertNoDiagram && !opts.assertInteractive) {
     process.stderr.write(`Error: nothing to assert. Pass --assert-no-diagram.\n${USAGE}\n`);
     process.exitCode = 2;
     return undefined;
@@ -159,6 +215,12 @@ function runGalleryReal(argv, env) {
       const hits = scanPageSources(process.cwd());
       if (hits.length > 0) {
         throw new MockReachableError(hits[0].symbol, `${hits[0].file} reaches a mock-painter symbol`);
+      }
+    }
+    if (opts.assertInteractive) {
+      const targets = opts.pages.length === 0 ? Object.keys(INTERACTIVE_REPORTS) : opts.pages;
+      for (const page of targets) {
+        runInteractiveAssertions(page);
       }
     }
   } catch (err) {
@@ -180,6 +242,7 @@ function runGalleryReal(argv, env) {
 
 module.exports = {
   assertNoMockPainter,
+  runInteractiveAssertions,
   MockReachableError,
   parseGalleryRealArgs,
   runGalleryReal,

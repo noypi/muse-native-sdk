@@ -23,6 +23,12 @@ import { reportStaticFallback } from "./galleryMode";
 // 'generated' path renders only manifest-generated real tags. Rendering this
 // static root explicitly reports the fallback (AC-RUNTIME-032).
 
+// T3 (FR-M3-011 / AC-M3-026): story-surface interactions run in place
+// through the engine-owned Surface host contract — tap flips enabled
+// selection controls, text focuses with caret, scrub clamps without firing
+// tap, scrim input dismisses the topmost overlay, scroll pans locally.
+// Paging stays owned by shell chrome (galleryNav Prev/Next, keys, links);
+// this surface exposes no paging path of its own.
 export default function Showcase() {
   reportStaticFallback();
   return (
