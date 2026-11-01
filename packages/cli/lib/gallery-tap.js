@@ -69,10 +69,15 @@ function parseTapPageArgs(argv) {
   return { tapPage: true, assertZeroJniFaults, device };
 }
 
-function toTapPageFailure(code, detail) {
+function toTapPageFailure(code, detail, extra) {
   const err = new Error(`TAP-PAGE-FAIL: ${code}: ${detail}`);
   err.code = code;
   err.detail = detail;
+  if (extra && typeof extra === 'object') {
+    for (const key of Object.keys(extra)) {
+      err[key] = extra[key];
+    }
+  }
   return err;
 }
 
@@ -215,6 +220,23 @@ function defaultTapPageReadScreencap(serial) {
   };
 }
 
+// Count JNI faults per pattern across the tap-page run logcat
+// (AC-RUNTIME-037). UnsatisfiedLinkError counts every occurrence;
+// SIGSEGV counts one per line matching SIGSEGV or `signal 11` so a line
+// carrying both markers (e.g. `signal 11 (SIGSEGV)`) counts once.
+// Non-string provider output yields zero counts (accepted-risk pin: the
+// scan is skipped, never fail-closed, for inconclusive shapes).
+function countJniFaults(logcat) {
+  if (typeof logcat !== 'string') return { unsatisfiedLinkError: 0, sigsegv: 0 };
+  let unsatisfiedLinkError = 0;
+  let sigsegv = 0;
+  for (const line of logcat.split('\n')) {
+    unsatisfiedLinkError += (line.match(/UnsatisfiedLinkError/g) || []).length;
+    if (/SIGSEGV/i.test(line) || /signal\s*11/i.test(line)) sigsegv += 1;
+  }
+  return { unsatisfiedLinkError, sigsegv };
+}
+
 // JNI-fault patterns scanned across the tap-page run logcat when
 // `--assert-zero-jni-faults` is set (AC-RUNTIME-037).
 const JNI_FAULT_RE = /UnsatisfiedLinkError|SIGSEGV|signal\s*11|FATAL/;
@@ -258,7 +280,9 @@ async function runTapPage(opts = {}) {
     || typeof readScreencap !== 'function') {
     const serial = resolveTapPageSerial(opts.device);
     if (!serial) {
-      throw toTapPageFailure('NO-DEVICE-RUNNER', 'no device runner injected for gallery-tap --tap-page');
+      throw toTapPageFailure('NO-DEVICE-RUNNER', 'no device runner injected for gallery-tap --tap-page: pass --device <serial> or set ANDROID_SERIAL', {
+        exitCode: 1, pageAdvanced: false, blankViewport: false, jniFaults: { unsatisfiedLinkError: 0, sigsegv: 0 },
+      });
     }
     if (typeof driveSequence !== 'function') driveSequence = defaultTapPageDriveSequence(serial);
     if (typeof readLogcat !== 'function') readLogcat = defaultTapPageReadLogcat(serial);
@@ -275,31 +299,47 @@ async function runTapPage(opts = {}) {
     const detail = (err && typeof err.code === 'string' && err.code.length > 0)
       ? ((err && err.detail) || (err && err.message) || String(err))
       : `device unreachable via adb against serial '${opts.device || 'unknown'}': ${(err && err.message) || String(err)}`;
-    throw toTapPageFailure(code, detail);
+    throw toTapPageFailure(code, detail, {
+      exitCode: 1, pageAdvanced: false, blankViewport: false, jniFaults: { unsatisfiedLinkError: 0, sigsegv: 0 },
+    });
   }
 
   const pageBefore = driven && typeof driven.pageBefore === 'number' ? driven.pageBefore : NaN;
   const pageAfter = driven && typeof driven.pageAfter === 'number' ? driven.pageAfter : NaN;
-  if (!(pageAfter > pageBefore)) {
-    throw toTapPageFailure('PAGE-NOT-ADVANCED', `page index did not advance after tap (before=${pageBefore} after=${pageAfter})`);
+  const pageAdvanced = pageAfter > pageBefore;
+  if (!pageAdvanced) {
+    throw toTapPageFailure('PAGE-NOT-ADVANCED', `page index did not advance after tap (before=${pageBefore} after=${pageAfter})`, {
+      exitCode: 1, pageAdvanced: false, blankViewport: false, jniFaults: { unsatisfiedLinkError: 0, sigsegv: 0 },
+    });
   }
 
   const shot = await readScreencap({ device: opts.device || null });
-  if (isBlankViewport(shot)) {
-    throw toTapPageFailure('BLANK-VIEWPORT', `blank viewport on the new page (page=${pageAfter})`);
+  const blankViewport = isBlankViewport(shot);
+  if (blankViewport) {
+    throw toTapPageFailure('BLANK-VIEWPORT', `blank viewport on the new page (page=${pageAfter})`, {
+      exitCode: 1, pageAdvanced: true, blankViewport: true, jniFaults: { unsatisfiedLinkError: 0, sigsegv: 0 },
+    });
   }
 
   const logcat = await readLogcat({ device: opts.device || null });
+  const jniFaults = countJniFaults(logcat);
   if (opts.assertZeroJniFaults && typeof logcat === 'string') {
-    const match = logcat.match(JNI_FAULT_RE);
-    if (match) {
-      const snippet = logcat.slice(Math.max(0, logcat.indexOf(match[0]) - 40), logcat.indexOf(match[0]) + 120).trim();
-      throw toTapPageFailure('JNI-FAULT', `JNI fault in logcat: ${snippet.slice(0, 200)}`);
+    const hasFault = jniFaults.unsatisfiedLinkError > 0 || jniFaults.sigsegv > 0 || JNI_FAULT_RE.test(logcat);
+    if (hasFault) {
+      const match = logcat.match(JNI_FAULT_RE);
+      const anchor = match ? logcat.indexOf(match[0]) : 0;
+      const snippet = logcat.slice(Math.max(0, anchor - 40), anchor + 120).trim();
+      throw toTapPageFailure('JNI-FAULT', `JNI fault in logcat: UnsatisfiedLinkError=${jniFaults.unsatisfiedLinkError} SIGSEGV=${jniFaults.sigsegv}${snippet ? `: ${snippet.slice(0, 200)}` : ''}`, {
+        exitCode: 1, pageAdvanced: true, blankViewport: false, jniFaults,
+      });
     }
   }
 
   emit(`tap-page: page ${pageBefore} -> ${pageAfter} PASS`);
-  return { ok: true, pageBefore, pageAfter, blank: false };
+  return {
+    ok: true, exitCode: 0, pageAdvanced: true, blankViewport: false, jniFaults,
+    pageBefore, pageAfter, blank: false,
+  };
 }
 
 function usageError(message) {
