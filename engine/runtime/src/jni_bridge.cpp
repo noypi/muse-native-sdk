@@ -62,6 +62,16 @@
 #define MUSE_JNI_EXPORT __attribute__((visibility("default")))
 
 namespace runtime {
+// BUG-INPUT-001 T3: layering-page predicate + pager owned by the present path
+// (defined in gallery_present.cpp, deliberately no header change). Forward-
+// declared here so the dispatch slice stays page-scoped without widening the
+// production claim to a header.
+std::vector<int> PageStarts(const std::vector<GalleryRow>& rows, int height);
+bool IsLayeringPageSlice(const std::vector<GalleryRow>& rows, int first,
+                         int last);
+}  // namespace runtime
+
+namespace runtime {
 namespace {
 
 // Engine-backed host behind the opaque boundary. Kept in this translation
@@ -328,6 +338,17 @@ struct GalleryHandle {
   // node). Guarded by mu like the rest of the handle.
   HitTestTree tapTree;
   GestureArena tapArena;
+  // BUG-INPUT-001 T3 (AC-M3-022 scrim clause): live overlay count for the
+  // layering page (paintLayeringPage presents the scrim + five contents, so
+  // the stack opens at 5) and the last viewport height RenderLocked presented
+  // with, so the ACTION_UP slice can scope dismiss routing to the layering
+  // page. Guarded by mu like the rest of the handle.
+  int layeringOverlayCount = 5;
+  int lastViewportH = 0;
+  // BUG-INPUT-001 T4: last page RenderLocked presented; a page change resets
+  // layeringOverlayCount to the full stack (5) so away/back re-entry restarts
+  // full. Guarded by mu like the rest of the handle.
+  int lastPresentedPage = -1;
 #ifdef __ANDROID__
   ANativeWindow* window = nullptr;
   // FR-STARTUP-003 T1 (RULE-STARTUP-002): single-owner render-thread frame
@@ -792,6 +813,9 @@ void RenderLocked(GalleryHandle* g) {
   int w = buf.width;
   int h = buf.height;
   int stride = buf.stride;
+  // BUG-INPUT-001 T3: remember the presented viewport height (mu is held by
+  // the caller) so the ACTION_UP slice can window the layering predicate.
+  g->lastViewportH = h;
   int pages = ::runtime::GalleryPageCount(g->rows, h);
   if (pages > 0) {
     g->page %= pages;
@@ -826,8 +850,16 @@ void RenderLocked(GalleryHandle* g) {
   // vs dark surface) so no black gutters leak through either mode.
   window.clear(ThemeInk(WindowRGBA(0xFE, 0xF7, 0xFF, 0xFF)));
   std::string error = g->parseError;
+  // BUG-INPUT-001 T4: page change resets the dismiss stack to full so
+  // away/back re-entry restarts from 5; the live count feeds the paint path
+  // so dismiss and paint cannot diverge. Runs under mu (caller holds it).
+  if (g->lastPresentedPage != g->page) {
+    g->layeringOverlayCount = 5;
+    g->lastPresentedPage = g->page;
+  }
   const bool presented = ::runtime::PresentDeviceGalleryPage(
-      g->rows, g->page, *g->renderer, window, h, &error);
+      g->rows, g->page, *g->renderer, window, h, &error,
+      g->layeringOverlayCount);
   // FR-GRAPHICS-014 T2: requested-vs-effective present-path selection with
   // probe downgrade to the proven CPU push (AC-GRAPHICS-040/041). The
   // requested renderer defaults to `cpu`; the resolve gate maps it against
@@ -1369,6 +1401,38 @@ extern "C" MUSE_JNI_EXPORT jint Java_com_muse_host_MainActivity_nativeDispatchTo
         }
         if (!FireTapHandler(target)) {
           return -1;
+        }
+        // BUG-INPUT-001 T3 (AC-M3-022 scrim clause): layering-page scrim-tap
+        // routing. scrimHit rides the T2 scrim hit-target (node 20, child of
+        // root 10 with content 21 above it, so button taps never read as
+        // scrim). isDrag is false here by construction: a past-slop drag
+        // fails the ClaimTap slop verdict above (unclaimed → early -1) before
+        // any fire. A topmost dismiss applies the single pop here under mu;
+        // the existing EnqueueFrame below repaints outside the lock.
+        // Non-layering pages never route (present-path predicate below).
+        const bool scrimHit = (target == 20);
+        if (scrimHit && g->lastViewportH > 0 && !g->rows.empty()) {
+          bool onLayeringPage = false;
+          const std::vector<int> starts =
+              ::runtime::PageStarts(g->rows, g->lastViewportH);
+          const int pages = static_cast<int>(starts.size()) - 1;
+          int cur = g->page;
+          if (pages > 0) {
+            cur %= pages;
+            if (cur < 0) cur += pages;
+          }
+          if (pages > 0 && cur >= 0 && cur < pages) {
+            onLayeringPage = ::runtime::IsLayeringPageSlice(
+                g->rows, starts[static_cast<std::size_t>(cur)],
+                starts[static_cast<std::size_t>(cur) + 1] - 1);
+          }
+          if (onLayeringPage) {
+            const ::runtime::DismissResult dismiss = ::runtime::onScrimTap(
+                true, /*isDrag=*/false, g->layeringOverlayCount);
+            if (dismiss.dismissed == "topmost") {
+              g->layeringOverlayCount = dismiss.remaining;
+            }
+          }
         }
         const bool posted = RepaintWithinOneFrame(target);
         firedTarget = static_cast<int>(target);

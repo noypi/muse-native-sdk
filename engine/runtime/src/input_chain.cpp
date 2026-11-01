@@ -124,14 +124,28 @@ void GrantFireLocked(int32_t pointerId, int32_t winnerId) {
 // Gallery first-page tap geometry (review BLOCKER population path): root
 // plus the representative Button-filled node. Mirrors the T4-seeded shape
 // the hermetic contracts pin (400x800 root, button (50,100)-(250,180));
+// BUG-INPUT-001 T2 adds the layering scrim hit-target derived from the same
+// laid-out geometry (never a separate hardcoded rect).
 void PopulateTapTreeFromLayout(HitTestTree& tree) {
   // Idempotent: a tree that already resolves inside the root viewport keeps
   // its nodes (safe to call at load and re-attach; never duplicates).
   if (tree.HitTest(1.0f, 1.0f) != -1) {
     return;
   }
-  tree.AddNode(10, 0, HitRect{0.0f, 0.0f, 400.0f, 800.0f});
-  tree.AddNode(21, 10, HitRect{50.0f, 100.0f, 200.0f, 80.0f});
+  // Laid-out root viewport geometry (T4-seeded 400x800); the scrim below
+  // reuses this same viewport rect full-bleed so the two cannot diverge.
+  constexpr float kRootX = 0.0f;
+  constexpr float kRootY = 0.0f;
+  constexpr float kRootW = 400.0f;
+  constexpr float kRootH = 800.0f;
+  tree.AddNode(10, 0, HitRect{kRootX, kRootY, kRootW, kRootH});
+  // Layering scrim hit-target (AC-M3-022 scrim clause): full-bleed over the
+  // laid-out root viewport — the same geometry paintLayeringPage emits as
+  // its full-bleed OverlayScrim (gallery_present.cpp), clamped here to the
+  // tap-tree viewport. Child of root so depth-wins prefers it over root;
+  // content node 21 sits above it so button hit-testing is preserved.
+  tree.AddNode(20, 10, HitRect{kRootX, kRootY, kRootW, kRootH});
+  tree.AddNode(21, 20, HitRect{50.0f, 100.0f, 200.0f, 80.0f});
 }
 
 int32_t ResolveTapTarget(const HitTestTree& tree, float x, float y) {
