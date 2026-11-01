@@ -199,6 +199,29 @@ struct DismissResult {
 // Never throws.
 DismissResult onScrimTap(bool scrimHit, bool isDrag,
                          int overlayCount) noexcept;
+
+// ---- Device-path pressed engagement (FR-GRAPHICS-015 P2 / AC-GRAPHICS-043)
+// ----
+//
+// Slop-aware DOWN/MOVE trigger for the state-layer wash on the device path.
+// The native tap chain claims only on the UP slop verdict, so no pressed
+// state ever engages mid-hold and the wash has nothing to render. The
+// device host closes that gap through this seam: on ACTION_DOWN it resolves
+// the hit target and calls GallerySetPressedNode(target) (provisional claim,
+// target is the 1-based row node id, i + 1); on ACTION_MOVE it keeps the
+// node while displacement stays within slop and calls
+// GalleryClearPressedNode() past slop; on ACTION_UP / cancel it calls
+// GalleryClearPressedNode(). The host must request a frame after engaging
+// so the mid-hold repaint carries the wash. The present path
+// (EmitGalleryWindowCmds) paints exactly one pressed wash overlay for the
+// engaged node via the shared PaintStateWash resolver, staged like every
+// other cmd (nothing committed on a diagnostic). Fail-closed: a negative or
+// zero node id clears (never engages); an engaged id outside the presented
+// window paints nothing; the default state is disengaged (-1). Never throws.
+void GallerySetPressedNode(int nodeId) noexcept;
+void GalleryClearPressedNode() noexcept;
+int GalleryPressedNode() noexcept;
+
 // Plan T62 `Interface:` line (verbatim): maps a state token to its numeric
 // M3 state-layer opacity (0.08 hover / 0.12 focus / 0.16 pressed / 0.38
 // disabled baseline per D1). Unknown/empty input returns the 0.0f no-wash
