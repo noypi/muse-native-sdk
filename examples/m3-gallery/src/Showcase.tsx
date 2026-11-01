@@ -166,6 +166,14 @@ export function TextProbePage() {
 // exactly one OverlayHost in submission order, dimming layer submitted before
 // overlay content. The dismiss hook site is declared on the host below; the
 // dismiss behavior itself is owned by L3.
+// FR-GRAPHICS-015 T5 (AC-GRAPHICS-043, TC-GRAPHICS-045): this page is the
+// interactive surface driven through the T2 component-record output
+// (PresentRealGalleryPage layering-slice dispatch, no oracle pixels) — tap
+// dispatch via the host's onScrimTap, state-layer wash via the dimmed
+// content rows, theme/Dynamic Color repaint via the light+dark halves,
+// IME-inset sheet anchoring via the imeSafe BottomSheet + insetSource feeds,
+// and layering overlay order via the single OverlayHost submission order.
+// Shell-chrome-only paging and fail-closed semantics preserved.
 export function LayeringPage() {
   reportStaticFallback();
   return (

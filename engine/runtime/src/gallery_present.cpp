@@ -3040,6 +3040,26 @@ bool PresentRealGalleryPage(const std::vector<GalleryRow>& rows, int page,
     window.firstVisible = starts[static_cast<std::size_t>(page)];
     window.lastVisible = starts[static_cast<std::size_t>(page) + 1] - 1;
     window.prefetchAhead = 0;
+    // T5 (FR-GRAPHICS-015 / AC-GRAPHICS-043, TC-GRAPHICS-045): the
+    // layering-page slice presents through the owning-criteria path —
+    // paintLayeringPage (composited scrim + five contents in submission
+    // order, shell-chrome-only paging untouched) with the sheet bound per
+    // frame to the live FR-LAYOUT-012 inset via anchorSheetToImeInset.
+    // Tap dispatch (onScrimTap), state wash (StateLayerOpacity/PaintStateWash
+    // via EmitComponentRowCmds), and theme repaint ride the same shared
+    // paths as the device lane; no oracle pixels on any leg. Fail-closed:
+    // a paint diagnostic returns false with nothing committed.
+    if (IsLayeringPageSlice(rows, window.firstVisible, window.lastVisible)) {
+      LayeringScene scene;
+      scene.valid = true;
+      scene.overlayCount = 5;
+      const float live_inset_px =
+          PresentDeps().insets.imeBottom.load(std::memory_order_relaxed);
+      anchorSheetToImeInset(scene, live_inset_px);
+      paintLayeringPage(scene, renderer, target, error);
+      if (error != nullptr && !error->empty()) return false;
+      return true;
+    }
     std::vector<DrawCmd> cmds;
     cmds.reserve(rows.size() * 2 + 2);
     EmitGalleryWindowCmds(rows, window, cmds);
