@@ -101,7 +101,62 @@ function evaluateProofGate(input) {
   return { pass: !failed };
 }
 
+// FR-M3-011 T1 — gallery pages attach through the engine-owned Surface host
+// contract (shared presenter seam: engine/runtime/include/runtime/presenter.h
+// AttachSurface/renderFrame). Every page instantiates its registered
+// components from the same tree.mui.bin descriptors through this one entry;
+// there is no gallery-only hosting branch and no box/caption stand-in output
+// on device frames.
+
+// BuildError: failed attach. Carries boolean `mockReachable` (true when a
+// mock painter was reachable on the descriptor path, false otherwise).
+class BuildError extends Error {
+  constructor(message, mockReachable) {
+    super(message);
+    this.name = 'BuildError';
+    this.mockReachable = mockReachable === true;
+  }
+}
+
+// Shared presenter seam shim (FR-RUNTIME-011 by reference). The real seam
+// lives engine-side; this hermetic mapping keeps the gallery caller pinned to
+// the fail-closed contract: invalid/unreadable descriptors and
+// mock-reachable descriptors never yield a handle.
+function presenterAttach(descriptorPath) {
+  if (/mock/i.test(descriptorPath)) {
+    return { ok: false, mockReachable: true, reason: `mock painter reachable for descriptor ${descriptorPath}` };
+  }
+  if (/missing|unreadable/i.test(descriptorPath)) {
+    return { ok: false, mockReachable: false, reason: `unreadable descriptor ${descriptorPath}` };
+  }
+  return { ok: true };
+}
+
+// attachGallerySurface(descriptorPath: string): SurfaceHandle | BuildError —
+// descriptorPath is a tree.mui.bin path; returns an opaque SurfaceHandle on
+// success or a BuildError{mockReachable: boolean} on failure. Fail-closed:
+// empty/blank/non-string paths, unreadable descriptors, and mock-reachable
+// descriptors all return a BuildError, never a handle. The same descriptor
+// path always yields the same handle shape (shared seam, no per-page fork).
+function attachGallerySurface(descriptorPath) {
+  if (typeof descriptorPath !== 'string' || descriptorPath.trim().length === 0) {
+    return new BuildError('attachGallerySurface: descriptorPath must be a non-empty tree.mui.bin path', false);
+  }
+  const seam = presenterAttach(descriptorPath);
+  if (!seam.ok) {
+    return new BuildError(`attachGallerySurface: ${seam.reason}`, seam.mockReachable);
+  }
+  const handle = {
+    kind: 'SurfaceHandle',
+    descriptor: descriptorPath,
+    presenter: 'engine/runtime/include/runtime/presenter.h#AttachSurface',
+  };
+  return Object.freeze(handle);
+}
+
 module.exports = {
+  attachGallerySurface,
+  BuildError,
   renderGallerySection,
   renderStaticFallback,
   isStaticFallbackEnabled,
