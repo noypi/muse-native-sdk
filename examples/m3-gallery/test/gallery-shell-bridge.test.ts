@@ -328,4 +328,87 @@ describe('T1 requestShellAdvance shell-chrome→native bridge (AC-SAMPLE-039)', 
       clearHost();
     }
   });
+
+  it('string/boolean direction denied even for allowed origin (strict +-1)', () => {
+    const nav = freshRequireNav();
+    try {
+      assert.equal(typeof nav.requestShellAdvance, 'function');
+      const sink = globalThis.__museTestBroadcasts;
+      assert.equal(nav.requestShellAdvance('1', 'shell-chrome'), false);
+      assert.equal(nav.requestShellAdvance('-1', 'key'), false);
+      assert.equal(nav.requestShellAdvance(true, 'shell-chrome'), false);
+      assert.equal(nav.requestShellAdvance(undefined, 'shell-chrome'), false);
+      assert.equal(sink.length, 0, 'non-numeric direction must never emit');
+    } finally {
+      clearSink();
+    }
+  });
+
+  it('prototype-pollution origins denied with no emit (hasOwnProperty-safe lookup)', () => {
+    const nav = freshRequireNav();
+    try {
+      assert.equal(typeof nav.requestShellAdvance, 'function');
+      const sink = globalThis.__museTestBroadcasts;
+      assert.equal(nav.requestShellAdvance(1, '__proto__'), false);
+      assert.equal(nav.requestShellAdvance(1, 'constructor'), false);
+      assert.equal(nav.requestShellAdvance(1, 'hasOwnProperty'), false);
+      assert.equal(sink.length, 0, 'pollution-shaped origin must never emit');
+    } finally {
+      clearSink();
+    }
+  });
+
+  it('sink absent + pollution origin with host present: denied, host never called', () => {
+    clearSink();
+    clearHost();
+    const nav = freshRequireNav();
+    const calls = installHostStub();
+    try {
+      assert.equal(nav.requestShellAdvance(1, '__proto__'), false);
+      assert.equal(nav.requestShellAdvance(1, 'constructor'), false);
+      assert.equal(calls.length, 0, 'pollution-shaped denial must never invoke the host');
+    } finally {
+      clearSink();
+      clearHost();
+    }
+  });
+
+  it('App.tsx keyboard path returns before emit at both boundaries (static pin)', () => {
+    const { readFileSync } = require('node:fs');
+    const { join } = require('node:path');
+    const appSrc = readFileSync(join(__dirname, '..', 'src', 'App.tsx'), 'utf8');
+    const keyBlock = appSrc.slice(appSrc.indexOf('onKeyDown'), appSrc.indexOf("window.addEventListener('keydown'"));
+    assert.ok(keyBlock.length > 0, 'App.tsx must define onKeyDown keyboard handler');
+    const nextEmit = keyBlock.indexOf("requestShellAdvance(1, 'key')");
+    const prevEmit = keyBlock.indexOf("requestShellAdvance(-1, 'key')");
+    assert.ok(nextEmit !== -1 && prevEmit !== -1, 'keyboard handler must emit via requestShellAdvance for both arrows');
+    assert.ok(/if\s*\(\s*nextDisabled\s*\)\s*\{\s*return;/.test(keyBlock), 'ArrowRight must return-before-emit when nextDisabled');
+    assert.ok(/if\s*\(\s*prevDisabled\s*\)\s*\{\s*return;/.test(keyBlock), 'ArrowLeft must return-before-emit when prevDisabled');
+    assert.ok(keyBlock.indexOf('nextDisabled') < nextEmit, 'nextDisabled guard must precede the key +1 emit');
+    assert.ok(keyBlock.indexOf('prevDisabled') < prevEmit, 'prevDisabled guard must precede the key -1 emit');
+    assert.ok(
+      /\},\s*\[stories\.length,\s*clampedIndex\]\)/.test(appSrc),
+      'keyboard effect deps must include clampedIndex (stale-closure fix pin)',
+    );
+  });
+
+  it('App.tsx deep-link path no-emit on same-index and unknown-id (static pin)', () => {
+    const { readFileSync } = require('node:fs');
+    const { join } = require('node:path');
+    const appSrc = readFileSync(join(__dirname, '..', 'src', 'App.tsx'), 'utf8');
+    const dlStart = appSrc.indexOf('onOpenStoryLink');
+    assert.ok(dlStart !== -1, 'App.tsx must define onOpenStoryLink');
+    const dlBlock = appSrc.slice(dlStart, appSrc.indexOf('setSelectedIndex(found)'));
+    assert.ok(dlBlock.length > 0, 'deep-link handler body must be readable');
+    assert.ok(
+      /if\s*\(\s*found\s*!==\s*clampedIndex\s*\)/.test(dlBlock),
+      'same-index deep link must skip the emit (found !== clampedIndex guard)',
+    );
+    const guardPos = dlBlock.search(/if\s*\(\s*found\s*!==\s*clampedIndex\s*\)/);
+    const emitPos = dlBlock.indexOf("requestShellAdvance(");
+    assert.ok(emitPos !== -1 && guardPos < emitPos, 'deep-link emit must sit inside the same-index guard');
+    assert.ok(/if\s*\(\s*found\s*<\s*0\s*\)\s*\{\s*return\s*\{\s*code:\s*'unknown-story'/.test(dlBlock), 'unknown id must return unknown-story before any emit');
+    const unknownPos = dlBlock.search(/if\s*\(\s*found\s*<\s*0/);
+    assert.ok(unknownPos !== -1 && unknownPos < emitPos, 'unknown-id return must precede the deep-link emit');
+  });
 });

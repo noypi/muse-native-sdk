@@ -197,4 +197,44 @@ describe('T2 assertAdvanceProducesMotion proof advance leg (AC-M3-020)', () => {
     const text = readFileSync(PROOF_LIB, 'utf8');
     assert.match(text, /muse\.native\.NATIVE_ADVANCE_PAGE/, 'proof advance entry action unchanged');
   });
+
+  it('receiver fail-closed: null intent returns before any JNI (static-shape pin)', () => {
+    const block = advanceReceiverBlock();
+    assert.match(block, /if\s*\(\s*intent\s*==\s*null\s*\)\s*\{\s*return;/, 'null-Intent guard must be present');
+    const guardPos = block.search(/if\s*\(\s*intent\s*==\s*null/);
+    const jniPos = block.indexOf('nativeAdvancePage(engineHandle)');
+    assert.ok(guardPos !== -1 && jniPos !== -1 && guardPos < jniPos, 'null guard must precede the JNI sink');
+  });
+
+  it('receiver fail-closed: wrong action returns before any JNI (static-shape pin)', () => {
+    const block = advanceReceiverBlock();
+    assert.match(
+      block,
+      /ACTION_NATIVE_ADVANCE_PAGE\.equals\(intent\.getAction\(\)\)/,
+      'action check must be literal-.equals (null-safe)',
+    );
+    const guardPos = block.indexOf('ACTION_NATIVE_ADVANCE_PAGE.equals(intent.getAction())');
+    const jniPos = block.indexOf('nativeAdvancePage(engineHandle)');
+    assert.ok(guardPos !== -1 && jniPos !== -1 && guardPos < jniPos, 'action guard must precede the JNI sink');
+  });
+
+  it('receiver fail-closed: disallowed/missing origin returns before any JNI (static-shape pin)', () => {
+    const block = advanceReceiverBlock();
+    assert.match(block, /"shell-chrome"\.equals\(origin\)/, 'allowlist must contain shell-chrome (literal-.equals)');
+    assert.match(block, /"key"\.equals\(origin\)/, 'allowlist must contain key (literal-.equals)');
+    assert.match(block, /"deep-link"\.equals\(origin\)/, 'allowlist must contain deep-link (literal-.equals)');
+    const guardPos = block.indexOf('"shell-chrome".equals(origin)');
+    const jniPos = block.indexOf('nativeAdvancePage(engineHandle)');
+    assert.ok(guardPos !== -1 && jniPos !== -1 && guardPos < jniPos, 'origin allowlist must precede the JNI sink');
+  });
+
+  it('receiver fail-closed: engineHandle == 0 returns before any JNI (static-shape pin)', () => {
+    const block = advanceReceiverBlock();
+    assert.match(block, /if\s*\(\s*engineHandle\s*==\s*0\s*\)\s*\{\s*return;/, 'zero-handle guard must be present');
+    const guardPos = block.search(/if\s*\(\s*engineHandle\s*==\s*0/);
+    const jniPos = block.indexOf('nativeAdvancePage(engineHandle)');
+    const renderPos = block.indexOf('nativeRenderFrame(engineHandle)');
+    assert.ok(guardPos !== -1 && jniPos !== -1 && guardPos < jniPos, 'zero-handle guard must precede nativeAdvancePage');
+    assert.ok(renderPos !== -1 && guardPos < renderPos, 'zero-handle guard must precede nativeRenderFrame');
+  });
 });
