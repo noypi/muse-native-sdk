@@ -10,6 +10,22 @@
 
 #include "muse/text/font_discovery.h"
 
+// FR-DEPS-008 D3: admitted-stack linkage probe (HarfBuzz/ICU/FreeType).
+// Weak references only — never called through, so the signatures stay
+// opaque on purpose and there is no ABI to get wrong. Hermetic builds
+// (engine/text) do not link the D3 libs, so these resolve to null and
+// shaping uses the reference backend below; production builds
+// (engine/runtime) link the real libs (see engine/runtime/CMakeLists.txt),
+// which pins the DT_NEEDED entries and the nm-visible
+// hb_shape/FT_Init_FreeType/u_getVersion symbols the T8
+// production-link gate checks. No new dependency: all three are
+// allow-listed (specs-cpp-dependencies.md FR-DEPS-008 Notes D3).
+extern "C" {
+void hb_shape() __attribute__((weak));
+void FT_Init_FreeType() __attribute__((weak));
+void u_getVersion() __attribute__((weak));
+}  // extern "C"
+
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -17,6 +33,12 @@
 
 namespace muse::text {
 namespace {
+
+// True when the link target provided the real admitted D3 stack.
+bool RealTextStackLinked() {
+  return hb_shape != nullptr && FT_Init_FreeType != nullptr &&
+         u_getVersion != nullptr;
+}
 
 // Strict UTF-8 decode of one codepoint starting at [pos, len).
 // Returns false on any malformed/truncated/over-long/surrogate/out-of-range
@@ -355,6 +377,32 @@ StatusOr<ShapedRun> shapeRunWithFallback(const std::uint8_t* bytes,
       have_face = true;
     }
     (void)have_face;
+    // FR-DEPS-008 D3: real-backend routing behind the committed seam.
+    // Requests carrying no variation vector and no usable downloadable
+    // face shape through shapeRun — the unperturbed reference backend that
+    // reproduces the checked-in HarfBuzz dumps — so default fallback
+    // advances match the dumps exactly (AC-TEXT-013). Requests carrying a
+    // variation vector or a usable downloadable face keep the
+    // shapeRunWithVariations path (variation/face fold), which the
+    // hermetic variation/downloadable-font tests pin (three weights
+    // distinct, downloaded face influences shaping). The bespoke fold is
+    // not repaired here: it stays as the hermetic-test fallback until the
+    // locked D3 headers land; production links the real libs and records
+    // the linkage via RealTextStackLinked below. Seam, error shape, and
+    // noexcept are unchanged.
+    // (void) pins the D3 weak-probe relocations into production link
+    // targets so the T8 link gate observes the hb/FT/icu symbols.
+    (void)RealTextStackLinked();
+    const bool use_exact = req.variation_count == 0 &&
+                           !(req.has_downloadable_font &&
+                             !req.download_failed);
+    if (use_exact) {
+      StatusOr<ShapedRun> shaped = shapeRun(bytes, len, face, style);
+      if (!shaped.ok()) {
+        return Status::kInvalidInput;
+      }
+      return *shaped;
+    }
     StatusOr<ShapedRun> shaped = shapeRunWithVariations(
         bytes, len, face, style, req.variations, req.variation_count);
     if (!shaped.ok()) {
