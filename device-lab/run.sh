@@ -2,7 +2,7 @@
 # device-lab suite runner (FR-RUNTIME-008 / AC-RUNTIME-021, RULE-RUNTIME-005).
 #
 # Usage: device-lab/run.sh <suite>
-#   suite is exactly one of: ime-smoke | ime-inset | touch-smoke | config-change
+#   suite is exactly one of: ime-smoke | ime-inset | touch-smoke | config-change | arbitrary-route
 # Exits 0 only when that suite's evidence file validates, non-zero otherwise;
 # unknown suite (including empty, wrong case, or extra args) exits 2.
 #
@@ -24,11 +24,11 @@ APP_ID="com.muse.devicelab"
 # (Context.getExternalFilesDir -> Android/data/<package>/files). Resolved via
 # cmdline `cmd media_session` free probe below; see resolve_evidence_path.
 # EXTERNAL_FILES default; DEVICE_LAB_*_EVIDENCE_PATH overrides path only.
-SUITES="ime-smoke ime-inset touch-smoke config-change"
+SUITES="ime-smoke ime-inset touch-smoke config-change arbitrary-route"
 
 usage() {
   echo "usage: run.sh <suite>" >&2
-  echo "suites: ime-smoke ime-inset touch-smoke config-change" >&2
+  echo "suites: ime-smoke ime-inset touch-smoke config-change arbitrary-route" >&2
 }
 
 if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
@@ -38,9 +38,11 @@ if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
   echo "  ime-inset"
   echo "  touch-smoke"
   echo "  config-change"
+  echo "  arbitrary-route"
   echo "evidence: app-specific external files dir (getExternalFilesDir);"
   echo "  DEVICE_LAB_IME_SMOKE_EVIDENCE_PATH, DEVICE_LAB_IME_INSET_EVIDENCE_PATH,"
-  echo "  DEVICE_LAB_TOUCH_SMOKE_EVIDENCE_PATH, DEVICE_LAB_CONFIG_CHANGE_EVIDENCE_PATH"
+  echo "  DEVICE_LAB_TOUCH_SMOKE_EVIDENCE_PATH, DEVICE_LAB_CONFIG_CHANGE_EVIDENCE_PATH,"
+  echo "  DEVICE_LAB_ARBITRARY_ROUTE_EVIDENCE_PATH"
   echo "  retarget the evidence path only; the verdict validates evidence content."
   exit 0
 fi
@@ -52,7 +54,7 @@ if [[ $# -ne 1 ]]; then
 fi
 SUITE="$1"
 case "$SUITE" in
-  ime-smoke|ime-inset|touch-smoke|config-change) ;;
+  ime-smoke|ime-inset|touch-smoke|config-change|arbitrary-route) ;;
   *) usage; exit 2 ;;
 esac
 
@@ -82,6 +84,7 @@ evidence_file_for() {
     ime-inset) echo "ime-inset-frames.jsonl" ;;
     touch-smoke) echo "touch-smoke-result.json" ;;
     config-change) echo "config-change-result.json" ;;
+    arbitrary-route) echo "arbitrary-route-result.json" ;;
   esac
 }
 
@@ -139,6 +142,8 @@ elif suite == "touch-smoke":
     ok = doc.get("tapDispatched") is True and doc.get("dragScrolled") is True and doc.get("engineHosted") is True
 elif suite == "config-change":
     ok = all(doc.get(k) is True for k in ["rotationPreserved", "bgFgPreserved", "nodeIdsStable", "engineHosted"])
+elif suite == "arbitrary-route":
+    ok = doc.get("destinationReached") is True and doc.get("singleStepAdvance") is False and doc.get("engineHosted") is True
 else:
     ok = False
 sys.exit(0 if ok else 1)

@@ -378,36 +378,70 @@ function failWith(code, detail) {
 // serial and throw device-unreachable when no device answers — the wrap
 // assertion never silently passes.
 //
+// FR-NAV-013 (T5): arbitrary-route assertion lane. Each entry navigates to
+// an explicit { route, params } target via RouterBridge.invoke("navigate",
+// {route, params}) and asserts the destination lands there (mirrors the T2
+// hermetic contract: non-adjacent jumps, params carried). The retired +1
+// wrap loop survives only re-expressed as N explicit arbitrary navigates:
+// callers pass `routes` (a non-empty list of { route, params } targets,
+// ending back at the start route to verify the return); when omitted, page
+// routes are derived from the count. `advance`/`readRoute` are injectable
+// for hermetic use; the defaults below go through the PROOF_ADVANCE_PAGE
+// harness clamp (kept, harness-only) and the device index markers —
+// `readRoute` defaults to mapping the device page index to its route.
+//
 // Settle note: the device render + logcat page marker lands ~100-500ms after
-// the advance broadcast, so the index is read only after a settle delay
+// the navigate, so the route is read only after a settle delay
 // (`settleMs`, default 700ms; `sleep` injectable for hermetic use). Without
-// the settle, rapid reads see the stale pre-advance index and report
-// no-motion even though the advance landed.
-async function pageAllAndVerifyWrap({ pageCount, advance, readIndex, serial, sleep, settleMs }) {
+// the settle, rapid reads see the stale pre-navigate route and report
+// no-motion even though the navigate landed.
+async function pageAllAndVerifyWrap({ pageCount, routes, advance, readIndex, readRoute, serial, sleep, settleMs }) {
   const advancePage = advance || ((opts) => defaultAdvancePage({ ...opts, serial }));
   const getIndex = readIndex || (() => defaultReadPageIndex({ serial }));
+  const getRoute = readRoute || (async () => {
+    const idx = await getIndex();
+    return (idx === null || idx === undefined) ? null : `gallery-page:${idx}`;
+  });
   const settleDelay = Number.isInteger(settleMs) && settleMs >= 0 ? settleMs : 700;
   const sleepFn = sleep || ((ms) => new Promise((resolve) => { setTimeout(resolve, ms); }));
-  const startIndex = await getIndex();
-  // Dead-advance guard (F6): a broadcast with no receiver leaves the page
-  // index pinned at start, and start==end after a full cycle then passes
-  // vacuously. Require observing a non-start page index mid-cycle so a dead
-  // advance fails counts-mismatch instead of passing without motion.
-  // Single-page galleries (pageCount <= 1) cannot leave the start index by
-  // definition, so the motion requirement only applies past one page.
+  const targets = Array.isArray(routes) && routes.length > 0
+    ? routes
+    : Array.from({ length: pageCount }, (_, i) => ({ route: `gallery-page:${i}`, params: { index: i } }));
+  const startRoute = await getRoute();
+  // Dead-navigate guard (F6): a broadcast with no receiver leaves the route
+  // pinned at start, and start==end after a full cycle then passes
+  // vacuously. Require observing a non-start route mid-cycle so a dead
+  // navigate fails counts-mismatch instead of passing without motion.
+  // Single-route galleries cannot leave the start route by definition, so
+  // the motion requirement only applies past one target.
   let sawMotion = false;
-  for (let page = 0; page < pageCount; page++) {
-    await advancePage({ nativeAdvancePage: true, serial });
+  for (const target of targets) {
+    await advancePage({ route: target.route, params: target.params || {}, serial });
     await sleepFn(settleDelay);
-    const midIndex = await getIndex();
-    if (midIndex !== startIndex) sawMotion = true;
+    const midRoute = await getRoute();
+    if (midRoute !== startRoute) sawMotion = true;
+    if (midRoute !== target.route) {
+      failWith('counts-mismatch', `arbitrary-route mismatch (at=${midRoute} want=${target.route})`);
+    }
   }
-  const wrappedIndex = await getIndex();
-  if (wrappedIndex !== startIndex) {
-    failWith('counts-mismatch', `page wrap mismatch (start=${startIndex} end=${wrappedIndex}, pages=${pageCount})`);
+  // Return leg: navigate back to the start route and verify the landing.
+  // Skipped when the start route is unknown (null): there is no route to
+  // return to, so issuing a null-route navigate would be invalid.
+  if (startRoute != null) {
+    await advancePage({ route: startRoute, params: {}, serial });
+    await sleepFn(settleDelay);
+    const wrappedRoute = await getRoute();
+    if (wrappedRoute !== startRoute) {
+      failWith('counts-mismatch', `route return mismatch (start=${startRoute} end=${wrappedRoute}, routes=${targets.length})`);
+    }
+    if (targets.length > 1 && !sawMotion) {
+      failWith('counts-mismatch', `page navigate showed no motion (start=${startRoute} end=${wrappedRoute}); navigate path did not move`);
+    }
+    return { wrapped: true };
   }
-  if (pageCount > 1 && !sawMotion) {
-    failWith('counts-mismatch', `page advance showed no motion (start=${startIndex} end=${wrappedIndex}, pages=${pageCount}); advance path did not page`);
+  if (targets.length > 1 && !sawMotion) {
+    const wrappedRoute = await getRoute();
+    failWith('counts-mismatch', `page navigate showed no motion (start=${startRoute} end=${wrappedRoute}); navigate path did not move`);
   }
   return { wrapped: true };
 }
@@ -898,7 +932,7 @@ async function runGalleryProof({ serial, androidJar, outDir, readCounts, capture
     await saveScreenshot({ serial: deviceSerial, page, shot, frame });
     shots.push(shot);
     if (page + 1 < pages) {
-      await advanceForShots({ nativeAdvancePage: true, serial: deviceSerial, page });
+      await advanceForShots({ route: `gallery-page:${page + 1}`, params: { index: page + 1 }, serial: deviceSerial, page });
       await shotSleepFn(shotSettleDelay);
     }
   }

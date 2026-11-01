@@ -87,20 +87,25 @@ function createNavigator(stories) {
     return { index, storyId: storyIdOf(list[index]) };
   }
 
+  // FR-NAV-013 (T5): retired forward-only +1 stepping. The Prev/Next
+  // chrome itself is untouched (FR-SAMPLE-014 per CONFLICT-NAV-002), but the
+  // navigation semantic behind it is arbitrary-route: resolve the adjacent
+  // story id and target it by id through the same id/route path as
+  // openStoryLink (RouterBridge.invoke("navigate", {route, params}) on the
+  // native side). Boundary behavior is unchanged.
   function navigateStory(direction) {
-    let next = index;
+    let targetId;
     if (direction === 'next') {
-      next = index + 1;
+      targetId = storyIdOf(list[index + 1]);
     } else if (direction === 'prev') {
-      next = index - 1;
+      targetId = storyIdOf(list[index - 1]);
     } else {
       return { code: 'boundary' };
     }
-    if (next < 0 || next >= list.length) {
+    if (targetId === undefined) {
       return { code: 'boundary' };
     }
-    index = next;
-    return { index, storyId: storyIdOf(list[index]) };
+    return openStoryLink(STORY_LINK_PREFIX + encodeURIComponent(targetId));
   }
 
   function openStoryLink(link) {
@@ -229,38 +234,44 @@ function isPagingGesture(origin, gesture) {
   return gesture === 'tap' || gesture === 'key' || gesture === 'deep-link';
 }
 
-// Shell-chrome-only native advance bridge (BUG-SAMPLE-007 T3, AC-SAMPLE-039).
+// Shell-chrome-only arbitrary-route bridge (FR-NAV-011 T5, was BUG-SAMPLE-007 T3).
 //
-// Single choke point for every JS→native page advance: shell buttons, arrow
-// keys, and in-app deep links all emit through here. Allowed origins map to
+// Single choke point for every JS→native navigation: shell buttons, arrow
+// keys, and in-app deep links all emit RouterBridge.invoke("navigate",
+// {route, params}) records through here. Allowed origins map to
 // the gesture `isPagingGesture` already accepts for shell chrome
 // (`shell-chrome`→`tap`, `key`→`key`, `deep-link`→`deep-link`); every other
 // origin — including `story-surface`, `inside-surface`, and unknown/missing
 // origins — is denied with no emission (fail closed, FR-SAMPLE-014). Invalid
 // directions are likewise denied. `isPagingGesture` itself is unchanged.
 //
-// Emission seam (contract note A-T1a): when the hermetic test sink
+// Emission seam (FR-NAV-011 T5): when the hermetic test sink
 // `globalThis.__museTestBroadcasts` (an array) is present, one record
-// `{ action, direction, origin }` with
-// `action === 'muse.native.NATIVE_ADVANCE_PAGE'` is appended per allowed
-// call. When the sink is absent the injected host entry
-// `globalThis.__museHostAdvance(direction, origin)` is called (same
-// convention as `__museHostSetTheme` in App.tsx).
+// `{ action: 'muse.native.NAVIGATE', route, params, origin }` is appended
+// per allowed call — the RouterBridge.invoke("navigate", {route, params})
+// record. When the sink is absent the injected host entry
+// `globalThis.__museRouterNavigate(route, params, origin)` is called.
 //
-// Fallback semantics (fail-closed): `true` always means "a
-// native-observable advance was issued" — either the hermetic sink record
+// Fallback semantics (fail-closed): `true` always means "an
+// arbitrary-route navigate was issued" — either the hermetic sink record
 // or the host entry was invoked without throwing/denying. Sink absent +
 // no host entry → `false` (no-op), never a bare `true` with no effect.
 // A host entry that throws or returns exactly `false` is treated as
 // denied → `false`; any other host return (including `undefined`) counts
-// as issued → `true`.
+// as issued → `true`. A call without an explicit route target is denied:
+// the retired +1 semantic never navigates.
+// Arbitrary-route navigation action (FR-NAV-011/FR-NAV-013 T5): product
+// advances route via RouterBridge.invoke("navigate", {route, params}).
+// The retired +1 NATIVE_ADVANCE_PAGE broadcast is never emitted here.
+const NAVIGATE_ACTION = 'muse.native.NAVIGATE';
+
 const SHELL_ADVANCE_GESTURES = {
   'shell-chrome': 'tap',
   key: 'key',
   'deep-link': 'deep-link',
 };
 
-function requestShellAdvance(direction, origin) {
+function requestShellAdvance(direction, origin, route, params) {
   if (direction !== -1 && direction !== 1) {
     return false;
   }
@@ -270,21 +281,28 @@ function requestShellAdvance(direction, origin) {
   if (gesture === undefined || !isPagingGesture('shell-chrome', gesture)) {
     return false;
   }
+  // Arbitrary-route requires an explicit route target; without one the
+  // retired +1 semantic stays denied (fail closed).
+  if (typeof route !== 'string' || route.length === 0) {
+    return false;
+  }
+  const navigateParams = params !== null && typeof params === 'object' && !Array.isArray(params) ? params : {};
   if (typeof globalThis !== 'undefined' && Array.isArray(globalThis.__museTestBroadcasts)) {
     globalThis.__museTestBroadcasts.push({
-      action: BROADCAST_ADVANCE_PAGE,
-      direction,
+      action: NAVIGATE_ACTION,
+      route,
+      params: navigateParams,
       origin,
     });
     return true;
   }
-  // Production path: injected host advance entry when present; fail closed
-  // (return false) when absent, so `true` always implies an observable
-  // native advance was issued.
+  // Production path: injected router-navigate host entry when present; fail
+  // closed (return false) when absent, so `true` always implies an
+  // arbitrary-route navigate was issued.
   try {
-    const host = typeof globalThis !== 'undefined' ? globalThis.__museHostAdvance : undefined;
+    const host = typeof globalThis !== 'undefined' ? globalThis.__museRouterNavigate : undefined;
     if (typeof host === 'function') {
-      const issued = host(direction, origin);
+      const issued = host(route, navigateParams, origin);
       if (issued === false) {
         return false;
       }
@@ -326,5 +344,6 @@ module.exports = {
   handleBroadcast,
   STORY_LINK_PREFIX,
   BROADCAST_ADVANCE_PAGE,
+  NAVIGATE_ACTION,
   PROOF_ADVANCE_PAGE,
 };
