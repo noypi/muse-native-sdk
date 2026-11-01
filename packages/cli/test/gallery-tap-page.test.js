@@ -694,6 +694,12 @@ function t2AssertStepOrder(lines) {
 const T2_SERIAL = 'emulator-5554';
 const T2_PAGE_BEFORE = 'muse-host: page-index 2\n';
 const T2_PAGE_AFTER = 'muse-host: page-index 3\n';
+// Live-device format (serial 127.0.0.1:6569: `adb -s 127.0.0.1:6569 logcat -d`
+// shows `GalleryPage: gallery-page=1/9`, NOT `muse-host: page-index N`).
+// Served through the same stub (d1/d2 verbatim); the muse-host form above
+// is kept — both formats must be served, neither removed.
+const T2_GALLERY_PAGE_BEFORE = 'GalleryPage: gallery-page=2/9\n';
+const T2_GALLERY_PAGE_AFTER = 'GalleryPage: gallery-page=3/9\n';
 const T2_PNG = `PNGFAKEDATA-${'A'.repeat(200)}`;
 
 describe('T2 — tap-page device sequence (FR-RUNTIME-012, AC-RUNTIME-036)', () => {
@@ -709,6 +715,31 @@ describe('T2 — tap-page device sequence (FR-RUNTIME-012, AC-RUNTIME-036)', () 
     assert.ok(new RegExp(T2_SERIAL.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).test(out), 'output must name the lane device serial');
     assert.ok(/page-advanced/.test(out), 'output must tabulate the page-advanced row');
     assert.ok(/no-blank-viewport/.test(out), 'output must tabulate the no-blank-viewport row');
+  });
+
+  it('live GalleryPage format gallery-page=2/9 → 3/9 with non-blank screencap exits 0', () => {
+    const { bin } = writeTapPageAdbStub({ d1: T2_GALLERY_PAGE_BEFORE, d2: T2_GALLERY_PAGE_AFTER, png: T2_PNG });
+    const res = runCli(
+      ['gallery-tap', '--tap-page', '--serial', T2_SERIAL],
+      t2WithPath(bin, { cwd: t2mkTmp('muse-tap-page-cwd-') }),
+    );
+    const out = `${res.stdout}\n${res.stderr}`;
+    assert.equal(res.status, 0, `live gallery-page format 2/9→3/9 must exit 0, got ${res.status}; out: ${out.slice(0, 800)}`);
+    assert.ok(/tap-page/.test(out), 'output must name the tap-page lane');
+    assert.ok(/page-advanced/.test(out), 'output must tabulate the page-advanced row');
+    assert.ok(/no-blank-viewport/.test(out), 'output must tabulate the no-blank-viewport row');
+  });
+
+  it('live GalleryPage format unchanged gallery-page=2/9 exits 1 naming the page-advanced row', () => {
+    const { bin } = writeTapPageAdbStub({ d1: T2_GALLERY_PAGE_BEFORE, d2: T2_GALLERY_PAGE_BEFORE, png: T2_PNG });
+    const res = runCli(
+      ['gallery-tap', '--tap-page', '--serial', T2_SERIAL],
+      t2WithPath(bin, { cwd: t2mkTmp('muse-tap-page-cwd-') }),
+    );
+    const out = `${res.stdout}\n${res.stderr}`;
+    assert.equal(res.status, 1, `unchanged live gallery-page index must exit 1, got ${res.status}; out: ${out.slice(0, 800)}`);
+    assert.ok(/page-advanced/.test(out), 'exit-1 output must name the failing page-advanced row');
+    assert.ok(/fail/.test(out), 'exit-1 output must mark the row fail');
   });
 
   it('tap-page run shells install/force-stop/logcat-c/start/tap/logcat-d/screencap in order', () => {
