@@ -36,9 +36,17 @@ apk:
 	test -s "$(MUSE_NATIVE_HOME)/android-armeabi-v7a/libRuntime.so" || { echo "error: missing engine lib for ABI slot armeabi-v7a at '$(MUSE_NATIVE_HOME)/android-armeabi-v7a/libRuntime.so'" >&2; exit 1; }
 	test -s "$(MUSE_NATIVE_HOME)/android-x86_64/libRuntime.so" || { echo "error: missing engine lib for ABI slot x86_64 at '$(MUSE_NATIVE_HOME)/android-x86_64/libRuntime.so'" >&2; exit 1; }
 	test -s "$(MUSE_NATIVE_HOME)/android-x86/libRuntime.so" || { echo "error: missing engine lib for ABI slot x86 at '$(MUSE_NATIVE_HOME)/android-x86/libRuntime.so'" >&2; exit 1; }
+	@if ! grep -a -q "Java_com_muse_host_MainActivity_nativeSetImeBottom" "$(MUSE_NATIVE_HOME)/android-arm64-v8a/libRuntime.so"; then echo "error: stale-lib: arm64-v8a '$(MUSE_NATIVE_HOME)/android-arm64-v8a/libRuntime.so' missing required symbol Java_com_muse_host_MainActivity_nativeSetImeBottom (expected fresh engine output engine/runtime/build-android-arm64-v8a/libRuntime.so) — reinstall the SDK" >&2; exit 1; fi
+	@if ! grep -a -q "Java_com_muse_host_MainActivity_nativeSetImeBottom" "$(MUSE_NATIVE_HOME)/android-armeabi-v7a/libRuntime.so"; then echo "error: stale-lib: armeabi-v7a '$(MUSE_NATIVE_HOME)/android-armeabi-v7a/libRuntime.so' missing required symbol Java_com_muse_host_MainActivity_nativeSetImeBottom (expected fresh engine output engine/runtime/build-android-armeabi-v7a/libRuntime.so) — reinstall the SDK" >&2; exit 1; fi
+	@if ! grep -a -q "Java_com_muse_host_MainActivity_nativeSetImeBottom" "$(MUSE_NATIVE_HOME)/android-x86_64/libRuntime.so"; then echo "error: stale-lib: x86_64 '$(MUSE_NATIVE_HOME)/android-x86_64/libRuntime.so' missing required symbol Java_com_muse_host_MainActivity_nativeSetImeBottom (expected fresh engine output engine/runtime/build-android-x86_64/libRuntime.so) — reinstall the SDK" >&2; exit 1; fi
+	@if ! grep -a -q "Java_com_muse_host_MainActivity_nativeSetImeBottom" "$(MUSE_NATIVE_HOME)/android-x86/libRuntime.so"; then echo "error: stale-lib: x86 '$(MUSE_NATIVE_HOME)/android-x86/libRuntime.so' missing required symbol Java_com_muse_host_MainActivity_nativeSetImeBottom (expected fresh engine output engine/runtime/build-android-x86/libRuntime.so) — reinstall the SDK" >&2; exit 1; fi
 	rm -f $(UNSIGNED_APK)
 	muse-native build .
 	mkdir -p assets && cp dist/tree.mui.bin assets/tree.mui.bin
+	@built_hash="$$(sha256sum dist/tree.mui.bin 2>/dev/null | cut -d' ' -f1)"; \
+	staged_hash="$$(sha256sum assets/tree.mui.bin 2>/dev/null | cut -d' ' -f1)"; \
+	if [ -z "$$built_hash" ] || [ -z "$$staged_hash" ]; then echo "error: stale-asset: assets/tree.mui.bin vs dist/tree.mui.bin: missing tree bytes (built='$$built_hash' staged='$$staged_hash') — rebuild required" >&2; exit 1; fi; \
+	if [ "$$built_hash" != "$$staged_hash" ]; then echo "error: stale-asset: assets/tree.mui.bin baked $$staged_hash != built dist/tree.mui.bin $$built_hash — rebuild required" >&2; exit 1; fi
 	mkdir -p $(STAGING_DIR) $(BUILD_DIR)/gen $(BUILD_DIR)/classes $(BUILD_DIR)/dex
 	aapt2 compile --dir res -o $(BUILD_DIR)/compiled.zip
 	aapt2 link -o $(LINKED_ZIP) -I $(ANDROID_JAR) --manifest AndroidManifest.xml --java $(BUILD_DIR)/gen -A assets $(BUILD_DIR)/compiled.zip
