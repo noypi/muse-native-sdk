@@ -135,22 +135,40 @@
 // muse-native gallery-real --assert-surface-contract [--device <serial>]
 // FR-RUNTIME-011 T3 surface-contract gate (AC-RUNTIME-034, TC-RUNTIME-034).
 // Intercepted here so the generic option validation in lib/cli.js (which
-// only knows the build flags) never sees the gate flags.
+// only knows the build flags) never sees the gate flags. The FR-GRAPHICS-015
+// T4 retained-component/interactive flags ride `lib/gallery-real.js` on the
+// same `gallery-real` command without altering the surface-contract leg.
 (function galleryRealEntry() {
   const argv = process.argv.slice(2);
   if (argv[0] !== 'gallery-real') return;
-  // FR-M3-011 dispatch: route the gallery-real flags to lib/gallery-real.js.
-  // The surface-contract gate keeps its byte-for-byte behavior for its own
-  // flag; anything carrying a FR-M3-011 flag (and no --assert-surface-contract)
-  // delegates to the gallery-real module, which fails closed with usage
-  // (exit 2) on unknown flags.
+  // Merged dispatch (resolve-conflicts round 2): one `gallery-real` entry
+  // serves three legs without altering any leg's flags, exit codes, or help:
+  //   (a) surface-contract gate (`--assert-surface-contract [--device
+  //       <serial>]`, exit 2 misuse / exit 1 SURFACE-CONTRACT-FAIL; `--help`
+  //       keeps the surface-contract Usage line — the FR-GRAPHICS-015 T4
+  //       help-preservation fix);
+  //   (b) upstream FR-M3-011 device-interactive + no-diagram/counts/
+  //       real-pixels/page dispatch (exit 2 usage / exit 1 fail);
+  //   (c) FR-GRAPHICS-015 T4 retained-component/interactive gates
+  //       (`--assert-retained-components|--assert-interactive
+  //       [--code-root <dir>]`, exit 2 misuse with the plan Usage line /
+  //       exit 1 naming the probe or symbol).
+  // `--assert-interactive` exists on both (b) and (c): with `--code-root`
+  // (or `--assert-retained-components`) it is the T4 source-gate leg;
+  // without it, it is the upstream device-interactive leg.
   const rest = argv.slice(1);
   const hasSurfaceContract = rest.includes('--assert-surface-contract');
-  // T2 interactive gate (AC-M3-026/AC-GRAPHICS-043): `--assert-interactive`
-  // runs through lib/gallery-surface-contract.js with the same
-  // argv-array-only shell-out discipline as gallery-tap.js. Help lists the
-  // flag (exit 0); device-less runs fail closed (exit 1 NO-DEVICE-RUNNER).
-  if (rest.includes('--assert-interactive') && !hasSurfaceContract) {
+  const hasRetained = rest.includes('--assert-retained-components');
+  const hasCodeRoot = rest.includes('--code-root');
+  const hasInteractive = rest.includes('--assert-interactive');
+  const wantsNew = hasRetained || (hasInteractive && hasCodeRoot);
+  const wantsContract = hasSurfaceContract;
+  // Leg (b1): upstream T2 device-interactive gate (AC-M3-026/AC-GRAPHICS-043):
+  // `--assert-interactive` runs through lib/gallery-surface-contract.js with
+  // the same argv-array-only shell-out discipline as gallery-tap.js. Help
+  // lists the flag (exit 0); device-less runs fail closed (exit 1
+  // NO-DEVICE-RUNNER).
+  if (hasInteractive && !hasSurfaceContract && !wantsNew) {
     const contract = require('../lib/gallery-surface-contract.js');
     if (argv.includes('--help') || argv.includes('-h')) {
       process.stdout.write(
@@ -192,16 +210,20 @@
     );
     return;
   }
+  // Leg (b2): upstream FR-M3-011 dispatch — route the no-diagram/counts/
+  // real-pixels/page flags to the namespaced M3 runner in
+  // lib/gallery-real.js, which fails closed with usage (exit 2) on unknown
+  // flags.
   const hasGalleryRealFlag = rest.includes('--assert-no-diagram')
     || rest.includes('--assert-counts')
-    || rest.includes('--assert-interactive')
     || rest.includes('--assert-real-pixels')
     || rest.includes('--page');
-  if (hasGalleryRealFlag && !hasSurfaceContract) {
+  if (hasGalleryRealFlag && !hasSurfaceContract && !wantsNew) {
     const real = require('../lib/gallery-real.js');
-    real.runGalleryReal(rest);
+    real.runGalleryRealM3(rest);
     return;
   }
+  if (wantsContract && !wantsNew) {
   const contract = require('../lib/gallery-surface-contract.js');
   if (argv.includes('--help') || argv.includes('-h')) {
     process.stdout.write(
@@ -227,6 +249,41 @@
         ? err.detail
         : ((err && err.message) || String(err));
       process.stderr.write(`SURFACE-CONTRACT-FAIL: ${code}: ${detail}\n`);
+      process.exitCode = 1;
+    },
+  );
+    return;
+  }
+  // FR-GRAPHICS-015 T4 leg (AC-GRAPHICS-042/043, TC-GRAPHICS-044/045):
+  // `muse-native gallery-real (--assert-retained-components|--assert-interactive)
+  // [--code-root <dir>]`. Bare/unknown-flag misuse maps to exit 2 with the
+  // plan Usage line; assertion failures map to exit 1 naming the probe or
+  // symbol. No device, no network.
+  const real = require('../lib/gallery-real.js');
+  const realUsage =
+    'Usage: muse-native gallery-real (--assert-retained-components|--assert-interactive) [--code-root <dir>]';
+  if (argv.includes('--help') || argv.includes('-h')) {
+    process.stdout.write(`${realUsage}\n`);
+    return;
+  }
+  let realOpts;
+  try {
+    realOpts = real.parseGalleryRealArgs(argv);
+  } catch (err) {
+    process.stderr.write(`${(err && err.message) || String(err)}\n${realUsage}\n`);
+    process.exitCode = 2;
+    return;
+  }
+  real.runGalleryReal({
+    assertRetainedComponents: realOpts.assertRetainedComponents,
+    assertInteractive: realOpts.assertInteractive,
+    codeRoot: realOpts.codeRoot,
+  }).then(
+    (result) => {
+      process.stdout.write(`${(result && result.message) || 'gallery-real ok'}\n`);
+    },
+    (err) => {
+      process.stderr.write(`${(err && err.message) || String(err)}\n`);
       process.exitCode = 1;
     },
   );
