@@ -224,6 +224,47 @@ function isPagingGesture(origin, gesture) {
   return gesture === 'tap' || gesture === 'key' || gesture === 'deep-link';
 }
 
+// Shell-chrome-only native advance bridge (BUG-SAMPLE-007 T3, AC-SAMPLE-039).
+//
+// Single choke point for every JS→native page advance: shell buttons, arrow
+// keys, and in-app deep links all emit through here. Allowed origins map to
+// the gesture `isPagingGesture` already accepts for shell chrome
+// (`shell-chrome`→`tap`, `key`→`key`, `deep-link`→`deep-link`); every other
+// origin — including `story-surface`, `inside-surface`, and unknown/missing
+// origins — is denied with no emission (fail closed, FR-SAMPLE-014). Invalid
+// directions are likewise denied. `isPagingGesture` itself is unchanged.
+//
+// Emission seam (contract note A-T1a): when the hermetic test sink
+// `globalThis.__museTestBroadcasts` (an array) is present, one record
+// `{ action, direction, origin }` with
+// `action === 'muse.native.NATIVE_ADVANCE_PAGE'` is appended per allowed
+// call. When the sink is absent the real bridge is used.
+const SHELL_ADVANCE_GESTURES = {
+  'shell-chrome': 'tap',
+  key: 'key',
+  'deep-link': 'deep-link',
+};
+
+function requestShellAdvance(direction, origin) {
+  if (direction !== -1 && direction !== 1) {
+    return false;
+  }
+  const gesture = Object.prototype.hasOwnProperty.call(SHELL_ADVANCE_GESTURES, origin)
+    ? SHELL_ADVANCE_GESTURES[origin]
+    : undefined;
+  if (gesture === undefined || !isPagingGesture('shell-chrome', gesture)) {
+    return false;
+  }
+  if (typeof globalThis !== 'undefined' && Array.isArray(globalThis.__museTestBroadcasts)) {
+    globalThis.__museTestBroadcasts.push({
+      action: BROADCAST_ADVANCE_PAGE,
+      direction,
+      origin,
+    });
+  }
+  return true;
+}
+
 // Shell chrome entry points (bound by App.tsx outside the story surface).
 function PrevButton(disabled) {
   void disabled;
@@ -244,6 +285,7 @@ module.exports = {
   parseStoryLink,
   storyIdOf,
   isPagingGesture,
+  requestShellAdvance,
   PrevButton,
   NextButton,
   StoryIndex,

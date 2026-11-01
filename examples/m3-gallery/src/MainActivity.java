@@ -143,9 +143,27 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     private final BroadcastReceiver advanceReceiver = new BroadcastReceiver() {
         @Override
         public void onReceive(Context context, Intent intent) {
-            // FR-SAMPLE-014: neutralized — no broadcast paginates
-            // (AC-SAMPLE-039). The receiver entry is kept for the proof
-            // harness, but it intentionally never calls nativeAdvancePage.
+            // BUG-SAMPLE-007 T4: scoped paging — shell-chrome/deep-link/key
+            // origins only (AC-SAMPLE-039/AC-M3-020). Every other
+            // action/origin (including missing origin, story-surface,
+            // surface tap) is a fail-closed no-op that never pages.
+            if (intent == null) {
+                return;
+            }
+            if (!ACTION_NATIVE_ADVANCE_PAGE.equals(intent.getAction())) {
+                return;
+            }
+            String origin = intent.getStringExtra("origin");
+            if (!("shell-chrome".equals(origin)
+                    || "key".equals(origin)
+                    || "deep-link".equals(origin))) {
+                return;
+            }
+            if (engineHandle == 0) {
+                return;
+            }
+            nativeAdvancePage(engineHandle);
+            nativeRenderFrame(engineHandle);
         }
     };
 

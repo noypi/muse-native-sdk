@@ -6,7 +6,7 @@ import { LayeringPage } from "./Showcase";
 import { buildStories } from "./stories";
 import { getGalleryMode, reportStaticFallback } from "./galleryMode";
 import { shuffleRemix, encodeRemix, decodeRemix } from "./remix";
-import { parseStoryLink, storyIdOf, isPagingGesture } from "./galleryNav";
+import { parseStoryLink, storyIdOf, isPagingGesture, requestShellAdvance } from "./galleryNav";
 
 // M3 motion tokens only (AC-SAMPLE-030; AC-TSX-029/030/031 consume-only):
 // route/state transitions reference motion tokens, never literal curves.
@@ -146,7 +146,7 @@ export function applyTheme(mode: 'light' | 'dark', seedFallback: boolean): void 
   activePalette = { ...palette, primary: seed };
 }
 
-export type PagingOrigin = 'inside-surface' | 'shell-chrome';
+export type PagingOrigin = 'inside-surface' | 'shell-chrome' | 'key' | 'deep-link';
 export type PagingGesture = 'tap' | 'double-tap' | 'drag' | 'long-press' | 'scroll' | 'key' | 'deep-link';
 // Single-sourced paging predicate (FR-SAMPLE-014, AC-SAMPLE-040): this module
 // reuses galleryNav.isPagingGesture so the tested denial-by-default rule and
@@ -190,19 +190,30 @@ export default function App() {
   const selectedStory = stories.length === 0 ? null : stories[clampedIndex];
   const prevDisabled = clampedIndex <= 0;
   const nextDisabled = stories.length === 0 || clampedIndex >= stories.length - 1;
-  const onPrev = (origin: PagingOrigin = SHELL_ORIGIN): void => {
+  const onPrev = (origin: PagingOrigin = SHELL_ORIGIN): boolean => {
     if (!isPagingGesture(origin, 'tap')) {
-      return;
+      return false;
     }
+    if (prevDisabled) {
+      return false;
+    }
+    requestShellAdvance(-1, 'shell-chrome');
     setSelectedIndex((i) => Math.max(0, i - 1));
+    return true;
   };
-  const onNext = (origin: PagingOrigin = SHELL_ORIGIN): void => {
+  const onNext = (origin: PagingOrigin = SHELL_ORIGIN): boolean => {
     if (!isPagingGesture(origin, 'tap')) {
-      return;
+      return false;
     }
+    if (nextDisabled) {
+      return false;
+    }
+    requestShellAdvance(1, 'shell-chrome');
     setSelectedIndex((i) => Math.min(Math.max(stories.length - 1, 0), i + 1));
+    return true;
   };
-  // ArrowLeft/ArrowRight dispatch the same navigate path as the buttons.
+  // ArrowLeft/ArrowRight dispatch the same index path as the buttons, routed
+  // through the shared native advance bridge with the key origin.
   useEffect(() => {
     if (typeof window === 'undefined' || typeof window.addEventListener !== 'function') {
       return;
@@ -211,9 +222,17 @@ export default function App() {
       if (!isPagingGesture(origin, 'key')) {
         return;
       }      if (event.key === 'ArrowRight') {
-        onNext(origin);
+        if (nextDisabled) {
+          return;
+        }
+        requestShellAdvance(1, 'key');
+        setSelectedIndex((i) => Math.min(Math.max(stories.length - 1, 0), i + 1));
       } else if (event.key === 'ArrowLeft') {
-        onPrev(origin);
+        if (prevDisabled) {
+          return;
+        }
+        requestShellAdvance(-1, 'key');
+        setSelectedIndex((i) => Math.max(0, i - 1));
       }
     };
     window.addEventListener('keydown', onKeyDown);
@@ -237,6 +256,9 @@ export default function App() {
     const found = stories.findIndex((story) => storyIdOf(story) === id);
     if (found < 0) {
       return { code: 'unknown-story', storyId: id };
+    }
+    if (found !== clampedIndex) {
+      requestShellAdvance(found > clampedIndex ? 1 : -1, 'deep-link');
     }
     setSelectedIndex(found);
     return { index: found, storyId: storyIdOf(stories[found]) as string };
