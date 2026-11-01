@@ -28,6 +28,8 @@
 // update these call sites (reconciliation, not weakening) and re-publish.
 // Until the coder defines them, compiling/linking this file MUST fail
 // (expected red, not a malformed test).
+#include <jni.h>
+
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -90,6 +92,77 @@ void* valid_window() {
 #else
   return reinterpret_cast<void*>(0x1234);
 #endif
+}
+
+// --- hermetic JNI-entry seam (fake but valid JNIEnv) -------------------------
+// The `nativeSeam*` JNI entries live in jni_bridge.cpp and link into the
+// `runtime` lib, so hermetic tests can bind the real `extern "C"` symbols
+// without starting a JVM. The fake JNIEnv below is a REAL JNIEnv object
+// (real jni.h layout) whose function table serves canned string ops; only
+// the slots the attach path touches are populated (ExceptionCheck /
+// ExceptionClear / GetStringUTFLength / GetStringUTFChars /
+// ReleaseStringUTFChars). No VM interaction, no exception can cross into a
+// VM, no device/network/env/filesystem use.
+extern "C" jint Java_com_muse_host_MainActivity_nativeSeamAttachSurface(
+    JNIEnv* env, jobject thiz, jlong windowHandle, jstring rootKind,
+    jboolean unknownKind);
+extern "C" jlong Java_com_muse_host_MainActivity_nativeSeamLastHandle(
+    JNIEnv* env, jobject thiz);
+extern "C" jint Java_com_muse_host_MainActivity_nativeSeamDetach(
+    JNIEnv* env, jobject thiz, jlong surfaceHandle);
+extern "C" jint Java_com_muse_host_MainActivity_nativeSeamDestroy(
+    JNIEnv* env, jobject thiz, jlong surfaceHandle);
+
+// Canned modified-UTF-8 bytes served by the fake GetStringUTFChars.
+const char* g_fake_kind_chars = "";
+jsize g_fake_kind_len = 0;
+
+jboolean JNICALL fake_ExceptionCheck(JNIEnv*) { return JNI_FALSE; }
+void JNICALL fake_ExceptionClear(JNIEnv*) {}
+jsize JNICALL fake_GetStringUTFLength(JNIEnv*, jstring) {
+  return g_fake_kind_len;
+}
+const char* JNICALL fake_GetStringUTFChars(JNIEnv*, jstring, jboolean*) {
+  return g_fake_kind_chars;
+}
+void JNICALL fake_ReleaseStringUTFChars(JNIEnv*, jstring, const char*) {}
+
+JNINativeInterface_ g_fake_jni_table{};
+JNIEnv g_fake_env{};
+
+void init_fake_jni() {
+  static bool inited = false;
+  if (inited) return;
+  g_fake_jni_table.ExceptionCheck = fake_ExceptionCheck;
+  g_fake_jni_table.ExceptionClear = fake_ExceptionClear;
+  g_fake_jni_table.GetStringUTFLength = fake_GetStringUTFLength;
+  g_fake_jni_table.GetStringUTFChars = fake_GetStringUTFChars;
+  g_fake_jni_table.ReleaseStringUTFChars = fake_ReleaseStringUTFChars;
+  g_fake_env.functions = &g_fake_jni_table;
+  inited = true;
+}
+
+// A non-null fake jstring; the fake string ops ignore it and serve the
+// canned bytes above.
+jstring fake_jstring() {
+  return reinterpret_cast<jstring>(static_cast<std::uintptr_t>(0x11));
+}
+
+// Calls the REAL JNI attach entry with `kind` served through the fake env.
+jint jni_attach(const char* kind, jboolean unknown, void* window) {
+  init_fake_jni();
+  g_fake_kind_chars = kind;
+  g_fake_kind_len = static_cast<jsize>(std::strlen(kind));
+  return Java_com_muse_host_MainActivity_nativeSeamAttachSurface(
+      &g_fake_env, nullptr,
+      static_cast<jlong>(reinterpret_cast<std::intptr_t>(window)),
+      fake_jstring(), unknown);
+}
+
+jlong jni_last_handle() {
+  init_fake_jni();
+  return Java_com_muse_host_MainActivity_nativeSeamLastHandle(&g_fake_env,
+                                                              nullptr);
 }
 
 }  // namespace
@@ -312,20 +385,80 @@ static bool check_frame_stats_increment() {
   return ok;
 }
 
-// T2 security: oversized IME inset is clamped or rejected, never crashes;
-// negative inset fails closed or clamps — never an unowned draw.
+// Security [MEDIUM]: stale-handle reset — after detach+destroy through the
+// REAL JNI entries, the last-handle getter must read 0. EXPECTED RED:
+// detach/destroy never clear g_seam_last_handle (jni_bridge.cpp stores it on
+// attach exit only), so the getter keeps returning the dead handle.
+static bool check_last_handle_resets_after_detach_destroy() {
+  init_fake_jni();
+  jint st = jni_attach("M3Button", JNI_FALSE, valid_window());
+  if (st != static_cast<jint>(runtime::PresenterCode::kOk)) return false;
+  jlong h = jni_last_handle();
+  if (h == 0) return false;  // attach must have published a handle
+  (void)Java_com_muse_host_MainActivity_nativeSeamDetach(&g_fake_env,
+                                                          nullptr, h);
+  (void)Java_com_muse_host_MainActivity_nativeSeamDestroy(&g_fake_env,
+                                                          nullptr, h);
+  return jni_last_handle() == 0;
+}
+
+// Security [LOW]: empty-kind fail-closed at the JNI-entry-equivalent path.
+// The JNI layer promotes empty rootKind + unknownKind=false to unknown
+// before the seam (jni_bridge.cpp); calling the REAL entry with "" must
+// yield kCreateFailed and publish no handle (getter reads 0).
+static bool check_empty_root_kind_rejected_fail_closed() {
+  init_fake_jni();
+  jint st = jni_attach("", JNI_FALSE, valid_window());
+  bool ok = (st == static_cast<jint>(runtime::PresenterCode::kCreateFailed));
+  ok = ok && (jni_last_handle() == 0);
+  return ok;
+}
+
+// Security [LOW]: forged-window double-attach — a second attach on the same
+// live window (different valid tree, i.e. a squatting caller) is rejected
+// with kAlreadyAttached and the first surface's state is untouched.
+static bool check_forged_window_double_attach_state_untouched() {
+  runtime::AttachResult first =
+      runtime::attachSurface(make_valid_tree(), valid_window());
+  if (!error_is(first.error, runtime::PresenterCode::kOk)) return false;
+  runtime::CompiledTreeRef forged;
+  forged.rootKind = "M3Gallery";
+  forged.unknownKind = false;
+  runtime::AttachResult second = runtime::attachSurface(forged, valid_window());
+  bool ok = error_is(second.error, runtime::PresenterCode::kAlreadyAttached) &&
+            has_diagnostic(second.error) && second.handle == 0;
+  // State untouched: the first handle is still live and usable.
+  runtime::FrameStats stats{};
+  ok = ok && error_is(runtime::getFrameStats(first.handle, &stats),
+                      runtime::PresenterCode::kOk);
+  runtime::DrawCmds cmds;
+  runtime::NoteFrameRecordedForSurface(first.handle, cmds);
+  ok = ok && error_is(runtime::renderFrame(first.handle, cmds),
+                      runtime::PresenterCode::kOk);
+  (void)runtime::detachSurface(first.handle);
+  (void)runtime::destroySurface(first.handle);
+  return ok;
+}
+
+// T2 security: oversized IME inset is clamped, never crashes; negative inset
+// clamps — never an unowned draw. Tightened: pins the specific oversized
+// value 100000 (>> kSeamImeMaxPx 8192, so it must take the ClampImeBottom
+// path in presenter.cpp) and requires exact kOk plus continued liveness.
+// (The clamped stored value has no public getter, so kOk + liveness is the
+// observable pin; the 8192 bound itself is by inspection of ClampImeBottom.)
 static bool check_ime_inset_bounds_fail_closed() {
   runtime::CompiledTreeRef tree = make_valid_tree();
   runtime::AttachResult r = runtime::attachSurface(tree, valid_window());
   if (!error_is(r.error, runtime::PresenterCode::kOk)) return false;
-  runtime::PresenterError huge = runtime::setImeBottom(r.handle, 1000000);
-  bool ok = error_is(huge, runtime::PresenterCode::kOk) ||
-            (error_is(huge, runtime::PresenterCode::kNoSurface) &&
-             has_diagnostic(huge)) ||
-            has_diagnostic(huge);
-  runtime::PresenterError neg = runtime::setImeBottom(r.handle, -1);
-  ok = ok && (error_is(neg, runtime::PresenterCode::kOk) ||
-              has_diagnostic(neg));
+  bool ok = error_is(runtime::setImeBottom(r.handle, 100000),
+                     runtime::PresenterCode::kOk);
+  ok = ok && error_is(runtime::setImeBottom(r.handle, -1),
+                      runtime::PresenterCode::kOk);
+  // Surface still live after clamped insets: the render path is unaffected.
+  runtime::DrawCmds cmds;
+  runtime::NoteFrameRecordedForSurface(r.handle, cmds);
+  ok = ok && error_is(runtime::renderFrame(r.handle, cmds),
+                      runtime::PresenterCode::kOk);
   (void)runtime::detachSurface(r.handle);
   (void)runtime::destroySurface(r.handle);
   return ok;
@@ -359,6 +492,9 @@ int main() {
   RUN_CASE(check_set_theme_in_place);
   RUN_CASE(check_set_ime_bottom_in_place);
   RUN_CASE(check_frame_stats_increment);
+  RUN_CASE(check_last_handle_resets_after_detach_destroy);
+  RUN_CASE(check_empty_root_kind_rejected_fail_closed);
+  RUN_CASE(check_forged_window_double_attach_state_untouched);
   RUN_CASE(check_ime_inset_bounds_fail_closed);
   if (failures > 0) {
     std::printf("surface_contract_test: %d failing\n", failures);

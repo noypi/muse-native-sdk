@@ -1799,11 +1799,16 @@ extern "C" MUSE_JNI_EXPORT jint Java_com_muse_host_MainActivity_nativeSeamDetach
   try {
     ::runtime::PresenterError err = ::runtime::detachSurface(
         static_cast<::runtime::SurfaceHandle>(surfaceHandle));
+    // Security MEDIUM: the detached handle is invalid — clear the published
+    // last-handle slot so nativeSeamLastHandle never returns a stale handle.
+    // Unconditional store: any detach invalidates currency for the getter.
+    g_seam_last_handle.store(0, std::memory_order_relaxed);
     return static_cast<jint>(err.code);
   } catch (...) {
     if (env->ExceptionCheck() == JNI_TRUE) {
       env->ExceptionClear();
     }
+    g_seam_last_handle.store(0, std::memory_order_relaxed);
     return static_cast<jint>(::runtime::PresenterCode::kOk);
   }
 }
@@ -1817,11 +1822,15 @@ extern "C" MUSE_JNI_EXPORT jint Java_com_muse_host_MainActivity_nativeSeamDestro
   try {
     ::runtime::PresenterError err = ::runtime::destroySurface(
         static_cast<::runtime::SurfaceHandle>(surfaceHandle));
+    // Security MEDIUM: the destroyed handle is invalid — clear the published
+    // last-handle slot so nativeSeamLastHandle never returns a stale handle.
+    g_seam_last_handle.store(0, std::memory_order_relaxed);
     return static_cast<jint>(err.code);
   } catch (...) {
     if (env->ExceptionCheck() == JNI_TRUE) {
       env->ExceptionClear();
     }
+    g_seam_last_handle.store(0, std::memory_order_relaxed);
     return static_cast<jint>(::runtime::PresenterCode::kOk);
   }
 }

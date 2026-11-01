@@ -55,12 +55,27 @@ function okSequence() {
   };
 }
 
+// Canned clean seam-interface text: zero gallery-concept tokens per
+// RULE-RUNTIME-007 (`INTERFACE_TOKEN_RE = /page|stor|Prev|Next/` in
+// lib/gallery-surface-contract.js). Shared by okDeps so no hermetic test
+// touches the filesystem via the default presenter.h reader.
+const CLEAN_INTERFACE_TEXT = [
+  '// seam interface: zero gallery-concept tokens',
+  'struct MuseSurface {',
+  '  int handle;',
+  '};',
+  'int attachSurface(int handle);',
+  'int renderFrame(int handle);',
+  '',
+].join('\n');
+
 function okDeps(overrides = {}) {
   const seq = { ...okSequence(), ...overrides };
   return {
     driveSequence: async () => ({ steps: seq.steps, fallbackToStaticRoot: seq.fallbackToStaticRoot }),
     readFrameStats: async () => seq.stats,
     readLogcat: async () => seq.logcat,
+    readInterfaceText: async () => CLEAN_INTERFACE_TEXT,
   };
 }
 
@@ -253,16 +268,6 @@ describe('T3 — runSurfaceContract hermetic, device/logcat/gallery stubbed (no 
 });
 
 describe('T3 — seam interface token scan via deps.readInterfaceText only (RULE-RUNTIME-007)', () => {
-  const CLEAN_INTERFACE_TEXT = [
-    '// seam interface: zero gallery-concept tokens',
-    'struct MuseSurface {',
-    '  int handle;',
-    '};',
-    'int attachSurface(int handle);',
-    'int renderFrame(int handle);',
-    '',
-  ].join('\n');
-
   function tokenDeps(interfaceText) {
     return {
       ...okDeps(),
@@ -330,6 +335,21 @@ describe('T3 — seam interface token scan via deps.readInterfaceText only (RULE
       surfaceContract.runSurfaceContract({
         device: 'stubbed-no-device',
         deps: tokenDeps(`${CLEAN_INTERFACE_TEXT}\nvoid goNext();\n`),
+      }),
+      assertGalleryTokensFailure,
+    );
+  });
+
+  it('innocent longer identifiers containing token substrings are still rejected (unanchored substring match)', async () => {
+    // Pins the exact lib behavior: INTERFACE_TOKEN_RE is the unanchored
+    // substring match /page|stor|Prev|Next/, so `storageCount` contains
+    // `stor` and the gate must reject it — no word-boundary rule is
+    // invented here.
+    assert.ok(surfaceContract, 'lib/gallery-surface-contract.js must load');
+    await assert.rejects(
+      surfaceContract.runSurfaceContract({
+        device: 'stubbed-no-device',
+        deps: tokenDeps(`${CLEAN_INTERFACE_TEXT}\nint storageCount;\n`),
       }),
       assertGalleryTokensFailure,
     );
