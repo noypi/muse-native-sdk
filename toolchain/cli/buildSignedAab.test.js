@@ -198,6 +198,29 @@ describe('T2 — signing inputs missing throw unsigned-artifact', () => {
         'project not found'
       );
     }
+    // (c3) projectDir is not a directory (buildSignedAab.js:130).
+    {
+      const root = mkTmp('aab-sentinel-c3-');
+      const notDir = path.join(root, 'not-a-dir-not-real');
+      fs.writeFileSync(notDir, 'file-not-dir-not-real\n');
+      collectThrow(
+        () => buildSignedAab({ projectDir: notDir, keyAlias: SENTINEL }),
+        'projectDir is not a directory'
+      );
+    }
+    // (c4) cannot read project (buildSignedAab.js:138) via fault injection.
+    {
+      const root = mkTmp('aab-sentinel-c4-');
+      const projectDir = writeProject(path.join(root, 'app'));
+      const origReaddir = fs.readdirSync;
+      const fault = Object.assign(new Error('fault-not-real'), { code: 'EIO-FAULT-NOT-REAL' });
+      fs.readdirSync = () => { throw fault; };
+      try {
+        collectThrow(() => buildSignedAab({ projectDir, keyAlias: SENTINEL }), 'cannot read project');
+      } finally {
+        fs.readdirSync = origReaddir;
+      }
+    }
     // (d) tampered-inputs fixture (.tampered sidecar).
     {
       const root = mkTmp('aab-sentinel-d-');
@@ -211,6 +234,19 @@ describe('T2 — signing inputs missing throw unsigned-artifact', () => {
       const projectDir = writeProject(path.join(root, 'app'));
       fs.rmSync(path.join(projectDir, 'bundle.stub.js'));
       collectThrow(() => buildSignedAab({ projectDir, keyAlias: SENTINEL }), 'missing input');
+    }
+    // (e2) cannot read input (buildSignedAab.js:160) via fault injection on read.
+    {
+      const root = mkTmp('aab-sentinel-e2-');
+      const projectDir = writeProject(path.join(root, 'app'));
+      const origRead = fs.readFileSync;
+      const fault = Object.assign(new Error('fault-not-real'), { code: 'EIO-FAULT-NOT-REAL' });
+      fs.readFileSync = () => { throw fault; };
+      try {
+        collectThrow(() => buildSignedAab({ projectDir, keyAlias: SENTINEL }), 'cannot read input');
+      } finally {
+        fs.readFileSync = origRead;
+      }
     }
     // (f) signing-failure path via fault injection on write.
     {
@@ -226,6 +262,6 @@ describe('T2 — signing inputs missing throw unsigned-artifact', () => {
       }
     }
 
-    assert.equal(messages.length, 7, 'every throwing branch must have been exercised');
+    assert.equal(messages.length, 10, 'sentinel-alias loop covers missing/empty keyAlias, missing projectDir, project-not-found, not-a-directory (:130), cannot-read-project (:138), tampered inputs, missing input, cannot-read-input (:160), signing failure');
   });
 });
