@@ -473,6 +473,188 @@ static bool check_host_on_config_change_drives_both() {
   return ok;
 }
 
+bool diagnostic_leaks_internals(const std::string& msg) {
+  // Negative property: diagnostics must be static literals with no pointer
+  // formatting, hex addresses, or errno/strerror text.
+  if (msg.find("%p") != std::string::npos) return true;
+  if (msg.find("0x") != std::string::npos) return true;
+  if (msg.find("0X") != std::string::npos) return true;
+  if (msg.find("strerror") != std::string::npos) return true;
+  if (msg.find("errno") != std::string::npos) return true;
+  if (msg.find("ENOMEM") != std::string::npos) return true;
+  return false;
+}
+
+// Named case (security NOTE-1): HostOnSurfaceRecreated failure-path liveness
+// agreement — null/invalid recreate must leave host AND presenter agreeing on
+// failure (surface_valid==false AND PresentFrame→kNoSwapchain), never
+// host-live/presenter-dead.
+static bool check_host_on_recreated_failure_liveness_agrees() {
+  reset_presenter();
+#ifndef __ANDROID__
+  FakeNativeWindow w;
+  void* handle = static_cast<void*>(&w);
+#else
+  void* handle = reinterpret_cast<void*>(0x1234);
+#endif
+  runtime::Surface s;
+  runtime::Host host = runtime::create_host(s);
+  if (!setup_live_swapchain(handle)) {
+    reset_presenter();
+    runtime::destroy_host(host);
+    return false;
+  }
+  if (!error_is(runtime::HostOnSurfaceDestroyed(host),
+                runtime::PresenterCode::kOk)) {
+    reset_presenter();
+    runtime::destroy_host(host);
+    return false;
+  }
+  // Null window: must fail AND leave both layers agreeing on no-surface.
+  runtime::PresenterError null_err =
+      runtime::HostOnSurfaceRecreated(host, nullptr);
+  bool ok = !error_is(null_err, runtime::PresenterCode::kOk) &&
+            !runtime::surface_valid(host);
+  runtime::DrawCmds cmds;
+  ok = ok && error_is(runtime::PresentFrame(cmds),
+                      runtime::PresenterCode::kNoSwapchain);
+#ifndef __ANDROID__
+  int bogus = 0;  // never a FakeNativeWindow: must be rejected, not probed.
+  runtime::PresenterError bad_err = runtime::HostOnSurfaceRecreated(
+      host, static_cast<void*>(&bogus));
+#else
+  runtime::PresenterError bad_err = runtime::HostOnSurfaceRecreated(
+      host, reinterpret_cast<void*>(0x1));
+#endif
+  ok = ok && !error_is(bad_err, runtime::PresenterCode::kOk) &&
+       !runtime::surface_valid(host);
+  ok = ok && error_is(runtime::PresentFrame(cmds),
+                      runtime::PresenterCode::kNoSwapchain);
+  reset_presenter();
+  runtime::destroy_host(host);
+  return ok;
+}
+
+// Named case (security NOTE-1): HostOnConfigChange failure-path liveness
+// agreement — (a) invalid fresh_window on a live swapchain and (b) config
+// change with no pre-existing surface must both leave host AND presenter
+// agreeing on failure (surface_valid==false AND PresentFrame→kNoSwapchain).
+static bool check_host_on_config_change_failure_liveness_agrees() {
+  reset_presenter();
+#ifndef __ANDROID__
+  FakeNativeWindow w;
+  void* handle = static_cast<void*>(&w);
+  int bogus = 0;  // never a FakeNativeWindow: must be rejected, not probed.
+  void* bad = static_cast<void*>(&bogus);
+  FakeNativeWindow fresh;
+  void* fresh_handle = static_cast<void*>(&fresh);
+#else
+  void* handle = reinterpret_cast<void*>(0x1234);
+  void* bad = reinterpret_cast<void*>(0x1);
+  void* fresh_handle = reinterpret_cast<void*>(0x5678);
+#endif
+  // (a) live swapchain + invalid fresh_window → failure, both layers agree.
+  {
+    runtime::Surface s;
+    runtime::Host host = runtime::create_host(s);
+    if (!setup_live_swapchain(handle)) {
+      reset_presenter();
+      runtime::destroy_host(host);
+      return false;
+    }
+    runtime::PresenterError err =
+        runtime::HostOnConfigChange(host, bad);
+    bool ok = !error_is(err, runtime::PresenterCode::kOk) &&
+              !runtime::surface_valid(host);
+    runtime::DrawCmds cmds;
+    ok = ok && error_is(runtime::PresentFrame(cmds),
+                        runtime::PresenterCode::kNoSwapchain);
+    reset_presenter();
+    runtime::destroy_host(host);
+    if (!ok) {
+      return false;
+    }
+  }
+  // (b) no pre-existing surface + config change → failure, both layers agree
+  // (early destroyed != kOk return must not leave host-live/presenter-dead).
+  {
+    runtime::Surface s;
+    runtime::Host host = runtime::create_host(s);
+    runtime::PresenterError err =
+        runtime::HostOnConfigChange(host, fresh_handle);
+    bool ok = !error_is(err, runtime::PresenterCode::kOk) &&
+              !runtime::surface_valid(host);
+    runtime::DrawCmds cmds;
+    ok = ok && error_is(runtime::PresentFrame(cmds),
+                        runtime::PresenterCode::kNoSwapchain);
+    reset_presenter();
+    runtime::destroy_host(host);
+    if (!ok) {
+      return false;
+    }
+  }
+  return true;
+}
+
+// Named case (security review MINOR): error diagnostics carry no internals —
+// negative assertion that invalid-handle failure messages contain no
+// pointer formatting, hex addresses, or strerror/errno text.
+static bool check_error_diagnostics_carry_no_internals() {
+  reset_presenter();
+#ifndef __ANDROID__
+  FakeNativeWindow w;
+  void* handle = static_cast<void*>(&w);
+  int bogus = 0;  // never a FakeNativeWindow: must be rejected, not probed.
+  void* bad = static_cast<void*>(&bogus);
+#else
+  void* handle = reinterpret_cast<void*>(0x1234);
+  void* bad = reinterpret_cast<void*>(0x1);
+#endif
+  bool ok = true;
+  runtime::PresenterError e1 = runtime::AttachSurface(nullptr);
+  ok = ok && has_diagnostic(e1) && !diagnostic_leaks_internals(e1.message);
+  runtime::PresenterError e2 = runtime::AttachSurface(bad);
+  ok = ok && has_diagnostic(e2) && !diagnostic_leaks_internals(e2.message);
+  (void)runtime::DetachSurface();
+  runtime::PresenterError e3 = runtime::OnSurfaceRecreated(nullptr);
+  ok = ok && has_diagnostic(e3) && !diagnostic_leaks_internals(e3.message);
+  runtime::PresenterError e4 = runtime::OnSurfaceRecreated(bad);
+  ok = ok && has_diagnostic(e4) && !diagnostic_leaks_internals(e4.message);
+  runtime::Surface s;
+  runtime::Host host = runtime::create_host(s);
+  if (!setup_live_swapchain(handle)) {
+    reset_presenter();
+    runtime::destroy_host(host);
+    return false;
+  }
+  if (!error_is(runtime::HostOnSurfaceDestroyed(host),
+                runtime::PresenterCode::kOk)) {
+    reset_presenter();
+    runtime::destroy_host(host);
+    return false;
+  }
+  runtime::PresenterError e5 =
+      runtime::HostOnSurfaceRecreated(host, nullptr);
+  ok = ok && has_diagnostic(e5) && !diagnostic_leaks_internals(e5.message);
+  runtime::PresenterError e6 = runtime::HostOnSurfaceRecreated(host, bad);
+  ok = ok && has_diagnostic(e6) && !diagnostic_leaks_internals(e6.message);
+  runtime::PresenterError e7 = runtime::HostOnConfigChange(host, bad);
+  ok = ok && has_diagnostic(e7) && !diagnostic_leaks_internals(e7.message);
+  reset_presenter();
+  runtime::destroy_host(host);
+  // No-surface config-change path diagnostic is also covered (early return).
+  {
+    runtime::Surface s2;
+    runtime::Host host2 = runtime::create_host(s2);
+    runtime::PresenterError e8 =
+        runtime::HostOnConfigChange(host2, handle);
+    ok = ok && has_diagnostic(e8) && !diagnostic_leaks_internals(e8.message);
+    runtime::destroy_host(host2);
+  }
+  reset_presenter();
+  return ok;
+}
+
 #define RUN_CASE(name)                                       \
   do {                                                       \
     if (!(name)()) {                                         \
@@ -500,6 +682,9 @@ int main() {
   RUN_CASE(check_host_on_recreated_drives_both_layers);
   RUN_CASE(check_host_on_background_foreground_drive_both);
   RUN_CASE(check_host_on_config_change_drives_both);
+  RUN_CASE(check_host_on_recreated_failure_liveness_agrees);
+  RUN_CASE(check_host_on_config_change_failure_liveness_agrees);
+  RUN_CASE(check_error_diagnostics_carry_no_internals);
   if (failures > 0) {
     std::printf("swapchain_lifecycle_test: %d failing\n", failures);
     return 1;

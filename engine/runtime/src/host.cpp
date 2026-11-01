@@ -25,10 +25,13 @@ PresenterError HostOnSurfaceDestroyed(Host& host) {
 }
 
 PresenterError HostOnSurfaceRecreated(Host& host, void* opaque_window) {
-  // Re-arm the host surface in place (tree untouched), then re-create the
-  // presenter surface+swapchain on the fresh window.
-  host.surface_live = true;
-  return OnSurfaceRecreated(opaque_window);
+  // Re-create the presenter surface+swapchain on the fresh window first,
+  // then re-arm the host surface only on success (rollback-on-error), so a
+  // null/invalid recreate leaves host AND presenter agreeing on failure.
+  // Tree untouched (RULE-RUNTIME-004).
+  PresenterError recreated = OnSurfaceRecreated(opaque_window);
+  host.surface_live = (recreated.code == PresenterCode::kOk);
+  return recreated;
 }
 
 PresenterError HostOnBackground(Host& host) {
@@ -45,9 +48,14 @@ PresenterError HostOnConfigChange(Host& host, void* fresh_window) {
   simulate_config_change(host);
   PresenterError destroyed = OnSurfaceDestroyed();
   if (destroyed.code != PresenterCode::kOk) {
+    // Roll back the simulate re-arm so host agrees with the presenter
+    // no-surface failure; tree untouched.
+    host.surface_live = false;
     return destroyed;
   }
-  return OnSurfaceRecreated(fresh_window);
+  PresenterError recreated = OnSurfaceRecreated(fresh_window);
+  host.surface_live = (recreated.code == PresenterCode::kOk);
+  return recreated;
 }
 
 }  // namespace runtime
