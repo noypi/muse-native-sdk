@@ -10,13 +10,14 @@
 // Hermetic: node:test + node:assert/strict + stdlib only. Spawns `node bin/muse-native.js`
 // for the CLI exit contract. The device/logcat/gallery runner is stubbed via an
 // injectable `deps` override (ASSUMPTION A1) — hermetic cases never touch adb, a
-// device, the network, secrets, or live services.
+// device, the network, secrets, live services, or the filesystem: the seam
+// interface text is supplied via `deps.readInterfaceText`, never read from disk.
 // ASSUMPTIONS (contract genuinely silent, most defensible behavior tested):
 // - A1: `runSurfaceContract` accepts an optional hermetic `deps` override
-//   `{ driveSequence, readFrameStats, readLogcat }` plus an optional `emit`
-//   line sink, mirroring the gallery-present injectable-runner pattern. The plan
-//   Interface line names only the CLI shape; the override is a test-only seam,
-//   reconcile names (not verdicts) with the coder.
+//   `{ driveSequence, readFrameStats, readLogcat, readInterfaceText }` plus an
+//   optional `emit` line sink, mirroring the gallery-present injectable-runner
+//   pattern. The plan Interface line names only the CLI shape; the override is
+//   a test-only seam, reconcile names (not verdicts) with the coder.
 // - A2: unknown flags and missing `--device` values exit 2 with usage naming the
 //   flag (gallery-proof/gallery-present exit-code convention 0/1/2).
 // - A3: the failure value is `{ code: string(non-empty), detail: string(non-empty) }`
@@ -247,6 +248,90 @@ describe('T3 — runSurfaceContract hermetic, device/logcat/gallery stubbed (no 
         deps: okDeps({ steps: ['attach', 'render'] }),
       }),
       /step|sequence|missing/i,
+    );
+  });
+});
+
+describe('T3 — seam interface token scan via deps.readInterfaceText only (RULE-RUNTIME-007)', () => {
+  const CLEAN_INTERFACE_TEXT = [
+    '// seam interface: zero gallery-concept tokens',
+    'struct MuseSurface {',
+    '  int handle;',
+    '};',
+    'int attachSurface(int handle);',
+    'int renderFrame(int handle);',
+    '',
+  ].join('\n');
+
+  function tokenDeps(interfaceText) {
+    return {
+      ...okDeps(),
+      readInterfaceText: async () => interfaceText,
+    };
+  }
+
+  function assertGalleryTokensFailure(err) {
+    assert.ok(err, 'gate must reject on gallery-concept tokens in the seam interface');
+    assert.equal(err.code, 'GALLERY-TOKENS-IN-INTERFACE',
+      `failure code must be GALLERY-TOKENS-IN-INTERFACE, got: ${err && err.code}`);
+    assert.ok(typeof err.detail === 'string' && err.detail.length > 0,
+      'failure must carry a non-empty detail');
+    return true;
+  }
+
+  it('clean interface text passes the token-scan step (gate resolves ok)', async () => {
+    assert.ok(surfaceContract, 'lib/gallery-surface-contract.js must load');
+    const lines = [];
+    const result = await surfaceContract.runSurfaceContract({
+      device: 'stubbed-no-device',
+      deps: tokenDeps(CLEAN_INTERFACE_TEXT),
+      emit: (line) => lines.push(String(line)),
+    });
+    assert.equal(result.ok, true);
+    assert.ok(lines.some((l) => /PASS/i.test(l)), 'gate must still emit per-step PASS lines');
+  });
+
+  it('interface text containing a `page` token fails closed with GALLERY-TOKENS-IN-INTERFACE', async () => {
+    assert.ok(surfaceContract, 'lib/gallery-surface-contract.js must load');
+    await assert.rejects(
+      surfaceContract.runSurfaceContract({
+        device: 'stubbed-no-device',
+        deps: tokenDeps(`${CLEAN_INTERFACE_TEXT}\nint pageIndex;\n`),
+      }),
+      assertGalleryTokensFailure,
+    );
+  });
+
+  it('interface text containing a `stor` token fails closed with GALLERY-TOKENS-IN-INTERFACE', async () => {
+    assert.ok(surfaceContract, 'lib/gallery-surface-contract.js must load');
+    await assert.rejects(
+      surfaceContract.runSurfaceContract({
+        device: 'stubbed-no-device',
+        deps: tokenDeps(`${CLEAN_INTERFACE_TEXT}\nint storeCount;\n`),
+      }),
+      assertGalleryTokensFailure,
+    );
+  });
+
+  it('interface text containing a `Prev` token fails closed with GALLERY-TOKENS-IN-INTERFACE', async () => {
+    assert.ok(surfaceContract, 'lib/gallery-surface-contract.js must load');
+    await assert.rejects(
+      surfaceContract.runSurfaceContract({
+        device: 'stubbed-no-device',
+        deps: tokenDeps(`${CLEAN_INTERFACE_TEXT}\nvoid goPrev();\n`),
+      }),
+      assertGalleryTokensFailure,
+    );
+  });
+
+  it('interface text containing a `Next` token fails closed with GALLERY-TOKENS-IN-INTERFACE', async () => {
+    assert.ok(surfaceContract, 'lib/gallery-surface-contract.js must load');
+    await assert.rejects(
+      surfaceContract.runSurfaceContract({
+        device: 'stubbed-no-device',
+        deps: tokenDeps(`${CLEAN_INTERFACE_TEXT}\nvoid goNext();\n`),
+      }),
+      assertGalleryTokensFailure,
     );
   });
 });

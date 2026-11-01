@@ -2766,8 +2766,12 @@ bool PresentDeviceGalleryPage(const std::vector<GalleryRow>& rows, int page,
         starts[static_cast<std::size_t>(page) + 1] - 1;
     window.prefetchAhead = 0;
     // T4 per-page count conformance: the emitted slice length matches the
-    // manifest slice from the same pager. Mismatch fails closed (unreachable
-    // by construction — both derive from starts[] above).
+    // manifest slice from an independent PageStarts evaluation (a second
+    // call, not the `starts` vector sliced above). Mismatch fails closed.
+    // (Stage 3 fix, MINOR 1: the check no longer compares the slice against
+    // itself — GalleryPageNodeCount re-derives the pager independently — so
+    // a manifest/pager divergence is observable here; the T5 manual per-page
+    // counts remain the owning leg.)
     if (GalleryPageNodeCount(rows, page, viewportH) !=
         window.lastVisible - window.firstVisible + 1) {
       SetPresentError(error, "present window: page slice mismatch");
@@ -3126,11 +3130,15 @@ bool GalleryPixelsHaveVariance(const std::uint32_t* pixels,
 // OverlayScrim followed by contents in strictly increasing node-id
 // (submission) order — later submissions draw above. Fail-closed: false
 // on an empty list or any order violation. Never throws.
+// (Stage 3 fix, MINOR 2: the order check starts at index 1 with the
+// kind-aware rule — cmds[1] is now ordered against cmds[0] — so a
+// second scrim or an out-of-order first content node fails closed.)
 bool GalleryLayeringZOrderOk(const std::vector<DrawCmd>& cmds) noexcept {
   try {
     if (cmds.empty()) return false;
     if (cmds[0].kind != PrimitiveKind::OverlayScrim) return false;
-    for (std::size_t i = 2; i < cmds.size(); ++i) {
+    for (std::size_t i = 1; i < cmds.size(); ++i) {
+      if (cmds[i].kind == PrimitiveKind::OverlayScrim) return false;
       if (cmds[i].nodeId <= cmds[i - 1].nodeId) return false;
     }
     return true;

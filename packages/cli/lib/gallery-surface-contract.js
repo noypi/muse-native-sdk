@@ -3,10 +3,18 @@
 //
 // Drives the single Surface host seam sequence (attach/render/touch/theme/ime/
 // detach/destroy) against the built gallery, then asserts frame stats show
-// non-zero presents, logcat is FATAL-free, and no fallback-to-static-root
-// occurred. Every seam violation fails closed with `{ code, detail }`.
+// non-zero presents, logcat is FATAL-free, no fallback-to-static-root
+// occurred, and the seam interface carries zero gallery-concept tokens.
+// Every seam violation fails closed with `{ code, detail }`.
+
+const fs = require('node:fs');
+const path = require('node:path');
 
 const REQUIRED_STEPS = ['attach', 'render', 'touch', 'theme', 'ime', 'detach', 'destroy'];
+
+// Gallery-concept tokens forbidden in the seam interface (RULE-RUNTIME-007).
+// Mirrors the `grep -rEn "page|stor|Prev|Next" presenter.h` CI leg.
+const INTERFACE_TOKEN_RE = /page|stor|Prev|Next/;
 
 const USAGE = 'Usage: muse-native gallery-real --assert-surface-contract [--device <serial>]';
 
@@ -51,16 +59,29 @@ function defaultEmit(line) {
   process.stdout.write(`${line}\n`);
 }
 
+// Default seam-interface reader: loads the real
+// `engine/runtime/include/runtime/presenter.h` text. Injectable via
+// `deps.readInterfaceText` so unit tests can supply header text without
+// filesystem reads (same seam shape as `driveSequence` / `readLogcat`).
+function defaultReadInterfaceText() {
+  const header = path.resolve(
+    __dirname, '..', '..', '..', 'engine', 'runtime', 'include', 'runtime', 'presenter.h');
+  return fs.readFileSync(header, 'utf8');
+}
+
 // Run the surface-contract gate. `deps` is the hermetic test seam
-// `{ driveSequence, readFrameStats, readLogcat }`; production defaults fail
-// closed when no device runner is injected. `emit` is an optional line sink
-// for per-step PASS lines (defaults to stdout).
+// `{ driveSequence, readFrameStats, readLogcat, readInterfaceText }`;
+// production defaults fail closed when no device runner is injected.
+// `emit` is an optional line sink for per-step PASS lines (defaults to stdout).
 async function runSurfaceContract(opts = {}) {
   const deps = opts.deps || {};
   const emit = typeof opts.emit === 'function' ? opts.emit : defaultEmit;
   const driveSequence = deps.driveSequence;
   const readFrameStats = deps.readFrameStats;
   const readLogcat = deps.readLogcat;
+  const readInterfaceText = typeof deps.readInterfaceText === 'function'
+    ? deps.readInterfaceText
+    : defaultReadInterfaceText;
 
   if (typeof driveSequence !== 'function'
     || typeof readFrameStats !== 'function'
@@ -99,6 +120,23 @@ async function runSurfaceContract(opts = {}) {
   const logcat = await readLogcat({ device: opts.device || null });
   if (typeof logcat === 'string' && /fatal/i.test(logcat)) {
     throw toFailure('FATAL-LOGCAT', `FATAL found in logcat: ${logcat.slice(0, 200)}`);
+  }
+
+  // Zero gallery-concept tokens in the seam interface (RULE-RUNTIME-007,
+  // plan Interface line). Fails closed with a named code on any match.
+  let interfaceText;
+  try {
+    interfaceText = await readInterfaceText();
+  } catch (err) {
+    throw toFailure('GALLERY-TOKENS-IN-INTERFACE',
+      `seam interface text unreadable: ${(err && err.message) || String(err)}`);
+  }
+  const tokenMatch = typeof interfaceText === 'string'
+    ? interfaceText.match(INTERFACE_TOKEN_RE)
+    : null;
+  if (tokenMatch) {
+    throw toFailure('GALLERY-TOKENS-IN-INTERFACE',
+      `gallery-concept token in seam interface: "${tokenMatch[0]}"`);
   }
 
   for (const step of REQUIRED_STEPS) {

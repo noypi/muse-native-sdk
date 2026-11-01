@@ -1569,6 +1569,13 @@ extern "C" MUSE_JNI_EXPORT void Java_com_muse_host_MainActivity_nativeDestroy(
 // Fail-closed, never throws: a null JNIEnv, a pending exception, or any C++
 // exception yields the corresponding status with a logcat diagnostic and no
 // exception crossing into the VM.
+//
+// Handle publication (Stage 3 fix, MAJOR 2 / adjudication A1): the T2
+// contract keeps `nativeSeamAttachSurface -> int32 status`, so the usable
+// SurfaceHandle is published out-of-band via `nativeSeamLastHandle`
+// (last attached jlong handle, 0 when none). Written on every attach exit
+// (handle on kOk, 0 on any failure), read with a relaxed atomic load.
+std::atomic<jlong> g_seam_last_handle{0};
 extern "C" MUSE_JNI_EXPORT jint Java_com_muse_host_MainActivity_nativeSeamAttachSurface(
     JNIEnv* env, jobject thiz, jlong windowHandle, jstring rootKind,
     jboolean unknownKind) {
@@ -1604,20 +1611,52 @@ extern "C" MUSE_JNI_EXPORT jint Java_com_muse_host_MainActivity_nativeSeamAttach
     ::runtime::CompiledTreeRef tree;
     tree.rootKind = kind;
     tree.unknownKind = (unknownKind != JNI_FALSE);
+    // Empty-kind fail-closed (Stage 3 fix, MINOR 3): an empty rootKind with
+    // unknownKind=false is an unknown kind per RULE-RUNTIME-001 (never a
+    // valid default root). Rejected here in the JNI layer — presenter.cpp
+    // is untouched — by promoting to unknownKind before calling through,
+    // so attach fails closed with kCreateFailed + diagnostic.
+    if (kind.empty() && !tree.unknownKind) {
+      tree.unknownKind = true;
+    }
     ::runtime::AttachResult result = ::runtime::attachSurface(
         tree, reinterpret_cast<void*>(static_cast<intptr_t>(windowHandle)));
     if (result.error.code != ::runtime::PresenterCode::kOk) {
 #ifdef __ANDROID__
       MuseLogInfo("nativeSeamAttachSurface: " + result.error.message);
 #endif
+      g_seam_last_handle.store(0, std::memory_order_relaxed);
       return static_cast<jint>(result.error.code);
     }
+    g_seam_last_handle.store(static_cast<jlong>(result.handle),
+                             std::memory_order_relaxed);
     return 0;
   } catch (...) {
     if (env != nullptr && env->ExceptionCheck() == JNI_TRUE) {
       env->ExceptionClear();
     }
+    g_seam_last_handle.store(0, std::memory_order_relaxed);
     return static_cast<jint>(::runtime::PresenterCode::kInvalidWindow);
+  }
+}
+
+// Handle getter (Stage 3 fix, MAJOR 2 / adjudication A1): returns the last
+// attached SurfaceHandle as jlong, or 0 when no attach has succeeded.
+// Fail-closed: null env, pending exception, or C++ exception yields 0 with
+// no exception crossing into the VM. Never throws.
+extern "C" MUSE_JNI_EXPORT jlong Java_com_muse_host_MainActivity_nativeSeamLastHandle(
+    JNIEnv* env, jobject thiz) {
+  (void)thiz;
+  if (env == nullptr || env->ExceptionCheck() == JNI_TRUE) {
+    return static_cast<jlong>(0);
+  }
+  try {
+    return g_seam_last_handle.load(std::memory_order_relaxed);
+  } catch (...) {
+    if (env->ExceptionCheck() == JNI_TRUE) {
+      env->ExceptionClear();
+    }
+    return static_cast<jlong>(0);
   }
 }
 
@@ -1672,7 +1711,15 @@ extern "C" MUSE_JNI_EXPORT jint Java_com_muse_host_MainActivity_nativeSeamRender
     return static_cast<jint>(::runtime::PresenterCode::kInvalidWindow);
   }
   try {
+    // DAG currency (Stage 3 fix, MAJOR 3 / adjudication A2): the JNI leg
+    // carries no DrawCmds across the VM, so the present path records
+    // currency on the handle's current set via NoteFrameRecordedForSurface
+    // immediately before presenting. renderFrame's unrecorded rejection
+    // in presenter.cpp is untouched: a direct renderFrame without this
+    // record still fails closed with kNoCurrentFrame.
     const ::runtime::DrawCmds cmds;
+    ::runtime::NoteFrameRecordedForSurface(
+        static_cast<::runtime::SurfaceHandle>(surfaceHandle), cmds);
     ::runtime::PresenterError err = ::runtime::renderFrame(
         static_cast<::runtime::SurfaceHandle>(surfaceHandle), cmds);
     if (err.code != ::runtime::PresenterCode::kOk) {
