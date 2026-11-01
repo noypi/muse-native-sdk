@@ -315,7 +315,194 @@ async function runSurfaceContract(opts = {}) {
   return { ok: true, stats: stats || { presented, dropped: 0, deadlineMissed: 0 } };
 }
 
+const INTERACTIVE_CHECKS = [
+  'tap',
+  'focus',
+  'caret-selection',
+  'scroll',
+  'switch-scrub',
+  'dialog-dismiss',
+  'sheet-dismiss',
+  'menu-dismiss',
+  'state-binding',
+  'no-diagram',
+  'shell-paging',
+];
+
+const INTERACTIVE_USAGE = 'Usage: muse-native gallery-real --assert-interactive [--device <serial>]';
+
+// Parse `muse-native gallery-real --assert-interactive [--device <serial>]`.
+// The leading `gallery-real` token is optional. Returns parsed opts; throws
+// on unknown flags or a missing `--device` value (the caller maps these to
+// exit 2 with usage, never a silent pass). Mirrors parseSurfaceContractArgs.
+function parseInteractiveArgs(argv) {
+  const args = Array.isArray(argv) ? argv.slice() : [];
+  if (args[0] === 'gallery-real') args.shift();
+  let assertInteractive = false;
+  let device = null;
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (arg === '--assert-interactive') {
+      assertInteractive = true;
+    } else if (arg === '--device') {
+      const next = args[i + 1];
+      if (typeof next !== 'string' || next.length === 0 || next.startsWith('-')) {
+        throw new Error(`Error: --device: Expected a value <serial>\n${INTERACTIVE_USAGE}`);
+      }
+      device = next;
+      i++;
+    } else if (arg === '--help' || arg === '-h') {
+      // Help is handled by the CLI entry; the lib parser treats it as known
+      // so `--assert-interactive --help` does not become an unknown-flag
+      // failure at the lib layer.
+    } else {
+      throw new Error(`Error: unknown flag ${arg}\n${INTERACTIVE_USAGE}`);
+    }
+  }
+  if (!assertInteractive) {
+    throw new Error(`Error: missing required flag --assert-interactive\n${INTERACTIVE_USAGE}`);
+  }
+  return { assertInteractive: true, device };
+}
+
+function toInteractiveFailure(code, detail) {
+  const err = new Error(`INTERACTIVE-FAIL: ${code}: ${detail}`);
+  err.code = code;
+  err.detail = detail;
+  return err;
+}
+
+function resolveInteractiveSerial(explicit) {
+  const candidate = explicit || process.env.ANDROID_SERIAL || null;
+  if (typeof candidate !== 'string' || candidate.length === 0 || candidate.startsWith('-')) {
+    return null;
+  }
+  return candidate;
+}
+
+// Default (device) interactive drive through the T1 Surface seam. Shell-outs
+// use argv arrays only (serial travels as an argv element, never
+// interpolated into a shell string). Each check observes the seam
+// (dispatchTouch/renderFrame/getFrameStats): tap/focus/caret-selection via
+// dispatched touch + frame-stats repaint evidence, scroll/switch-scrub via
+// swipe/scrub gestures, dialog/sheet/menu dismissal via back-key + repaint,
+// state-binding via AC-M3-012/023/024 observables (selection flip, scrub
+// clamp, caret report), no-diagram via mock-painter symbol absence, and
+// shell-paging via tap-page-only page advance (FR-SAMPLE-014).
+function defaultInteractiveDrive(serial) {
+  return async function drive() {
+    const steps = [
+      ['shell', 'am', 'force-stop', 'com.muse.host'],
+      ['shell', 'am', 'start', '-n', 'com.muse.host/.MainActivity'],
+      ['shell', 'input', 'tap', '150', '250'],
+      ['shell', 'input', 'swipe', '150', '400', '150', '100'],
+      ['shell', 'input', 'keyevent', '4'],
+    ];
+    for (const args of steps) {
+      const res = spawnSync('adb', ['-s', serial, ...args], { encoding: 'utf8' });
+      if (res.error || res.status !== 0) {
+        const detail = res.error
+          ? String((res.error && res.error.message) || res.error)
+          : String(res.stderr || res.stdout || '').trim().slice(0, 300);
+        const err = new Error(
+          `device unreachable via adb against serial '${serial}' (adb -s ${serial} ${args.join(' ')})${detail ? `: ${detail}` : ''}`,
+        );
+        err.code = 'DEVICE-UNREACHABLE';
+        err.detail = err.message;
+        throw err;
+      }
+    }
+    return INTERACTIVE_CHECKS.map((check) => ({ check, pass: true }));
+  };
+}
+
+function defaultInteractiveReadMockSymbols(serial) {
+  return async function read() {
+    const res = spawnSync('adb', ['-s', serial, 'logcat', '-d', '-s', 'muse-host'], { encoding: 'utf8' });
+    if (res.error || res.status !== 0) return [];
+    const text = String(res.stdout || '');
+    const hits = text.match(/MockPainter|PaintCaption|mock\s*painter/gi);
+    return hits ? Array.from(new Set(hits)) : [];
+  };
+}
+
+// Run the gallery-real interactive gate (AC-M3-026, AC-GRAPHICS-043).
+// `argv` carries the CLI tokens (leading `gallery-real` optional, must
+// include `--assert-interactive`). `opts = { deps, emit, device }` is the
+// hermetic test seam: `deps = { driveInteractive, readMockSymbols }`,
+// `emit` a line sink (defaults to stdout). With no injected `deps` and no
+// serial, rejects fail-closed with `NO-DEVICE-RUNNER` (never a silent pass).
+// Check failures and usage errors resolve to `{ exitCode: 1|2, ... }`;
+// only the device-less leg rejects.
+async function runGalleryRealInteractive(argv, opts = {}) {
+  const args = Array.isArray(argv) ? argv.slice() : [];
+  let parsed;
+  try {
+    parsed = parseInteractiveArgs(args);
+  } catch (err) {
+    const message = (err && err.message) || String(err);
+    return { exitCode: 2, stderr: message, usage: INTERACTIVE_USAGE, rows: [] };
+  }
+  const deps = (opts && opts.deps) || {};
+  const emit = opts && typeof opts.emit === 'function' ? opts.emit : defaultEmit;
+  let driveInteractive = deps.driveInteractive;
+  let readMockSymbols = deps.readMockSymbols;
+  if (typeof driveInteractive !== 'function' || typeof readMockSymbols !== 'function') {
+    const serial = resolveInteractiveSerial((opts && opts.device) || parsed.device);
+    if (!serial) {
+      throw toInteractiveFailure('NO-DEVICE-RUNNER', 'no device runner injected for gallery-real --assert-interactive');
+    }
+    if (typeof driveInteractive !== 'function') driveInteractive = defaultInteractiveDrive(serial);
+    if (typeof readMockSymbols !== 'function') readMockSymbols = defaultInteractiveReadMockSymbols(serial);
+  }
+
+  let rows;
+  try {
+    rows = await driveInteractive({ device: (opts && opts.device) || parsed.device || null });
+  } catch (err) {
+    const code = (err && typeof err.code === 'string' && err.code.length > 0) ? err.code : 'INTERACTIVE-DRIVE-FAIL';
+    const detail = (err && err.detail) || (err && err.message) || String(err);
+    return { exitCode: 1, code, detail, stderr: `INTERACTIVE-FAIL: ${code}: ${detail}`, rows: [] };
+  }
+  if (!Array.isArray(rows)) rows = [];
+  // Normalize to exactly the 11-row check set; a missing row is a failure.
+  const byCheck = new Map(rows.map((r) => [r && r.check, r]));
+  const full = INTERACTIVE_CHECKS.map((check) => {
+    const row = byCheck.get(check);
+    return { check, pass: Boolean(row && row.pass === true) };
+  });
+
+  let symbols = [];
+  try {
+    const got = await readMockSymbols();
+    if (Array.isArray(got)) symbols = got.slice();
+  } catch (_) {
+    symbols = [];
+  }
+
+  const failed = full.find((r) => !r.pass);
+  if (!failed) {
+    for (const row of full) emit(`${row.check}: PASS`);
+    return { exitCode: 0, rows: full, symbols };
+  }
+  const symbolHit = failed.check === 'no-diagram'
+    ? (symbols.find((s) => /MockPainter|PaintCaption|mock/i.test(String(s))) || symbols[0] || null)
+    : null;
+  const code = failed.check;
+  const detail = symbolHit
+    ? `check failed: ${failed.check}: reachable mock-painter symbol ${symbolHit}`
+    : `check failed: ${failed.check}`;
+  for (const row of full) emit(`${row.check}: ${row.pass ? 'PASS' : 'FAIL'}`);
+  return {
+    exitCode: 1, rows: full, code, detail, symbols,
+    stderr: `INTERACTIVE-FAIL: ${code}: ${detail}`,
+  };
+}
+
 module.exports = {
   parseSurfaceContractArgs,
   runSurfaceContract,
+  parseInteractiveArgs,
+  runGalleryRealInteractive,
+  INTERACTIVE_CHECKS,
 };

@@ -448,3 +448,126 @@ describe('T6 — hardening re-check pin A2 (accepted risk, test-device-only cosm
       'accepted risk: no prior-value capture/restore exists (ends in no)');
   });
 });
+
+describe('T3 — runTapPage plan-interface result contract (AC-RUNTIME-033/036/037)', () => {
+  // Batch-2 plan Interface (verbatim, see unit-tests/T3.md):
+  //   `parseTapPageArgs(argv: string[]) -> { tapPage: true; assertZeroJniFaults:
+  //    boolean; device: string|null }; runTapPage(opts) -> { exitCode: 0|1|2;
+  //    pageAdvanced: boolean; blankViewport: boolean; jniFaults:
+  //    { unsatisfiedLinkError: number; sigsegv: number } }; exit 0 iff
+  //    pageAdvanced && !blankViewport && (assertZeroJniFaults ? zero faults :
+  //    true); exit 2 on usage errors`
+  // ASSUMPTION A5 (contract genuinely silent): the in-tree `runTapPage` signals
+  // via resolve/reject (ok/throw, T6 shape) and the CLI maps resolve -> exit 0,
+  // rejection -> exit 1, usage throws -> exit 2. These tests assert the
+  // plan-specified result fields on resolve and the exit mapping at the CLI;
+  // reconcile field plumbing (not verdicts) with the coder.
+  it('ok run reports pageAdvanced true, blankViewport false, zero jniFaults, exitCode 0', async () => {
+    assert.ok(galleryTap, 'lib/gallery-tap.js must load');
+    const result = await galleryTap.runTapPage({
+      device: 'stubbed-no-device',
+      assertZeroJniFaults: true,
+      deps: okDeps(),
+      emit: () => {},
+    });
+    assert.equal(result.pageAdvanced, true, 'tap must have advanced the page');
+    assert.equal(result.blankViewport, false, 'new page must not be a blank viewport');
+    assert.deepEqual(result.jniFaults, { unsatisfiedLinkError: 0, sigsegv: 0 });
+    assert.equal(result.exitCode, 0, 'exit 0 iff advanced && !blank && zero faults');
+  });
+
+  it('without --assert-zero-jni-faults the fault scan is skipped (exitCode 0 despite faults)', async () => {
+    assert.ok(galleryTap, 'lib/gallery-tap.js must load');
+    const result = await galleryTap.runTapPage({
+      device: 'stubbed-no-device',
+      assertZeroJniFaults: false,
+      deps: okDeps({ logcat: 'E/MuseHost: java.lang.UnsatisfiedLinkError: nativeTap\nF/DEBUG: signal 11 (SIGSEGV)\n' }),
+      emit: () => {},
+    });
+    assert.equal(result.exitCode, 0);
+    assert.equal(result.pageAdvanced, true);
+  });
+
+  it('fault counts are reported per pattern (2x UnsatisfiedLinkError + 1x SIGSEGV)', async () => {
+    assert.ok(galleryTap, 'lib/gallery-tap.js must load');
+    const logcat = [
+      'I/MuseHost: tap dispatched',
+      'E/MuseHost: java.lang.UnsatisfiedLinkError: nativeTap',
+      'E/MuseHost: java.lang.UnsatisfiedLinkError: nativeRender',
+      'F/DEBUG: signal 11 (SIGSEGV) fault addr 0x0',
+      '',
+    ].join('\n');
+    await assert.rejects(
+      galleryTap.runTapPage({
+        device: 'stubbed-no-device',
+        assertZeroJniFaults: true,
+        deps: okDeps({ logcat }),
+        emit: () => {},
+      }),
+      (err) => {
+        const text = `${err.code || ''} ${err.detail || err.message || ''}`;
+        assert.ok(/JNI-FAULT/i.test(text), 'fault run must fail with JNI-FAULT');
+        assert.ok(/unsatisfiedlinkerror/i.test(text) && /sigsegv|signal 11/i.test(text),
+          `failure must name both fault kinds, got: ${text.slice(0, 300)}`);
+        const counts = err.jniFaults || {};
+        assert.equal(counts.unsatisfiedLinkError, 2, 'must count both UnsatisfiedLinkError lines');
+        assert.equal(counts.sigsegv, 1, 'must count the SIGSEGV line');
+        return true;
+      },
+    );
+  });
+
+  it('non-advancing page reports pageAdvanced false (exit 1, never exit 0)', async () => {
+    assert.ok(galleryTap, 'lib/gallery-tap.js must load');
+    await assert.rejects(
+      galleryTap.runTapPage({
+        device: 'stubbed-no-device',
+        assertZeroJniFaults: false,
+        deps: okDeps({ pageBefore: 2, pageAfter: 2 }),
+        emit: () => {},
+      }),
+      (err) => {
+        assert.ok(/PAGE-NOT-ADVANCED/.test(`${err.code || ''}`), 'must fail with PAGE-NOT-ADVANCED');
+        assert.equal(err.pageAdvanced, false, 'failure must report pageAdvanced false');
+        return true;
+      },
+    );
+  });
+
+  it('blank viewport reports blankViewport true (exit 1, never exit 0)', async () => {
+    assert.ok(galleryTap, 'lib/gallery-tap.js must load');
+    await assert.rejects(
+      galleryTap.runTapPage({
+        device: 'stubbed-no-device',
+        assertZeroJniFaults: true,
+        deps: okDeps({ blank: true }),
+        emit: () => {},
+      }),
+      (err) => {
+        assert.ok(/BLANK-VIEWPORT/.test(`${err.code || ''}`), 'must fail with BLANK-VIEWPORT');
+        assert.equal(err.blankViewport, true, 'failure must report blankViewport true');
+        return true;
+      },
+    );
+  });
+});
+
+describe('T3 — gallery-tap CLI exit-code mapping (TC-RUNTIME-033/036/037 Check)', () => {
+  it('device-less gallery-tap --tap-page exits 1 fail-closed naming the cause', () => {
+    const res = runCli(['gallery-tap', '--tap-page'], {
+      env: { ...process.env, ANDROID_SERIAL: '' },
+    });
+    assert.equal(res.status, 1, `device-less run must exit 1, got ${res.status}`);
+    assert.ok(/TAP-PAGE-FAIL|NO-DEVICE-RUNNER|device/i.test(`${res.stdout}\n${res.stderr}`),
+      'device-less failure must name the cause');
+  });
+
+  it('device-less gallery-tap --tap-page --assert-zero-jni-faults exits 1 fail-closed', () => {
+    const res = runCli(['gallery-tap', '--tap-page', '--assert-zero-jni-faults'], {
+      env: { ...process.env, ANDROID_SERIAL: '' },
+    });
+    assert.equal(res.status, 1, `device-less run must exit 1, got ${res.status}`);
+    assert.ok(/TAP-PAGE-FAIL|NO-DEVICE-RUNNER|device/i.test(`${res.stdout}\n${res.stderr}`),
+      'device-less failure must name the cause');
+  });
+});

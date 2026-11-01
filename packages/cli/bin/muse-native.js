@@ -146,6 +146,52 @@
   // (exit 2) on unknown flags.
   const rest = argv.slice(1);
   const hasSurfaceContract = rest.includes('--assert-surface-contract');
+  // T2 interactive gate (AC-M3-026/AC-GRAPHICS-043): `--assert-interactive`
+  // runs through lib/gallery-surface-contract.js with the same
+  // argv-array-only shell-out discipline as gallery-tap.js. Help lists the
+  // flag (exit 0); device-less runs fail closed (exit 1 NO-DEVICE-RUNNER).
+  if (rest.includes('--assert-interactive') && !hasSurfaceContract) {
+    const contract = require('../lib/gallery-surface-contract.js');
+    if (argv.includes('--help') || argv.includes('-h')) {
+      process.stdout.write(
+        'Usage: muse-native gallery-real --assert-interactive [--device <serial>]\n',
+      );
+      return;
+    }
+    let parsed;
+    try {
+      parsed = contract.parseInteractiveArgs(argv);
+    } catch (err) {
+      process.stderr.write(`${(err && err.message) || String(err)}\nUsage: muse-native gallery-real --assert-interactive [--device <serial>]\n`);
+      process.exitCode = 2;
+      return;
+    }
+    contract.runGalleryRealInteractive(argv, {
+      device: parsed.device || process.env.ANDROID_SERIAL || null,
+    }).then(
+      (result) => {
+        if (result && result.exitCode === 2) {
+          process.stderr.write(`${result.stderr || 'usage'}\nUsage: muse-native gallery-real --assert-interactive [--device <serial>]\n`);
+          process.exitCode = 2;
+          return;
+        }
+        if (result && result.exitCode !== 0) {
+          process.stderr.write(`${(result && result.stderr) || `INTERACTIVE-FAIL: ${result.code}: ${result.detail}`}\n`);
+          process.exitCode = 1;
+          return;
+        }
+      },
+      (err) => {
+        const code = (err && typeof err.code === 'string' && err.code.length > 0) ? err.code : 'INTERACTIVE-FAIL';
+        const detail = (err && typeof err.detail === 'string' && err.detail.length > 0)
+          ? err.detail
+          : ((err && err.message) || String(err));
+        process.stderr.write(`INTERACTIVE-FAIL: ${code}: ${detail}\n`);
+        process.exitCode = 1;
+      },
+    );
+    return;
+  }
   const hasGalleryRealFlag = rest.includes('--assert-no-diagram')
     || rest.includes('--assert-counts')
     || rest.includes('--assert-interactive')
