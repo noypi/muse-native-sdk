@@ -394,7 +394,115 @@ function runHermeticLane(opts) {
   process.exitCode = rows.every((row) => row.pass) ? getExitCode('ok') : getExitCode('compile');
 }
 
-// Device lane: shell the exact T7 adb sequence against --serial (argv arrays
+function parsePageIndex(text) {
+  const out = String(text || '');
+  let m = out.match(/page[-_ ]?index\s*[:= ]\s*(\d+)/i);
+  if (!m) m = out.match(/page\s+(\d+)/i);
+  if (!m) return null;
+  const n = Number.parseInt(m[1], 10);
+  return Number.isInteger(n) ? n : null;
+}
+
+function tapPageTitle(serialOrNull) {
+  return serialOrNull === null
+    ? 'gallery-tap results (tap-page, lane no-device):'
+    : `gallery-tap results (tap-page, lane device serial ${serialOrNull}):`;
+}
+
+function printTapPageRows(serialOrNull, pageAdvanced, viewportOk) {
+  printTable(tapPageTitle(serialOrNull), [
+    { name: 'page-advanced', asserted: true, pass: pageAdvanced },
+    { name: 'no-blank-viewport', asserted: true, pass: viewportOk },
+  ]);
+}
+
+// Tap-page lane: shell the device-lane adb argv-array pattern against
+// --serial (install -r, force-stop, logcat -c, am start, page-index read via
+// logcat -d -s muse-host, input tap at (150,250), page-index re-read,
+// exec-out screencap -p piped to a blank check); argv arrays only, never
+// interpolated into shell strings. Exit 0 iff the page index advances AND
+// the post-tap screencap is non-blank; otherwise exit 1 with the tap-page
+// tabulation. Any failing adb step exits 1 naming the serial + failed args.
+function runTapPageLane(opts) {
+  const { serial } = opts;
+  const apk = path.join(process.cwd(), 'examples', 'm3-gallery', 'build', 'm3-gallery-debug.apk');
+  const failClosed = (args, detail) => {
+    printTapPageRows(serial, false, false);
+    process.stderr.write(
+      `Error: device unreachable via adb against serial '${serial}' (adb -s ${serial} ${args.slice(2).join(' ')})${detail ? `: ${detail}` : ''}.\n`,
+    );
+    process.exitCode = getExitCode('compile');
+  };
+  const setupSteps = [
+    ['-s', serial, 'install', '-r', apk],
+    ['-s', serial, 'shell', 'am', 'force-stop', 'com.muse.host'],
+    ['-s', serial, 'logcat', '-c'],
+    ['-s', serial, 'shell', 'am', 'start', '-n', 'com.muse.host/.MainActivity'],
+  ];
+  for (const args of setupSteps) {
+    const res = spawnSync('adb', args, { encoding: 'utf8' });
+    if (res.error || res.status !== 0) {
+      const detail = res.error
+        ? String((res.error && res.error.message) || res.error)
+        : String(res.stderr || res.stdout || '').trim().slice(0, 300);
+      failClosed(args, detail);
+      return;
+    }
+  }
+  const readPageIndex = () => {
+    const args = ['-s', serial, 'logcat', '-d', '-s', 'muse-host'];
+    const res = spawnSync('adb', args, { encoding: 'utf8' });
+    if (res.error || res.status !== 0) {
+      const detail = res.error
+        ? String((res.error && res.error.message) || res.error)
+        : String(res.stderr || res.stdout || '').trim().slice(0, 300);
+      return { error: { args, detail } };
+    }
+    return { index: parsePageIndex(res.stdout) };
+  };
+  const before = readPageIndex();
+  if (before.error) {
+    failClosed(before.error.args, before.error.detail);
+    return;
+  }
+  const tapArgs = ['-s', serial, 'shell', 'input', 'tap', '150', '250'];
+  {
+    const res = spawnSync('adb', tapArgs, { encoding: 'utf8' });
+    if (res.error || res.status !== 0) {
+      const detail = res.error
+        ? String((res.error && res.error.message) || res.error)
+        : String(res.stderr || res.stdout || '').trim().slice(0, 300);
+      failClosed(tapArgs, detail);
+      return;
+    }
+  }
+  const after = readPageIndex();
+  if (after.error) {
+    failClosed(after.error.args, after.error.detail);
+    return;
+  }
+  const capArgs = ['-s', serial, 'exec-out', 'screencap', '-p'];
+  const cap = spawnSync('adb', capArgs, { encoding: 'utf8' });
+  if (cap.error || cap.status !== 0) {
+    const detail = cap.error
+      ? String((cap.error && cap.error.message) || cap.error)
+      : String(cap.stderr || cap.stdout || '').trim().slice(0, 300);
+    failClosed(capArgs, detail);
+    return;
+  }
+  const pageAdvanced = before.index !== null && after.index !== null && after.index > before.index;
+  const viewportOk = String(cap.stdout || '').length > 0;
+  printTapPageRows(serial, pageAdvanced, viewportOk);
+  process.exitCode = pageAdvanced && viewportOk ? getExitCode('ok') : getExitCode('compile');
+}
+
+function runTapPageNoDevice() {
+  printTapPageRows(null, false, false);
+  process.stderr.write(
+    'Error: --tap-page requires --serial (no-device: no device lane without a serial; adb not invoked).\n',
+  );
+  process.exitCode = getExitCode('compile');
+}
 // only; the serial travels as an argv element, never interpolated into a
 // shell string) and tabulate TC-INPUT-020 from device observables. Any
 // failing step fails closed naming the device fault + serial.
@@ -502,7 +610,15 @@ function runGalleryTap(rest) {
     process.exitCode = getExitCode('config');
     return;
   }
+  if (opts.tapPage && !opts.serial) {
+    runTapPageNoDevice();
+    return;
+  }
   if (opts.serial) {
+    if (opts.tapPage) {
+      runTapPageLane(opts);
+      return;
+    }
     runDeviceLane(opts);
     return;
   }

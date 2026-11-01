@@ -582,3 +582,208 @@ describe('T1 — gallery-tap page CLI exit codes (usage errors exit 2)', () => {
     );
   });
 });
+
+// ── T2 (Batch 2) — tap-page device sequence with page-advance + ──
+// no-blank-viewport assertions. Spec refs: FR-RUNTIME-012, AC-RUNTIME-036.
+// Interface (plan T2 verbatim):
+//   `runGalleryTap(['gallery-tap','--tap-page','--serial',s]) => exit 0 iff
+//   page index advances AND post-tap screencap is non-blank; exit 1 with
+//   gallery-tap results (tap-page, lane device serial <s>): tabulation naming
+//   page-advanced / no-blank-viewport rows otherwise` — any failing adb step
+//   exits 1 naming serial + failed adb args.
+// Scope: stubbed-adb CLI runs only (recorded argv). No T1 rewrite; T3
+// (fault scan) out of scope.
+// Hermetic: node:test + node:assert/strict + stdlib only; adb is a tmp-bin
+// `sh` stub prepended to PATH (real adb never runs). Each test owns its
+// tmp roots (no shared mutable state).
+// ASSUMPTIONS (contract genuinely silent, most defensible behavior tested):
+// - A1: the page tap reuses the existing device-lane tap coordinates
+//   (150,250) — the argv `input tap 150 250` must appear in the recorded
+//   sequence; a right-edge fallback tap is NOT asserted here.
+// - A2: page-index detection reads the `muse-host` logcat tag
+//   (`adb -s <s> logcat -d -s muse-host`) before/after the tap, backed by a
+//   screencap non-blank assertion (`adb -s <s> exec-out screencap -p`).
+//   Stub logcat emits `muse-host: page-index <N>` lines; the parser is
+//   expected to match /page[-_ ]?index\s*[:= ]\s*(\d+)/i (with a
+//   /page\s+(\d+)/ fallback). Non-blank screencap = non-empty stdout;
+//   blank = empty stdout (screencap fallback for advance is NOT required
+//   here — an unchanged index fails even with a non-blank frame).
+
+const fs = require('node:fs');
+const os = require('node:os');
+
+const T2_TMP_ROOTS = [];
+function t2mkTmp(prefix) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  T2_TMP_ROOTS.push(dir);
+  return dir;
+}
+
+// Stateful stubbed `adb`: records every argv line to <bin>/adb.log and
+// serves canned outputs. `logcat -d` calls are counted: the 1st dump
+// prints d1, the 2nd and later print d2 (pre/post page-index reads).
+// `exec-out screencap` prints `png` verbatim (empty string = blank).
+// When `failOn` (substring of "$*") matches, exits `failExit` (default 1)
+// printing `failOut` — models an unreachable serial / failing step.
+function writeTapPageAdbStub({ d1, d2, png, failOn, failExit, failOut }) {
+  const bin = t2mkTmp('muse-tap-page-bin-');
+  const log = path.join(bin, 'adb.log');
+  const countFile = path.join(bin, 'adb.count');
+  fs.writeFileSync(log, '');
+  fs.writeFileSync(countFile, '0');
+  const script = [
+    '#!/bin/sh',
+    `LOG=${JSON.stringify(log)}`,
+    `COUNT_FILE=${JSON.stringify(countFile)}`,
+    `D1=${JSON.stringify(d1 === undefined ? '' : d1)}`,
+    `D2=${JSON.stringify(d2 === undefined ? '' : d2)}`,
+    `PNG=${JSON.stringify(png === undefined ? '' : png)}`,
+    `FAIL_ON=${JSON.stringify(failOn === undefined ? '' : failOn)}`,
+    `FAIL_EXIT=${failExit === undefined ? 1 : failExit}`,
+    `FAIL_OUT=${JSON.stringify(failOut === undefined ? '' : failOut)}`,
+    'printf \'%s\\n\' "$*" >> "$LOG"',
+    'if [ -n "$FAIL_ON" ]; then case "$*" in *"$FAIL_ON"*) [ -n "$FAIL_OUT" ] && printf \'%s\\n\' "$FAIL_OUT"; exit "$FAIL_EXIT";; esac; fi',
+    'case "$*" in',
+    '(*"logcat"*" -d"*)',
+    '  N=$(cat "$COUNT_FILE" 2>/dev/null || echo 0); N=$((N + 1)); printf \'%s\' "$N" > "$COUNT_FILE";',
+    '  if [ "$N" = "1" ]; then printf \'%s\\n\' "$D1"; else printf \'%s\\n\' "$D2"; fi; exit 0;;',
+    '(*"exec-out"*"screencap"*) printf \'%s\' "$PNG"; exit 0;;',
+    '(*) exit 0;;',
+    'esac',
+  ].join('\n');
+  fs.writeFileSync(path.join(bin, 'adb'), `${script}\n`, { mode: 0o755 });
+  return { bin, log };
+}
+
+function t2WithPath(bin, options) {
+  const env = { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH}` };
+  delete env.ANDROID_SERIAL;
+  return { ...options, env };
+}
+
+function t2ReadLog(log) {
+  try {
+    return fs.readFileSync(log, 'utf8').split('\n').filter((l) => l.length > 0);
+  } catch {
+    return [];
+  }
+}
+
+// Asserts the recorded argv lines contain the tap-page adb steps in order:
+// install → force-stop → logcat -c → am start → input tap (150,250) →
+// logcat -d → screencap. Extra invocations (e.g. a second logcat -d
+// re-read) are allowed; order is what matters.
+function t2AssertStepOrder(lines) {
+  const need = [
+    /install/,
+    /force-stop/,
+    /logcat.*-c/,
+    /am.*start/,
+    /input.*tap.*150.*250/,
+    /logcat.*-d/,
+    /screencap/,
+  ];
+  let idx = -1;
+  for (const re of need) {
+    const next = lines.findIndex((l, i) => i > idx && re.test(l));
+    assert.ok(next > idx, `adb sequence must contain ${re} in order; got:\n${lines.join('\n')}`);
+    idx = next;
+  }
+}
+
+const T2_SERIAL = 'emulator-5554';
+const T2_PAGE_BEFORE = 'muse-host: page-index 2\n';
+const T2_PAGE_AFTER = 'muse-host: page-index 3\n';
+const T2_PNG = `PNGFAKEDATA-${'A'.repeat(200)}`;
+
+describe('T2 — tap-page device sequence (FR-RUNTIME-012, AC-RUNTIME-036)', () => {
+  it('page index 2→3 with non-blank screencap exits 0 with page-advanced + no-blank-viewport pass rows', () => {
+    const { bin } = writeTapPageAdbStub({ d1: T2_PAGE_BEFORE, d2: T2_PAGE_AFTER, png: T2_PNG });
+    const res = runCli(
+      ['gallery-tap', '--tap-page', '--serial', T2_SERIAL],
+      t2WithPath(bin, { cwd: t2mkTmp('muse-tap-page-cwd-') }),
+    );
+    const out = `${res.stdout}\n${res.stderr}`;
+    assert.equal(res.status, 0, `expected exit 0, got ${res.status}; out: ${out.slice(0, 800)}`);
+    assert.ok(/tap-page/.test(out), 'output must name the tap-page lane');
+    assert.ok(new RegExp(T2_SERIAL.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).test(out), 'output must name the lane device serial');
+    assert.ok(/page-advanced/.test(out), 'output must tabulate the page-advanced row');
+    assert.ok(/no-blank-viewport/.test(out), 'output must tabulate the no-blank-viewport row');
+  });
+
+  it('tap-page run shells install/force-stop/logcat-c/start/tap/logcat-d/screencap in order', () => {
+    const { bin, log } = writeTapPageAdbStub({ d1: T2_PAGE_BEFORE, d2: T2_PAGE_AFTER, png: T2_PNG });
+    const res = runCli(
+      ['gallery-tap', '--tap-page', '--serial', T2_SERIAL],
+      t2WithPath(bin, { cwd: t2mkTmp('muse-tap-page-cwd-') }),
+    );
+    assert.equal(res.status, 0, `expected exit 0, got ${res.status}; out: ${`${res.stdout}\n${res.stderr}`.slice(0, 800)}`);
+    t2AssertStepOrder(t2ReadLog(log));
+  });
+
+  it('unchanged page index exits 1 naming the page-advanced row', () => {
+    const { bin } = writeTapPageAdbStub({ d1: T2_PAGE_BEFORE, d2: T2_PAGE_BEFORE, png: T2_PNG });
+    const res = runCli(
+      ['gallery-tap', '--tap-page', '--serial', T2_SERIAL],
+      t2WithPath(bin, { cwd: t2mkTmp('muse-tap-page-cwd-') }),
+    );
+    const out = `${res.stdout}\n${res.stderr}`;
+    assert.equal(res.status, 1, `unchanged index must exit 1, got ${res.status}; out: ${out.slice(0, 800)}`);
+    assert.ok(/page-advanced/.test(out), 'exit-1 output must name the failing page-advanced row');
+    assert.ok(/fail/.test(out), 'exit-1 output must mark the row fail');
+  });
+
+  it('blank screencap exits 1 naming the no-blank-viewport row', () => {
+    const { bin } = writeTapPageAdbStub({ d1: T2_PAGE_BEFORE, d2: T2_PAGE_AFTER, png: '' });
+    const res = runCli(
+      ['gallery-tap', '--tap-page', '--serial', T2_SERIAL],
+      t2WithPath(bin, { cwd: t2mkTmp('muse-tap-page-cwd-') }),
+    );
+    const out = `${res.stdout}\n${res.stderr}`;
+    assert.equal(res.status, 1, `blank screencap must exit 1, got ${res.status}; out: ${out.slice(0, 800)}`);
+    assert.ok(/no-blank-viewport/.test(out), 'exit-1 output must name the failing no-blank-viewport row');
+    assert.ok(/fail/.test(out), 'exit-1 output must mark the row fail');
+  });
+
+  it('unreachable serial exits 1 naming the serial', () => {
+    const { bin } = writeTapPageAdbStub({
+      d1: T2_PAGE_BEFORE, d2: T2_PAGE_AFTER, png: T2_PNG,
+      failOn: 'install', failExit: 1, failOut: 'device not found',
+    });
+    const res = runCli(
+      ['gallery-tap', '--tap-page', '--serial', '127.0.0.1:5999'],
+      t2WithPath(bin, { cwd: t2mkTmp('muse-tap-page-cwd-') }),
+    );
+    const out = `${res.stdout}\n${res.stderr}`;
+    assert.equal(res.status, 1, `unreachable serial must exit 1, got ${res.status}; out: ${out.slice(0, 800)}`);
+    assert.ok(/127\.0\.0\.1:5999/.test(out), 'exit-1 output must name the serial');
+  });
+
+  it('any failing adb step exits 1 naming serial + failed adb args', () => {
+    const { bin } = writeTapPageAdbStub({
+      d1: T2_PAGE_BEFORE, d2: T2_PAGE_AFTER, png: T2_PNG,
+      failOn: 'input tap', failExit: 1, failOut: 'closed',
+    });
+    const res = runCli(
+      ['gallery-tap', '--tap-page', '--serial', T2_SERIAL],
+      t2WithPath(bin, { cwd: t2mkTmp('muse-tap-page-cwd-') }),
+    );
+    const out = `${res.stdout}\n${res.stderr}`;
+    assert.equal(res.status, 1, `failing adb step must exit 1, got ${res.status}; out: ${out.slice(0, 800)}`);
+    assert.ok(new RegExp(T2_SERIAL.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).test(out), 'exit-1 output must name the serial');
+    assert.ok(/input tap|tap/.test(out), 'exit-1 output must name the failed adb args');
+  });
+
+  it('--tap-page without --serial exits 1 naming no-device without invoking adb (fail closed)', () => {
+    const { bin } = writeTapPageAdbStub({ d1: T2_PAGE_BEFORE, d2: T2_PAGE_AFTER, png: T2_PNG });
+    const res = runCli(
+      ['gallery-tap', '--tap-page'],
+      t2WithPath(bin, { cwd: t2mkTmp('muse-tap-page-cwd-') }),
+    );
+    const out = `${res.stdout}\n${res.stderr}`;
+    assert.equal(res.status, 1, `--tap-page without --serial must exit 1, got ${res.status}; out: ${out.slice(0, 800)}`);
+    assert.ok(/no-device|no device/i.test(out), 'exit-1 output must name no-device');
+    assert.ok(!fs.existsSync(path.join(bin, 'adb.log')) || t2ReadLog(path.join(bin, 'adb.log')).length === 0,
+      'fail-closed run must not invoke adb');
+  });
+});
