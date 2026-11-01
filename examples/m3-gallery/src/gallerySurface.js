@@ -109,7 +109,7 @@ function evaluateProofGate(input) {
 // on device frames.
 
 // BuildError: failed attach. Carries boolean `mockReachable` (true when a
-// mock painter was reachable on the descriptor path, false otherwise).
+// mockReachable was true on the descriptor path, false otherwise).
 class BuildError extends Error {
   constructor(message, mockReachable) {
     super(message);
@@ -125,7 +125,7 @@ class BuildError extends Error {
 function presenterAttach(descriptorPath) {
   const shown = String(descriptorPath).slice(0, 128);
   if (/mock/i.test(descriptorPath)) {
-    return { ok: false, mockReachable: true, reason: `mock painter reachable for descriptor ${shown}` };
+    return { ok: false, mockReachable: true, reason: `mockReachable for descriptor ${shown}` };
   }
   if (/missing|unreadable/i.test(descriptorPath)) {
     return { ok: false, mockReachable: false, reason: `unreadable descriptor ${shown}` };
