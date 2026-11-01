@@ -9,6 +9,7 @@ const { execFileSync } = require('node:child_process');
 
 const DEFAULT_TIMEOUT_MS = 30000;
 const POLL_INTERVAL_MS = 50;
+const SETTLE_POLL_MS = 50;
 
 class FrameNotReadyError extends Error {
   constructor(expectedPage, timeoutMs) {
@@ -54,6 +55,62 @@ function findMarker(output, expectedPage, totalPages) {
   return needle;
 }
 
+// Settle check (marker-before-composite race guard): after the marker is
+// observed, require composite to have settled before resolving. Preferred
+// form: a SurfaceFlinger frame-time advance on the gallery surface. Fallback
+// (hermetic fake adb has no parseable SurfaceFlinger output): require the
+// marker to persist across two consecutive logcat polls separated by a short
+// delay. Bounded by the caller's deadline; returns true when settled, false
+// when the marker flaked (caller keeps polling) — throws FrameNotReadyError
+// only via the caller's timeout path (fail-closed, never stale).
+async function settleAfterMarker(run, expectedPage, totalPages, deadlineMs) {
+  // Best-effort SurfaceFlinger frame-time-advance probe. Any failure or
+  // unparseable output falls through to the marker-persistence check so the
+  // hermetic fake adb (which returns canned logcat text for every argv)
+  // stays green.
+  try {
+    const before = await run(['shell', 'dumpsys', 'SurfaceFlinger']);
+    const t0 = extractFrameTime(before);
+    if (t0 !== null) {
+      await sleep(SETTLE_POLL_MS);
+      if (Date.now() >= deadlineMs) return false;
+      const after = await run(['shell', 'dumpsys', 'SurfaceFlinger']);
+      const t1 = extractFrameTime(after);
+      if (t1 !== null && t1 > t0) {
+        // Frames advanced: composite settled. Still require the marker to
+        // be present so a page flip mid-settle does not resolve stale.
+        const output = await run(['logcat', '-d']);
+        return findMarker(output, expectedPage, totalPages) !== null;
+      }
+      // Parseable but not advancing: fall through to persistence check.
+    }
+  } catch {
+    // Ignore probe errors; persistence check below is the hermetic path.
+  }
+  // Marker-persistence fallback: marker must survive one more poll after a
+  // short delay.
+  await sleep(SETTLE_POLL_MS);
+  if (Date.now() >= deadlineMs) return false;
+  const output = await run(['logcat', '-d']);
+  return findMarker(output, expectedPage, totalPages) !== null;
+}
+
+// Extract the largest frame-timestamp-like number from `dumpsys
+// SurfaceFlinger` output. Returns null when nothing parseable is present
+// (e.g. hermetic fake adb) so the caller can fall back.
+function extractFrameTime(output) {
+  if (typeof output !== 'string') return null;
+  const matches = output.match(/\b\d{10,}\b/g);
+  if (!matches) return null;
+  let max = null;
+  for (const m of matches) {
+    const n = Number(m);
+    if (!Number.isFinite(n)) continue;
+    if (max === null || n > max) max = n;
+  }
+  return max;
+}
+
 async function waitForFrameReady({ serial, expectedPage, totalPages = 9, timeoutMs = DEFAULT_TIMEOUT_MS, adb } = {}) {
   if (!Number.isInteger(expectedPage) || expectedPage < 1) {
     throw new TypeError(`expectedPage must be a positive integer, got: ${expectedPage}`);
@@ -66,11 +123,18 @@ async function waitForFrameReady({ serial, expectedPage, totalPages = 9, timeout
   }
   const run = resolveAdbRunner(adb, serial);
   const start = Date.now();
+  const deadlineMs = start + timeoutMs;
   for (;;) {
     const output = await run(['logcat', '-d']);
     const marker = findMarker(output, expectedPage, totalPages);
     if (marker !== null) {
-      return { marker, elapsedMs: Date.now() - start };
+      if (Date.now() >= deadlineMs) {
+        throw new FrameNotReadyError(expectedPage, timeoutMs);
+      }
+      const settled = await settleAfterMarker(run, expectedPage, totalPages, deadlineMs);
+      if (settled) {
+        return { marker, elapsedMs: Date.now() - start };
+      }
     }
     if (Date.now() - start >= timeoutMs) {
       throw new FrameNotReadyError(expectedPage, timeoutMs);
