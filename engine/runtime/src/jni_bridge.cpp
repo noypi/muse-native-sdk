@@ -6,6 +6,7 @@
 #include "runtime/jni_bridge.h"
 #include "runtime/presenter.h"
 #include "runtime/egl_blit.h"
+#include "runtime/renderer_preference.h"
 // FR-GRAPHICS-012 T3: single-definition compile of the fallback branch.
 // `src/egl_blit.cpp` is not listed in any CMake target (header-only project
 // pattern, see that TU's note); including it here compiles the
@@ -811,15 +812,48 @@ void RenderLocked(GalleryHandle* g) {
   std::string error = g->parseError;
   const bool presented = ::runtime::PresentDeviceGalleryPage(
       g->rows, g->page, *g->renderer, window, h, &error);
+  // FR-GRAPHICS-014 T2: requested-vs-effective present-path selection with
+  // probe downgrade to the proven CPU push (AC-GRAPHICS-040/041). The
+  // requested renderer defaults to `cpu`; the resolve gate maps it against
+  // EGL/Skia availability into the effective frame path (never blank) and
+  // names every downgrade `renderer-downgrade:<lane>-unavailable`. `egl`
+  // dispatches to the FR-012 blit leg, `skia` to the FR-003/AC-039 Skia leg,
+  // `cpu`/downgrade takes the proven CPU `SurfaceView` push below (the
+  // staged->locked copy); no EGL/Skia failure can blank or crash the frame
+  // per AC-GRAPHICS-034, and every downgrade is logged with requested vs
+  // effective reported separately.
   // FR-GRAPHICS-012 T3: EGL blit-present attempt with automatic in-process
   // CPU fallback. Observational until T4 proves EGL pixels: the proven CPU
   // copy below always posts, so a failed (or dormant — EGL never initialized
   // yet) EGL lane can never blank the device frame. Every EGL failure is
   // logged inside as `GFX-BLIT-FALLBACK: <trigger>`; lock/unlockAndPost below
   // are reused unchanged.
+  const char* requestedRenderer = "cpu";
+  const bool eglAvailable = false;
+  const bool skiaAvailable = false;
+  char effectiveRenderer[16] = {};
+  std::string rendererTrigger;
+  ResolveRendererFallback(requestedRenderer, eglAvailable, skiaAvailable,
+                          effectiveRenderer, sizeof(effectiveRenderer),
+                          &rendererTrigger);
+  if (!rendererTrigger.empty()) {
+    const char* reqName =
+        (requestedRenderer != nullptr) ? requestedRenderer : "cpu";
+    std::string downgradeLog =
+        rendererTrigger + " (requested=" + reqName +
+        " effective=" + effectiveRenderer + ")";
+    MuseLogInfo(downgradeLog);
+  }
   if (presented && w > 0 && h > 0 && !g->staged.empty()) {
-    std::string eglFallback;
-    PresentFrameWithFallback(g->staged.data(), w, h, &eglFallback);
+    if (std::strcmp(effectiveRenderer, "egl") == 0) {
+      std::string eglFallback;
+      PresentFrameWithFallback(g->staged.data(), w, h, &eglFallback);
+    } else if (std::strcmp(effectiveRenderer, "skia") == 0) {
+      bool PresentSkiaFrameWithFallback(const uint32_t*, int, int,
+                                        std::string*);
+      std::string skiaFallback;
+      PresentSkiaFrameWithFallback(g->staged.data(), w, h, &skiaFallback);
+    }
   }
   // T3: staged->locked copy gated on presented — when false the locked bits
   // stay untouched and the unlockAndPost below reposts the previous frame.
