@@ -263,7 +263,7 @@
   const realUsage =
     'Usage: muse-native gallery-real (--assert-retained-components|--assert-interactive) [--code-root <dir>]';
   if (argv.includes('--help') || argv.includes('-h')) {
-    process.stdout.write(`${realUsage}\n`);
+    process.stdout.write(`${realUsage}\nUsage: muse-native gallery-real --assert-surface-contract [--device <serial>]\n`);
     return;
   }
   let realOpts;
