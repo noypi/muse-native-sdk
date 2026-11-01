@@ -1,0 +1,28 @@
+11-01 19:23:39.653  3787  3787 I muse-host: nativeDispatchTouch: action=0 x=540.0 y=90.0 pointer=0
+11-01 19:23:39.653  3787  3787 D MainActivity: touch x=540.0 y=89.99902 claimed=-1
+11-01 19:23:41.197  3787  3787 D MainActivity: touch x=540.0 y=89.99902 claimed=-1
+11-01 19:23:44.301  3787  3787 I muse-host: nativeDispatchTouch: action=0 x=540.0 y=290.0 pointer=0
+11-01 19:23:44.301  3787  3787 D MainActivity: touch x=540.0 y=289.99902 claimed=-1
+11-01 19:23:45.840  3787  3787 D MainActivity: touch x=540.0 y=289.99902 claimed=-1
+11-01 19:23:48.988  3787  3787 I muse-host: nativeDispatchTouch: action=0 x=540.0 y=490.0 pointer=0
+11-01 19:23:48.988  3787  3787 D MainActivity: touch x=540.0 y=489.99902 claimed=-1
+11-01 19:23:50.574  3787  3787 D MainActivity: touch x=540.0 y=489.99902 claimed=-1
+11-01 19:23:53.720  3787  3787 I muse-host: nativeDispatchTouch: action=0 x=540.0 y=790.0 pointer=0
+11-01 19:23:53.720  3787  3787 D MainActivity: touch x=540.0 y=790.0 claimed=-1
+11-01 19:23:55.270  3787  3787 D MainActivity: touch x=540.0 y=790.0 claimed=-1
+11-01 19:23:58.392  3787  3787 I muse-host: nativeDispatchTouch: action=0 x=540.0 y=1090.0 pointer=0
+11-01 19:23:58.392  3787  3787 D MainActivity: touch x=540.0 y=1090.0 claimed=-1
+11-01 19:23:59.948  3787  3787 D MainActivity: touch x=540.0 y=1090.0 claimed=-1
+11-01 19:24:03.061  3787  3787 I muse-host: nativeDispatchTouch: action=0 x=540.0 y=1290.0 pointer=0
+11-01 19:24:03.061  3787  3787 D MainActivity: touch x=540.0 y=1290.0 claimed=-1
+11-01 19:24:04.609  3787  3787 D MainActivity: touch x=540.0 y=1290.0 claimed=-1
+11-01 19:24:07.706  3787  3787 I muse-host: nativeDispatchTouch: action=0 x=540.0 y=1490.0 pointer=0
+11-01 19:24:07.706  3787  3787 D MainActivity: touch x=540.0 y=1490.0 claimed=-1
+11-01 19:24:09.269  3787  3787 D MainActivity: touch x=540.0 y=1490.0 claimed=-1
+11-01 19:24:12.353  3787  3787 I muse-host: nativeDispatchTouch: action=0 x=540.0 y=1690.0 pointer=0
+11-01 19:24:12.353  3787  3787 D MainActivity: touch x=540.0 y=1690.0 claimed=-1
+11-01 19:24:13.909  3787  3787 D MainActivity: touch x=540.0 y=1690.0 claimed=-1
+11-01 19:24:47.166  3787  3787 I muse-host: nativeDispatchTouch: action=0 x=200.0 y=190.0 pointer=0
+11-01 19:24:47.166  3787  3787 D MainActivity: touch x=200.0 y=190.0 claimed=-1
+11-01 19:24:47.166  3787  3787 I muse-host: nativeDispatchTouch: tap fired node=20 repaint=1
+11-01 19:24:47.166  3787  3787 D MainActivity: touch x=200.0 y=190.0 claimed=20

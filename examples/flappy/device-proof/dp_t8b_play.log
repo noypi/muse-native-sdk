@@ -1,0 +1,16 @@
+=== T8b play/input evidence 2026-11-01T19:16:34Z ===
+--- 8 taps sent ---
+UI hierchary dumped to: /sdcard/t8b_ui.xml
+/sdcard/t8b_ui.xml: 1 file pulled, 0 skipped. 4.3 MB/s (3132 bytes in 0.001s)
+--- hierarchy node count ---
+9
+--- muse-host lines since cold start ---
+11-01 19:15:30.439  3589  3589 I muse-host: nativeLoadTree: bytes=12944 rows=41 -> handle acquired
+11-01 19:15:30.439  3589  3589 I muse-host: nativeProvenance: engine-sha=1b5e89e gallery_present-sha=17f062b02bdbd8cda3a4ae49706ad002d936a798
+--- FATAL/crash grep ---
+(end crash grep)
+/sdcard/t8b_play.png: 1 file pulled, 0 skipped. 30.4 MB/s (27216 bytes in 0.001s)
+f7acae62738218e25b518214487a1cfc  device-proof/dp_t8b_first.png
+fa1f5b45f7f4c3785795854a377b9d7e  device-proof/dp_t8b_play.png
+f7acae62738218e25b518214487a1cfc  device-proof/dp_t8b_tap1.png
+f7acae62738218e25b518214487a1cfc  device-proof/dp_t8b_waited.png

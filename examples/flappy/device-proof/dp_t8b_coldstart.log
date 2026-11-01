@@ -1,0 +1,9 @@
+=== T8b live-play evidence 2026-11-01T19:15:30Z ===
+--- cold start ---
+Starting: Intent { cmp=com.muse.host/.MainActivity }
+--- focused app ---
+    topResumedActivity=ActivityRecord{b0cf508 u0 com.muse.host/.MainActivity t217}
+  ResumedActivity: ActivityRecord{b0cf508 u0 com.muse.host/.MainActivity t217}
+  mFocusedApp=ActivityRecord{b0cf508 u0 com.muse.host/.MainActivity t217}
+--- crash grep ---
+(end crash grep)
