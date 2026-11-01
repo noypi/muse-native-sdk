@@ -143,3 +143,71 @@ describe('resolvePins — security coverage', () => {
     assert.equal(calls, 0);
   });
 });
+
+describe('resolvePins — Cronet AAR pins per ABI (T6 / FR-DEPS-010 AC-DEPS-026)', () => {
+  // Authoritative pins transcribed from FR-DEPS-010 Notes (specs-cpp-dependencies.md:307);
+  // the API-coord sha256 below is the spec/test value `d0cbb75a…faddcf8`
+  // (dispatch briefs transcribed it with a typo — spec wins).
+  const CRONET = [
+    {
+      match: 'cronet-bundled',
+      version: '500.1.0',
+      sha256: 'fa286aeebe66dcab4a64df017d566cb8ec563c3bb63af527997c3a4e056bf295',
+      url: 'https://maven.google.com/org/chromium/net/cronet-bundled/500.1.0/cronet-bundled-500.1.0.aar',
+    },
+    {
+      match: 'cronet',
+      version: '500.1.0',
+      sha256: 'd0cbb75a3e558166a1e21747d75b788b2650ddf8bec321b727b0878f01addcf8',
+      url: 'https://maven.google.com/org/chromium/net/cronet/500.1.0/cronet-500.1.0.aar',
+    },
+  ];
+
+  function artifactOf(entry) {
+    return String(entry.artifact ?? entry.name ?? '');
+  }
+
+  function findCronet(pins, want) {
+    const cands = pins.filter((e) => artifactOf(e).includes(want.match));
+    if (want.match === 'cronet') {
+      // Exclude the bundled sibling: the API artifact is the bare `cronet` coord.
+      return cands.find((e) => !artifactOf(e).includes('cronet-bundled'));
+    }
+    return cands[0];
+  }
+
+  for (const abi of ABIS) {
+    it(`includes both Cronet AAR pins for ${abi} with verbatim version/sha256/url`, () => {
+      const pins = resolvePins(abi);
+      for (const want of CRONET) {
+        const got = findCronet(pins, want);
+        assert.ok(got, `${want.match}:500.1.0 pinned for ${abi}`);
+        assert.equal(got.version, want.version);
+        assert.equal(String(got.sha256).toLowerCase(), want.sha256);
+        assert.equal(got.url, want.url);
+      }
+    });
+  }
+
+  it('Cronet pins carry well-formed sha256 + https AAR urls on every ABI', () => {
+    for (const abi of ABIS) {
+      const pins = resolvePins(abi);
+      for (const want of CRONET) {
+        const got = findCronet(pins, want);
+        assert.ok(got, `${want.match} present for ${abi}`);
+        assert.match(String(got.sha256), /^[0-9a-fA-F]{64}$/);
+        assert.match(String(got.url), /^https:\/\//);
+        assert.ok(String(got.url).endsWith('.aar'), `AAR url, got: ${got.url}`);
+      }
+    }
+  });
+
+  it('SetupError contract is unchanged (EUNPINNED|EHASH with artifact+abi fields)', () => {
+    assert.throws(() => resolvePins('mips-unknown'), (err) => {
+      assert.ok(['EUNPINNED', 'EHASH'].includes(err.code));
+      assert.equal(typeof err.artifact, 'string');
+      assert.equal(typeof err.abi, 'string');
+      return true;
+    });
+  });
+});

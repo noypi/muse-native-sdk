@@ -5,6 +5,18 @@
       "version": "1.0.0",
       "sha256": "9f2c9f2c9f2c9f2c9f2c9f2c9f2c9f2c9f2c9f2c9f2c9f2c9f2c9f2c9f2c9f2c",
       "url": "https://example.com/native-deps/e2e-fixture-native-lib-1.0.0-arm64-v8a.tar.gz"
+    },
+    {
+      "artifact": "cronet-bundled",
+      "version": "500.1.0",
+      "sha256": "fa286aeebe66dcab4a64df017d566cb8ec563c3bb63af527997c3a4e056bf295",
+      "url": "https://maven.google.com/org/chromium/net/cronet-bundled/500.1.0/cronet-bundled-500.1.0.aar"
+    },
+    {
+      "artifact": "cronet",
+      "version": "500.1.0",
+      "sha256": "d0cbb75a3e558166a1e21747d75b788b2650ddf8bec321b727b0878f01addcf8",
+      "url": "https://maven.google.com/org/chromium/net/cronet/500.1.0/cronet-500.1.0.aar"
     }
   ],
   "armeabi-v7a": [
@@ -13,6 +25,18 @@
       "version": "1.0.0",
       "sha256": "1a2b1a2b1a2b1a2b1a2b1a2b1a2b1a2b1a2b1a2b1a2b1a2b1a2b1a2b1a2b1a2b",
       "url": "https://example.com/native-deps/e2e-fixture-native-lib-1.0.0-armeabi-v7a.tar.gz"
+    },
+    {
+      "artifact": "cronet-bundled",
+      "version": "500.1.0",
+      "sha256": "fa286aeebe66dcab4a64df017d566cb8ec563c3bb63af527997c3a4e056bf295",
+      "url": "https://maven.google.com/org/chromium/net/cronet-bundled/500.1.0/cronet-bundled-500.1.0.aar"
+    },
+    {
+      "artifact": "cronet",
+      "version": "500.1.0",
+      "sha256": "d0cbb75a3e558166a1e21747d75b788b2650ddf8bec321b727b0878f01addcf8",
+      "url": "https://maven.google.com/org/chromium/net/cronet/500.1.0/cronet-500.1.0.aar"
     }
   ],
   "x86": [
@@ -21,6 +45,18 @@
       "version": "1.0.0",
       "sha256": "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
       "url": "https://example.com/native-deps/e2e-fixture-native-lib-1.0.0-x86.tar.gz"
+    },
+    {
+      "artifact": "cronet-bundled",
+      "version": "500.1.0",
+      "sha256": "fa286aeebe66dcab4a64df017d566cb8ec563c3bb63af527997c3a4e056bf295",
+      "url": "https://maven.google.com/org/chromium/net/cronet-bundled/500.1.0/cronet-bundled-500.1.0.aar"
+    },
+    {
+      "artifact": "cronet",
+      "version": "500.1.0",
+      "sha256": "d0cbb75a3e558166a1e21747d75b788b2650ddf8bec321b727b0878f01addcf8",
+      "url": "https://maven.google.com/org/chromium/net/cronet/500.1.0/cronet-500.1.0.aar"
     }
   ],
   "x86_64": [
@@ -29,6 +65,18 @@
       "version": "1.0.0",
       "sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
       "url": "https://example.com/native-deps/e2e-fixture-native-lib-1.0.0-x86_64.tar.gz"
+    },
+    {
+      "artifact": "cronet-bundled",
+      "version": "500.1.0",
+      "sha256": "fa286aeebe66dcab4a64df017d566cb8ec563c3bb63af527997c3a4e056bf295",
+      "url": "https://maven.google.com/org/chromium/net/cronet-bundled/500.1.0/cronet-bundled-500.1.0.aar"
+    },
+    {
+      "artifact": "cronet",
+      "version": "500.1.0",
+      "sha256": "d0cbb75a3e558166a1e21747d75b788b2650ddf8bec321b727b0878f01addcf8",
+      "url": "https://maven.google.com/org/chromium/net/cronet/500.1.0/cronet-500.1.0.aar"
     }
   ]
 }

@@ -72,7 +72,7 @@ function resolvePins(abi) {
     if (typeof entry.url !== 'string' || entry.url.length === 0 || !HTTPS_RE.test(entry.url)) {
       throw new SetupError('EUNPINNED', artifact, abi);
     }
-    out.push({ version: entry.version, sha256: entry.sha256, url: entry.url });
+    out.push({ artifact, version: entry.version, sha256: entry.sha256, url: entry.url });
   }
   return out;
 }
