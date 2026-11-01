@@ -14,6 +14,7 @@ import os
 __all__ = [
     "DepsDataError",
     "get_allowlist",
+    "get_cronet_pins",
     "get_denylist",
     "load_manifest",
 ]
@@ -66,6 +67,7 @@ _ALLOWLIST = [
     ("{fmt}", "Formatting where libc++ lacks std::format", "core"),
     ("magic_enum", "Enum names for diagnostics; header-only", "core"),
     ("simdjson", "Tooling/debug JSON only; never in the frame path", "build"),
+    ("Cronet", "Default shippable transport (FR-NET-014)", "net"),
 ]
 
 # Deny-list mirroring the spec table (library, reason).
@@ -112,6 +114,47 @@ def get_allowlist():
         {"name": name, "owner": owner, "need": need}
         for name, need, owner in _ALLOWLIST
     ]
+
+
+# Cronet pins transcribed verbatim from FR-DEPS-010 Notes (no fallback pins
+# per Q-DEPS-004).
+_CRONET_PINS = [
+    {
+        "coordinate": "org.chromium.net:cronet-bundled:500.1.0",
+        "version": "500.1.0",
+        "sha256": (
+            "fa286aeebe66dcab4a64df017d566cb8ec563c3bb63af527997c3a4e056bf295"
+        ),
+        "url": (
+            "https://maven.google.com/org/chromium/net/cronet-bundled/500.1.0/"
+            "cronet-bundled-500.1.0.aar"
+        ),
+        "licence": "BSD-3-Clause",
+        "licence_url": (
+            "https://chromium.googlesource.com/chromium/src/+/HEAD/LICENSE"
+        ),
+    },
+    {
+        "coordinate": "org.chromium.net:cronet:500.1.0",
+        "version": "500.1.0",
+        "sha256": (
+            "d0cbb75a3e558166a1e21747d75b788b2650ddf8bec321b727b0878f01addcf8"
+        ),
+        "url": (
+            "https://maven.google.com/org/chromium/net/cronet/500.1.0/"
+            "cronet-500.1.0.aar"
+        ),
+        "licence": "BSD-3-Clause",
+        "licence_url": (
+            "https://chromium.googlesource.com/chromium/src/+/HEAD/LICENSE"
+        ),
+    },
+]
+
+
+def get_cronet_pins():
+    """Return the Cronet AAR pins as a fresh list of pin dicts."""
+    return [dict(pin) for pin in _CRONET_PINS]
 
 
 def get_denylist():
