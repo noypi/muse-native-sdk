@@ -435,7 +435,7 @@ function defaultAdvancePage({ serial } = {}) {
   // resolved at proof time against the emulator serial. Throws
   // device-unreachable when no device answers (never a silent pass).
   // Hermetic halves inject their own advance and never call this.
-  adbOrUnreachable(['shell', 'am', 'broadcast', '-a', 'muse.native.NATIVE_ADVANCE_PAGE'], serial);
+  adbOrUnreachable(['shell', 'am', 'broadcast', '-a', 'muse.native.PROOF_ADVANCE_PAGE'], serial);
   return Promise.resolve({ nativeAdvancePage: true });
 }
 
@@ -450,6 +450,7 @@ function defaultReadPageIndex({ serial } = {}) {
     /gallerystorypage[=:\s]+(\d+)/i,
     /GalleryPage[^0-9]*(\d+)/,
     /NATIVE_ADVANCE_PAGE[^0-9]*page[=:\s]+(\d+)/i,
+    /PROOF_ADVANCE_PAGE[^0-9]*page[=:\s]+(\d+)/i,
     /\bpage[=:\s]+(\d+)\s*\/\s*(\d+)/i,
     /\bpage-index[=:\s]+(\d+)/i,
   ];
