@@ -383,6 +383,113 @@ class TestScanner(unittest.TestCase):
             self.assertEqual(result, [os.path.join("bin", "blob.bin")])
 
 
+class TestScannerHardening(unittest.TestCase):
+    """Hardening (security-review 2026-11-01): hostile entries, symlinks,
+    unreadable/undecodable allowlist — all hermetic tmp-dir fixtures.
+
+    ASSUMPTION (fail-closed reading): the settled scanner contract pins
+    only exact-match / ``path::Symbol``-prefix coverage and a clean
+    ``FileNotFoundError`` failure. These tests pin the fail-closed
+    reading of the three requested controls without changing scanner
+    semantics: hostile entries are inert (never cover an in-repo path),
+    symlinked dirs are never descended (``os.walk`` default
+    ``followlinks=False``), and allowlist read errors raise instead of
+    passing.
+    """
+
+    def test_hostile_allowlist_entries_never_match_outside_repo(self):
+        # ASSUMPTION: ``..`` / absolute-path entries are inert — they
+        # normalize to strings no in-repo relpath can equal, so they
+        # never cover a scanned file.
+        with tempfile.TemporaryDirectory() as root:
+            victim = os.path.join("scripts", "run.sh")
+            _write_tree(
+                root,
+                {victim.replace(os.sep, "/"): "#!/bin/sh\n./gradlew :app:build\n"},
+            )
+            hostile = frozenset(
+                {
+                    "../escape.sh",
+                    "/etc/passwd",
+                    "..\\win-escape",
+                    "../scripts/run.sh",
+                }
+            )
+            self.assertEqual(
+                find_unallowlisted(root, hostile),
+                find_unallowlisted(root, frozenset()),
+            )
+            self.assertEqual(
+                find_unallowlisted(root, hostile), [victim]
+            )
+
+    def test_symlinked_dir_does_not_escape_scan(self):
+        # ASSUMPTION: ``os.walk`` uses default ``followlinks=False``, so
+        # a symlinked dir (e.g. pointing at ``/`` or an outside tree)
+        # is never descended — no scan escape.
+        with tempfile.TemporaryDirectory() as root:
+            with tempfile.TemporaryDirectory() as outside:
+                _write_tree(outside, {"evil.sh": "./gradlew :evil:build\n"})
+                link = os.path.join(root, "link_out")
+                try:
+                    os.symlink(outside, link)
+                except (OSError, NotImplementedError) as exc:
+                    self.skipTest("symlinks unsupported: %s" % exc)
+                _write_tree(root, {"src/clean.py": "x = 1\n"})
+                self.assertEqual(find_unallowlisted(root, frozenset()), [])
+
+    def test_symlink_loop_does_not_hang(self):
+        # ASSUMPTION: symlink loops terminate because symlinked dirs
+        # are never followed (same ``followlinks=False`` premise).
+        with tempfile.TemporaryDirectory() as root:
+            first = os.path.join(root, "loop_a")
+            second = os.path.join(root, "loop_b")
+            try:
+                os.symlink(second, first)
+                os.symlink(first, second)
+            except (OSError, NotImplementedError) as exc:
+                self.skipTest("symlinks unsupported: %s" % exc)
+            _write_tree(root, {"src/clean.py": "x = 1\n"})
+            self.assertEqual(find_unallowlisted(root, frozenset()), [])
+
+    def test_undecodable_allowlist_fails_closed(self):
+        # Invalid-UTF-8 allowlist must raise (clean failure), never
+        # return an empty (allow-nothing) or allow-all set that passes.
+        with tempfile.TemporaryDirectory() as root:
+            bad = os.path.join(root, "gradlew-allowlist.txt")
+            with open(bad, "wb") as handle:
+                handle.write(b"\xff\xfe invalid \xff\n")
+            with self.assertRaises(UnicodeDecodeError):
+                load_allowlist(bad)
+
+    def test_unreadable_allowlist_fails_closed(self):
+        # Permission-denied / unreadable allowlist must raise OSError
+        # (clean failure), never silently pass. A directory path stands
+        # in for the permission-denied read (IsADirectoryError is an
+        # OSError) so the test holds even when running as root; a
+        # chmod-000 probe is asserted best-effort on non-root.
+        with tempfile.TemporaryDirectory() as root:
+            with self.assertRaises(OSError):
+                load_allowlist(root)
+            probe = os.path.join(root, "locked.txt")
+            with open(probe, "w", encoding="utf-8") as handle:
+                handle.write("scripts/run.sh\n")
+            try:
+                os.chmod(probe, 0o000)
+            except OSError:
+                return
+            try:
+                if hasattr(os, "geteuid") and os.geteuid() == 0:
+                    self.skipTest("running as root — chmod gate not enforceable")
+                with self.assertRaises(OSError):
+                    load_allowlist(probe)
+            finally:
+                try:
+                    os.chmod(probe, 0o644)
+                except OSError:
+                    pass
+
+
 class TestGateBehavior(unittest.TestCase):
     """T2/T3 — gate verdict on the real tree and stdlib-only discipline."""
 
