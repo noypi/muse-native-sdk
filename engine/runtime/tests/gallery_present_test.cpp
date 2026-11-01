@@ -425,6 +425,89 @@ static bool check_present_gallery_no_rows_diagnostic_never_blank() {
   return !error.empty() && target.captured.empty();
 }
 
+// T2 (BUG-GRAPHICS-002): segmented divider geometry — the NavigationBar /
+// SegmentedButton oracle branch must not paint the s==0 divider on the
+// outer left edge; the outer border is a single closed stroke and interior
+// dividers (s >= 1) remain. Hermetic: in-memory pixel buffer only.
+static bool ProbeSegmentedRow(const char* comp) {
+  runtime::GalleryRow row;
+  row.label = "probe";
+  row.comp = comp;
+  row.desc = comp;
+  std::vector<runtime::GalleryRow> rows{row};
+  const int w = 720;
+  const int h = 400;
+  std::vector<std::uint32_t> px(static_cast<std::size_t>(w) * h, 0u);
+  std::string err;
+  int drawn = runtime::RasterGalleryPage(rows, 0, px.data(), w, w, h, &err);
+  if (drawn <= 0) {
+    std::printf("  %s drawn=%d err=%s\n", comp, drawn, err.c_str());
+    return false;
+  }
+  auto at = [&](int x, int y) -> std::uint32_t {
+    return px[static_cast<std::size_t>(y) * w + x];
+  };
+  // Outline-variant #CAC4D0 as an RGBA_8888 word (see existing 0xFFA45067
+  // convention above). Bar x-geometry mirrors the oracle branch; y0 is
+  // located by scanning so the test does not depend on page packing.
+  constexpr std::uint32_t kOutline = 0xFFD0C4CAu;
+  const int bw = w - 2 * 16;
+  const int segW = (bw - 96) / 3;
+  const int barW = segW * 3;
+  const int cx = 16 + bw / 2;
+  const int x0 = cx - barW / 2;
+  const int barH = 76;
+  int y0 = -1;
+  for (int y = 0; y < h; ++y) {
+    int run = 0;
+    for (int x = x0 + 24; x < x0 + barW - 24; ++x) {
+      if (at(x, y) == kOutline) ++run;
+    }
+    if (run >= barW - 48 - 8) {
+      y0 = y;
+      break;
+    }
+  }
+  if (y0 < 0) {
+    std::printf("  %s bar top not found\n", comp);
+    return false;
+  }
+  const int yMid = y0 + barH / 2;
+  const int yDiv = y0 + barH - 20;
+  // (a) No s==0 edge stroke: the columns just left of the border carry no
+  // outline pixels (the straight divider at sx == x0 would paint x0-1).
+  for (int y = y0 + 10; y < y0 + barH - 10; ++y) {
+    if (at(x0 - 1, y) == kOutline) {
+      std::printf("  %s edge stroke at (%d,%d)\n", comp, x0 - 1, y);
+      return false;
+    }
+    if (at(x0 - 2, y) == kOutline) {
+      std::printf("  %s outer stroke at (%d,%d)\n", comp, x0 - 2, y);
+      return false;
+    }
+  }
+  // (b) The outer border is a single closed stroke.
+  if (at(x0, yMid) != kOutline) return false;
+  if (at(x0 - 2, yMid) == kOutline) return false;
+  if (at(x0 + barW / 2, y0) != kOutline) return false;
+  if (at(x0 + barW / 2, y0 + barH - 1) != kOutline) return false;
+  // (c) Interior dividers at x0 + s*segW for s >= 1 remain.
+  for (int s = 1; s < 3; ++s) {
+    int sx = x0 + s * segW;
+    if (at(sx - 1, yDiv) != kOutline && at(sx, yDiv) != kOutline) {
+      std::printf("  %s interior divider s=%d missing\n", comp, s);
+      return false;
+    }
+  }
+  return true;
+}
+
+static bool check_segmented_divider_interior_no_edge_stroke() {
+  if (!ProbeSegmentedRow("NavigationBar")) return false;
+  if (!ProbeSegmentedRow("SegmentedButton")) return false;
+  return true;
+}
+
 #define RUN_CASE(name)                      \
   do {                                      \
     if (!(name)()) {                        \
@@ -461,6 +544,7 @@ int main() {
   RUN_CASE(check_known_states_never_throw);
   RUN_CASE(check_mirror_equality_with_js_drive_state);
   RUN_CASE(check_case_sensitive_unknown_is_closed);
+  RUN_CASE(check_segmented_divider_interior_no_edge_stroke);
   if (failures > 0) {
     std::printf("gallery_present_test: %d failing\n", failures);
     return 1;
