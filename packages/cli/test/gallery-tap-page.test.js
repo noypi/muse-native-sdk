@@ -787,3 +787,191 @@ describe('T2 — tap-page device sequence (FR-RUNTIME-012, AC-RUNTIME-036)', () 
       'fail-closed run must not invoke adb');
   });
 });
+// ── T3 (Batch 3) — tap-page zero-jni-faults gate across full logcat. ──
+// Spec refs: FR-RUNTIME-012, AC-RUNTIME-037.
+// Interface (plan T3 verbatim):
+//   `runGalleryTap(['gallery-tap','--tap-page','--assert-zero-jni-faults','--serial',s])
+//   => exit 0 iff T2 passes AND full `adb -s s logcat -d` contains zero
+//   `UnsatisfiedLinkError` and zero `SIGSEGV|Fatal signal.*SIGSEGV` matches;
+//   any match prints `zero-jni-faults fail` + first matching line (truncated
+//   300 chars) and exits 1` — `--tap-page` without `--serial` exits 1 naming
+//   no-device (fail closed, never touches adb); default lane never shells adb.
+// Scope: stubbed-adb CLI runs only. No T1/T2 rewrite (16 cases stay green).
+// Hermetic: node:test + node:assert/strict + stdlib only; adb is a tmp-bin
+// `sh` stub prepended to PATH (real adb never runs). Full-buffer scan reads
+// the unfiltered `logcat -d` dump (no `-s muse-host` filter); tagged
+// `logcat -d -s muse-host` reads still serve the page index.
+// ASSUMPTIONS (contract genuinely silent, most defensible behavior tested):
+// - A3: the fault scan covers the full buffer from this run's `logcat -c`
+//   (pre-run history cannot leak in); the stub models this by serving FULL
+//   verbatim for the unfiltered dump.
+// - A4: tap-page needs a serial — `--tap-page` without `--serial` fails
+//   closed (exit 1 naming no-device) without invoking adb, with or without
+//   the fault flag (nfr-audit Checks must not hang).
+
+const T3_TMP_ROOTS = [];
+function t3mkTmp(prefix) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  T3_TMP_ROOTS.push(dir);
+  return dir;
+}
+
+// Stateful stubbed `adb` for T3: records every argv line to <bin>/adb.log.
+// - `logcat -d -s muse-host` (tagged): 1st call prints d1, 2nd+ print d2
+//   (pre/post page-index reads, `muse-host: page-index <N>`).
+// - plain `logcat -d` (no muse-host): prints FULL verbatim (fault buffer).
+// - `exec-out screencap`: prints `png` verbatim (empty = blank).
+// - `failOn` substring match: exits `failExit` printing `failOut`.
+function writeFaultGateAdbStub({ d1, d2, png, full, failOn, failExit, failOut }) {
+  const bin = t3mkTmp('muse-fault-bin-');
+  const log = path.join(bin, 'adb.log');
+  const countFile = path.join(bin, 'adb.count');
+  fs.writeFileSync(log, '');
+  fs.writeFileSync(countFile, '0');
+  const script = [
+    '#!/bin/sh',
+    `LOG=${JSON.stringify(log)}`,
+    `COUNT_FILE=${JSON.stringify(countFile)}`,
+    `D1=${JSON.stringify(d1 === undefined ? '' : d1)}`,
+    `D2=${JSON.stringify(d2 === undefined ? '' : d2)}`,
+    `PNG=${JSON.stringify(png === undefined ? '' : png)}`,
+    `FULL=${JSON.stringify(full === undefined ? '' : full)}`,
+    `FAIL_ON=${JSON.stringify(failOn === undefined ? '' : failOn)}`,
+    `FAIL_EXIT=${failExit === undefined ? 1 : failExit}`,
+    `FAIL_OUT=${JSON.stringify(failOut === undefined ? '' : failOut)}`,
+    'printf \'%s\\n\' "$*" >> "$LOG"',
+    'if [ -n "$FAIL_ON" ]; then case "$*" in *"$FAIL_ON"*) [ -n "$FAIL_OUT" ] && printf \'%s\\n\' "$FAIL_OUT"; exit "$FAIL_EXIT";; esac; fi',
+    'case "$*" in',
+    '(*"muse-host"*"logcat"*|*"logcat"*"muse-host"*)',
+    '  N=$(cat "$COUNT_FILE" 2>/dev/null || echo 0); N=$((N + 1)); printf \'%s\' "$N" > "$COUNT_FILE";',
+    '  if [ "$N" = "1" ]; then printf \'%s\\n\' "$D1"; else printf \'%s\\n\' "$D2"; fi; exit 0;;',
+    '(*"logcat"*" -d"*) printf \'%s\\n\' "$FULL"; exit 0;;',
+    '(*"exec-out"*"screencap"*) printf \'%s\' "$PNG"; exit 0;;',
+    '(*) exit 0;;',
+    'esac',
+  ].join('\n');
+  fs.writeFileSync(path.join(bin, 'adb'), `${script}\n`, { mode: 0o755 });
+  return { bin, log };
+}
+
+function t3WithPath(bin, options) {
+  const env = { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH}` };
+  delete env.ANDROID_SERIAL;
+  return { ...options, env };
+}
+
+function t3ReadLog(log) {
+  try {
+    return fs.readFileSync(log, 'utf8').split('\n').filter((l) => l.length > 0);
+  } catch {
+    return [];
+  }
+}
+
+const T3_SERIAL = 'emulator-5554';
+const T3_PAGE_BEFORE = 'muse-host: page-index 2\n';
+const T3_PAGE_AFTER = 'muse-host: page-index 3\n';
+const T3_PNG = `PNGFAKEDATA-${'A'.repeat(200)}`;
+const T3_CLEAN = 'muse-host: page-index 3\nI/ActivityManager: clean run\n';
+const T3_JNI = `I/muse-host: page-index 3\nE/AndroidRuntime: java.lang.UnsatisfiedLinkError: No implementation found for void com.muse.host.Native.tick()${'B'.repeat(400)}\n`;
+const T3_SEGV = 'I/muse-host: page-index 3\nF/libc: Fatal signal 11 (SIGSEGV), code 1 (SEGV_MAPERR) in tid 1234\n';
+const T3_BARE_SEGV = 'W/native: SIGSEGV received in render thread\n';
+
+describe('T3 — tap-page zero-jni-faults gate (FR-RUNTIME-012, AC-RUNTIME-037)', () => {
+  it('stubbed adb with clean logcat exits 0 tabulating zero-jni-faults pass', () => {
+    const { bin } = writeFaultGateAdbStub({
+      d1: T3_PAGE_BEFORE, d2: T3_PAGE_AFTER, png: T3_PNG, full: T3_CLEAN,
+    });
+    const res = runCli(
+      ['gallery-tap', '--tap-page', '--assert-zero-jni-faults', '--serial', T3_SERIAL],
+      t3WithPath(bin, { cwd: t3mkTmp('muse-fault-cwd-') }),
+    );
+    const out = `${res.stdout}\n${res.stderr}`;
+    assert.equal(res.status, 0, `clean logcat must exit 0, got ${res.status}; out: ${out.slice(0, 800)}`);
+    assert.ok(/zero-jni-faults/.test(out), 'output must tabulate the zero-jni-faults row');
+    assert.ok(/pass/.test(out), 'clean run must mark rows pass');
+  });
+
+  it('logcat with java.lang.UnsatisfiedLinkError exits 1 naming the fault', () => {
+    const { bin } = writeFaultGateAdbStub({
+      d1: T3_PAGE_BEFORE, d2: T3_PAGE_AFTER, png: T3_PNG, full: T3_JNI,
+    });
+    const res = runCli(
+      ['gallery-tap', '--tap-page', '--assert-zero-jni-faults', '--serial', T3_SERIAL],
+      t3WithPath(bin, { cwd: t3mkTmp('muse-fault-cwd-') }),
+    );
+    const out = `${res.stdout}\n${res.stderr}`;
+    assert.equal(res.status, 1, `UnsatisfiedLinkError must exit 1, got ${res.status}; out: ${out.slice(0, 800)}`);
+    assert.ok(/zero-jni-faults/.test(out), 'exit-1 output must name the zero-jni-faults row');
+    assert.ok(/fail/.test(out), 'exit-1 output must mark the row fail');
+    assert.ok(/UnsatisfiedLinkError/.test(out), 'exit-1 output must name the fault');
+  });
+
+  it('logcat with Fatal signal 11 (SIGSEGV) exits 1 naming the fault', () => {
+    const { bin } = writeFaultGateAdbStub({
+      d1: T3_PAGE_BEFORE, d2: T3_PAGE_AFTER, png: T3_PNG, full: T3_SEGV,
+    });
+    const res = runCli(
+      ['gallery-tap', '--tap-page', '--assert-zero-jni-faults', '--serial', T3_SERIAL],
+      t3WithPath(bin, { cwd: t3mkTmp('muse-fault-cwd-') }),
+    );
+    const out = `${res.stdout}\n${res.stderr}`;
+    assert.equal(res.status, 1, `Fatal signal SIGSEGV must exit 1, got ${res.status}; out: ${out.slice(0, 800)}`);
+    assert.ok(/zero-jni-faults/.test(out), 'exit-1 output must name the zero-jni-faults row');
+    assert.ok(/fail/.test(out), 'exit-1 output must mark the row fail');
+    assert.ok(/SIGSEGV|Fatal signal/.test(out), 'exit-1 output must name the fault');
+  });
+
+  it('logcat with a bare SIGSEGV line exits 1', () => {
+    const { bin } = writeFaultGateAdbStub({
+      d1: T3_PAGE_BEFORE, d2: T3_PAGE_AFTER, png: T3_PNG, full: T3_BARE_SEGV,
+    });
+    const res = runCli(
+      ['gallery-tap', '--tap-page', '--assert-zero-jni-faults', '--serial', T3_SERIAL],
+      t3WithPath(bin, { cwd: t3mkTmp('muse-fault-cwd-') }),
+    );
+    const out = `${res.stdout}\n${res.stderr}`;
+    assert.equal(res.status, 1, `bare SIGSEGV must exit 1, got ${res.status}; out: ${out.slice(0, 800)}`);
+    assert.ok(/zero-jni-faults/.test(out), 'exit-1 output must name the zero-jni-faults row');
+  });
+
+  it('--tap-page with the fault flag but no --serial exits 1 naming no-device without invoking adb', () => {
+    const { bin } = writeFaultGateAdbStub({
+      d1: T3_PAGE_BEFORE, d2: T3_PAGE_AFTER, png: T3_PNG, full: T3_CLEAN,
+    });
+    const res = runCli(
+      ['gallery-tap', '--tap-page', '--assert-zero-jni-faults'],
+      t3WithPath(bin, { cwd: t3mkTmp('muse-fault-cwd-') }),
+    );
+    const out = `${res.stdout}\n${res.stderr}`;
+    assert.equal(res.status, 1, `fault-flag run without --serial must exit 1, got ${res.status}; out: ${out.slice(0, 800)}`);
+    assert.ok(/no-device|no device/i.test(out), 'exit-1 output must name no-device');
+    assert.ok(t3ReadLog(path.join(bin, 'adb.log')).length === 0, 'fail-closed run must not invoke adb');
+  });
+
+  it('--tap-page without --serial exits 1 naming no-device without invoking adb (nfr-audit Check)', () => {
+    const { bin } = writeFaultGateAdbStub({
+      d1: T3_PAGE_BEFORE, d2: T3_PAGE_AFTER, png: T3_PNG, full: T3_CLEAN,
+    });
+    const res = runCli(
+      ['gallery-tap', '--tap-page'],
+      t3WithPath(bin, { cwd: t3mkTmp('muse-fault-cwd-') }),
+    );
+    const out = `${res.stdout}\n${res.stderr}`;
+    assert.equal(res.status, 1, `--tap-page without --serial must exit 1, got ${res.status}; out: ${out.slice(0, 800)}`);
+    assert.ok(/no-device|no device/i.test(out), 'exit-1 output must name no-device');
+    assert.ok(t3ReadLog(path.join(bin, 'adb.log')).length === 0, 'fail-closed run must not invoke adb');
+  });
+
+  it('--tap-page without the fault flag skips the scan (faulty logcat still exits 0 when T2 passes)', () => {
+    const { bin } = writeFaultGateAdbStub({
+      d1: T3_PAGE_BEFORE, d2: T3_PAGE_AFTER, png: T3_PNG, full: T3_JNI,
+    });
+    const res = runCli(
+      ['gallery-tap', '--tap-page', '--serial', T3_SERIAL],
+      t3WithPath(bin, { cwd: t3mkTmp('muse-fault-cwd-') }),
+    );
+    const out = `${res.stdout}\n${res.stderr}`;
+    assert.equal(res.status, 0, `run without the fault flag must skip the scan (exit 0), got ${res.status}; out: ${out.slice(0, 800)}`);
+  });
+});

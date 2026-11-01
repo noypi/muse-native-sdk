@@ -416,6 +416,24 @@ function printTapPageRows(serialOrNull, pageAdvanced, viewportOk) {
   ]);
 }
 
+function printTapPageRowsWithFault(serialOrNull, pageAdvanced, viewportOk, faultPass) {
+  printTable(tapPageTitle(serialOrNull), [
+    { name: 'page-advanced', asserted: true, pass: pageAdvanced },
+    { name: 'no-blank-viewport', asserted: true, pass: viewportOk },
+    { name: 'zero-jni-faults', asserted: true, pass: faultPass },
+  ]);
+}
+
+function findJniFaultLine(text) {
+  const lines = String(text || '').split('\n');
+  for (const line of lines) {
+    if (line.includes('UnsatisfiedLinkError')) return line;
+    if (/Fatal signal.*SIGSEGV/.test(line)) return line;
+    if (/SIGSEGV/.test(line)) return line;
+  }
+  return null;
+}
+
 // Tap-page lane: shell the device-lane adb argv-array pattern against
 // --serial (install -r, force-stop, logcat -c, am start, page-index read via
 // logcat -d -s muse-host, input tap at (150,250), page-index re-read,
@@ -492,6 +510,29 @@ function runTapPageLane(opts) {
   }
   const pageAdvanced = before.index !== null && after.index !== null && after.index > before.index;
   const viewportOk = String(cap.stdout || '').length > 0;
+  if (opts.assertZeroJniFaults) {
+    const dumpArgs = ['-s', serial, 'logcat', '-d'];
+    const dump = spawnSync('adb', dumpArgs, { encoding: 'utf8' });
+    if (dump.error || dump.status !== 0) {
+      const detail = dump.error
+        ? String((dump.error && dump.error.message) || dump.error)
+        : String(dump.stderr || dump.stdout || '').trim().slice(0, 300);
+      failClosed(dumpArgs, detail);
+      return;
+    }
+    const faultLine = findJniFaultLine(dump.stdout);
+    if (faultLine !== null) {
+      printTapPageRowsWithFault(serial, pageAdvanced, viewportOk, false);
+      process.stderr.write(
+        `Error: zero-jni-faults fail: ${faultLine.slice(0, 300)}\n`,
+      );
+      process.exitCode = getExitCode('compile');
+      return;
+    }
+    printTapPageRowsWithFault(serial, pageAdvanced, viewportOk, true);
+    process.exitCode = pageAdvanced && viewportOk ? getExitCode('ok') : getExitCode('compile');
+    return;
+  }
   printTapPageRows(serial, pageAdvanced, viewportOk);
   process.exitCode = pageAdvanced && viewportOk ? getExitCode('ok') : getExitCode('compile');
 }
