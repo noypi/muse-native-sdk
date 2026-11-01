@@ -127,7 +127,12 @@ const char* JNICALL fake_GetStringUTFChars(JNIEnv*, jstring, jboolean*) {
 }
 void JNICALL fake_ReleaseStringUTFChars(JNIEnv*, jstring, const char*) {}
 
-JNINativeInterface_ g_fake_jni_table{};
+#ifdef __ANDROID__
+using FakeJniTable = JNINativeInterface;
+#else
+using FakeJniTable = JNINativeInterface_;
+#endif
+FakeJniTable g_fake_jni_table{};
 JNIEnv g_fake_env{};
 
 void init_fake_jni() {

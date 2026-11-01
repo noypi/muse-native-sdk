@@ -116,6 +116,21 @@ if(ANDROID)
   target_include_directories(runtime PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../..)
 endif()
 
+# FR-RUNTIME-011 T4 (Android-configured static lane): under the Android
+# toolchain __ANDROID__ is defined, so jni_bridge.cpp's device lane
+# (RenderLocked) calls PresentFrameWithFallback (egl_blit.cpp) and
+# PresentSkiaFrameWithFallback (present_skia.cpp), and every hermetic test
+# executable linking the static runtime needs the objects. Host lane
+# (no ANDROID toolchain) is untouched — its jni_bridge.o never references
+# these symbols. Mirrors the pacing fix above and the shared Runtime
+# target, which already compiles both TUs.
+if(ANDROID)
+  target_sources(runtime PRIVATE
+    src/egl_blit.cpp
+    ../graphics/skia/present_skia.cpp
+  )
+endif()
+
 find_package(JNI)
 if(JNI_FOUND)
   target_include_directories(runtime PUBLIC ${JNI_INCLUDE_DIRS})
