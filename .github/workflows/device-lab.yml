@@ -61,3 +61,6 @@ jobs:
 
       - name: Suite config-change
         run: device-lab/run.sh config-change
+
+      - name: Suite arbitrary-route
+        run: device-lab/run.sh arbitrary-route

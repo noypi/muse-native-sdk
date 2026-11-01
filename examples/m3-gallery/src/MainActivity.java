@@ -173,8 +173,12 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             if (engineHandle == 0) {
                 return;
             }
-            nativeAdvancePage(engineHandle);
-            nativeRenderFrame(engineHandle);
+            // FR-NAV-013 (T5): NATIVE_ADVANCE_PAGE product paging is retired.
+            // Arbitrary-route product navigation goes exclusively through
+            // RouterBridge.invoke("navigate", {route, params}); this entry
+            // stays registered but never pages. Diagnostics use the
+            // PROOF_ADVANCE_PAGE harness entry below.
+            Log.i("GalleryPage", "NATIVE_ADVANCE_PAGE retired; no page turn (use RouterBridge navigate)");
         }
     };
 
@@ -547,11 +551,13 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             if (action == MotionEvent.ACTION_UP
                     && engineHandle != 0
                     && isShellChromeAdvance(event.getX(index), event.getY(index), claimed)) {
-                // T6 Next-only direct driver: exactly one forward step plus
-                // one frame, never via broadcast. Region-miss samples
+                // T6 Next-only direct driver (retired FR-NAV-013 T5): the +1
+                // forward step is gone — product navigation routes to an
+                // arbitrary route via RouterBridge.invoke("navigate",
+                // {route, params}). A Next-region ACTION_UP now only presents
+                // the current frame, never via broadcast. Region-miss samples
                 // (left-chrome, surface, outside, unclaimed) fall through to
                 // the existing dispatch/render path below with no page.
-                nativeAdvancePage(engineHandle);
                 nativeRenderFrame(engineHandle);
                 // FR-RUNTIME-011 T4 seam present (Stage 3 fix, MAJOR 1):
                 // present the seam frame alongside the legacy frame.
