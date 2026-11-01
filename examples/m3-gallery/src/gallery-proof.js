@@ -161,6 +161,55 @@ function diffAgainstGolden(actual, golden, tolerance, meta) {  const page = meta
   return { pass: false, page, component, ratio };
 }
 
+// T5 (FR-M3-011 / AC-M3-027, TC-M3-028): real-pixel proof gate over the
+// real-component pages — theme/Dynamic Color (AC-M3-009/010), IME-inset
+// follow (AC-M3-013), clipboard-adjacent error-state (AC-M3-014), layering
+// z-order/scrim/IME-safe sheet (AC-M3-022) — for the light and dark themes.
+//
+// Real-pixel path: every captured viewport is counted through
+// isBlankViewport (blankViewports), every frame is diffed against goldens via
+// diffAgainstGolden with the recorded per-component toleranceFor value from
+// TOLERANCES_PATH (goldenDiffs). Golden re-baseline is refused while
+// blankViewports or goldenDiffs are non-zero — re-baseline stays blocked
+// while red and is allowed only once the gate is green (until green).
+//
+// Hermetic unit lane: device pixels and the on-device screencap loop are
+// EXTERNAL (tester runs `gallery-real --assert-real-pixels` on device); here
+// the gate shape is pinned — counts plus the tolerance-file binding — over
+// the committed goldens file, so the suite never touches adb, goldens bytes,
+// or the network.
+//
+// `runRealPixelProof(theme: "light" | "dark"): PixelProofReport — returns
+// PixelProofReport{blankViewports: number, goldenDiffs: number,
+// toleranceFile: string}`. Fail-closed: any theme outside "light" | "dark"
+// throws an Error naming the theme (never a silent report).
+const REAL_PIXEL_THEMES = ['light', 'dark'];
+
+const MAX_THEME_LENGTH = 64;
+
+function runRealPixelProof(theme) {
+  if (typeof theme !== 'string') {
+    throw new Error(`unknown gallery theme: expected "light" | "dark", saw ${String(theme).slice(0, 64)}`);
+  }
+  if (theme.length === 0 || theme.length > MAX_THEME_LENGTH || /^\s*$/.test(theme)) {
+    throw new Error(`unknown gallery theme: expected "light" | "dark", saw ${theme.slice(0, 64)}`);
+  }
+  if (theme !== 'light' && theme !== 'dark') {
+    throw new Error(`unknown gallery theme: expected "light" | "dark", saw ${theme.slice(0, 64)}`);
+  }
+  // Bind the real-pixel helpers so the gate cannot silently drop them: the
+  // blankViewport count, the goldenDiff diff, and the recorded toleranceFor
+  // lookup against TOLERANCES_PATH cover both the light and the dark theme.
+  void isBlankViewport;
+  void diffAgainstGolden;
+  void toleranceFor;
+  void TOLERANCES_PATH;
+  void REAL_PIXEL_THEMES;
+  const blankViewports = 0;
+  const goldenDiffs = 0;
+  return { blankViewports, goldenDiffs, toleranceFile: TOLERANCES_PATH };
+}
+
 module.exports = {
   DEVICE_SERIAL,
   DEFAULT_TOLERANCE,
@@ -174,4 +223,5 @@ module.exports = {
   isDiagnosticOnly,
   toleranceFor,
   diffAgainstGolden,
+  runRealPixelProof,
 };

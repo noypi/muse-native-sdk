@@ -19,7 +19,21 @@ ASSET_DST = assets/tree.mui.bin
 ANDROID_JAR = $(ANDROID_PLATFORM)/android.jar
 ENGINE_LIBS = $(MUSE_NATIVE_HOME)/android-arm64-v8a/libRuntime.so $(MUSE_NATIVE_HOME)/android-armeabi-v7a/libRuntime.so $(MUSE_NATIVE_HOME)/android-x86_64/libRuntime.so $(MUSE_NATIVE_HOME)/android-x86/libRuntime.so
 
-.PHONY: apk sign verify install clean parity
+.PHONY: apk sign verify install clean parity assert-no-diagram
+
+# T2 (FR-M3-011 AC-M3-025; RULE-M3-007, RULE-GRAPHICS-003): mock-painter
+# reachability gate, scanned per gallery page target. Any page target that
+# reaches a mock-painter symbol (MockPainter, the PaintCaption box/caption
+# stand-in, any other mock diagram painter) fails the build with the symbol
+# named. Oracle diagram painters remain importable only from unit-test /
+# hermetic targets (test/, tests/, fixtures) — never from src/ page targets
+# or device frames.
+# TC-M3-026 check: `muse-native gallery-real --assert-no-diagram` (equivalently
+# `node ../../packages/cli/lib/gallery-real.js --assert-no-diagram`) passes on
+# a clean tree and fails the build naming the symbol otherwise.
+assert-no-diagram:
+	node ../../packages/cli/lib/gallery-real.js --assert-no-diagram --page gallery-page-button
+	@if grep -rniE --include='*.tsx' --include='*.ts' --include='*.js' --include='*.jsx' -E 'mock[[:space:]]*painter|paint[[:space:]]*caption' src/ 2>/dev/null; then echo "error: mock-painter reachable: MockPainter/PaintCaption stand-in found in src/ page targets (see hits above) — oracle diagram painters are unit-test/hermetic-only" >&2; exit 1; fi
 
 # TC-GRAPHICS-041 (AC-GRAPHICS-039 T4): cpu-vs-skia pixel parity via the AC-035
 # harness shape — same gallery tree on both paths, md5 compare. Exits 0 iff
@@ -27,7 +41,7 @@ ENGINE_LIBS = $(MUSE_NATIVE_HOME)/android-arm64-v8a/libRuntime.so $(MUSE_NATIVE_
 parity:
 	muse-native gallery-parity --cpu-vs-skia --assert-md5
 
-apk:
+apk: assert-no-diagram
 	@if [ -z "$(MUSE_NATIVE_HOME)" ]; then echo "error: MUSE_NATIVE_HOME is not set. Example: export MUSE_NATIVE_HOME=<sdk-install>/build" >&2; exit 1; fi
 	@test -f "$(MUSE_NATIVE_HOME)/VERSION" || { echo "error: missing SDK VERSION file at '$(MUSE_NATIVE_HOME)/VERSION'" >&2; exit 1; }
 	@if [ "$$(awk 'END{print NR}' "$(MUSE_NATIVE_HOME)/VERSION")" -ne 3 ]; then echo "error: malformed SDK VERSION at '$(MUSE_NATIVE_HOME)/VERSION': expected 3 lines, found $$(awk 'END{print NR}' "$(MUSE_NATIVE_HOME)/VERSION")" >&2; exit 1; fi

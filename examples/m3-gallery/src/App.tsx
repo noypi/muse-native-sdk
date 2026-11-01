@@ -1,3 +1,8 @@
+// FR-M3-011 T1 — every page below instantiates its registered components
+// from the same tree.mui.bin descriptors via the shared Surface host
+// contract (attachGallerySurface in gallerySurface.js, engine-owned
+// presenter seam). Device frames render real components only; no stand-in
+// box/caption output is emitted on any page path.
 import { useEffect, useState } from 'react';
 import { View, Text, manifest, components, TopAppBar, BottomAppBar, NavigationRail, OverlayHost } from '@muse/native';
 import { spring } from '@muse/core';

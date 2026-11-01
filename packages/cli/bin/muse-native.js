@@ -139,6 +139,23 @@
 (function galleryRealEntry() {
   const argv = process.argv.slice(2);
   if (argv[0] !== 'gallery-real') return;
+  // FR-M3-011 dispatch: route the gallery-real flags to lib/gallery-real.js.
+  // The surface-contract gate keeps its byte-for-byte behavior for its own
+  // flag; anything carrying a FR-M3-011 flag (and no --assert-surface-contract)
+  // delegates to the gallery-real module, which fails closed with usage
+  // (exit 2) on unknown flags.
+  const rest = argv.slice(1);
+  const hasSurfaceContract = rest.includes('--assert-surface-contract');
+  const hasGalleryRealFlag = rest.includes('--assert-no-diagram')
+    || rest.includes('--assert-counts')
+    || rest.includes('--assert-interactive')
+    || rest.includes('--assert-real-pixels')
+    || rest.includes('--page');
+  if (hasGalleryRealFlag && !hasSurfaceContract) {
+    const real = require('../lib/gallery-real.js');
+    real.runGalleryReal(rest);
+    return;
+  }
   const contract = require('../lib/gallery-surface-contract.js');
   if (argv.includes('--help') || argv.includes('-h')) {
     process.stdout.write(

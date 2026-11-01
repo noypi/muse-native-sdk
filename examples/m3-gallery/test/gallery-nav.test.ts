@@ -306,3 +306,66 @@ describe('T2 — inside-surface gestures never page (AC-M3-012 text path interac
     assert.equal(paged, 0);
   });
 });
+
+describe('FR-M3-011 T4 — full interaction vocabulary never paginates (AC-M3-026 interaction tests)', () => {
+  // T4 preserved behavior (Interface: none — preserved behavior, no new
+  // surface): every story-surface gesture in the T3 interaction vocabulary
+  // — focus, caret/selection, scroll, switch/scrub, dialog/sheet/menu
+  // dismissal — stays testable in place and never paginates. Paging only
+  // via shell buttons/index/keys/deep-link. Denial by default: any
+  // non-shell-chrome origin returns false for any gesture.
+  const T3_GESTURES = ['tap', 'focus', 'caret', 'selection', 'scroll', 'switch', 'scrub', 'dismiss', 'key'];
+
+  for (const gesture of T3_GESTURES) {
+    it(`story-surface ${gesture} never paginates`, () => {
+      requireNav();
+      assert.equal(nav.isPagingGesture('story-surface', gesture), false);
+      assert.equal(nav.isPagingGesture('inside-surface', gesture), false);
+    });
+  }
+
+  it('unknown and missing origins never paginate', () => {
+    requireNav();
+    assert.equal(nav.isPagingGesture('overlay', 'tap'), false);
+    assert.equal(nav.isPagingGesture(undefined, 'tap'), false);
+    assert.equal(nav.isPagingGesture(null, 'tap'), false);
+    assert.equal(nav.isPagingGesture('', 'deep-link'), false);
+  });
+
+  it('shell-chrome-only paging still holds after the T3 vocabulary lands', () => {
+    requireNav();
+    assert.equal(nav.isPagingGesture('shell-chrome', 'tap'), true);
+    assert.equal(nav.isPagingGesture('shell-chrome', 'key'), true);
+    assert.equal(nav.isPagingGesture('shell-chrome', 'deep-link'), true);
+    // Shell chrome never claims interaction gestures as paging either.
+    assert.equal(nav.isPagingGesture('shell-chrome', 'scrub'), false);
+    assert.equal(nav.isPagingGesture('shell-chrome', 'dismiss'), false);
+  });
+
+  it('focus/caret/selection stay testable in place with no paging callback', () => {
+    const n = navigatorFor(demoStories());
+    let paged = 0;
+    const onPage = () => { paged += 1; };
+    const focused = n.tapTextField({ onPage });
+    assert.equal(focused.focused, true);
+    assert.equal(focused.caret, true);
+    assert.equal(n.textGesture('double-tap', { onPage }).selected, true);
+    assert.equal(n.textGesture('drag', { onPage }).selected, true);
+    assert.equal(n.textGesture('scroll', { onPage }).panned, true);
+    assert.equal(paged, 0, 'no interaction gesture may fire the paging callback');
+  });
+
+  it('a full T3 interaction pass leaves the story index untouched', () => {
+    const n = navigatorFor(demoStories());
+    let paged = 0;
+    const onPage = () => { paged += 1; };
+    n.tapTextField({ onPage });
+    for (const gesture of ['tap', 'double-tap', 'drag', 'scroll']) {
+      n.textGesture(gesture, { onPage, onActivate: () => {} });
+    }
+    n.handleOutsideTap({ x: 10, y: 10, dragged: false });
+    n.handleBroadcast('muse.native.NATIVE_ADVANCE_PAGE');
+    assert.deepEqual(n.current(), { index: 0, storyId: 'buttons' });
+    assert.equal(paged, 0);
+  });
+});
