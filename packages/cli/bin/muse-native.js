@@ -132,6 +132,43 @@
   require('../lib/cli.js').runGalleryTreeCommand(argv.slice(1));
 })();
 
-if (process.argv.slice(2)[0] !== 'gallery-proof' && process.argv.slice(2)[0] !== 'gallery-present' && process.argv.slice(2)[0] !== 'gallery-parity' && process.argv.slice(2)[0] !== 'gallery-tree') {
+// muse-native gallery-real --assert-surface-contract [--device <serial>]
+// FR-RUNTIME-011 T3 surface-contract gate (AC-RUNTIME-034, TC-RUNTIME-034).
+// Intercepted here so the generic option validation in lib/cli.js (which
+// only knows the build flags) never sees the gate flags.
+(function galleryRealEntry() {
+  const argv = process.argv.slice(2);
+  if (argv[0] !== 'gallery-real') return;
+  const contract = require('../lib/gallery-surface-contract.js');
+  if (argv.includes('--help') || argv.includes('-h')) {
+    process.stdout.write(
+      'Usage: muse-native gallery-real --assert-surface-contract [--device <serial>]\n',
+    );
+    return;
+  }
+  let opts;
+  try {
+    opts = contract.parseSurfaceContractArgs(argv);
+  } catch (err) {
+    process.stderr.write(`${(err && err.message) || String(err)}\nUsage: muse-native gallery-real --assert-surface-contract [--device <serial>]\n`);
+    process.exitCode = 2;
+    return;
+  }
+  contract.runSurfaceContract({
+    device: opts.device || process.env.ANDROID_SERIAL || null,
+  }).then(
+    () => {},
+    (err) => {
+      const code = (err && typeof err.code === 'string' && err.code.length > 0) ? err.code : 'SURFACE-CONTRACT-FAIL';
+      const detail = (err && typeof err.detail === 'string' && err.detail.length > 0)
+        ? err.detail
+        : ((err && err.message) || String(err));
+      process.stderr.write(`SURFACE-CONTRACT-FAIL: ${code}: ${detail}\n`);
+      process.exitCode = 1;
+    },
+  );
+})();
+
+if (process.argv.slice(2)[0] !== 'gallery-proof' && process.argv.slice(2)[0] !== 'gallery-present' && process.argv.slice(2)[0] !== 'gallery-parity' && process.argv.slice(2)[0] !== 'gallery-tree' && process.argv.slice(2)[0] !== 'gallery-real') {
   require('../lib/cli.js');
 }
