@@ -155,7 +155,7 @@ describe('T3 VERSION-present gate second (SDK-VERSION-MISSING)', () => {
     const home = sandboxHome({ omitVersion: true });
     const r = makeN(GALLERY_DIR, home);
     assert.equal(r.status, 0, `dry-run prints recipes without executing: ${r.stderr}`);
-    assert.match(r.stdout, /test\s+-f[^\\n]*VERSION/, 'dry-run output must surface the VERSION gate');
+    assert.match(r.stdout, /test\s+-f[^\n]*VERSION/, 'dry-run output must surface the VERSION gate');
   });
 });
 
