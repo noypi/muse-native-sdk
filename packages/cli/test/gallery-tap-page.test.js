@@ -308,4 +308,78 @@ describe('T6 — gallery-tap CLI exit contract (TC-RUNTIME-036/037 Check)', () =
     assert.ok(/Usage|device/i.test(`${res.stdout}\n${res.stderr}`),
       'missing-value failure must print usage');
   });
+
+  // Security-requested T6 addendum pins (CLEARED WITH NOTES, review round 4:
+  // no fix cycle — these document CURRENT accepted behavior, not a change).
+  it('env-device note (accepted risk): parseTapPageArgs does NOT consume ANDROID_SERIAL — explicit --device still required', () => {
+    assert.ok(galleryTap, 'lib/gallery-tap.js must load');
+    const saved = process.env.ANDROID_SERIAL;
+    process.env.ANDROID_SERIAL = 'env-serial-should-be-ignored-by-gate';
+    try {
+      // The in-tree gate returns device:null regardless of env; the env
+      // fallback (if any) lives outside the gate. Serial reaches only
+      // injected deps + stderr text, never the gate itself.
+      assert.deepEqual(
+        galleryTap.parseTapPageArgs(['gallery-tap', '--tap-page']),
+        { tapPage: true, assertZeroJniFaults: false, device: null },
+      );
+      // Missing --device value still usage-rejects even when env is set.
+      assert.throws(
+        () => galleryTap.parseTapPageArgs(['gallery-tap', '--tap-page', '--device']),
+        /device|value|Usage/i,
+      );
+    } finally {
+      if (saved === undefined) delete process.env.ANDROID_SERIAL;
+      else process.env.ANDROID_SERIAL = saved;
+    }
+  });
+
+  it('env-device note (accepted risk): CLI missing --device value exits 2 regardless of ANDROID_SERIAL', () => {
+    const res = runCli(['gallery-tap', '--tap-page', '--device'], {
+      env: { ...process.env, ANDROID_SERIAL: 'env-serial-should-not-satisfy-gate' },
+    });
+    assert.equal(res.status, 2, `missing value must exit 2 even with ANDROID_SERIAL set, got ${res.status}`);
+    assert.ok(/Usage|device/i.test(`${res.stdout}\n${res.stderr}`),
+      'missing-value failure must print usage even with ANDROID_SERIAL set');
+  });
+
+  // Security-requested T6 addendum pin (CLEARED WITH NOTES, review round 4:
+  // accepted risk, do NOT change production to fail-closed).
+  it('inconclusive-shape note (accepted risk): non-string logcat skips the JNI-fault leg to PASS', async () => {
+    assert.ok(galleryTap, 'lib/gallery-tap.js must load');
+    // Current default: `typeof logcat === 'string'` guard silently skips the
+    // scan for non-string provider output. Pinned as accepted risk per
+    // review round 4 — do NOT change production to fail-closed.
+    const result = await galleryTap.runTapPage({
+      device: 'stubbed-no-device',
+      assertZeroJniFaults: true,
+      deps: {
+        driveSequence: async () => ({ pageBefore: 2, pageAfter: 3 }),
+        readLogcat: async () => 42,
+        readScreencap: async () => ({ blank: false }),
+      },
+    });
+    assert.equal(result.ok, true);
+  });
+
+  // Security-requested T6 addendum pin (CLEARED WITH NOTES, review round 4:
+  // accepted risk, do NOT change production to fail-closed).
+  it('inconclusive-shape note (accepted risk): unknown-shape screencap defaults that leg to PASS', async () => {
+    assert.ok(galleryTap, 'lib/gallery-tap.js must load');
+    // Current default: `isBlankViewport` returns false for unrecognized
+    // shapes (null/undefined/{}, ...). Pinned as accepted risk per review
+    // round 4 — do NOT change production to fail-closed.
+    for (const shot of [{}, null, undefined]) {
+      const result = await galleryTap.runTapPage({
+        device: 'stubbed-no-device',
+        assertZeroJniFaults: false,
+        deps: {
+          driveSequence: async () => ({ pageBefore: 2, pageAfter: 3 }),
+          readLogcat: async () => '',
+          readScreencap: async () => shot,
+        },
+      });
+      assert.equal(result.ok, true, `unknown-shape screencap must currently PASS, got shot=${String(shot)}`);
+    }
+  });
 });
