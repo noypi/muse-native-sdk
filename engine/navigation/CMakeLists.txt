@@ -163,6 +163,16 @@ target_link_libraries(arbitrary_navigate_test PRIVATE navigation)
 target_compile_options(arbitrary_navigate_test PRIVATE -Wall -Wextra -Wpedantic)
 add_test(NAME arbitrary_navigate_test COMMAND arbitrary_navigate_test)
 
+add_executable(surface_seam_test tests/surface_seam_test.cpp)
+target_link_libraries(surface_seam_test PRIVATE navigation)
+target_compile_options(surface_seam_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME surface_seam_test COMMAND surface_seam_test)
+
+add_executable(rollback_flag_test tests/rollback_flag_test.cpp)
+target_link_libraries(rollback_flag_test PRIVATE navigation)
+target_compile_options(rollback_flag_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME rollback_flag_test COMMAND rollback_flag_test)
+
 # FR-NAV-006 T2 (NAV-APPLINKS codegen invocation — documentation only, no new
 # engine target added here):
 #   Generate: python3 ../../toolchain/applinks/codegen.py
