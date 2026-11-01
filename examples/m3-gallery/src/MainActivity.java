@@ -219,6 +219,38 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     /** Destroy the engine handle. */
     private static native void nativeDestroy(long handle);
 
+    /**
+     * BUG-SAMPLE-007 T6: shell-chrome Next-region predicate (forward-only
+     * contract per user ruling 2026-11-01). Pure function of its inputs, no
+     * JNI. Returns true iff the (x, y, claimed) sample hits the calibrated
+     * shell-chrome Next region. A Next-region ACTION_UP issues exactly one
+     * direct forward step; Prev-region (left-chrome) taps fall through with
+     * no page and no emit — there is no step-back entry (nativeAdvancePage
+     * takes no direction), so backward paging stays unpaged until a trusted
+     * count plus proven wrap exist. Surface taps, outside-region samples,
+     * and unclaimed gestures (claimed == -1) all return false.
+     *
+     * Tunable bounds (T7 calibrates on device 720x1600): the chrome strip
+     * occupies the top band of the display and the Next control sits in the
+     * right-hand band. Raw MotionEvent pixels are density-dependent: on the
+     * 720x1600 reference device 1dp ~= 2px at 320dpi (xhdpi), so a 300dp
+     * right-hand band maps to ~= 600px and a 100dp top strip maps to ~=
+     * 200px. Evidence anchor: device tap request (660,150) dispatched as
+     * (660.0,105.0) — inside the band/Strip under these defaults. Adjust
+     * NEXT_X_MIN / NEXT_Y_MAX from the per-tap Log.d line below when T7
+     * measures the true chrome geometry and the y offset mapping.
+     */
+    static boolean isShellChromeAdvance(float x, float y, int claimed) {
+        // T6 tunable region constants (px on the reference device; see the
+        // dp/px mapping in the method doc above — T7 owns calibration).
+        final float NEXT_X_MIN = 600f;
+        final float NEXT_Y_MAX = 200f;
+        if (claimed < 0) {
+            return false;
+        }
+        return x >= NEXT_X_MIN && y <= NEXT_Y_MAX;
+    }
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -273,7 +305,23 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                     event.getY(index),
                     event.getPointerId(index),
                     event.getEventTime());
-            if (action == MotionEvent.ACTION_UP) {
+            // T6 calibration line (T7): raw tap geometry plus the
+            // claimed node id per tap; left-chrome and surface samples are
+            // expected here with no page following.
+            Log.d("MainActivity",
+                    "touch x=" + event.getX(index)
+                            + " y=" + event.getY(index)
+                            + " claimed=" + claimed);
+            if (action == MotionEvent.ACTION_UP
+                    && engineHandle != 0
+                    && isShellChromeAdvance(event.getX(index), event.getY(index), claimed)) {
+                // T6 Next-only direct driver: exactly one forward step plus
+                // one frame, never via broadcast. Region-miss samples
+                // (left-chrome, surface, outside, unclaimed) fall through to
+                // the existing dispatch/render path below with no page.
+                nativeAdvancePage(engineHandle);
+                nativeRenderFrame(engineHandle);
+            } else if (action == MotionEvent.ACTION_UP) {
                 // FR-SAMPLE-014: no outside-tap fallback — an unclaimed
                 // tap renders the frame but never advances the page.
                 if (claimed >= 0) {
