@@ -8,20 +8,89 @@
 
 namespace {
 
+// Scans only top-level object keys (brace/string-aware): a `"key"`
+// occurrence nested inside a string value or a nested object does not
+// count. On success `keyPosOut` is the offset of the opening quote of the
+// matching key. The match must be followed by optional whitespace + ':'.
+bool FindTopLevelKey(const std::string& s, const std::string& name,
+                      std::string::size_type& keyPosOut) {
+  int depth = 0;
+  bool inStr = false;
+  for (std::string::size_type i = 0; i < s.size(); ++i) {
+    char c = s[i];
+    if (inStr) {
+      if (c == '"' && (i == 0 || s[i - 1] != '\\')) inStr = false;
+      continue;
+    }
+    if (c == '"') {
+      if (depth == 1) {
+        // Candidate key: scan to the closing quote honoring backslashes.
+        std::string::size_type j = i + 1;
+        while (j < s.size()) {
+          if (s[j] == '\\' && j + 1 < s.size()) {
+            j += 2;
+            continue;
+          }
+          if (s[j] == '"') break;
+          ++j;
+        }
+        if (j >= s.size()) return false;
+        if (s.compare(i + 1, j - i - 1, name) == 0) {
+          std::string::size_type k = j + 1;
+          while (k < s.size() &&
+                 (s[k] == ' ' || s[k] == '\t' || s[k] == '\n' ||
+                  s[k] == '\r')) {
+            ++k;
+          }
+          if (k < s.size() && s[k] == ':') {
+            keyPosOut = i;
+            return true;
+          }
+        }
+        i = j;  // skip past this string literal
+        continue;
+      }
+      inStr = true;
+    } else if (c == '{') {
+      ++depth;
+    } else if (c == '}') {
+      --depth;
+    }
+  }
+  return false;
+}
+
 // Extracts the "route" string field from a minimal `{"route":"<id>"}` JSON
 // object. Returns false when the field is absent or malformed.
 bool ParseRouteArg(const std::string& jsonArgs, std::string& out) {
-  const std::string key = "\"route\"";
-  std::string::size_type keyPos = jsonArgs.find(key);
-  if (keyPos == std::string::npos) return false;
-  std::string::size_type colon = jsonArgs.find(':', keyPos + key.size());
+  std::string::size_type keyPos = std::string::npos;
+  if (!FindTopLevelKey(jsonArgs, "route", keyPos)) return false;
+  std::string::size_type colon = jsonArgs.find(':', keyPos + 7);
   if (colon == std::string::npos) return false;
-  std::string::size_type open = jsonArgs.find('"', colon + 1);
-  if (open == std::string::npos) return false;
-  std::string::size_type close = jsonArgs.find('"', open + 1);
-  if (close == std::string::npos) return false;
-  out = jsonArgs.substr(open + 1, close - open - 1);
-  return !out.empty();
+  std::string::size_type i = colon + 1;
+  while (i < jsonArgs.size() &&
+         (jsonArgs[i] == ' ' || jsonArgs[i] == '\t' ||
+          jsonArgs[i] == '\n' || jsonArgs[i] == '\r')) {
+    ++i;
+  }
+  if (i >= jsonArgs.size() || jsonArgs[i] != '"') return false;
+  ++i;
+  std::string acc;
+  while (i < jsonArgs.size()) {
+    char c = jsonArgs[i];
+    if (c == '\\' && i + 1 < jsonArgs.size()) {
+      acc.push_back(jsonArgs[i + 1]);
+      i += 2;
+      continue;
+    }
+    if (c == '"') {
+      out = acc;
+      return !out.empty();
+    }
+    acc.push_back(c);
+    ++i;
+  }
+  return false;
 }
 
 void SkipWs(const std::string& s, std::string::size_type& i) {
@@ -40,8 +109,8 @@ bool FindParamsBody(const std::string& jsonArgs, bool& present, bool& isObject,
   isObject = false;
   body.clear();
   const std::string key = "\"params\"";
-  std::string::size_type keyPos = jsonArgs.find(key);
-  if (keyPos == std::string::npos) return true;
+  std::string::size_type keyPos = std::string::npos;
+  if (!FindTopLevelKey(jsonArgs, "params", keyPos)) return true;
   std::string::size_type colon = jsonArgs.find(':', keyPos + key.size());
   if (colon == std::string::npos) return false;
   std::string::size_type i = colon + 1;

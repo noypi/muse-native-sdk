@@ -425,13 +425,22 @@ async function pageAllAndVerifyWrap({ pageCount, routes, advance, readIndex, rea
     }
   }
   // Return leg: navigate back to the start route and verify the landing.
-  await advancePage({ route: startRoute, params: {}, serial });
-  await sleepFn(settleDelay);
-  const wrappedRoute = await getRoute();
-  if (wrappedRoute !== startRoute) {
-    failWith('counts-mismatch', `route return mismatch (start=${startRoute} end=${wrappedRoute}, routes=${targets.length})`);
+  // Skipped when the start route is unknown (null): there is no route to
+  // return to, so issuing a null-route navigate would be invalid.
+  if (startRoute != null) {
+    await advancePage({ route: startRoute, params: {}, serial });
+    await sleepFn(settleDelay);
+    const wrappedRoute = await getRoute();
+    if (wrappedRoute !== startRoute) {
+      failWith('counts-mismatch', `route return mismatch (start=${startRoute} end=${wrappedRoute}, routes=${targets.length})`);
+    }
+    if (targets.length > 1 && !sawMotion) {
+      failWith('counts-mismatch', `page navigate showed no motion (start=${startRoute} end=${wrappedRoute}); navigate path did not move`);
+    }
+    return { wrapped: true };
   }
   if (targets.length > 1 && !sawMotion) {
+    const wrappedRoute = await getRoute();
     failWith('counts-mismatch', `page navigate showed no motion (start=${startRoute} end=${wrappedRoute}); navigate path did not move`);
   }
   return { wrapped: true };

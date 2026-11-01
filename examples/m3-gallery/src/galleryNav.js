@@ -286,7 +286,7 @@ function requestShellAdvance(direction, origin, route, params) {
   if (typeof route !== 'string' || route.length === 0) {
     return false;
   }
-  const navigateParams = params !== null && typeof params === 'object' ? params : {};
+  const navigateParams = params !== null && typeof params === 'object' && !Array.isArray(params) ? params : {};
   if (typeof globalThis !== 'undefined' && Array.isArray(globalThis.__museTestBroadcasts)) {
     globalThis.__museTestBroadcasts.push({
       action: NAVIGATE_ACTION,
