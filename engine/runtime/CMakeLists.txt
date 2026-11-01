@@ -629,3 +629,25 @@ add_test(NAME present_real_components_test COMMAND present_real_components_test)
 add_test(NAME gallery_page_no_oracle_check
   COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/gallery_page_no_oracle_check.sh"
     "${CMAKE_CURRENT_SOURCE_DIR}/../..")
+
+# T8 production-link gate (FR-DEPS-008, AC-DEPS-019/021): no hermetic
+# test double may ship in production. Plan Interface names
+# `--target libRuntime.so`; the shipped gate exposes `--manifest` +
+# `--self-test` only (T1.10 variance), so the wiring maps target->manifest:
+# the production link set for the `Runtime` shared target is expressed as
+# `build/dependency-manifest.json`, which is what the gate checks. Invoke
+# the script with that manifest; exit nonzero fails the build. Gate
+# semantics untouched (script read-only, never weakened); DI seams
+# (AC-DEPS-021) stay denied on this tree so the gate keeps passing here.
+find_package(Python3 COMPONENTS Interpreter QUIET)
+if(Python3_Interpreter_FOUND)
+  set(_MUSE_PROD_LINK_PYTHON ${Python3_EXECUTABLE})
+else()
+  set(_MUSE_PROD_LINK_PYTHON python3)
+endif()
+add_custom_target(production_link_gate ALL
+  COMMAND ${_MUSE_PROD_LINK_PYTHON}
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../tools/deps/production_link_check.py"
+    --manifest "${CMAKE_CURRENT_SOURCE_DIR}/../../build/dependency-manifest.json"
+  COMMENT "T8 production-link gate: allow-list + no test-double reachable (fails build on violation)"
+  VERBATIM)
