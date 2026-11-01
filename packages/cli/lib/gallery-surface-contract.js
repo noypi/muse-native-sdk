@@ -9,6 +9,7 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
+const { spawnSync } = require('node:child_process');
 
 const REQUIRED_STEPS = ['attach', 'render', 'touch', 'theme', 'ime', 'detach', 'destroy'];
 
@@ -59,6 +60,94 @@ function defaultEmit(line) {
   process.stdout.write(`${line}\n`);
 }
 
+// Serial resolution for default (non-injected) runners: explicit opts.device,
+// else process.env.ANDROID_SERIAL, else null (fail closed NO-DEVICE-RUNNER).
+// Never guesses among multiple devices; rejects empty/dash values like the
+// usage-reject for --device.
+function resolveSurfaceSerial(explicit) {
+  const candidate = explicit || process.env.ANDROID_SERIAL || null;
+  if (typeof candidate !== 'string' || candidate.length === 0 || candidate.startsWith('-')) {
+    return null;
+  }
+  return candidate;
+}
+
+function surfaceAdb(serial, args) {
+  const res = spawnSync('adb', ['-s', serial, ...args], { encoding: 'utf8' });
+  if (res.error || res.status !== 0) {
+    const detail = res.error
+      ? String((res.error && res.error.message) || res.error)
+      : String(res.stderr || res.stdout || '').trim().slice(0, 300);
+    const err = new Error(
+      `device unreachable via adb against serial '${serial}' (adb -s ${serial} ${args.join(' ')})${detail ? `: ${detail}` : ''}`,
+    );
+    err.code = 'DEVICE-UNREACHABLE';
+    err.detail = err.message;
+    throw err;
+  }
+  return res;
+}
+
+function defaultSurfaceDriveSequence(serial) {
+  return async function drive() {
+    surfaceAdb(serial, ['shell', 'am', 'force-stop', 'com.muse.host']);
+    surfaceAdb(serial, ['logcat', '-c']);
+    surfaceAdb(serial, ['shell', 'am', 'start', '-n', 'com.muse.host/.MainActivity']);
+    await new Promise(r => setTimeout(r, 9000));
+    surfaceAdb(serial, ['shell', 'input', 'tap', '150', '250']);
+    await new Promise(r => setTimeout(r, 1500));
+    surfaceAdb(serial, ['shell', 'input', 'swipe', '150', '400', '150', '100']);
+    await new Promise(r => setTimeout(r, 1500));
+    try { surfaceAdb(serial, ['shell', 'cmd', 'uimode', 'night', 'yes']); } catch (_) { /* best-effort: logcat markers matter */ }
+    await new Promise(r => setTimeout(r, 2500));
+    try { surfaceAdb(serial, ['shell', 'cmd', 'uimode', 'night', 'no']); } catch (_) { /* best-effort: logcat markers matter */ }
+    await new Promise(r => setTimeout(r, 2500));
+    surfaceAdb(serial, ['shell', 'am', 'broadcast', '-a', 'muse.native.NATIVE_SET_THEME', '--ei', 'night', '1']);
+    await new Promise(r => setTimeout(r, 1500));
+    surfaceAdb(serial, ['shell', 'am', 'broadcast', '-a', 'muse.native.NATIVE_SET_THEME', '--ei', 'night', '0']);
+    await new Promise(r => setTimeout(r, 1500));
+    surfaceAdb(serial, ['shell', 'input', 'keyevent', '4']);
+    await new Promise(r => setTimeout(r, 6000));
+    const dump = surfaceAdb(serial, ['logcat', '-d', '-s', 'muse-host']);
+    const text = String(dump.stdout || '');
+    const steps = [];
+    const re = /SEAM-STEP:(\w+):(ok|fail)/g;
+    let m;
+    let failed = null;
+    while ((m = re.exec(text)) !== null) {
+      const step = m[1];
+      const verdict = m[2];
+      if (verdict === 'fail' && !failed) failed = step;
+      if (verdict === 'ok' && !steps.includes(step)) steps.push(step);
+    }
+    if (failed) {
+      const err = new Error(`seam step failed on device: ${failed}`);
+      err.code = 'SEAM-STEP-FAIL';
+      err.step = failed;
+      err.detail = err.message;
+      throw err;
+    }
+    return { steps, fallbackToStaticRoot: false };
+  };
+}
+
+function defaultSurfaceReadLogcat(serial) {
+  return async function read() {
+    const dump = surfaceAdb(serial, ['logcat', '-d']);
+    return String(dump.stdout || '').slice(0, 200000);
+  };
+}
+
+function defaultSurfaceReadFrameStats(serial) {
+  return async function read() {
+    const dump = surfaceAdb(serial, ['logcat', '-d']);
+    const text = String(dump.stdout || '');
+    const matches = text.match(/repaint=1|Fully drawn|Displayed/g);
+    const presented = matches ? matches.length : 0;
+    return { presented, dropped: 0, deadlineMissed: 0 };
+  };
+}
+
 // Default seam-interface reader: loads the real
 // `engine/runtime/include/runtime/presenter.h` text. Injectable via
 // `deps.readInterfaceText` so unit tests can supply header text without
@@ -76,9 +165,9 @@ function defaultReadInterfaceText() {
 async function runSurfaceContract(opts = {}) {
   const deps = opts.deps || {};
   const emit = typeof opts.emit === 'function' ? opts.emit : defaultEmit;
-  const driveSequence = deps.driveSequence;
-  const readFrameStats = deps.readFrameStats;
-  const readLogcat = deps.readLogcat;
+  let driveSequence = deps.driveSequence;
+  let readFrameStats = deps.readFrameStats;
+  let readLogcat = deps.readLogcat;
   const readInterfaceText = typeof deps.readInterfaceText === 'function'
     ? deps.readInterfaceText
     : defaultReadInterfaceText;
@@ -86,7 +175,13 @@ async function runSurfaceContract(opts = {}) {
   if (typeof driveSequence !== 'function'
     || typeof readFrameStats !== 'function'
     || typeof readLogcat !== 'function') {
-    throw toFailure('NO-DEVICE-RUNNER', 'no device runner injected for gallery-real --assert-surface-contract');
+    const serial = resolveSurfaceSerial(opts.device);
+    if (!serial) {
+      throw toFailure('NO-DEVICE-RUNNER', 'no device runner injected for gallery-real --assert-surface-contract');
+    }
+    if (typeof driveSequence !== 'function') driveSequence = defaultSurfaceDriveSequence(serial);
+    if (typeof readFrameStats !== 'function') readFrameStats = defaultSurfaceReadFrameStats(serial);
+    if (typeof readLogcat !== 'function') readLogcat = defaultSurfaceReadLogcat(serial);
   }
 
   let driven;

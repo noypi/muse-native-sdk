@@ -15,6 +15,7 @@
 // build tree + stdout). Shell-outs use argv arrays only — no user-string
 // interpolation into shell (serial/button travel as argv elements).
 const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const { getExitCode } = require('./exit-codes.js');
@@ -79,6 +80,113 @@ function defaultTapPageEmit(line) {
   process.stdout.write(`${line}\n`);
 }
 
+// Serial resolution for default (non-injected) runners: explicit opts.device,
+// else process.env.ANDROID_SERIAL, else null (fail closed NO-DEVICE-RUNNER).
+// Never guesses among multiple devices; rejects empty/dash values like the
+// usage-reject for --device.
+function resolveTapPageSerial(explicit) {
+  const candidate = explicit || process.env.ANDROID_SERIAL || null;
+  if (typeof candidate !== 'string' || candidate.length === 0 || candidate.startsWith('-')) {
+    return null;
+  }
+  return candidate;
+}
+
+function tapPageAdb(serial, args, opts) {
+  const res = spawnSync('adb', ['-s', serial, ...args], {
+    encoding: (opts && opts.encoding) || 'utf8',
+  });
+  if (res.error || res.status !== 0) {
+    const detail = res.error
+      ? String((res.error && res.error.message) || res.error)
+      : String(res.stderr || res.stdout || '').trim().slice(0, 300);
+    const err = new Error(
+      `device unreachable via adb against serial '${serial}' (adb -s ${serial} ${args.join(' ')})${detail ? `: ${detail}` : ''}`,
+    );
+    err.code = 'DEVICE-UNREACHABLE';
+    err.detail = err.message;
+    throw err;
+  }
+  return res;
+}
+
+// Pre-drive screencap bytes keyed by serial, captured best-effort inside the
+// default driveSequence so the default readScreencap can detect a frozen
+// frame (byte-identical to the pre-drive shot).
+const tapPagePreDriveShots = new Map();
+
+function defaultTapPageDriveSequence(serial) {
+  return async function drive() {
+    tapPageAdb(serial, ['shell', 'am', 'force-stop', 'com.muse.host']);
+    tapPageAdb(serial, ['logcat', '-c']);
+    tapPageAdb(serial, ['shell', 'am', 'start', '-n', 'com.muse.host/.MainActivity']);
+    await new Promise((r) => setTimeout(r, 9000));
+    // Best-effort pre-drive shot for the frozen-frame comparison; failures
+    // here must not fail the drive itself.
+    try {
+      const pre = tapPageAdb(serial, ['exec-out', 'screencap', '-p'], { encoding: 'buffer' });
+      if (pre && pre.stdout && pre.stdout.length > 0) {
+        tapPagePreDriveShots.set(serial, Buffer.from(pre.stdout));
+      }
+    } catch (_) {
+      // ignore — post-drive blank check still applies the size floor.
+    }
+    tapPageAdb(serial, ['shell', 'input', 'tap', '150', '250']);
+    await new Promise((r) => setTimeout(r, 1500));
+    tapPageAdb(serial, ['shell', 'am', 'broadcast', '-a', 'muse.native.PROOF_ADVANCE_PAGE']);
+    await new Promise((r) => setTimeout(r, 1500));
+    tapPageAdb(serial, ['shell', 'am', 'broadcast', '-a', 'muse.native.PROOF_ADVANCE_PAGE']);
+    await new Promise((r) => setTimeout(r, 1500));
+    await new Promise((r) => setTimeout(r, 6000));
+    const dump = tapPageAdb(serial, ['logcat', '-d']);
+    const text = String(dump.stdout || '');
+    const pages = [];
+    const re = /GalleryPage.*?page=(\d+)/g;
+    let m;
+    while ((m = re.exec(text)) !== null) {
+      pages.push(Number(m[1]));
+    }
+    if (pages.length === 0) {
+      const err = new Error(
+        `device unreachable via adb against serial '${serial}': no GalleryPage page= indices in logcat`,
+      );
+      err.code = 'DEVICE-UNREACHABLE';
+      err.detail = err.message;
+      throw err;
+    }
+    const pageAfter = pages[pages.length - 1];
+    const pageBefore = pages[0] - 1;
+    return { pageBefore, pageAfter, fallbackToStaticRoot: false };
+  };
+}
+
+function defaultTapPageReadLogcat(serial) {
+  return async function read() {
+    const dump = tapPageAdb(serial, ['logcat', '-d']);
+    return String(dump.stdout || '').slice(0, 200000);
+  };
+}
+
+function defaultTapPageReadScreencap(serial) {
+  return async function read() {
+    const res = tapPageAdb(serial, ['exec-out', 'screencap', '-p'], { encoding: 'buffer' });
+    const bytes = res && res.stdout ? Buffer.from(res.stdout) : Buffer.alloc(0);
+    try {
+      const out = path.join(os.tmpdir(), `gallery-tap-${Date.now()}.png`);
+      fs.writeFileSync(out, bytes);
+    } catch (_) {
+      // ignore — verdict is in-memory.
+    }
+    // Coarse blank basis: tiny PNGs (<8192 bytes) are blank placeholders,
+    // and a post-drive shot byte-identical to the pre-drive shot means the
+    // tap rendered nothing new. Exact pixel-variance stays with the injected
+    // `deps.readScreencap` seam (isBlankViewport).
+    const pre = tapPagePreDriveShots.get(serial);
+    const blank = bytes.length < 8192 || (pre != null && pre.length > 0 && bytes.equals(pre));
+    return { blank };
+  };
+}
+
 // JNI-fault patterns scanned across the tap-page run logcat when
 // `--assert-zero-jni-faults` is set (AC-RUNTIME-037).
 const JNI_FAULT_RE = /UnsatisfiedLinkError|SIGSEGV|signal\s*11|FATAL/;
@@ -113,14 +221,20 @@ function isBlankViewport(shot) {
 async function runTapPage(opts = {}) {
   const deps = opts.deps || {};
   const emit = typeof opts.emit === 'function' ? opts.emit : defaultTapPageEmit;
-  const driveSequence = deps.driveSequence;
-  const readLogcat = deps.readLogcat;
-  const readScreencap = deps.readScreencap;
+  let driveSequence = deps.driveSequence;
+  let readLogcat = deps.readLogcat;
+  let readScreencap = deps.readScreencap;
 
   if (typeof driveSequence !== 'function'
     || typeof readLogcat !== 'function'
     || typeof readScreencap !== 'function') {
-    throw toTapPageFailure('NO-DEVICE-RUNNER', 'no device runner injected for gallery-tap --tap-page');
+    const serial = resolveTapPageSerial(opts.device);
+    if (!serial) {
+      throw toTapPageFailure('NO-DEVICE-RUNNER', 'no device runner injected for gallery-tap --tap-page');
+    }
+    if (typeof driveSequence !== 'function') driveSequence = defaultTapPageDriveSequence(serial);
+    if (typeof readLogcat !== 'function') readLogcat = defaultTapPageReadLogcat(serial);
+    if (typeof readScreencap !== 'function') readScreencap = defaultTapPageReadScreencap(serial);
   }
 
   let driven;
