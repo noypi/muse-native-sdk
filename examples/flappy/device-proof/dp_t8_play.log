@@ -1,0 +1,18 @@
+=== T8 live-play evidence 2026-11-02 ===
+--- adb devices ---
+List of devices attached
+KDSBB22429250346	device
+127.0.0.1:6555	device
+127.0.0.1:6562	device
+
+--- launch ---
+Starting: Intent { cmp=com.muse.host/.MainActivity }
+--- focused app ---
+  mFocusedApp=ActivityRecord{b7c2b35 u0 com.android.launcher3/.uioverrides.QuickstepLauncher t6}
+--- crash grep ---
+11-01 19:04:18.673  3423  3423 E AndroidRuntime: FATAL EXCEPTION: main
+11-01 19:04:18.673  3423  3423 E AndroidRuntime: java.lang.RuntimeException: Unable to instantiate activity ComponentInfo{com.muse.host/com.muse.host.MainActivity}: java.lang.ClassNotFoundException: Didn't find class "com.muse.host.MainActivity" on path: DexPathList[[zip file "/data/app/~~lsnKpn-oFQ4p5YgTM4fktA==/com.muse.host--8GU0ePImGgtIFgXfhfOyQ==/base.apk"],nativeLibraryDirectories=[/data/app/~~lsnKpn-oFQ4p5YgTM4fktA==/com.muse.host--8GU0ePImGgtIFgXfhfOyQ==/lib/x86_64, /data/app/~~lsnKpn-oFQ4p5YgTM4fktA==/com.muse.host--8GU0ePImGgtIFgXfhfOyQ==/base.apk!/lib/x86_64, /system/lib64]]
+11-01 19:04:18.673  3423  3423 E AndroidRuntime: Caused by: java.lang.ClassNotFoundException: Didn't find class "com.muse.host.MainActivity" on path: DexPathList[[zip file "/data/app/~~lsnKpn-oFQ4p5YgTM4fktA==/com.muse.host--8GU0ePImGgtIFgXfhfOyQ==/base.apk"],nativeLibraryDirectories=[/data/app/~~lsnKpn-oFQ4p5YgTM4fktA==/com.muse.host--8GU0ePImGgtIFgXfhfOyQ==/lib/x86_64, /data/app/~~lsnKpn-oFQ4p5YgTM4fktA==/com.muse.host--8GU0ePImGgtIFgXfhfOyQ==/base.apk!/lib/x86_64, /system/lib64]]
+11-01 19:04:56.691  3468  3468 E AndroidRuntime: FATAL EXCEPTION: main
+11-01 19:04:56.691  3468  3468 E AndroidRuntime: java.lang.RuntimeException: Unable to instantiate activity ComponentInfo{com.muse.host/com.muse.host.MainActivity}: java.lang.ClassNotFoundException: Didn't find class "com.muse.host.MainActivity" on path: DexPathList[[zip file "/data/app/~~lsnKpn-oFQ4p5YgTM4fktA==/com.muse.host--8GU0ePImGgtIFgXfhfOyQ==/base.apk"],nativeLibraryDirectories=[/data/app/~~lsnKpn-oFQ4p5YgTM4fktA==/com.muse.host--8GU0ePImGgtIFgXfhfOyQ==/lib/x86_64, /data/app/~~lsnKpn-oFQ4p5YgTM4fktA==/com.muse.host--8GU0ePImGgtIFgXfhfOyQ==/base.apk!/lib/x86_64, /system/lib64]]
+11-01 19:04:56.691  3468  3468 E AndroidRuntime: Caused by: java.lang.ClassNotFoundException: Didn't find class "com.muse.host.MainActivity" on path: DexPathList[[zip file "/data/app/~~lsnKpn-oFQ4p5YgTM4fktA==/com.muse.host--8GU0ePImGgtIFgXfhfOyQ==/base.apk"],nativeLibraryDirectories=[/data/app/~~lsnKpn-oFQ4p5YgTM4fktA==/com.muse.host--8GU0ePImGgtIFgXfhfOyQ==/lib/x86_64, /data/app/~~lsnKpn-oFQ4p5YgTM4fktA==/com.muse.host--8GU0ePImGgtIFgXfhfOyQ==/base.apk!/lib/x86_64, /system/lib64]]

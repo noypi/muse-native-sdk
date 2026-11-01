@@ -66,6 +66,7 @@ verify: sign
 	if ! unzip -lv $(SIGNED_APK) | grep "resources.arsc" | grep -q "Stored"; then echo "error: verify failed: resources.arsc must be Stored (method 0) + 4-byte aligned in $(SIGNED_APK)" >&2; exit 1; fi
 	if command -v zipalign >/dev/null 2>&1; then if ! zipalign -c 4 $(SIGNED_APK) >/dev/null 2>&1; then echo "error: verify failed: resources.arsc not Stored+aligned (zipalign -c 4 rejected $(SIGNED_APK))" >&2; exit 1; fi; fi
 	if ! apksigner verify $(SIGNED_APK) >/dev/null 2>&1; then echo "error: verify failed: apksigner verify rejected $(SIGNED_APK)" >&2; exit 1; fi
+	if ! unzip -p $(SIGNED_APK) classes.dex | strings | grep -q 'Lcom/muse/host/MainActivity;'; then echo "error: verify failed: dex missing manifest activity class com/muse/host/MainActivity in $(SIGNED_APK)" >&2; exit 1; fi
 
 install: sign
 	mkdir -p $(dir $(ASSET_DST))
