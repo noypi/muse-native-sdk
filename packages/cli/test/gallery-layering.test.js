@@ -339,9 +339,18 @@ describe('L5 — each flag independently falsifiable (AC-M3-022)', () => {
       replaceFirstInFile(
         r,
         path.join('examples', 'm3-gallery', 'src', 'Showcase.tsx'),
-        'scrim',
-        'no-scrim-here-broken',
+        'tone="scrim"',
+        'tone="no-scrim-here-broken"',
       ),
+    );
+    const mutated = fs.readFileSync(
+      path.join(root, 'examples', 'm3-gallery', 'src', 'Showcase.tsx'),
+      'utf8',
+    );
+    assert.equal(
+      mutated.search(/tone=(["'])scrim\1/),
+      -1,
+      'L5 guard: the exact gate token must be gone from the mutated fixture before invoking the gate',
     );
     const res = runGate(
       ['gallery-layering', '--assert-zorder', '--scrim-dismiss', '--ime-safe'],
