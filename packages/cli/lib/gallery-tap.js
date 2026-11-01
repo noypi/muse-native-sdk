@@ -396,9 +396,16 @@ function runHermeticLane(opts) {
 
 function parsePageIndex(text) {
   const out = String(text || '');
-  let m = out.match(/page[-_ ]?index\s*[:= ]\s*(\d+)/i);
-  if (!m) m = out.match(/gallery[-_\/ ]?page\s*[:= ]\s*(\d+)/i);
-  if (!m) m = out.match(/page\s+(\d+)/i);
+  const lastMatch = (re) => {
+    const rx = new RegExp(re.source, re.flags.includes('g') ? re.flags : `${re.flags}g`);
+    let last = null;
+    let m;
+    while ((m = rx.exec(out)) !== null) last = m;
+    return last;
+  };
+  let m = lastMatch(/gallery[-_/ ]?page\s*[:= ]\s*(\d+)/i);
+  if (!m) m = lastMatch(/page[-_ ]?index\s*[:= ]\s*(\d+)/i);
+  if (!m) m = lastMatch(/page\s+(\d+)/i);
   if (!m) return null;
   const n = Number.parseInt(m[1], 10);
   return Number.isInteger(n) ? n : null;
