@@ -246,6 +246,71 @@ bool check_malformed_utf8_commit_never_throws() {
   }
 }
 
+// Stage 4 security-review pin (T5 bounded copy) — JNI 256KB cap boundary.
+// Production guard: `nativeCommitEngineRowText` (jni_bridge.cpp) rejects
+// `ulen < 0 || ulen > 262144` with -1 before the bounded std::string copy, so
+// a commit of exactly 262144 bytes is accepted and 262145 is denied with the
+// named tree-too-large denial. The JVM/JNI leg is EXTERNAL (no JVM here), so
+// this file pins (a) the exact boundary predicate mirrored from the guard and
+// (b) the real seam accepting a 262144-byte bounded copy without throwing.
+// Synthetic bytes only.
+// AC: T5 bounded copy. ASSUMPTION A-SR2: JNI-side enforcement stays EXTERNAL
+// (device/JVM proof); the hermetic half pins the length predicate plus the
+// at-bound real-seam copy.
+namespace jni_cap {
+constexpr long kJniCommitCapBytes = 262144;  // mirrors jni_bridge.cpp guard
+
+enum class Verdict {
+  kAcceptCopy,       // 0 <= ulen <= cap: bounded copy proceeds
+  kDenyTreeTooLarge  // ulen < 0 || ulen > cap: named denial (-1), nothing copied
+};
+
+// Exact mirror of the `ulen < 0 || ulen > 262144 -> -1` guard.
+inline Verdict GateCommitLength(long ulen) noexcept {
+  if (ulen < 0 || ulen > kJniCommitCapBytes) {
+    return Verdict::kDenyTreeTooLarge;
+  }
+  return Verdict::kAcceptCopy;
+}
+}  // namespace jni_cap
+
+// Commit at exactly the bound is accepted; one byte over is denied.
+bool check_jni_256kb_boundary_accept_at_bound_deny_one_over() {
+  try {
+    if (jni_cap::GateCommitLength(262144) != jni_cap::Verdict::kAcceptCopy) {
+      std::printf("  detail: 262144-byte commit denied, want accept\n");
+      return false;
+    }
+    if (jni_cap::GateCommitLength(262145) !=
+        jni_cap::Verdict::kDenyTreeTooLarge) {
+      std::printf("  detail: 262145-byte commit accepted, want denial\n");
+      return false;
+    }
+    if (jni_cap::GateCommitLength(-1) !=
+        jni_cap::Verdict::kDenyTreeTooLarge) {
+      std::printf("  detail: negative length accepted, want denial\n");
+      return false;
+    }
+    if (jni_cap::GateCommitLength(0) != jni_cap::Verdict::kAcceptCopy) {
+      std::printf("  detail: empty commit denied, want accept(noop)\n");
+      return false;
+    }
+    // The real seam performs the bounded copy at exactly the bound.
+    Fixture fx;
+    const Utf8Bytes at_bound(262144, 'a');
+    RouteCommitToEngineRow(fx.view, fx.hidden, kSearchRowId, at_bound);
+    if (fx.text_of(kSearchRowId) != at_bound) {
+      std::printf("  detail: at-bound copy holds %zu bytes, want 262144\n",
+                  fx.text_of(kSearchRowId).size());
+      return false;
+    }
+    return true;
+  } catch (...) {
+    std::printf("  detail: threw across 256KB boundary (must never throw)\n");
+    return false;
+  }
+}
+
 }  // namespace
 
 #define RUN_CASE(name)                      \
@@ -268,6 +333,7 @@ int main() {
   RUN_CASE(check_empty_text_commit_is_noop_never_throws);
   RUN_CASE(check_unknown_row_commit_fails_closed_never_throws);
   RUN_CASE(check_malformed_utf8_commit_never_throws);
+  RUN_CASE(check_jni_256kb_boundary_accept_at_bound_deny_one_over);
   if (failures > 0) {
     std::printf("ime_commit_test: %d failing\n", failures);
     return 1;

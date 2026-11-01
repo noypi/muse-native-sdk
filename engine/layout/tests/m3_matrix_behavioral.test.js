@@ -300,6 +300,28 @@ describe('engine-repair T6 — setTheme resolves M3 tokens, flat-gray is an erro
     const out = setTheme(1, 'no-such-theme');
     assert.notEqual(out.code, 'kOk', 'unknown theme must fail closed, not kOk');
   });
+
+  // Stage 4 security-review pin (T6 fail-closed; FR-M3-005/007/008) — non-string
+  // theme input fails closed. Type-confusion values (undefined/null/numeric/
+  // boolean/object/array) must return null from resolveThemeTokens and a
+  // non-kOk code from setTheme — never throw, never silently resolve, never
+  // flat-gray. Synthetic values only; no device, no config.
+  // AC: T6 fail-closed. ASSUMPTION A-SR3: the caller contract passes a string
+  // theme id; non-string arrivals are attacker-or-bug input and are denied.
+  it('non-string theme input fails closed with null, never throws, never flat-gray', () => {
+    const { resolveThemeTokens: realResolve } = require('../tokens/theme.js');
+    for (const bad of [undefined, null, 42, true, {}, ['light']]) {
+      let tokens;
+      assert.doesNotThrow(() => {
+        tokens = realResolve(bad);
+      }, 'resolveThemeTokens must never throw on non-string input');
+      assert.equal(tokens, null, `non-string theme must fail closed, got ${String(bad)}`);
+      const out = setTheme(1, bad);
+      assert.notEqual(out.code, 'kOk', 'non-string theme must fail closed, not kOk');
+      assert.equal(out.tokens, null);
+      assert.notEqual(out.tokens && out.tokens.primary, FLAT_GRAY);
+    }
+  });
 });
 
 // T7 — Layout diagnosis + conditional Yoga branch (FR-DEPS-008 D1).

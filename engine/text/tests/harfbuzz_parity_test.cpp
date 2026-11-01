@@ -207,6 +207,41 @@ static bool check_fallback_null_variations_is_invalid_input() {
   return shaped.status() == muse::text::Status::kInvalidInput;
 }
 
+// Stage 4 security-review pin (T5 never-throw/bounded-copy; FR-TEXT-007 strict
+// decode) — JNI Modified-UTF-8 NUL/overlong seam boundary. Java encodes an
+// embedded NUL as the 2-byte overlong sequence C0 80, while the JNI seam copies
+// GetStringUTFLength bytes verbatim; a strict UTF-8 seam must therefore reject
+// C0 80 (and any overlong/truncated sequence) fail-closed with kInvalidInput —
+// never throw, never silently shape it. Synthetic bytes only; no JVM.
+// ASSUMPTION A-SR1: the JVM Modified-UTF-8 encode leg is EXTERNAL (device/JVM
+// proof); the hermetic half pins strict-decode rejection at the
+// shapeRunWithFallback seam, which is the same decoder the shaped-bytes path
+// funnels through.
+static bool check_fallback_modified_utf8_nul_overlong_rejected() {
+  muse::text::FontRequest req;
+  const std::uint8_t kModNul[] = {0xC0, 0x80};      // Modified-UTF-8 NUL
+  const std::uint8_t kOverlongSlash[] = {0xC0, 0xAF};  // overlong '/'
+  const std::uint8_t kOverlong3[] = {0xE0, 0x80, 0xAF};  // 3-byte overlong
+  const std::uint8_t kTrunc4[] = {0xF0, 0x28, 0x8C, 0x28};  // bad continuation
+  const struct {
+    const std::uint8_t* bytes;
+    std::size_t len;
+  } kCases[] = {
+      {kModNul, sizeof(kModNul)},
+      {kOverlongSlash, sizeof(kOverlongSlash)},
+      {kOverlong3, sizeof(kOverlong3)},
+      {kTrunc4, sizeof(kTrunc4)},
+  };
+  for (std::size_t i = 0; i < 4; ++i) {
+    muse::text::StatusOr<muse::text::ShapedRun> shaped =
+        muse::text::shapeRunWithFallback(kCases[i].bytes, kCases[i].len,
+                                         style16(), req);
+    if (shaped.ok()) return false;  // never silently accept
+    if (shaped.status() != muse::text::Status::kInvalidInput) return false;
+  }
+  return true;  // noexcept seam: no throw path exists to take
+}
+
 #define RUN_CASE(name)                           \
   do {                                           \
     if (!(name)()) {                             \
@@ -232,6 +267,7 @@ int main() {
   RUN_CASE(check_fallback_null_bytes_is_invalid_input);
   RUN_CASE(check_fallback_malformed_utf8_is_invalid_input);
   RUN_CASE(check_fallback_null_variations_is_invalid_input);
+  RUN_CASE(check_fallback_modified_utf8_nul_overlong_rejected);
   if (failures > 0) {
     std::printf("harfbuzz_parity_test: %d failing\n", failures);
     return 1;
