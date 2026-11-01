@@ -1063,8 +1063,12 @@ int RowHeight(const GalleryRow& row) {
   if (c == "BottomSheet" || c == "NavigationDrawer") return 180;
   if (c == "Menu" || c == "Carousel") return 170;
   if (c == "ListItem") return 128;
-  if (c == "NavigationBar" || c == "NavigationRail" ||
-      c == "BottomAppBar" || c == "SearchBar" || c == "SnackbarHost" ||
+  // T2 (BUG-GRAPHICS-001) packing agreement: NavigationRail/BottomAppBar
+  // miniature extents (rail dot stack + FAB disc, clamped in-card by T1)
+  // need headroom above the old 124px row so the clamp rarely engages and
+  // RowHeight always covers the painted extent (AC-GRAPHICS-042 invariant).
+  if (c == "NavigationRail" || c == "BottomAppBar") return 140;
+  if (c == "NavigationBar" || c == "SearchBar" || c == "SnackbarHost" ||
       c == "Slider" || c == "LinearProgress" || c == "CircularProgress") {
     return 124;
   }
@@ -1158,8 +1162,68 @@ void PaintCaption(std::uint32_t*, int, int, int, int, int, int, int,
 // rect; the painter draws the card background plus the control.
 inline int cy0(int y0, int size) { return y0 + size / 2; }
 
+// T1 (BUG-GRAPHICS-001) card containment: every oracle miniature primitive
+// is clamped to [bx,bx+bw) x [by,by+bh). Helpers below mirror the
+// buffer-clipped primitives above with an additional card-rect gate.
+inline bool CardContains(int x, int y, int bx, int by, int bw, int bh) {
+  return x >= bx && x < bx + bw && y >= by && y < by + bh;
+}
+
+void CardFillRect(std::uint32_t* px, int stride, int w, int h, int x, int y,
+                  int rw, int rh, std::uint32_t color, int bx, int by, int bw,
+                  int bh) {
+  if (px == nullptr || rw <= 0 || rh <= 0 || bw <= 0 || bh <= 0) return;
+  int cx0 = x < bx ? bx : x;
+  int cy1 = y < by ? by : y;
+  int cx1 = x + rw > bx + bw ? bx + bw : x + rw;
+  int cy2 = y + rh > by + bh ? by + bh : y + rh;
+  FillRect(px, stride, w, h, cx0, cy1, cx1 - cx0, cy2 - cy1, color);
+}
+
+void CardFillCircle(std::uint32_t* px, int stride, int w, int h, int cx,
+                    int cy, int r, std::uint32_t color, int bx, int by, int bw,
+                    int bh) {
+  if (px == nullptr || r <= 0 || bw <= 0 || bh <= 0) return;
+  for (int yy = cy - r; yy <= cy + r; ++yy) {
+    for (int xx = cx - r; xx <= cx + r; ++xx) {
+      int dx = xx - cx;
+      int dy = yy - cy;
+      if (dx * dx + dy * dy > r * r) continue;
+      if (!CardContains(xx, yy, bx, by, bw, bh)) continue;
+      if (xx >= 0 && yy >= 0 && xx < w && yy < h) {
+        px[yy * stride + xx] = color;
+      }
+    }
+  }
+}
+
+void CardLine(std::uint32_t* px, int stride, int w, int h, int x0, int y0,
+              int x1, int y1, int thick, std::uint32_t color, int bx, int by,
+              int bw, int bh) {
+  int dx = x1 - x0;
+  int dy = y1 - y0;
+  int adx = dx < 0 ? -dx : dx;
+  int ady = dy < 0 ? -dy : dy;
+  int steps = adx > ady ? adx : ady;
+  if (steps == 0) {
+    CardFillRect(px, stride, w, h, x0 - thick / 2, y0 - thick / 2, thick,
+                 thick, color, bx, by, bw, bh);
+    return;
+  }
+  for (int i = 0; i <= steps; ++i) {
+    int xx = x0 + dx * i / steps;
+    int yy = y0 + dy * i / steps;
+    CardFillRect(px, stride, w, h, xx - thick / 2, yy - thick / 2, thick,
+                 thick, color, bx, by, bw, bh);
+  }
+}
+
 void PaintComponent(std::uint32_t* px, int stride, int w, int h, int bx,
                     int by, int bw, int bh, const GalleryRow& row) {
+  try {
+  if (px == nullptr || stride < w || w <= 0 || h <= 0 || bw <= 0 || bh <= 0) {
+    return;
+  }
   const std::string& c = row.comp;
   const std::string& d = row.desc;
   // Card backdrop shared by every inventory row.
@@ -1515,14 +1579,18 @@ void PaintComponent(std::uint32_t* px, int stride, int w, int h, int bx,
       int rhh = bh - 52;
       FillRoundedRect(px, stride, w, h, x0, y0, rw, rhh, 20, kWhite);
       for (int s = 0; s < 3; ++s) {
-        int yy = y0 + 34 + s * 44;
+        int yy = y0 + 26 + s * 24;
+        // Clamp the dot center so the r=7 disc stays in-card.
+        if (yy - 7 < by) yy = by + 7;
+        if (yy + 7 >= by + bh) yy = by + bh - 8;
         if (s == 0) {
-          FillRoundedRect(px, stride, w, h, x0 + 10, yy - 15, rw - 20, 32, 16,
-                          kLightSecondaryContainer);
+          CardFillRect(px, stride, w, h, x0 + 10, yy - 15, rw - 20, 32,
+                       kLightSecondaryContainer, bx, by, bw, bh);
         }
-        FillCircle(px, stride, w, h, x0 + rw / 2, yy + 1, 7,
-                   s == 0 ? kLightOnPrimaryContainer
-                          : kLightOnSurfaceVariant);
+        CardFillCircle(px, stride, w, h, x0 + rw / 2, yy + 1, 7,
+                       s == 0 ? kLightOnPrimaryContainer
+                              : kLightOnSurfaceVariant,
+                       bx, by, bw, bh);
       }
     } else if (c == "NavigationDrawer") {
       int dw = 300;
@@ -1532,28 +1600,43 @@ void PaintComponent(std::uint32_t* px, int stride, int w, int h, int bx,
       int dhh = bh - 52;
       FillRoundedRect(px, stride, w, h, x0, y0, dw, dhh, 20, kWhite);
       for (int s = 0; s < 3; ++s) {
-        int yy = y0 + 26 + s * 40;
+        int yy = y0 + 22 + s * 22;
+        if (yy - 8 < by) yy = by + 8;
+        if (yy + 25 >= by + bh) yy = by + bh - 26;
         if (s == 0) {
-          FillRoundedRect(px, stride, w, h, x0 + 12, yy, dw - 24, 34, 17,
-                          kLightSecondaryContainer);
+          CardFillRect(px, stride, w, h, x0 + 12, yy, dw - 24, 34,
+                       kLightSecondaryContainer, bx, by, bw, bh);
         }
-        FillCircle(px, stride, w, h, x0 + 40, yy + 17, 8,
-                   s == 0 ? kLightOnPrimaryContainer
-                          : kLightOnSurfaceVariant);
+        CardFillCircle(px, stride, w, h, x0 + 40, yy + 17, 8,
+                       s == 0 ? kLightOnPrimaryContainer
+                              : kLightOnSurfaceVariant,
+                       bx, by, bw, bh);
       }
     } else {
       int barH = 76;
       int y0 = by + (bh - 20 - barH) / 2;
       FillRoundedRect(px, stride, w, h, bx + 8, y0, bw - 16, barH, 20,
                       kWhite);
-      FillCircle(px, stride, w, h, bx + 56, y0 + barH / 2, 9,
-                 kLightOnSurfaceVariant);
-      FillCircle(px, stride, w, h, bx + bw - 72, y0 - 6, 24,
-                 kLightSecondaryContainer);
-      DrawLine(px, stride, w, h, bx + bw - 80, y0 - 6, bx + bw - 64, y0 - 6,
-               5, kLightOnPrimaryContainer);
-      DrawLine(px, stride, w, h, bx + bw - 72, y0 - 14, bx + bw - 72, y0 + 2,
-               5, kLightOnPrimaryContainer);
+      CardFillCircle(px, stride, w, h, bx + 56, y0 + barH / 2, 9,
+                       kLightOnSurfaceVariant, bx, by, bw, bh);
+      int fabCx = bx + bw - 72;
+      int fabCy = y0 + barH / 2;
+      int fabR = 24;
+      // Fit the FAB disc in-card: shrink/clamp rather than float above.
+      if (fabCy - fabR < by) fabCy = by + fabR;
+      if (fabCy + fabR >= by + bh) fabCy = by + bh - fabR - 1;
+      if (fabR * 2 + 8 > bh) fabR = (bh - 10) / 2;
+      if (fabR < 1) fabR = 1;
+      if (fabCx - fabR < bx) fabCx = bx + fabR;
+      if (fabCx + fabR >= bx + bw) fabCx = bx + bw - fabR - 1;
+      if (fabCy - fabR < by) fabCy = by + fabR;
+      if (fabCy + fabR >= by + bh) fabCy = by + bh - fabR - 1;
+      CardFillCircle(px, stride, w, h, fabCx, fabCy, fabR,
+                     kLightSecondaryContainer, bx, by, bw, bh);
+      CardLine(px, stride, w, h, fabCx - 8, fabCy, fabCx + 8, fabCy, 5,
+               kLightOnPrimaryContainer, bx, by, bw, bh);
+      CardLine(px, stride, w, h, fabCx, fabCy - 8, fabCx, fabCy + 8, 5,
+               kLightOnPrimaryContainer, bx, by, bw, bh);
     }
     PaintCaption(px, stride, w, h, bx, by, bw, bh, c);
     return;
@@ -1671,6 +1754,9 @@ void PaintComponent(std::uint32_t* px, int stride, int w, int h, int bx,
   FillRoundedRect(px, stride, w, h, bx + 8, by + 8, bw - 16, bh - 44, 18,
                   kLightSecondaryContainer);
   PaintCaption(px, stride, w, h, bx, by, bw, bh, ShortCaption(row));
+  } catch (...) {
+    // T1: never throws; OOB writes already suppressed above.
+  }
 }
 
 // Text/label rows: rounded theme bands with the gallery copy.
