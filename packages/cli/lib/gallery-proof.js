@@ -548,6 +548,25 @@ function defaultInstallApk({ serial, apkPath, galleryDir } = {}) {
   return Promise.resolve({ installed: true, apk });
 }
 
+// Clear the logcat ring buffer after install / before launch (AC-M3-020,
+// TC-M3-021) so each proof run measures only its own launch. Fail-open to
+// the T2 last-pair-wins parser: resolves `{ cleared: false }` when no
+// serial is configured or the clear is unavailable, and never rejects the
+// proof run — real adb errors surface as `device-unreachable` only from the
+// subsequent gated reads. Serial is passed as an argv element, never
+// interpolated into a shell string.
+function defaultClearLogcat({ serial } = {}) {
+  const deviceSerial = adbSerial(serial);
+  if (!deviceSerial) return Promise.resolve({ cleared: false });
+  try {
+    const { execFileSync } = require('node:child_process');
+    execFileSync('adb', ['-s', deviceSerial, 'logcat', '-c'], { stdio: 'pipe' });
+    return Promise.resolve({ cleared: true });
+  } catch (_) {
+    return Promise.resolve({ cleared: false });
+  }
+}
+
 // Launch the gallery host activity.
 function defaultLaunchApp({ serial } = {}) {
   adbOrUnreachable(['shell', 'am', 'start', '-n', GALLERY_ACTIVITY], serial);
@@ -651,7 +670,7 @@ async function defaultReadViewport({ serial, attempts, sleepMs, sleep } = {}) {
   return null;
 }
 
-async function runGalleryProof({ serial, androidJar, outDir, readCounts, capture, advance, readIndex, sync, galleryDir, apkPath, install, launch, waitForMarkers, sleep, settleMs, readViewport }) {
+async function runGalleryProof({ serial, androidJar, outDir, readCounts, capture, advance, readIndex, sync, galleryDir, apkPath, install, launch, clearLogcat, waitForMarkers, sleep, settleMs, readViewport }) {
   const deviceSerial = serial || process.env.ANDROID_SERIAL;
   if (!deviceSerial) {
     failWith('device-unreachable', 'no serial/device');
@@ -692,6 +711,14 @@ async function runGalleryProof({ serial, androidJar, outDir, readCounts, capture
     } catch (err) {
       if (err && err.code === 'io-error') throw err;
       failWith('device-unreachable', `apk install failed: ${(err && err.message) || String(err)}`);
+    }
+    // T3: per-run logcat clear after install / before launch, fail-open to
+    // the T2 parser (still fail-closed on no complete pair downstream).
+    const clearFn = clearLogcat || ((args) => defaultClearLogcat(args));
+    try {
+      await clearFn({ serial: deviceSerial });
+    } catch (_) {
+      // Fail-open: a clear failure never hard-fails the proof run.
     }
     try {
       await launchFn({ serial: deviceSerial });
@@ -813,6 +840,39 @@ function loadGalleryManifest() {
 // Kept behind small helpers so the hermetic halves stay device-free; every
 // helper throws device-unreachable when no device answers, so a missing
 // device can never read as a passing assertion.
+// Pure per-line pair parser for the device count markers (AC-M3-020).
+// Accepts rows+pages only when both appear on the same marker line (either
+// order), walks buffer order keeping the last complete pair, and ignores
+// lone `gallery-rows=` load-only lines. Throws nothing; returns `null` when
+// no complete per-line pair exists (the caller maps `null` to
+// `counts-mismatch`).
+function parseDeviceCounts(text) {
+  try {
+    if (typeof text !== 'string' || text.length === 0) return null;
+    let last = null;
+    const lines = text.split(/\r?\n/);
+    for (const line of lines) {
+      let m = line.match(/gallery-rows\s*[:=]\s*(\d+).*?gallery-pages\s*[:=]\s*(\d+)/i);
+      if (m) {
+        last = { rows: Number(m[1]), pages: Number(m[2]) };
+        continue;
+      }
+      m = line.match(/gallery-pages\s*[:=]\s*(\d+).*?gallery-rows\s*[:=]\s*(\d+)/i);
+      if (m) {
+        last = { rows: Number(m[2]), pages: Number(m[1]) };
+        continue;
+      }
+      m = line.match(/rows\s*[:=]\s*(\d+)\s+pages\s*[:=]\s*(\d+)/i);
+      if (m) {
+        last = { rows: Number(m[1]), pages: Number(m[2]) };
+      }
+    }
+    return last;
+  } catch (_) {
+    return null;
+  }
+}
+
 function readDeviceCounts({ serial } = {}) {
   // Resolved live on the emulator via adb against ANDROID_SERIAL
   // (default 127.0.0.1:6562); hermetic halves inject their own reader or
@@ -821,16 +881,7 @@ function readDeviceCounts({ serial } = {}) {
   // markers; a genuinely unreachable device throws device-unreachable, and a
   // reachable device with no parseable counts throws counts-mismatch —
   // never a silent null pass.
-  const scanPairs = (text) => {
-    if (!text) return null;
-    let m = text.match(/gallery-rows\s*[:=]\s*(\d+)[\s\S]*?gallery-pages\s*[:=]\s*(\d+)/i);
-    if (m) return { rows: Number(m[1]), pages: Number(m[2]) };
-    m = text.match(/gallery-pages\s*[:=]\s*(\d+)[\s\S]*?gallery-rows\s*[:=]\s*(\d+)/i);
-    if (m) return { rows: Number(m[2]), pages: Number(m[1]) };
-    m = text.match(/rows\s*[:=]\s*(\d+)\s+pages\s*[:=]\s*(\d+)/i);
-    if (m) return { rows: Number(m[1]), pages: Number(m[2]) };
-    return null;
-  };
+  const scanPairs = (text) => parseDeviceCounts(text);
   let dumpsysText = '';
   try {
     const out = adbOrUnreachable(['shell', 'dumpsys', 'activity', 'top'], serial);
@@ -989,6 +1040,7 @@ function saveScreenshot({ serial, page, shot, frame } = {}) {
 
 module.exports = {
   runGalleryProof,
+  parseDeviceCounts,
   deriveExpectedCounts,
   deriveTreeCounts,
   parseTreeRows,
@@ -1006,6 +1058,7 @@ module.exports = {
   logcatViewportFilterArgs,
   resolveGalleryApkPath,
   defaultInstallApk,
+  defaultClearLogcat,
   defaultLaunchApp,
   waitForGalleryMarkers,
 };
