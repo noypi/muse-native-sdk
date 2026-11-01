@@ -11,14 +11,29 @@ const THEMES = {
   light: {
     't.theme.changing': 'change-light',
     't.theme.stable': 'stable-value',
+    // T6 (engine-repair) M3 token resolution — FR-M3-005/007/008,
+    // AC-M3-009/015/018. Committed role names from
+    // engine/layout/m3_matrix.json token tables; hex baselines mirror
+    // engine/runtime/src/gallery_present.cpp kLightPrimary et al.
+    // Flat gray (#808080) is never a value here — it is an error, never
+    // a pass. Elevation level-1 → 1dp, shape corner.medium → 12dp (M3).
+    'md.sys.color.primary': '#6750A4',
+    'md.sys.state.elevation.level-1': 1,
+    'md.sys.shape.corner.medium': 12,
   },
   dark: {
     't.theme.changing': 'change-dark',
     't.theme.stable': 'stable-value',
+    'md.sys.color.primary': '#D0BCFF',
+    'md.sys.state.elevation.level-1': 1,
+    'md.sys.shape.corner.medium': 12,
   },
   seasonal: {
     't.theme.changing': 'change-seasonal',
     't.theme.stable': 'stable-value',
+    'md.sys.color.primary': '#7D5260',
+    'md.sys.state.elevation.level-1': 1,
+    'md.sys.shape.corner.medium': 12,
   },
 };
 
@@ -30,6 +45,9 @@ const COMPONENT_TOKENS = {
 };
 
 let currentTheme = 'light';
+
+// Flat-gray fallback sentinel: an ERROR, never a silent pass.
+const FLAT_GRAY = '#808080';
 
 // token -> state holder for the token's resolved value.
 const holders = new Map();
@@ -94,7 +112,27 @@ function subscribeToken(token, cb) {
   };
 }
 
-module.exports = { setTheme, subscribeToken, repaintTheme };
+module.exports = { setTheme, subscribeToken, repaintTheme, resolveThemeTokens };
+
+// T6 (engine-repair) — resolve M3 theme tokens to surface params
+// (FR-M3-005/007/008, AC-M3-009/015/018). Returns
+// `{ primary, elevationDp, shapeDp }` with a distinct opaque M3 primary
+// per theme and nonzero elevation/shape dp; unknown themes (or a
+// gray/unresolved primary) fail closed with `null` — flat gray is an
+// error, never a pass. Never throws.
+function resolveThemeTokens(theme) {
+  if (typeof theme !== 'string' || !Object.hasOwn(THEMES, theme)) return null;
+  const table = THEMES[theme];
+  const primary = table['md.sys.color.primary'];
+  const elevationDp = table['md.sys.state.elevation.level-1'];
+  const shapeDp = table['md.sys.shape.corner.medium'];
+  if (typeof primary !== 'string' || !/^#[0-9a-fA-F]{6}$/.test(primary)) {
+    return null;
+  }
+  if (primary.toLowerCase() === FLAT_GRAY) return null;
+  if (!(elevationDp > 0) || !(shapeDp > 0)) return null;
+  return { primary, elevationDp, shapeDp };
+}
 
 // FR-LAYOUT-009 / AC-LAYOUT-023 — bounded single-frame repaint built on the
 // T5 subscription graph. Diffs the two theme tables, re-resolves only
