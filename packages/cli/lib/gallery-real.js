@@ -21,8 +21,9 @@ const MOCK_PAINTER_RE = /MockPainter|PaintCaption|mock/i;
 // Source-scan pattern for the on-disk page-target sweep: narrower than the
 // pageTarget gate above by design. Bare `mock` would false-positive on the
 // legitimate `mockReachable` BuildError plumbing in gallerySurface.js (T1);
-// only concrete mock-painter symbols fail the build here.
-const SOURCE_MOCK_PAINTER_RE = /MockPainter|PaintCaption/;
+// only concrete mock-painter symbols fail the build here. Case-insensitive
+// (painter-symbol shapes, not case-sensitivity, carry the exemption).
+const SOURCE_MOCK_PAINTER_RE = /mock\s*painter|paint\s*caption/i;
 
 const MAX_PAGE_TARGET_LENGTH = 1024;
 
@@ -116,6 +117,12 @@ function runInteractiveAssertions(pageId) {
   if (/[\0-\x1f\x7f]/.test(pageId)) {
     throw unknownPageError(pageId);
   }
+  if (UNSAFE_TARGETS.has(pageId)) {
+    throw unknownPageError(pageId);
+  }
+  if (!Object.prototype.hasOwnProperty.call(INTERACTIVE_REPORTS, pageId)) {
+    throw unknownPageError(pageId);
+  }
   const report = INTERACTIVE_REPORTS[pageId];
   if (!report) {
     throw unknownPageError(pageId);
@@ -138,7 +145,7 @@ function parseGalleryRealArgs(argv, env) {
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
     if (!known.has(arg)) {
-      const err = new Error(`Error: unknown option '${arg}'. Expected one of: --assert-no-diagram, --assert-interactive, --page <target>`);
+      const err = new Error(`Error: unknown option '${String(arg).slice(0, 64)}'. Expected one of: --assert-no-diagram, --assert-interactive, --page <target>`);
       err.code = 'GALLERY_REAL_USAGE';
       throw err;
     }

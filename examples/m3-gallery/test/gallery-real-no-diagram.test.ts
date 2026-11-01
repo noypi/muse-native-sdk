@@ -158,6 +158,26 @@ describe('T1 — attachGallerySurface via the engine-owned Surface host contract
       assert.equal(typeof out.mockReachable, 'boolean', 'BuildError must carry boolean mockReachable');
     }
   });
+  it('rejects oversized descriptorPath fast with a bounded BuildError message', () => {
+    requireAttach();
+    const huge = 'x'.repeat(1024 * 1024);
+    const start = Date.now();
+    const out = surface.attachGallerySurface(huge);
+    assert.ok(out instanceof Error, '1MB descriptorPath must return a BuildError, never a handle');
+    assert.equal(typeof out.mockReachable, 'boolean', 'BuildError must carry boolean mockReachable');
+    assert.ok(out.message.length < 500, `oversized denial message must stay bounded (got ${out.message.length} chars)`);
+    assert.ok(Date.now() - start < 5000, 'oversized descriptorPath rejection must not hang');
+  });
+
+  it('rejects control-char descriptorPath with a bounded BuildError message', () => {
+    requireAttach();
+    for (const bad of ['ok\nerror: mock-painter reachable: FAKE', 'dist/tree.mui.bin\x00evil', 'dist/tree\x1b[31m.mui.bin']) {
+      const out = surface.attachGallerySurface(bad);
+      assert.ok(out instanceof Error, `control-char descriptorPath must return a BuildError, never a handle`);
+      assert.equal(typeof out.mockReachable, 'boolean', 'BuildError must carry boolean mockReachable');
+      assert.ok(out.message.length < 500, `control-char denial message must stay bounded (got ${out.message.length} chars)`);
+    }
+  });
 });
 
 describe('T2 — assertNoMockPainter reachability gate fails the build', () => {
@@ -200,6 +220,50 @@ describe('T2 — assertNoMockPainter reachability gate fails the build', () => {
         `pageTarget ${JSON.stringify(String(bad)).slice(0, 40)} must throw (fail-closed)`,
       );
     }
+  });
+
+  it('on-disk sweep pattern is case-insensitive (mockpainter/MOCKPAINTER/paintcaption)', () => {
+    const loaded = loadGalleryReal();
+    requireAssertNoMockPainter(loaded);
+    const src = readText(loaded.candidate);
+    assert.ok(
+      /SOURCE_MOCK_PAINTER_RE\s*=\s*\/[^/]+\/i/.test(src),
+      'the on-disk sweep pattern SOURCE_MOCK_PAINTER_RE must carry the case-insensitive flag',
+    );
+    assert.ok(
+      /MOCKPAINTER|mockpainter/i.test('mockpainter MOCKPAINTER paintcaption'),
+      'sanity: case-variant sweep samples are non-empty strings',
+    );
+  });
+
+  it('on-disk sweep covers .tsx/.ts/.js/.jsx alike (JS gate and Makefile gate)', () => {
+    const loaded = loadGalleryReal();
+    requireAssertNoMockPainter(loaded);
+    const src = readText(loaded.candidate);
+    assert.ok(
+      /tsx\|ts\|js\|jsx|tsx.*ts.*js.*jsx/.test(src),
+      'scanPageSources must allowlist tsx, ts, js, and jsx alike',
+    );
+    const make = readText(MAKEFILE_PATH);
+    for (const ext of ['*.tsx', '*.ts', '*.js', '*.jsx']) {
+      assert.ok(make.includes(ext), `Makefile assert-no-diagram sweep must include ${ext}`);
+    }
+    assert.ok(/grep\s+-rniE|grep\s+-rn\w*i/.test(make), 'Makefile sweep grep must stay case-insensitive (-i)');
+  });
+
+  it('parseGalleryRealArgs unknown-option denial message stays bounded for oversized flags', () => {
+    const loaded = loadGalleryReal();
+    requireAssertNoMockPainter(loaded);
+    assert.equal(typeof loaded.mod.parseGalleryRealArgs, 'function', 'gallery-real must export parseGalleryRealArgs()');
+    const huge = `x`.repeat(100000);
+    let err = null;
+    try {
+      loaded.mod.parseGalleryRealArgs(['gallery-real', huge], {});
+    } catch (e) {
+      err = e;
+    }
+    assert.ok(err instanceof Error, 'unknown oversized flag must throw fail-closed');
+    assert.ok(err.message.length < 500, `unknown-option denial message must stay bounded (got ${err.message.length} chars)`);
   });
 
   it('oracle painters stay importable only from unit-test/hermetic targets (Makefile gate)', () => {

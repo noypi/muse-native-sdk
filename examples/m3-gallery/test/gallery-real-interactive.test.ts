@@ -150,6 +150,21 @@ describe('T3 — runInteractiveAssertions contract shape', () => {
     }
   });
 
+  it('denies prototype-chain keys (__proto__/constructor/prototype) fail-closed with code unknown-page', () => {
+    const run = requireRunInteractive(loadRunInteractive());
+    for (const bad of ['__proto__', 'constructor', 'prototype']) {
+      assert.throws(
+        () => run(bad),
+        (err) => {
+          assert.ok(err instanceof Error, `pageId ${bad} denial must be an Error`);
+          assert.equal(err.code, 'unknown-page', `pageId ${bad} denial must carry code unknown-page`);
+          return true;
+        },
+        `prototype-chain pageId ${JSON.stringify(bad)} must throw { code: unknown-page }, never a malformed report`,
+      );
+    }
+  });
+
   it('a 1MB hostile pageId rejects fast without hanging', () => {
     const run = requireRunInteractive(loadRunInteractive());
     const huge = 'x'.repeat(1024 * 1024);

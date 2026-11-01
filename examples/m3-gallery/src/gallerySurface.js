@@ -123,11 +123,12 @@ class BuildError extends Error {
 // the fail-closed contract: invalid/unreadable descriptors and
 // mock-reachable descriptors never yield a handle.
 function presenterAttach(descriptorPath) {
+  const shown = String(descriptorPath).slice(0, 128);
   if (/mock/i.test(descriptorPath)) {
-    return { ok: false, mockReachable: true, reason: `mock painter reachable for descriptor ${descriptorPath}` };
+    return { ok: false, mockReachable: true, reason: `mock painter reachable for descriptor ${shown}` };
   }
   if (/missing|unreadable/i.test(descriptorPath)) {
-    return { ok: false, mockReachable: false, reason: `unreadable descriptor ${descriptorPath}` };
+    return { ok: false, mockReachable: false, reason: `unreadable descriptor ${shown}` };
   }
   return { ok: true };
 }
@@ -141,6 +142,9 @@ function presenterAttach(descriptorPath) {
 function attachGallerySurface(descriptorPath) {
   if (typeof descriptorPath !== 'string' || descriptorPath.trim().length === 0) {
     return new BuildError('attachGallerySurface: descriptorPath must be a non-empty tree.mui.bin path', false);
+  }
+  if (descriptorPath.length > 1024 || /[\0-\x1f\x7f]/.test(descriptorPath)) {
+    return new BuildError(`attachGallerySurface: invalid descriptorPath (${descriptorPath.slice(0, 64)})`, false);
   }
   const seam = presenterAttach(descriptorPath);
   if (!seam.ok) {

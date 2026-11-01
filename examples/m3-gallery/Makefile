@@ -33,7 +33,7 @@ ENGINE_LIBS = $(MUSE_NATIVE_HOME)/android-arm64-v8a/libRuntime.so $(MUSE_NATIVE_
 # a clean tree and fails the build naming the symbol otherwise.
 assert-no-diagram:
 	node ../../packages/cli/lib/gallery-real.js --assert-no-diagram --page gallery-page-button
-	@if grep -rn --include='*.tsx' --include='*.js' -E 'MockPainter|PaintCaption' src/ 2>/dev/null; then echo "error: mock-painter reachable: MockPainter/PaintCaption stand-in found in src/ page targets (see hits above) — oracle diagram painters are unit-test/hermetic-only" >&2; exit 1; fi
+	@if grep -rniE --include='*.tsx' --include='*.ts' --include='*.js' --include='*.jsx' -E 'mock[[:space:]]*painter|paint[[:space:]]*caption' src/ 2>/dev/null; then echo "error: mock-painter reachable: MockPainter/PaintCaption stand-in found in src/ page targets (see hits above) — oracle diagram painters are unit-test/hermetic-only" >&2; exit 1; fi
 
 # TC-GRAPHICS-041 (AC-GRAPHICS-039 T4): cpu-vs-skia pixel parity via the AC-035
 # harness shape — same gallery tree on both paths, md5 compare. Exits 0 iff
