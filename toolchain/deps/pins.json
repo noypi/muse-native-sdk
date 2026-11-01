@@ -1,0 +1,34 @@
+{
+  "arm64-v8a": [
+    {
+      "artifact": "e2e-fixture-native-lib",
+      "version": "1.0.0",
+      "sha256": "9f2c9f2c9f2c9f2c9f2c9f2c9f2c9f2c9f2c9f2c9f2c9f2c9f2c9f2c9f2c9f2c",
+      "url": "https://example.com/native-deps/e2e-fixture-native-lib-1.0.0-arm64-v8a.tar.gz"
+    }
+  ],
+  "armeabi-v7a": [
+    {
+      "artifact": "e2e-fixture-native-lib",
+      "version": "1.0.0",
+      "sha256": "1a2b1a2b1a2b1a2b1a2b1a2b1a2b1a2b1a2b1a2b1a2b1a2b1a2b1a2b1a2b1a2b",
+      "url": "https://example.com/native-deps/e2e-fixture-native-lib-1.0.0-armeabi-v7a.tar.gz"
+    }
+  ],
+  "x86": [
+    {
+      "artifact": "e2e-fixture-native-lib",
+      "version": "1.0.0",
+      "sha256": "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
+      "url": "https://example.com/native-deps/e2e-fixture-native-lib-1.0.0-x86.tar.gz"
+    }
+  ],
+  "x86_64": [
+    {
+      "artifact": "e2e-fixture-native-lib",
+      "version": "1.0.0",
+      "sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      "url": "https://example.com/native-deps/e2e-fixture-native-lib-1.0.0-x86_64.tar.gz"
+    }
+  ]
+}
