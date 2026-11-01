@@ -644,7 +644,7 @@ describe('L7 — layering per-frame evidence emission', () => {
 
   it('layering path emits per-frame sheet-Y + inset + relayout-marker evidence (L7)', () => {
     const src = fs.readFileSync(PRESENTER_PATH_L7, 'utf8');
-    const anchorAt = src.indexOf('anchorSheetToImeInset');
+    const anchorAt = src.indexOf('void anchorSheetToImeInset');
     assert.ok(anchorAt !== -1, 'presenter must keep anchorSheetToImeInset (L2/L4 path)');
     // Code only: strip //-comments so prose about frames cannot satisfy
     // an emission assertion (GR-08 T1.12 — the assertion must be able to fail).
