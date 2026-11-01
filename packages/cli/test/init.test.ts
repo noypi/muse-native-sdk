@@ -364,6 +364,73 @@ describe('T4 — init copies the extended nine-file tree with rollback (AC-SAMPL
     );
   });
 
+  it('outDir with .. and absolute segments stays confined under path.resolve(outDir) with the exact nine-file set', () => {
+    // BUG-BUILD-005 T1 (AC-BUILD-005): an outDir containing `..`/absolute
+    // segments relocates the confined root to path.resolve(outDir); every
+    // emitted dest must stay under that root and the emitted set must equal
+    // exactly EXPECTED_TREE modulo the single D4 APP_NAME line in Makefile.
+    const { scaffoldProject } = require('../lib/init.js');
+    function listFilesRecursive(root, base = root) {
+      const out = [];
+      for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
+        const full = path.join(root, entry.name);
+        if (entry.isDirectory()) {
+          out.push(...listFilesRecursive(full, base));
+        } else if (entry.isFile()) {
+          out.push(path.relative(base, full));
+        }
+      }
+      return out.sort();
+    }
+    function isUnderRoot(root, dest) {
+      const rel = path.relative(root, path.resolve(dest));
+      return rel !== '' && !rel.startsWith('..') && !path.isAbsolute(rel);
+    }
+    const payloads = [
+      path.join(scratch, 'confine-dotdot', 'a', '..', 'b'),
+      path.join(scratch, 'confine-abs', 'w', '/v'),
+    ];
+    for (const outDir of payloads) {
+      const parent = path.dirname(path.resolve(outDir));
+      fs.mkdirSync(parent, { recursive: true });
+      const res = scaffoldProject({ templateDir: TEMPLATES_DIR, outDir });
+      assert.equal(res.ok, true, `scaffoldProject(${outDir}) must return { ok: true, ... }`);
+      assert.equal(res.projectDir, outDir, 'scaffoldProject must return the passed outDir as projectDir');
+      const root = path.resolve(outDir);
+      // Every emitted dest for the fixed set must resolve under the root
+      // (path.resolve/path.relative prefix check, not string prefix).
+      for (const rel of EXPECTED_TREE) {
+        const dest = path.resolve(outDir, rel);
+        assert.ok(isUnderRoot(root, dest), `emitted dest ${dest} must stay under resolved root ${root}`);
+        assert.ok(fs.existsSync(dest), `scaffolded project must contain ${rel} for outDir ${outDir}`);
+      }
+      // Emitted set equals exactly the fixed nine members (no more, no fewer).
+      const actual = listFilesRecursive(root);
+      const want = [...EXPECTED_TREE].sort();
+      assert.deepEqual(actual, want, `emitted set under ${root} must equal exactly the fixed nine-member set`);
+      // Byte equality modulo the single D4 APP_NAME line in Makefile.
+      for (const rel of EXPECTED_TREE) {
+        const wantText = fs.readFileSync(path.join(TEMPLATES_DIR, rel), 'utf8');
+        const gotText = fs.readFileSync(path.join(root, rel), 'utf8');
+        if (rel === 'Makefile') {
+          assert.equal(
+            normalizeAppNameLine(gotText),
+            normalizeAppNameLine(wantText),
+            `scaffolded Makefile must equal the template modulo the single APP_NAME line for outDir ${outDir}`,
+          );
+        } else {
+          assert.equal(gotText, wantText, `scaffolded ${rel} must equal the template source for outDir ${outDir}`);
+        }
+      }
+      // No writes outside the resolved dir: no sibling-escape file, and the
+      // parent dir contains only the resolved target.
+      assert.ok(!fs.existsSync(path.join(parent, 'evil-escape.txt')), 'no sibling-escape file may appear');
+      assert.ok(!fs.existsSync(path.join(scratch, 'evil-escape.txt')), 'no scratch-level escape file may appear');
+      const entries = fs.readdirSync(parent).sort();
+      assert.deepEqual(entries, [path.basename(root)], `parent ${parent} must contain only the resolved target`);
+    }
+  });
+
   it('init into a non-empty dir without --force refuses with exit 1 and adds no res/ tree', () => {
     const dir = path.join(scratch, 'existing');
     fs.mkdirSync(dir, { recursive: true });
