@@ -548,6 +548,25 @@ function defaultInstallApk({ serial, apkPath, galleryDir } = {}) {
   return Promise.resolve({ installed: true, apk });
 }
 
+// Clear the logcat ring buffer after install / before launch (AC-M3-020,
+// TC-M3-021) so each proof run measures only its own launch. Fail-open to
+// the T2 last-pair-wins parser: resolves `{ cleared: false }` when no
+// serial is configured or the clear is unavailable, and never rejects the
+// proof run — real adb errors surface as `device-unreachable` only from the
+// subsequent gated reads. Serial is passed as an argv element, never
+// interpolated into a shell string.
+function defaultClearLogcat({ serial } = {}) {
+  const deviceSerial = adbSerial(serial);
+  if (!deviceSerial) return Promise.resolve({ cleared: false });
+  try {
+    const { execFileSync } = require('node:child_process');
+    execFileSync('adb', ['-s', deviceSerial, 'logcat', '-c'], { stdio: 'pipe' });
+    return Promise.resolve({ cleared: true });
+  } catch (_) {
+    return Promise.resolve({ cleared: false });
+  }
+}
+
 // Launch the gallery host activity.
 function defaultLaunchApp({ serial } = {}) {
   adbOrUnreachable(['shell', 'am', 'start', '-n', GALLERY_ACTIVITY], serial);
@@ -651,7 +670,7 @@ async function defaultReadViewport({ serial, attempts, sleepMs, sleep } = {}) {
   return null;
 }
 
-async function runGalleryProof({ serial, androidJar, outDir, readCounts, capture, advance, readIndex, sync, galleryDir, apkPath, install, launch, waitForMarkers, sleep, settleMs, readViewport }) {
+async function runGalleryProof({ serial, androidJar, outDir, readCounts, capture, advance, readIndex, sync, galleryDir, apkPath, install, launch, clearLogcat, waitForMarkers, sleep, settleMs, readViewport }) {
   const deviceSerial = serial || process.env.ANDROID_SERIAL;
   if (!deviceSerial) {
     failWith('device-unreachable', 'no serial/device');
@@ -692,6 +711,14 @@ async function runGalleryProof({ serial, androidJar, outDir, readCounts, capture
     } catch (err) {
       if (err && err.code === 'io-error') throw err;
       failWith('device-unreachable', `apk install failed: ${(err && err.message) || String(err)}`);
+    }
+    // T3: per-run logcat clear after install / before launch, fail-open to
+    // the T2 parser (still fail-closed on no complete pair downstream).
+    const clearFn = clearLogcat || ((args) => defaultClearLogcat(args));
+    try {
+      await clearFn({ serial: deviceSerial });
+    } catch (_) {
+      // Fail-open: a clear failure never hard-fails the proof run.
     }
     try {
       await launchFn({ serial: deviceSerial });
@@ -1031,6 +1058,7 @@ module.exports = {
   logcatViewportFilterArgs,
   resolveGalleryApkPath,
   defaultInstallApk,
+  defaultClearLogcat,
   defaultLaunchApp,
   waitForGalleryMarkers,
 };
