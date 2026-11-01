@@ -20,9 +20,9 @@ const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const { getExitCode } = require('./exit-codes.js');
 
-const USAGE = 'Usage: muse-native gallery-tap --button <name> --assert-once --assert-outside-silent --drag-no-fire [--serial <serial>]';
+const USAGE = 'Usage: muse-native gallery-tap [--button <name>] [--tap-page] [--assert-zero-jni-faults] --assert-once --assert-outside-silent --drag-no-fire [--serial <serial>]';
 
-const KNOWN_FLAGS = ['--button', '--assert-once', '--assert-outside-silent', '--drag-no-fire', '--serial'];
+const KNOWN_FLAGS = ['--button', '--assert-once', '--assert-outside-silent', '--drag-no-fire', '--serial', '--tap-page', '--assert-zero-jni-faults'];
 
 const TAP_PAGE_USAGE = 'Usage: muse-native gallery-tap --tap-page [--assert-zero-jni-faults] [--device <serial>]';
 
@@ -314,11 +314,16 @@ function parseGalleryTapArgs(argv) {
   if (args[0] === 'gallery-tap') args.shift();
   const opts = {
     help: false, button: null, assertOnce: false, assertOutsideSilent: false, dragNoFire: false, serial: null,
+    tapPage: false, assertZeroJniFaults: false,
   };
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
     if (arg === '--assert-once') {
       opts.assertOnce = true;
+    } else if (arg === '--tap-page') {
+      opts.tapPage = true;
+    } else if (arg === '--assert-zero-jni-faults') {
+      opts.assertZeroJniFaults = true;
     } else if (arg === '--assert-outside-silent') {
       opts.assertOutsideSilent = true;
     } else if (arg === '--drag-no-fire') {
@@ -336,6 +341,9 @@ function parseGalleryTapArgs(argv) {
     } else {
       throw usageError(`Error: unknown option '${arg}'. Expected one of: ${KNOWN_FLAGS.join(', ')}`);
     }
+  }
+  if (opts.assertZeroJniFaults && !opts.tapPage) {
+    throw usageError(`Error: --assert-zero-jni-faults requires --tap-page. Expected ${USAGE}`);
   }
   return opts;
 }
@@ -489,7 +497,7 @@ function runGalleryTap(rest) {
     process.exitCode = getExitCode('ok');
     return;
   }
-  if (!opts.button) {
+  if (!opts.button && !opts.tapPage) {
     process.stderr.write(`Error: missing required flag --button. Expected ${USAGE}\n`);
     process.exitCode = getExitCode('config');
     return;

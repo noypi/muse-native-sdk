@@ -30,6 +30,34 @@
 //   `{ blank: boolean }` (the most defensible hermetic stand-in for the
 //   screenshot pixel-variance check); the coder owns the real screencap
 //   plumbing, reconcile the shape, not the verdict.
+// T1 (Batch 1) — `gallery-tap --tap-page --assert-zero-jni-faults` arg parsing
+// only. Spec refs: FR-RUNTIME-012, AC-RUNTIME-036/037 (parent context);
+// specs-engine-runtime.md FR-RUNTIME-012 Notes (FR-INPUT-011 untouched,
+// FR-RUNTIME-008 untouched). Neighbor: packages/cli/test/gallery-tap.test.js
+// must stay green (not edited here).
+// Interface (plan T1 verbatim):
+//   `parseGalleryTapArgs(argv: string[]): { tapPage: boolean, assertZeroJniFaults: boolean, button: string|null, serial: string|null, help: boolean }`
+//   — unknown flag or `--assert-zero-jni-faults` without `--tap-page` throws
+//   `OptionError` (code `GALLERY_TAP_USAGE`, CLI exit 2); `--tap-page`
+//   without `--button` is legal (paging needs no button name).
+// Scope: arg-parsing cases only — both flags parse true, fault-without-tap-page
+// exits 2 naming requirement, tap-page without --button legal, unknown flag
+// exits 2, existing parsing untouched. No device sequence / fault-scan behavior
+// (those are T2/T3). Hermetic: node:test + node:assert/strict + stdlib only;
+// adb is never invoked (parse-level assertions + usage-error CLI runs that
+// exit before any lane).
+// ASSUMPTIONS (contract genuinely silent, most defensible behavior tested):
+// - A-T1: `parseGalleryTapArgs` keeps its current export shape
+//   (`module.exports.parseGalleryTapArgs`, also reachable via the module
+//   function object) and its current input convention (leading
+//   `'gallery-tap'` element stripped when present).
+// - A-T2: boolean flags default false; `button`/`serial` default null;
+//   `help` defaults false; `-h`/`--help` still set help without throwing.
+// - A-T3: `--tap-page` / `--assert-zero-jni-faults` are space-free boolean
+//   flags (no `--flag=value` form); the usage error message names the
+//   offending requirement (`--tap-page` when the fault flag stands alone).
+// - A-T4: CLI exit code for usage errors stays 2 via `getExitCode('config')`,
+//   matching the existing gallery-tap lane.
 
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
@@ -45,6 +73,16 @@ try {
   galleryTap = require('../lib/gallery-tap.js');
 } catch {
   galleryTap = null;
+}
+
+function parse(argv) {
+  assert.ok(galleryTap, 'lib/gallery-tap.js must load');
+  assert.equal(
+    typeof galleryTap.parseGalleryTapArgs,
+    'function',
+    'gallery-tap module must export parseGalleryTapArgs',
+  );
+  return galleryTap.parseGalleryTapArgs(argv);
 }
 
 function runCli(args, options) {
@@ -446,5 +484,101 @@ describe('T6 — hardening re-check pin A2 (accepted risk, test-device-only cosm
     assert.ok(!/settings get secure ui_night_mode|cmd",?\s*"?uimode"?\s*,?\s*"?night"?\s*\]/.test(src)
       || !/restore.*prior|pre-run.*uimode|saveUimode/i.test(src),
       'accepted risk: no prior-value capture/restore exists (ends in no)');
+  });
+});
+
+describe('T1 — gallery-tap page arg parsing (FR-RUNTIME-012)', () => {
+  it('both flags parse true alongside button/serial', () => {
+    const opts = parse([
+      'gallery-tap',
+      '--button', 'Button-filled',
+      '--tap-page',
+      '--assert-zero-jni-faults',
+      '--serial', 'emulator-5554',
+    ]);
+    assert.equal(opts.tapPage, true);
+    assert.equal(opts.assertZeroJniFaults, true);
+    assert.equal(opts.button, 'Button-filled');
+    assert.equal(opts.serial, 'emulator-5554');
+  });
+
+  it('--tap-page alone parses true with fault flag false', () => {
+    const opts = parse(['gallery-tap', '--tap-page']);
+    assert.equal(opts.tapPage, true);
+    assert.equal(opts.assertZeroJniFaults, false);
+  });
+
+  it('--tap-page without --button is legal (button stays null)', () => {
+    const opts = parse(['gallery-tap', '--tap-page']);
+    assert.equal(opts.button, null);
+    assert.equal(opts.tapPage, true);
+  });
+
+  it('--assert-zero-jni-faults without --tap-page throws OptionError GALLERY_TAP_USAGE', () => {
+    assert.throws(
+      () => parse(['gallery-tap', '--assert-zero-jni-faults']),
+      (err) => {
+        assert.equal(err.name, 'OptionError');
+        assert.equal(err.code, 'GALLERY_TAP_USAGE');
+        assert.ok(/--tap-page/.test(err.message), 'error must name the --tap-page requirement');
+        return true;
+      },
+    );
+  });
+
+  it('unknown flag throws OptionError GALLERY_TAP_USAGE', () => {
+    assert.throws(
+      () => parse(['gallery-tap', '--bogus-flag']),
+      (err) => {
+        assert.equal(err.name, 'OptionError');
+        assert.equal(err.code, 'GALLERY_TAP_USAGE');
+        assert.ok(/--bogus-flag/.test(err.message), 'error must name the unknown flag');
+        return true;
+      },
+    );
+  });
+
+  it('existing parsing untouched: button/serial/assert flags and help still parse', () => {
+    const opts = parse([
+      '--button', 'Button-filled',
+      '--assert-once',
+      '--assert-outside-silent',
+      '--drag-no-fire',
+      '--serial', 'emulator-5554',
+    ]);
+    assert.equal(opts.button, 'Button-filled');
+    assert.equal(opts.serial, 'emulator-5554');
+    assert.equal(opts.help, false);
+    const helpOpts = parse(['--help']);
+    assert.equal(helpOpts.help, true);
+  });
+
+  it('defaults stay hermetic: flags false, button/serial null, help false', () => {
+    const opts = parse([]);
+    assert.equal(opts.tapPage, false);
+    assert.equal(opts.assertZeroJniFaults, false);
+    assert.equal(opts.button, null);
+    assert.equal(opts.serial, null);
+    assert.equal(opts.help, false);
+  });
+});
+
+describe('T1 — gallery-tap page CLI exit codes (usage errors exit 2)', () => {
+  it('fault flag without --tap-page exits 2 naming the requirement', () => {
+    const res = runCli(['gallery-tap', '--assert-zero-jni-faults']);
+    assert.equal(res.status, 2, `expected exit 2, got ${res.status}; stderr: ${(res.stderr || '').slice(0, 500)}`);
+    assert.ok(
+      /--tap-page/.test(`${res.stdout}\n${res.stderr}`),
+      'exit-2 output must name the --tap-page requirement',
+    );
+  });
+
+  it('unknown page-ish flag exits 2 naming the flag', () => {
+    const res = runCli(['gallery-tap', '--tap-page', '--bogus-flag']);
+    assert.equal(res.status, 2, `expected exit 2, got ${res.status}; stderr: ${(res.stderr || '').slice(0, 500)}`);
+    assert.ok(
+      /--bogus-flag/.test(`${res.stdout}\n${res.stderr}`),
+      'exit-2 output must name the unknown flag',
+    );
   });
 });
