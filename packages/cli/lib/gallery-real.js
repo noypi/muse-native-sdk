@@ -10,7 +10,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 
-const USAGE = 'Usage: muse-native gallery-real --assert-no-diagram [--assert-interactive] [--page <target> ...]';
+const USAGE = 'Usage: muse-native gallery-real --assert-no-diagram [--assert-interactive] [--assert-real-pixels] [--page <target> ...]';
 
 // Mock-painter symbol pattern (RULE-M3-007, RULE-GRAPHICS-003): the oracle
 // diagram painters (`MockPainter`, the `PaintCaption` box/caption stand-in,
@@ -133,8 +133,8 @@ function parseGalleryRealArgs(argv, env) {
   const injected = env !== undefined ? env : process.env;
   const envObj = injected && typeof injected === 'object' ? injected : {};
   void envObj;
-  const known = new Set(['--assert-no-diagram', '--assert-interactive', '--page', '-h', '--help']);
-  const parsed = { assertNoDiagram: false, assertInteractive: false, pages: [], help: false };
+  const known = new Set(['--assert-no-diagram', '--assert-interactive', '--assert-real-pixels', '--page', '-h', '--help']);
+  const parsed = { assertNoDiagram: false, assertInteractive: false, assertRealPixels: false, pages: [], help: false };
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
     if (!known.has(arg)) {
@@ -144,6 +144,7 @@ function parseGalleryRealArgs(argv, env) {
     }
     if (arg === '--assert-no-diagram') parsed.assertNoDiagram = true;
     else if (arg === '--assert-interactive') parsed.assertInteractive = true;
+    else if (arg === '--assert-real-pixels') parsed.assertRealPixels = true;
     else if (arg === '-h' || arg === '--help') parsed.help = true;
     else if (arg === '--page') {
       const next = args[i + 1];
@@ -202,7 +203,7 @@ function runGalleryReal(argv, env) {
     return undefined;
   }
   // Fail closed: asserting nothing is a usage error, never a silent pass.
-  if (!opts.assertNoDiagram && !opts.assertInteractive) {
+  if (!opts.assertNoDiagram && !opts.assertInteractive && !opts.assertRealPixels) {
     process.stderr.write(`Error: nothing to assert. Pass --assert-no-diagram.\n${USAGE}\n`);
     process.exitCode = 2;
     return undefined;
@@ -215,6 +216,36 @@ function runGalleryReal(argv, env) {
       const hits = scanPageSources(process.cwd());
       if (hits.length > 0) {
         throw new MockReachableError(hits[0].symbol, `${hits[0].file} reaches a mock-painter symbol`);
+      }
+    }
+    if (opts.assertRealPixels) {
+      // T5 (FR-M3-011 / AC-M3-027, TC-M3-028): real-pixel proof gate next to
+      // --assert-no-diagram / --assert-interactive. Re-runs the
+      // theme/Dynamic Color, IME-inset, error-state, and layering proof on
+      // real-component pages in light and dark via runRealPixelProof; golden
+      // re-baseline stays blocked while blankViewports/goldenDiffs are red.
+      let proof = null;
+      try {
+        proof = require('../../../examples/m3-gallery/src/gallery-proof.js');
+      } catch (_) {
+        proof = null;
+      }
+      if (!proof || typeof proof.runRealPixelProof !== 'function') {
+        const err = new Error('gallery-real failed: real-pixel proof unavailable');
+        process.stderr.write(`${err.message}\n`);
+        process.exitCode = 1;
+        return undefined;
+      }
+      for (const theme of ['light', 'dark']) {
+        const report = proof.runRealPixelProof(theme);
+        if (report.blankViewports !== 0 || report.goldenDiffs !== 0) {
+          process.stderr.write(
+            `gallery-real failed: real pixels red for theme ${theme} ` +
+            `(blankViewports=${report.blankViewports} goldenDiffs=${report.goldenDiffs}); re-baseline blocked\n`,
+          );
+          process.exitCode = 1;
+          return undefined;
+        }
       }
     }
     if (opts.assertInteractive) {
