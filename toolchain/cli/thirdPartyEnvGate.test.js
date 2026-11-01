@@ -150,3 +150,82 @@ describe('T4 — per-dep isolation in the build tree', () => {
     assert.equal(fs.existsSync(path.join(first.dir, 'third-party')), false);
   });
 });
+
+describe('T4 — pin manifest errors name the var with an example export', () => {
+  it('(7) unknown dep with a valid pins file throws ETHIRDPARTYPIN', () => {
+    const { dir, pinsPath } = makePinnedDep('dep-a');
+    process.env[VAR_NAME] = dir;
+    const buildTree = mkTmp('tp-build-');
+    assert.throws(() => resolveThirdParty('dep-unknown', { pinsPath, buildTree }), (err) => {
+      assert.equal(err.code, 'ETHIRDPARTYPIN');
+      expectVarHelp(err);
+      return true;
+    });
+  });
+
+  it('(8) malformed pins JSON throws ETHIRDPARTYPIN', () => {
+    const { dir } = makePinnedDep('dep-a');
+    process.env[VAR_NAME] = dir;
+    const badPinsPath = path.join(mkTmp('tp-pins-'), 'pins.json');
+    fs.writeFileSync(badPinsPath, '{ not valid json');
+    const buildTree = mkTmp('tp-build-');
+    assert.throws(() => resolveThirdParty('dep-a', { pinsPath: badPinsPath, buildTree }), (err) => {
+      assert.equal(err.code, 'ETHIRDPARTYPIN');
+      expectVarHelp(err);
+      return true;
+    });
+  });
+
+  it('(9) missing pins file throws ETHIRDPARTYPIN', () => {
+    const { dir } = makePinnedDep('dep-a');
+    process.env[VAR_NAME] = dir;
+    const missingPins = path.join(mkTmp('tp-pins-'), 'no-such-pins.json');
+    const buildTree = mkTmp('tp-build-');
+    assert.throws(() => resolveThirdParty('dep-a', { pinsPath: missingPins, buildTree }), (err) => {
+      assert.equal(err.code, 'ETHIRDPARTYPIN');
+      expectVarHelp(err);
+      return true;
+    });
+  });
+});
+
+describe('T4 — tamper-after-cache re-verifies the tarball', () => {
+  it('(10) resolve green then append bytes throws ETHIRDPARTYHASH', () => {
+    const { dir, pinsPath, file } = makePinnedDep('dep-a');
+    process.env[VAR_NAME] = dir;
+    const buildTree = mkTmp('tp-build-');
+    const first = resolveThirdParty('dep-a', { pinsPath, buildTree });
+    assert.equal(fs.readFileSync(path.join(first.dir, 'payload.txt'), 'utf8'), 'payload-for-dep-a\n');
+    fs.appendFileSync(path.join(dir, file), 'tampered-after-cache');
+    assert.throws(() => resolveThirdParty('dep-a', { pinsPath, buildTree }), (err) => {
+      assert.equal(err.code, 'ETHIRDPARTYHASH');
+      expectVarHelp(err);
+      return true;
+    });
+  });
+});
+
+describe('T4 — tar-slip guard rejects unsafe members', () => {
+  it('(11) tarball with a ../evil member throws ETHIRDPARTYENTRY', () => {
+    const dir = mkTmp('tp-dir-');
+    const src = mkTmp('tp-src-');
+    fs.writeFileSync(path.join(src, 'payload.txt'), 'slip-payload\n');
+    const file = 'dep-evil.tar.gz';
+    const tarball = path.join(dir, file);
+    childProcess.execFileSync('tar', [
+      '-czf', tarball, '-C', src,
+      '--transform=s,payload.txt,../evil,',
+      'payload.txt',
+    ]);
+    const sha256 = sha256Of(tarball);
+    const pinsPath = path.join(mkTmp('tp-pins-'), 'pins.json');
+    fs.writeFileSync(pinsPath, JSON.stringify({ 'dep-evil': { file, sha256 } }));
+    process.env[VAR_NAME] = dir;
+    const buildTree = mkTmp('tp-build-');
+    assert.throws(() => resolveThirdParty('dep-evil', { pinsPath, buildTree }), (err) => {
+      assert.equal(err.code, 'ETHIRDPARTYENTRY');
+      expectVarHelp(err);
+      return true;
+    });
+  });
+});

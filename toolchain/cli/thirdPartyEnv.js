@@ -108,19 +108,51 @@ function writeMarker(outDir, record) {
   fs.writeFileSync(markerPath(outDir), JSON.stringify(record), 'utf8');
 }
 
+function shQuote(value) {
+  return `'${String(value).replace(/'/g, `'\\''`)}'`;
+}
+
+function listTarMembers(tarballPath) {
+  try {
+    if (typeof childProcess.execFileSync === 'function') {
+      const out = childProcess.execFileSync('tar', ['-tzf', tarballPath], { encoding: 'utf8' });
+      return String(out).split('\n');
+    }
+    const out = childProcess.execSync(`tar -tzf ${shQuote(tarballPath)}`, { encoding: 'utf8' });
+    return String(out).split('\n');
+  } catch (err) {
+    void err;
+    fail('ETHIRDPARTYENTRY', `failed to list third-party tarball members '${tarballPath}'`);
+  }
+  return [];
+}
+
+function assertSafeTarMembers(members, tarballPath) {
+  for (const raw of members) {
+    const member = String(raw).trim();
+    if (member.length === 0) {
+      continue;
+    }
+    if (member.startsWith('/') || member.split('/').includes('..')) {
+      fail('ETHIRDPARTYENTRY', `third-party tarball '${tarballPath}' contains unsafe member path '${member}'`);
+    }
+  }
+}
+
 function extractTarball(tarballPath, outDir) {
+  assertSafeTarMembers(listTarMembers(tarballPath), tarballPath);
   fs.mkdirSync(outDir, { recursive: true });
   try {
     if (typeof childProcess.execFileSync === 'function') {
       childProcess.execFileSync('tar', ['-xzf', tarballPath, '-C', outDir]);
       return;
     }
-    childProcess.execSync(`tar -xzf ${JSON.stringify(tarballPath)} -C ${JSON.stringify(outDir)}`);
+    childProcess.execSync(`tar -xzf ${shQuote(tarballPath)} -C ${shQuote(outDir)}`);
   } catch (err) {
     void err;
     // Fall back to the string form once before failing closed.
     try {
-      childProcess.execSync(`tar -xzf ${JSON.stringify(tarballPath)} -C ${JSON.stringify(outDir)}`);
+      childProcess.execSync(`tar -xzf ${shQuote(tarballPath)} -C ${shQuote(outDir)}`);
     } catch (err2) {
       void err2;
       fail('ETHIRDPARTYHASH', `failed to extract third-party tarball '${tarballPath}'`);
@@ -165,16 +197,20 @@ function resolveThirdParty(depName, opts) {
   const pin = loadPin(pinsPath, depName);
 
   // 4. sha256 the $DIR/<file> tarball (missing/mismatch -> ETHIRDPARTYHASH).
+  // Always re-verified, including the marker-cache-hit path below, so a
+  // tarball tampered with after first extract cannot hide behind the marker.
   const tarballPath = path.join(dir, pin.file);
-  let actual = null;
-  try {
-    actual = sha256File(tarballPath);
-  } catch (err) {
-    void err;
-    fail('ETHIRDPARTYHASH', `third-party tarball missing or unreadable: '${tarballPath}' (dep '${depName}')`);
-  }
-  if (actual !== pin.sha256) {
-    fail('ETHIRDPARTYHASH', `third-party tarball hash mismatch for dep '${depName}': expected '${pin.sha256}' but found '${actual}'`);
+  function verifyTarballHash() {
+    let actual = null;
+    try {
+      actual = sha256File(tarballPath);
+    } catch (err) {
+      void err;
+      fail('ETHIRDPARTYHASH', `third-party tarball missing or unreadable: '${tarballPath}' (dep '${depName}')`);
+    }
+    if (actual !== pin.sha256) {
+      fail('ETHIRDPARTYHASH', `third-party tarball hash mismatch for dep '${depName}': expected '${pin.sha256}' but found '${actual}'`);
+    }
   }
 
   // 5. Extract that single tarball on demand into the build tree (per-dep
@@ -182,8 +218,10 @@ function resolveThirdParty(depName, opts) {
   const outDir = path.join(buildTree, 'third-party', depName);
   const marker = readMarker(outDir);
   if (marker && marker.sha256 === pin.sha256 && marker.file === pin.file) {
+    verifyTarballHash();
     return { dir: outDir };
   }
+  verifyTarballHash();
   extractTarball(tarballPath, outDir);
   writeMarker(outDir, { dep: depName, file: pin.file, sha256: pin.sha256 });
   return { dir: outDir };
