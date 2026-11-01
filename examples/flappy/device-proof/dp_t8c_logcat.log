@@ -1,0 +1,25 @@
+11-01 19:24:47.166  3787  3787 D MainActivity: touch x=200.0 y=190.0 claimed=20
+11-01 19:25:04.979  3787  3787 I muse-host: nativeDispatchTouch: action=0 x=200.0 y=290.0 pointer=0
+11-01 19:25:04.979  3787  3787 D MainActivity: touch x=200.0 y=289.99902 claimed=-1
+11-01 19:25:08.229  3787  3787 I muse-host: nativeDispatchTouch: tap fired node=20 repaint=1
+11-01 19:25:08.229  3787  3787 D MainActivity: touch x=200.0 y=289.99902 claimed=20
+11-01 19:25:11.471  3787  3787 I muse-host: nativeDispatchTouch: action=0 x=200.0 y=290.0 pointer=0
+11-01 19:25:11.471  3787  3787 D MainActivity: touch x=200.0 y=289.99902 claimed=-1
+11-01 19:25:14.686  3787  3787 I muse-host: nativeDispatchTouch: tap fired node=20 repaint=1
+11-01 19:25:14.686  3787  3787 D MainActivity: touch x=200.0 y=289.99902 claimed=20
+11-01 19:25:17.909  3787  3787 I muse-host: nativeDispatchTouch: action=0 x=200.0 y=290.0 pointer=0
+11-01 19:25:17.909  3787  3787 D MainActivity: touch x=200.0 y=289.99902 claimed=-1
+11-01 19:25:21.118  3787  3787 I muse-host: nativeDispatchTouch: tap fired node=20 repaint=1
+11-01 19:25:21.118  3787  3787 D MainActivity: touch x=200.0 y=289.99902 claimed=20
+11-01 19:25:24.221  3787  3787 I muse-host: nativeDispatchTouch: action=0 x=200.0 y=290.0 pointer=0
+11-01 19:25:24.221  3787  3787 D MainActivity: touch x=200.0 y=289.99902 claimed=-1
+11-01 19:25:27.337  3787  3787 I muse-host: nativeDispatchTouch: tap fired node=20 repaint=1
+11-01 19:25:27.337  3787  3787 D MainActivity: touch x=200.0 y=289.99902 claimed=20
+11-01 19:25:30.493  3787  3787 I muse-host: nativeDispatchTouch: action=0 x=200.0 y=290.0 pointer=0
+11-01 19:25:30.493  3787  3787 D MainActivity: touch x=200.0 y=289.99902 claimed=-1
+11-01 19:25:33.587  3787  3787 I muse-host: nativeDispatchTouch: tap fired node=20 repaint=1
+11-01 19:25:33.587  3787  3787 D MainActivity: touch x=200.0 y=289.99902 claimed=20
+11-01 19:25:36.695  3787  3787 I muse-host: nativeDispatchTouch: action=0 x=200.0 y=290.0 pointer=0
+11-01 19:25:36.695  3787  3787 D MainActivity: touch x=200.0 y=289.99902 claimed=-1
+11-01 19:25:39.772  3787  3787 I muse-host: nativeDispatchTouch: tap fired node=20 repaint=1
+11-01 19:25:39.772  3787  3787 D MainActivity: touch x=200.0 y=289.99902 claimed=20

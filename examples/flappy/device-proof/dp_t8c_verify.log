@@ -1,0 +1,69 @@
+warning: no 'sdk:' pin in muse-native.yaml; building against SDK version 0.1.0
+test -s "/media/saif/EXTRA/workspaces/meta-hackathon/muse-native-sdk/build/android-arm64-v8a/libRuntime.so" || { echo "error: missing engine lib for ABI slot arm64-v8a at '/media/saif/EXTRA/workspaces/meta-hackathon/muse-native-sdk/build/android-arm64-v8a/libRuntime.so'" >&2; exit 1; }
+test -s "/media/saif/EXTRA/workspaces/meta-hackathon/muse-native-sdk/build/android-armeabi-v7a/libRuntime.so" || { echo "error: missing engine lib for ABI slot armeabi-v7a at '/media/saif/EXTRA/workspaces/meta-hackathon/muse-native-sdk/build/android-armeabi-v7a/libRuntime.so'" >&2; exit 1; }
+test -s "/media/saif/EXTRA/workspaces/meta-hackathon/muse-native-sdk/build/android-x86_64/libRuntime.so" || { echo "error: missing engine lib for ABI slot x86_64 at '/media/saif/EXTRA/workspaces/meta-hackathon/muse-native-sdk/build/android-x86_64/libRuntime.so'" >&2; exit 1; }
+test -s "/media/saif/EXTRA/workspaces/meta-hackathon/muse-native-sdk/build/android-x86/libRuntime.so" || { echo "error: missing engine lib for ABI slot x86 at '/media/saif/EXTRA/workspaces/meta-hackathon/muse-native-sdk/build/android-x86/libRuntime.so'" >&2; exit 1; }
+rm -f build/flappy-unsigned.apk
+muse-native build .
+configure: ok (1ms)
+typecheck: ok (1ms)
+compile: ok (2ms)
+emit: ok (1ms)
+native-build: ok (0ms)
+package: ok (2ms)
+install: ok (1ms)
+Wrote /media/saif/EXTRA/workspaces/meta-hackathon/muse-native-sdk/.worktrees/demo-flappy/_run/examples/flappy/dist/ir.json
+Wrote /media/saif/EXTRA/workspaces/meta-hackathon/muse-native-sdk/.worktrees/demo-flappy/_run/examples/flappy/dist/tree.mui.bin
+mkdir -p assets && cp dist/tree.mui.bin assets/tree.mui.bin
+mkdir -p build/staging build/gen build/classes build/dex
+aapt2 compile --dir res -o build/compiled.zip
+aapt2 link -o build/base-linked.zip -I /media/saif/EXTRA/sdk/android/platforms/android-35/android.jar --manifest AndroidManifest.xml --java build/gen -A assets build/compiled.zip
+javac -source 17 -target 17 -classpath /media/saif/EXTRA/sdk/android/platforms/android-35/android.jar -d build/classes $(find src -name '*.java') $(find build/gen -name '*.java')
+warning: [options] system modules path not set in conjunction with -source 17
+1 warning
+d8 --lib /media/saif/EXTRA/sdk/android/platforms/android-35/android.jar --output build/dex $(find build/classes -name '*.class')
+mkdir -p build/staging/lib/arm64-v8a build/staging/lib/armeabi-v7a build/staging/lib/x86_64 build/staging/lib/x86 build/staging/assets/tree
+unzip -o build/base-linked.zip AndroidManifest.xml resources.arsc -d build/staging
+Archive:  build/base-linked.zip
+  inflating: build/staging/AndroidManifest.xml  
+ extracting: build/staging/resources.arsc  
+cp "/media/saif/EXTRA/workspaces/meta-hackathon/muse-native-sdk/build/android-arm64-v8a/libRuntime.so" build/staging/lib/arm64-v8a/libRuntime.so
+cp "/media/saif/EXTRA/workspaces/meta-hackathon/muse-native-sdk/build/android-armeabi-v7a/libRuntime.so" build/staging/lib/armeabi-v7a/libRuntime.so
+cp "/media/saif/EXTRA/workspaces/meta-hackathon/muse-native-sdk/build/android-x86_64/libRuntime.so" build/staging/lib/x86_64/libRuntime.so
+cp "/media/saif/EXTRA/workspaces/meta-hackathon/muse-native-sdk/build/android-x86/libRuntime.so" build/staging/lib/x86/libRuntime.so
+cp build/dex/classes.dex build/staging/classes.dex
+cp -r tree/* build/staging/assets/tree/ 2>/dev/null || cp -r assets/* build/staging/assets/ 2>/dev/null || true
+# NOTE (T2, AC-023): next line's parent-dir ref stays inside BUILD_DIR staging; exempt from no-traversal rule.
+cd build/staging && zip -r ../flappy-unsigned.apk AndroidManifest.xml classes.dex lib assets && zip -g -0 ../flappy-unsigned.apk resources.arsc
+  adding: AndroidManifest.xml (deflated 62%)
+  adding: classes.dex (deflated 48%)
+  adding: lib/ (stored 0%)
+  adding: lib/x86_64/ (stored 0%)
+  adding: lib/x86_64/libRuntime.so (deflated 74%)
+  adding: lib/arm64-v8a/ (stored 0%)
+  adding: lib/arm64-v8a/libRuntime.so (deflated 75%)
+  adding: lib/armeabi-v7a/ (stored 0%)
+  adding: lib/armeabi-v7a/libRuntime.so (deflated 73%)
+  adding: lib/x86/ (stored 0%)
+  adding: lib/x86/libRuntime.so (deflated 73%)
+  adding: assets/ (stored 0%)
+  adding: assets/tree/ (stored 0%)
+  adding: assets/tree.mui.bin (deflated 81%)
+  adding: resources.arsc (stored 0%)
+zipalign -f 4 build/flappy-unsigned.apk build/flappy-aligned.apk
+apksigner sign --ks ~/.android/debug.keystore --ks-pass pass:android --key-pass pass:android --out build/flappy-debug.apk build/flappy-aligned.apk
+signed debug build: build/flappy-debug.apk (debug key only)
+apksigner verify --verbose build/flappy-debug.apk
+Verifies
+Verified using v1 scheme (JAR signing): false
+Verified using v2 scheme (APK Signature Scheme v2): true
+Verified using v3 scheme (APK Signature Scheme v3): true
+Verified using v3.1 scheme (APK Signature Scheme v3.1): false
+Verified using v4 scheme (APK Signature Scheme v4): false
+Verified for SourceStamp: false
+Number of signers: 1
+for entry in AndroidManifest.xml classes.dex resources.arsc; do if ! unzip -l build/flappy-debug.apk | grep -q "$entry"; then echo "error: verify failed: APK entry missing: $entry in build/flappy-debug.apk" >&2; exit 1; fi; done
+if ! unzip -lv build/flappy-debug.apk | grep "resources.arsc" | grep -q "Stored"; then echo "error: verify failed: resources.arsc must be Stored (method 0) + 4-byte aligned in build/flappy-debug.apk" >&2; exit 1; fi
+if command -v zipalign >/dev/null 2>&1; then if ! zipalign -c 4 build/flappy-debug.apk >/dev/null 2>&1; then echo "error: verify failed: resources.arsc not Stored+aligned (zipalign -c 4 rejected build/flappy-debug.apk)" >&2; exit 1; fi; fi
+if ! apksigner verify build/flappy-debug.apk >/dev/null 2>&1; then echo "error: verify failed: apksigner verify rejected build/flappy-debug.apk" >&2; exit 1; fi
+if ! unzip -p build/flappy-debug.apk classes.dex | strings | grep -q 'Lcom/muse/host/MainActivity;'; then echo "error: verify failed: dex missing manifest activity class com/muse/host/MainActivity in build/flappy-debug.apk" >&2; exit 1; fi
