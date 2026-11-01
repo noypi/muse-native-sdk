@@ -345,6 +345,10 @@ struct GalleryHandle {
   // page. Guarded by mu like the rest of the handle.
   int layeringOverlayCount = 5;
   int lastViewportH = 0;
+  // BUG-INPUT-001 T4: last page RenderLocked presented; a page change resets
+  // layeringOverlayCount to the full stack (5) so away/back re-entry restarts
+  // full. Guarded by mu like the rest of the handle.
+  int lastPresentedPage = -1;
 #ifdef __ANDROID__
   ANativeWindow* window = nullptr;
   // FR-STARTUP-003 T1 (RULE-STARTUP-002): single-owner render-thread frame
@@ -846,8 +850,16 @@ void RenderLocked(GalleryHandle* g) {
   // vs dark surface) so no black gutters leak through either mode.
   window.clear(ThemeInk(WindowRGBA(0xFE, 0xF7, 0xFF, 0xFF)));
   std::string error = g->parseError;
+  // BUG-INPUT-001 T4: page change resets the dismiss stack to full so
+  // away/back re-entry restarts from 5; the live count feeds the paint path
+  // so dismiss and paint cannot diverge. Runs under mu (caller holds it).
+  if (g->lastPresentedPage != g->page) {
+    g->layeringOverlayCount = 5;
+    g->lastPresentedPage = g->page;
+  }
   const bool presented = ::runtime::PresentDeviceGalleryPage(
-      g->rows, g->page, *g->renderer, window, h, &error);
+      g->rows, g->page, *g->renderer, window, h, &error,
+      g->layeringOverlayCount);
   // FR-GRAPHICS-014 T2: requested-vs-effective present-path selection with
   // probe downgrade to the proven CPU push (AC-GRAPHICS-040/041). The
   // requested renderer defaults to `cpu`; the resolve gate maps it against

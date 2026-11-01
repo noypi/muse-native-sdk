@@ -879,6 +879,136 @@ bool check_scrim_geometry_resolves_to_scrim_node() {
   return true;
 }
 
+// ---- BUG-INPUT-001 T4 paint/dismiss non-divergence (batch 2, RED pre-T4)
+// ----
+//
+// Plan T4 Interface (proposal the coder implements; reconciliation rule:
+// update call sites, not expectations, if names differ):
+//   struct LayeringScene gains `int overlayCount = 5`
+//   paintLayeringPage(scene, renderer, target, error) unchanged signature,
+//   emits 1 scrim + clamp(overlayCount, 0, 5) contents
+//   PresentDeviceGalleryPage(rows, page, renderer, target, viewportH,
+//   error, overlayCount) new trailing param forwarded into scene.overlayCount
+//   (5-arg overload unchanged, full stack).
+// Pre-T4 RED: LayeringScene has no overlayCount member and no 7-arg
+// PresentDeviceGalleryPage overload exists, so this block fails to compile
+// by design (dismiss pop is bookkeeping-only until T4 lands).
+
+// T4: dismissed=topmost reduces the next frame by exactly one overlay.
+bool check_dismiss_remaining_drives_paint_one_fewer() {
+  const runtime::DismissResult dismiss = runtime::onScrimTap(true, false, 5);
+  if (dismiss.dismissed != "topmost") return false;
+  if (dismiss.remaining != 4) return false;
+  runtime::LayeringScene scene = valid_scene();
+  scene.overlayCount = dismiss.remaining;
+  runtime::Renderer renderer(baseline_device());
+  FakeSwapchain target;
+  std::string error;
+  runtime::paintLayeringPage(scene, renderer, target, &error);
+  if (!error.empty()) return false;
+  if (target.captured.size() != 5) return false;  // 1 scrim + 4 contents
+  if (target.captured.front().kind != runtime::PrimitiveKind::OverlayScrim) {
+    return false;
+  }
+  return true;
+}
+
+// T4: two consecutive dismissals composite 1 scrim + 3 contents.
+bool check_two_dismissals_composite_two_fewer() {
+  const runtime::DismissResult first = runtime::onScrimTap(true, false, 5);
+  const runtime::DismissResult second =
+      runtime::onScrimTap(true, false, first.remaining);
+  if (second.remaining != 3) return false;
+  runtime::LayeringScene scene = valid_scene();
+  scene.overlayCount = second.remaining;
+  runtime::Renderer renderer(baseline_device());
+  FakeSwapchain target;
+  std::string error;
+  runtime::paintLayeringPage(scene, renderer, target, &error);
+  if (!error.empty()) return false;
+  return target.captured.size() == 4;  // 1 scrim + 3 contents
+}
+
+// T4: default scene is the full stack (re-entry baseline).
+bool check_default_scene_overlay_count_is_full() {
+  runtime::LayeringScene scene = valid_scene();
+  if (scene.overlayCount != 5) return false;
+  runtime::Renderer renderer(baseline_device());
+  FakeSwapchain target;
+  std::string error;
+  runtime::paintLayeringPage(scene, renderer, target, &error);
+  if (!error.empty()) return false;
+  return target.captured.size() == 6;  // 1 scrim + 5 contents
+}
+
+// T4 boundary: negative count clamps to scrim-only, never negative.
+bool check_paint_negative_count_clamps_to_scrim_only() {
+  runtime::LayeringScene scene = valid_scene();
+  scene.overlayCount = -3;
+  runtime::Renderer renderer(baseline_device());
+  FakeSwapchain target;
+  std::string error;
+  runtime::paintLayeringPage(scene, renderer, target, &error);
+  if (!error.empty()) return false;
+  if (target.captured.size() != 1) return false;
+  return target.captured.front().kind ==
+         runtime::PrimitiveKind::OverlayScrim;
+}
+
+// T4 boundary: count above full clamps to the full stack.
+bool check_paint_above_full_clamps_to_full_stack() {
+  runtime::LayeringScene scene = valid_scene();
+  scene.overlayCount = 99;
+  runtime::Renderer renderer(baseline_device());
+  FakeSwapchain target;
+  std::string error;
+  runtime::paintLayeringPage(scene, renderer, target, &error);
+  if (!error.empty()) return false;
+  return target.captured.size() == 6;  // 1 scrim + 5 contents
+}
+
+// T4: 7-arg present forwards the live count; re-entry (full count or the
+// unchanged 6-arg overload) restarts from the full stack.
+bool check_present_overlay_count_forwards_and_reentry_resets() {
+  const std::vector<runtime::GalleryRow> rows =
+      TwoPageRowsWithLayeringSecond();
+  if (runtime::GalleryPageCount(rows, kLayeringViewportH) != 2) return false;
+  runtime::Renderer renderer(baseline_device());
+  {
+    FakeSwapchain dismissed;
+    std::string error;
+    if (!runtime::PresentDeviceGalleryPage(rows, 1, renderer, dismissed,
+                                           kLayeringViewportH, &error, 4)) {
+      return false;
+    }
+    if (!error.empty()) return false;
+    if (dismissed.captured.size() != 5) return false;  // 1 scrim + 4
+  }
+  {
+    // Re-entry restarts from the full stack.
+    FakeSwapchain reentry;
+    std::string error;
+    if (!runtime::PresentDeviceGalleryPage(rows, 1, renderer, reentry,
+                                           kLayeringViewportH, &error, 5)) {
+      return false;
+    }
+    if (!error.empty()) return false;
+    if (reentry.captured.size() != 6) return false;
+  }
+  {
+    // The unchanged 6-arg overload keeps full-stack behavior.
+    FakeSwapchain legacy;
+    std::string error;
+    if (!runtime::PresentDeviceGalleryPage(rows, 1, renderer, legacy,
+                                           kLayeringViewportH, &error)) {
+      return false;
+    }
+    if (!error.empty()) return false;
+    if (legacy.captured.size() != 6) return false;
+  }
+  return true;
+}
+
 #define RUN_CASE(name)                      \
   do {                                      \
     if (!(name)()) {                        \
@@ -915,6 +1045,12 @@ int main() {
   RUN_CASE(check_tap_tree_button_still_resolves_to_content_node);
   RUN_CASE(check_tap_tree_outside_still_fails_closed);
   RUN_CASE(check_scrim_geometry_resolves_to_scrim_node);
+  RUN_CASE(check_dismiss_remaining_drives_paint_one_fewer);
+  RUN_CASE(check_two_dismissals_composite_two_fewer);
+  RUN_CASE(check_default_scene_overlay_count_is_full);
+  RUN_CASE(check_paint_negative_count_clamps_to_scrim_only);
+  RUN_CASE(check_paint_above_full_clamps_to_full_stack);
+  RUN_CASE(check_present_overlay_count_forwards_and_reentry_resets);
   if (failures > 0) {
     std::printf("gallery_layering_test: %d failing\n", failures);
     return 1;

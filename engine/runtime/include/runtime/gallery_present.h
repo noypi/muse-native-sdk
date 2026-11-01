@@ -118,6 +118,15 @@ bool PresentDeviceGalleryPage(const std::vector<GalleryRow>& rows, int page,
                               Renderer& renderer, Swapchain& target,
                               int viewportH, std::string* error);
 
+// BUG-INPUT-001 T4 (AC-M3-022 scrim clause): layering-pop feed. Same
+// contract as the 6-arg entry, plus a trailing overlay count forwarded into
+// `LayeringScene::overlayCount` (clamped to [0, 5] by the paint path). The
+// 5-arg and 6-arg overloads keep full-stack behavior (overlayCount == 5).
+bool PresentDeviceGalleryPage(const std::vector<GalleryRow>& rows, int page,
+                              Renderer& renderer, Swapchain& target,
+                              int viewportH, std::string* error,
+                              int overlayCount);
+
 // T11 coverage seam (FR-TEXT-016 / AC-TEXT-045): resolve a ShapeGalleryLabel
 // handle to its shaped glyph data (glyph ids + advances) from the T5
 // gallery shaping cache. Returns true with both outputs populated on a
@@ -137,6 +146,7 @@ struct LayeringScene {
   bool valid = false;
   float sheetY = 0.0f;
   std::uint32_t fullRelayouts = 0;
+  int overlayCount = 5;
 };
 
 // Emit the layering scene through the retained path: one OverlayScrim

@@ -2695,6 +2695,14 @@ bool PresentDeviceGalleryPage(const std::vector<GalleryRow>& rows, int page,
 bool PresentDeviceGalleryPage(const std::vector<GalleryRow>& rows, int page,
                               Renderer& renderer, Swapchain& target,
                               int viewportH, std::string* error) {
+  return PresentDeviceGalleryPage(rows, page, renderer, target, viewportH,
+                                  error, 5);
+}
+
+bool PresentDeviceGalleryPage(const std::vector<GalleryRow>& rows, int page,
+                              Renderer& renderer, Swapchain& target,
+                              int viewportH, std::string* error,
+                              int overlayCount) {
   try {
     if (viewportH <= 0) {
       SetPresentError(error, "present window: bad viewport height");
@@ -2767,6 +2775,7 @@ bool PresentDeviceGalleryPage(const std::vector<GalleryRow>& rows, int page,
     if (IsLayeringPageSlice(rows, window.firstVisible, window.lastVisible)) {
       LayeringScene scene;
       scene.valid = true;
+      scene.overlayCount = overlayCount;
       // T4 (BUG-RUNTIME-004 / AC-M3-022 sink leg, AC-LAYOUT-035): bind the
       // sheet to the live FR-LAYOUT-012 inset (`deps.insets.imeBottom`) every
       // frame before paint. In-place sheet-Y mutation only, no full-tree
@@ -2778,11 +2787,17 @@ bool PresentDeviceGalleryPage(const std::vector<GalleryRow>& rows, int page,
       if (error != nullptr && !error->empty()) return false;
       // L8b dispatch confirm: names the routed page and shape count,
       // distinct from the slice diagnostic above (which says "slice").
+      int confirmShapes = scene.overlayCount;
+      if (confirmShapes < 0) confirmShapes = 0;
+      if (confirmShapes > 5) confirmShapes = 5;
+      confirmShapes += 1;
 #ifdef __ANDROID__
       __android_log_print(ANDROID_LOG_INFO, "GalleryPage",
-                          "[layering] paint layering page=%d shapes=6", page);
+                          "[layering] paint layering page=%d shapes=%d", page,
+                          confirmShapes);
 #else
-      std::printf("[layering] paint layering page=%d shapes=6\n", page);
+      std::printf("[layering] paint layering page=%d shapes=%d\n", page,
+                  confirmShapes);
 #endif
       return true;
     }
@@ -2879,7 +2894,14 @@ void paintLayeringPage(const LayeringScene& scene, Renderer& renderer,
     // carries an explicit opaque fill (F1: no payload-0 washout — the
     // retained Swapchain rasterizes Rect/RoundedRect from stateColor, so a
     // default 0 payload would present as transparent/washed out).
-    for (std::uint32_t i = 0; i < 5; ++i) {
+    // BUG-INPUT-001 T4: dismiss pop binds here — emit 1 scrim +
+    // clamp(overlayCount, 0, 5) contents so the pop removes the topmost step.
+    int liveOverlays = scene.overlayCount;
+    if (liveOverlays < 0) liveOverlays = 0;
+    if (liveOverlays > 5) liveOverlays = 5;
+    cmds.reserve(static_cast<std::size_t>(liveOverlays) + 1);
+    for (std::uint32_t i = 0;
+         i < static_cast<std::uint32_t>(liveOverlays); ++i) {
       DrawCmd content;
       content.kind =
           (i == 3) ? PrimitiveKind::Rect : PrimitiveKind::RoundedRect;
