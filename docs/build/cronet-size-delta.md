@@ -10,6 +10,13 @@ default in any template (blocks T6 default shipment while the gate is open).
 > as measured. What IS measured is the host-proxy A/B pair in §2. The
 > per-app APK delta table in §3 is ESTIMATED / pending device-lab
 > measurement, computed against the NFR-BUILD-019 estimates by reference.
+>
+> Update 2026-11-01 (T7 device session, commit `e10483b`): a single-variant
+> debug APK was built from this commit, installed on device 127.0.0.1:6562,
+> and verified launched/rendered (§5). The repo contains NO Cronet AAR or
+> prebuilt native library — only the `cronet_transport.cc` plug shim — so a
+> with/without-Cronet APK A/B remains INFEASIBLE: there is no second variant
+> to build. §5 numbers are MEASURED single-variant; the delta stays OPEN.
 
 ## 1. Method attempted
 
@@ -60,7 +67,46 @@ Follow-up to close the estimates: run the device-lab release A/B
 `downloadBytes`/`installBytes` in `docs/build/size-trends.md`, and let the
 `toolchain/size` gates compare them against the perf budgets.
 
-## 4. Gate status (Q-NET-001)
+## 5. Device evidence — single-variant debug APK (MEASURED, 2026-11-01)
+
+Built from commit `e10483b699eac4d7e7a20979f13bd09f36006dfe`
+(branch `run/fr-deps-009-fr-net-014-nfr-build-020-fr-media-013`):
+
+- Engine: `make engine-android` (NDK 27.2.12479018, platform android-29),
+  4 ABIs. `libRuntime.so` bytes: arm64-v8a 6352864, armeabi-v7a 5608148,
+  x86_64 6078152, x86 5911640.
+- SDK stamp: `sh scripts/release-sdk.sh --allow-dirty` → `build/VERSION`
+  `0.1.0` (matches `sdk: 0.1.0` pin in `examples/m3-gallery/muse-native.yaml`).
+- Example: `make clean && make apk && make sign` in `examples/m3-gallery`
+  (`MUSE_NATIVE_HOME=<run>/build`,
+  `ANDROID_PLATFORM=/media/saif/EXTRA/sdk/android/platforms/android-35`).
+- APK (`examples/m3-gallery/build/m3-gallery-debug.apk`, debug key only):
+  **6341553 bytes**, sha256
+  `4e5db3a5e6ef9d57b232eb2efa0f41b38c609e2c998c7f11b28840c7b993b976`.
+  Unsigned 6334434, aligned 6334436. Uncompressed native payload
+  (4 × `libRuntime.so`): 24035837 bytes total per `unzip -l`
+  (APK deflates the `.so` entries ~73–75%).
+- Install: `adb -s 127.0.0.1:6562 install -r build/m3-gallery-debug.apk`
+  → `Success` (note: `make install` without `ANDROID_SERIAL` fails with
+  "more than one device/emulator" — 3 devices on this adb server; use
+  `-s 127.0.0.1:6562`). Device `pm path com.muse.host` →
+  `/data/app/com.muse.host-7gW2nfKFkmLqBJiiXgq5mw==/base.apk`,
+  `du -k` → **6200 KB on-device** (≈ 6348800 bytes incl. filesystem blocks).
+- Device: model `Phone` (Genymobile vbox86p), **Android API 29
+  (Android 10)**, serial `127.0.0.1:6562` (`adb devices` state `device`).
+- Launch proof: `am start -n com.muse.host/.MainActivity` → pid 8362,
+  `mResumedActivity … com.muse.host/.MainActivity`,
+  logcat `Displayed com.muse.host/.MainActivity: +702ms`,
+  `muse-host: SEAM-STEP:render:ok`, `GalleryPage: gallery-rows=121`.
+  Screenshot: `docs/build/t7_install_proof.png` (this dir).
+- Cronet A/B feasibility: NO Cronet AAR/prebuilt exists anywhere in this
+  commit (`find . -iname '*cronet*'` outside `build/` returns only
+  `engine/net/{include,src}` shim sources + host test binaries). The
+  engine links no Cronet native library, so a with/without-Cronet APK pair
+  cannot be produced from this tree — the T7 A/B delta stays OPEN pending
+  vendoring a Cronet AAR and a release device-lab build.
+
+## 6. Gate status (Q-NET-001)
 
 - Both-binary APK numbers: NOT BUILT (infeasible this session, §1). Proxy
   pair built from the same commit: YES (§2).
