@@ -205,6 +205,116 @@ describe('T4 — tamper-after-cache re-verifies the tarball', () => {
   });
 });
 
+describe('T4 — pins entry.file traversal rejected fail-closed', () => {
+  it('(12) pin file "../evil.tar.gz" and absolute path are rejected, never used as a path', () => {
+    for (const evilFile of ['../evil.tar.gz', '/tmp/tp-abs-evil.tar.gz']) {
+      const dir = mkTmp('tp-dir-');
+      const src = mkTmp('tp-src-');
+      fs.writeFileSync(path.join(src, 'payload.txt'), 'good\n');
+      const goodFile = 'dep-good.tar.gz';
+      childProcess.execFileSync('tar', ['-czf', path.join(dir, goodFile), '-C', src, 'payload.txt']);
+      const pinsPath = path.join(mkTmp('tp-pins-'), 'pins.json');
+      fs.writeFileSync(pinsPath, JSON.stringify({
+        'dep-evil': { file: evilFile, sha256: 'a'.repeat(64) },
+      }));
+      process.env[VAR_NAME] = dir;
+      const buildTree = mkTmp('tp-build-');
+      assert.throws(() => resolveThirdParty('dep-evil', { pinsPath, buildTree }), (err) => {
+        assert.equal(err.code, 'ETHIRDPARTYPIN');
+        expectVarHelp(err);
+        return true;
+      });
+      // Never used as a filesystem path: no extraction, no marker, no escape.
+      assert.equal(fs.existsSync(path.join(buildTree, 'third-party', 'dep-evil', 'payload.txt')), false);
+      assert.equal(fs.existsSync(path.join(dir, 'evil.tar.gz')), false);
+      assert.equal(fs.existsSync('/tmp/tp-abs-evil.tar.gz'), false);
+    }
+  });
+});
+
+describe('T4 — symlink/hardlink tar member rejected before extraction', () => {
+  it('(13) tarball with a symlink member pointing outside outDir throws ETHIRDPARTYENTRY', () => {
+    const dir = mkTmp('tp-dir-');
+    const src = mkTmp('tp-src-');
+    fs.writeFileSync(path.join(src, 'payload.txt'), 'link-payload\n');
+    // Symlink member with a safe name pointing outside the extraction dir.
+    fs.symlinkSync('/tmp/tp-link-target-outside', path.join(src, 'link'));
+    const file = 'dep-link.tar.gz';
+    const tarball = path.join(dir, file);
+    childProcess.execFileSync('tar', ['-czf', tarball, '-C', src, 'payload.txt', 'link']);
+    const sha256 = sha256Of(tarball);
+    const pinsPath = path.join(mkTmp('tp-pins-'), 'pins.json');
+    fs.writeFileSync(pinsPath, JSON.stringify({ 'dep-link': { file, sha256 } }));
+    process.env[VAR_NAME] = dir;
+    const buildTree = mkTmp('tp-build-');
+    assert.throws(() => resolveThirdParty('dep-link', { pinsPath, buildTree }), (err) => {
+      assert.equal(err.code, 'ETHIRDPARTYENTRY');
+      expectVarHelp(err);
+      return true;
+    });
+  });
+
+  it('(13b) tarball with a hardlink member throws ETHIRDPARTYENTRY', () => {
+    const dir = mkTmp('tp-dir-');
+    const src = mkTmp('tp-src-');
+    fs.writeFileSync(path.join(src, 'payload.txt'), 'hardlink-payload\n');
+    fs.linkSync(path.join(src, 'payload.txt'), path.join(src, 'hardlink.txt'));
+    const file = 'dep-hardlink.tar.gz';
+    const tarball = path.join(dir, file);
+    childProcess.execFileSync('tar', ['-czf', tarball, '-C', src, 'payload.txt', 'hardlink.txt']);
+    const sha256 = sha256Of(tarball);
+    const pinsPath = path.join(mkTmp('tp-pins-'), 'pins.json');
+    fs.writeFileSync(pinsPath, JSON.stringify({ 'dep-hardlink': { file, sha256 } }));
+    process.env[VAR_NAME] = dir;
+    const buildTree = mkTmp('tp-build-');
+    assert.throws(() => resolveThirdParty('dep-hardlink', { pinsPath, buildTree }), (err) => {
+      assert.equal(err.code, 'ETHIRDPARTYENTRY');
+      expectVarHelp(err);
+      return true;
+    });
+  });
+});
+
+describe('T4 — depName traversal fails closed', () => {
+  it('(14) resolveThirdParty with ../evil and absolute depName fails closed without touching outside paths', () => {
+    const { dir, pinsPath } = makePinnedDep('dep-a');
+    process.env[VAR_NAME] = dir;
+    const buildTree = mkTmp('tp-build-');
+    for (const evilDep of ['../evil', '/tmp/tp-abs-evil-dep', 'a/b']) {
+      assert.throws(() => resolveThirdParty(evilDep, { pinsPath, buildTree }), (err) => {
+        assert.equal(err.code, 'ETHIRDPARTYPIN');
+        expectVarHelp(err);
+        return true;
+      });
+    }
+    // Nothing extracted outside the build tree.
+    assert.equal(fs.existsSync(path.join(buildTree, 'evil')), false);
+    assert.equal(fs.existsSync(path.join(buildTree, 'third-party', '..', 'evil')), false);
+    assert.equal(fs.existsSync('/tmp/tp-abs-evil-dep'), false);
+    assert.equal(fs.existsSync(path.join(tmpRoots[0] || os.tmpdir(), 'tp-abs-evil-dep')), false);
+  });
+});
+
+describe('T4 — forged marker cannot bypass tarball re-verification', () => {
+  it('(15) hand-written marker with correct sha256 plus tampered tarball still throws ETHIRDPARTYHASH', () => {
+    const { dir, pinsPath, file, sha256 } = makePinnedDep('dep-a');
+    process.env[VAR_NAME] = dir;
+    const buildTree = mkTmp('tp-build-');
+    // Forge a valid-looking marker with NO prior extract (no payload on disk).
+    const outDir = path.join(buildTree, 'third-party', 'dep-a');
+    fs.mkdirSync(outDir, { recursive: true });
+    fs.writeFileSync(path.join(outDir, '.third-party-pin.json'), JSON.stringify({ dep: 'dep-a', file, sha256 }));
+    // Tamper the tarball after the marker was forged.
+    fs.appendFileSync(path.join(dir, file), 'tampered-under-forged-marker');
+    assert.throws(() => resolveThirdParty('dep-a', { pinsPath, buildTree }), (err) => {
+      assert.equal(err.code, 'ETHIRDPARTYHASH');
+      expectVarHelp(err);
+      return true;
+    });
+    // Forged marker did not yield unverified content: no payload extracted.
+    assert.equal(fs.existsSync(path.join(outDir, 'payload.txt')), false);
+  });
+});
 describe('T4 — tar-slip guard rejects unsafe members', () => {
   it('(11) tarball with a ../evil member throws ETHIRDPARTYENTRY', () => {
     const dir = mkTmp('tp-dir-');

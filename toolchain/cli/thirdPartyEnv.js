@@ -127,6 +127,37 @@ function listTarMembers(tarballPath) {
   return [];
 }
 
+function listTarVerbose(tarballPath) {
+  try {
+    if (typeof childProcess.execFileSync === 'function') {
+      const out = childProcess.execFileSync('tar', ['-tvzf', tarballPath], { encoding: 'utf8' });
+      return String(out).split('\n');
+    }
+    const out = childProcess.execSync(`tar -tvzf ${shQuote(tarballPath)}`, { encoding: 'utf8' });
+    return String(out).split('\n');
+  } catch (err) {
+    void err;
+    fail('ETHIRDPARTYENTRY', `failed to list third-party tarball members '${tarballPath}'`);
+  }
+  return [];
+}
+
+function assertSafeTarListing(verboseLines, tarballPath) {
+  for (const raw of verboseLines) {
+    const line = String(raw).trim();
+    if (line.length === 0) {
+      continue;
+    }
+    const typeFlag = line[0];
+    if (typeFlag === 'l' || typeFlag === 'h' || typeFlag === 'b' || typeFlag === 'c') {
+      fail('ETHIRDPARTYENTRY', `third-party tarball '${tarballPath}' contains unsafe link/device member '${line}'`);
+    }
+    if (line.includes(' -> ') || line.includes(' link to ')) {
+      fail('ETHIRDPARTYENTRY', `third-party tarball '${tarballPath}' contains unsafe link member '${line}'`);
+    }
+  }
+}
+
 function assertSafeTarMembers(members, tarballPath) {
   for (const raw of members) {
     const member = String(raw).trim();
@@ -141,6 +172,7 @@ function assertSafeTarMembers(members, tarballPath) {
 
 function extractTarball(tarballPath, outDir) {
   assertSafeTarMembers(listTarMembers(tarballPath), tarballPath);
+  assertSafeTarListing(listTarVerbose(tarballPath), tarballPath);
   fs.mkdirSync(outDir, { recursive: true });
   try {
     if (typeof childProcess.execFileSync === 'function') {
