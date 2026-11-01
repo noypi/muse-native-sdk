@@ -1486,8 +1486,6 @@ void PaintComponent(std::uint32_t* px, int stride, int w, int h, int bx,
       } else {
         FillRect(px, stride, w, h, sx, y0, segW, barH, kCardBg);
       }
-      DrawLine(px, stride, w, h, sx, y0 + 8, sx, y0 + barH - 8, 2,
-               kLightOutlineVariant);
       if (first) {
         FillRoundedRect(px, stride, w, h, sx + segW / 2 - 26, y0 + 12, 52, 30,
                         15, kLightSecondaryContainer);
@@ -1498,6 +1496,11 @@ void PaintComponent(std::uint32_t* px, int stride, int w, int h, int bx,
     }
     StrokeRoundedRect(px, stride, w, h, x0, y0, segW * segs, barH, 20, 2,
                       kLightOutlineVariant, kCardBg);
+    for (int s = 1; s < segs; ++s) {
+      int sx = x0 + s * segW;
+      DrawLine(px, stride, w, h, sx, y0 + 8, sx, y0 + barH - 8, 2,
+               kLightOutlineVariant);
+    }
     PaintCaption(px, stride, w, h, bx, by, bw, bh,
                  sel.empty() ? c : c + " " + sel);
     return;
