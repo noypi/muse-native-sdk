@@ -873,7 +873,7 @@ function parseDeviceCounts(text) {
   }
 }
 
-function readDeviceCounts({ serial } = {}) {
+async function readDeviceCounts({ serial, attempts, sleepMs, sleep } = {}) {
   // Resolved live on the emulator via adb against ANDROID_SERIAL
   // (default 127.0.0.1:6562); hermetic halves inject their own reader or
   // assert deriveExpectedCounts directly. Parses the real gallery presenter
@@ -881,10 +881,29 @@ function readDeviceCounts({ serial } = {}) {
   // markers; a genuinely unreachable device throws device-unreachable, and a
   // reachable device with no parseable counts throws counts-mismatch —
   // never a silent null pass.
+  const tries = Number.isInteger(attempts) && attempts > 0 ? attempts : 6;
+  const delay = Number.isInteger(sleepMs) && sleepMs >= 0 ? sleepMs : 500;
+  const sleepFn = sleep || ((ms) => new Promise((resolve) => { setTimeout(resolve, ms); }));
   const scanPairs = (text) => parseDeviceCounts(text);
+  // Hermetic-safe adb read: goes through the adb shot layer even when no
+  // serial is configured (single-device / stubbed use), so pre-render
+  // polling works offline; any adb failure maps to device-unreachable and
+  // an existing device-unreachable propagates immediately.
+  const adbRead = (args, label) => {
+    const { execFileSync } = require('node:child_process');
+    const deviceSerial = adbSerial(serial);
+    const full = deviceSerial ? ['-s', deviceSerial, ...args] : [...args];
+    try {
+      return execFileSync('adb', full, { stdio: 'pipe' });
+    } catch (err) {
+      if (err && err.code === 'device-unreachable') throw err;
+      failWith('device-unreachable', `${label}: ${(err && err.message) || String(err)}`);
+    }
+    return null;
+  };
   let dumpsysText = '';
   try {
-    const out = adbOrUnreachable(['shell', 'dumpsys', 'activity', 'top'], serial);
+    const out = adbRead(['shell', 'dumpsys', 'activity', 'top'], 'device counts read failed');
     dumpsysText = out ? out.toString('utf8') : '';
   } catch (err) {
     if (err && err.code === 'device-unreachable') throw err;
@@ -892,25 +911,32 @@ function readDeviceCounts({ serial } = {}) {
   }
   const direct = scanPairs(dumpsysText);
   if (direct) return Promise.resolve(direct);
-  try {
-    const log = adbOrUnreachable(logcatFilterArgs(), serial);
-    const text = dumpsysText + '\n' + (log ? log.toString('utf8') : '');
-    const paired = scanPairs(text);
-    if (paired) return Promise.resolve(paired);
-    let maxPage = -1;
-    let total = -1;
-    const pageRe = /gallery-page\s*[:=]\s*(\d+)\s*\/\s*(\d+)/gi;
-    let pm = null;
-    while ((pm = pageRe.exec(text)) !== null) {
-      if (Number(pm[1]) > maxPage) maxPage = Number(pm[1]);
-      total = Number(pm[2]);
+  let lastText = dumpsysText;
+  for (let i = 0; i < tries; i++) {
+    try {
+      const fresh = adbRead(['shell', 'dumpsys', 'activity', 'top'], 'device counts read failed');
+      dumpsysText = fresh ? fresh.toString('utf8') : '';
+      const log = adbRead(logcatFilterArgs(), 'device counts logcat read failed');
+      const text = dumpsysText + '\n' + (log ? log.toString('utf8') : '');
+      lastText = text;
+      const paired = scanPairs(text);
+      if (paired) return Promise.resolve(paired);
+    } catch (err) {
+      if (err && (err.code === 'device-unreachable' || err.code === 'counts-mismatch')) throw err;
+      failWith('device-unreachable', 'device counts logcat read failed: ' + err.message);
     }
-    if (maxPage >= 0 && total > 0) {
-      return Promise.resolve({ rows: total * ROWS_PER_PAGE, pages: total });
-    }
-  } catch (err) {
-    if (err && (err.code === 'device-unreachable' || err.code === 'counts-mismatch')) throw err;
-    failWith('device-unreachable', 'device counts logcat read failed: ' + err.message);
+    if (i + 1 < tries) await sleepFn(delay);
+  }
+  let maxPage = -1;
+  let total = -1;
+  const pageRe = /gallery-page\s*[:=]\s*(\d+)\s*\/\s*(\d+)/gi;
+  let pm = null;
+  while ((pm = pageRe.exec(lastText)) !== null) {
+    if (Number(pm[1]) > maxPage) maxPage = Number(pm[1]);
+    total = Number(pm[2]);
+  }
+  if (maxPage >= 0 && total > 0) {
+    return Promise.resolve({ rows: total * ROWS_PER_PAGE, pages: total });
   }
   failWith('counts-mismatch', 'device counts unavailable: no parseable rows or pages on device output');
   return Promise.resolve(null);
@@ -1040,6 +1066,7 @@ function saveScreenshot({ serial, page, shot, frame } = {}) {
 
 module.exports = {
   runGalleryProof,
+  readDeviceCounts,
   parseDeviceCounts,
   deriveExpectedCounts,
   deriveTreeCounts,
