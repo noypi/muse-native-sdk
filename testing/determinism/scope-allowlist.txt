@@ -1,0 +1,18 @@
+# Hermetic-double scope allowlist (FR-TESTING-005 / AC-TESTING-036 / AC-TESTING-037).
+#
+# Tree-relative path prefixes (one per line) where hermetic test doubles
+# may legitimately live. Anything double-like outside these prefixes is
+# denied by testing/determinism/dry_run_scope_gate.py. Lines starting
+# with "#" and blank lines are ignored by the gate.
+#
+# Entries:
+# - tests: unit-test directories (AC-TESTING-036).
+# - testing/golden: golden generation tooling (AC-TESTING-036).
+# - testing/dry-run: named dry-run paths (AC-TESTING-037); these paths
+#   must emit no shipped artifact and never substitute in release.
+# - testing/determinism/hermetic-doubles: hermetic fixture doubles
+#   (TC-TESTING-036).
+tests
+testing/golden
+testing/dry-run
+testing/determinism/hermetic-doubles
