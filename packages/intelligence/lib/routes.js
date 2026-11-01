@@ -42,7 +42,7 @@ function validateProps(props) {
 
 async function assertMuseRoutes(fetchImpl, options) {
   const opts = options ?? {};
-  const { preset, props } = opts;
+  const { preset, props, resolveParams } = opts;
 
   // Reject raw model IDs / endpoints / params before any descriptor fetch,
   // hence certainly before any upstream call (which never happens here).
@@ -60,7 +60,17 @@ async function assertMuseRoutes(fetchImpl, options) {
   }
 
   const missing = REQUIRED_ROUTES.filter((name) => !(routes && routes[name]));
-  return { ok: missing.length === 0, missing };
+  const result = { ok: missing.length === 0, missing };
+  // T4 — thread the preset's params object verbatim when requested (A3: no
+  // second resolution path — no model resolution, no merging; that lives
+  // solely in dispatch). Falsy/absent resolveParams keeps today's shape.
+  if (resolveParams && preset !== undefined && preset !== null) {
+    const entry = presets && typeof presets === 'object' ? presets[preset] : undefined;
+    if (entry && typeof entry === 'object' && 'params' in entry) {
+      result.params = { ...entry.params };
+    }
+  }
+  return result;
 }
 
 module.exports = { assertMuseRoutes };

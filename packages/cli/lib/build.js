@@ -177,7 +177,7 @@ function runBuild(appDir, rest) {
   // allow-list; an unavailable allow-list fails closed, same as any other
   // config error (stderr + exit 2, no `dist/` writes).
   try {
-    const { validateMuseSection, ConfigError: MuseConfigError } = require('./muse-models.js');
+    const { resolveMuseSection, ConfigError: MuseConfigError } = require('./muse-models.js');
     const fileLayer = config.readFileLayer(resolved);
     if (fileLayer.muse !== undefined) {
       let allowList;
@@ -187,7 +187,12 @@ function runBuild(appDir, rest) {
       } catch (_) {
         throw new MuseConfigError('muse', 'muse-native.yaml', 'a readable proxy allow-list');
       }
-      validateMuseSection(fileLayer.muse, allowList);
+      const resolvedMuse = resolveMuseSection(fileLayer.muse, allowList);
+      // A2: explicit per-project artefact path — the resolved app dir's own
+      // `dist/muse.json`. Never a parent-dir search, never the repo root.
+      const artefactPath = path.join(resolved, 'dist', 'muse.json');
+      fs.mkdirSync(path.dirname(artefactPath), { recursive: true });
+      fs.writeFileSync(artefactPath, JSON.stringify(resolvedMuse, null, 2) + '\n');
     }
   } catch (err) {
     const message = err && err.message ? err.message : String(err);

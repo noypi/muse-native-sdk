@@ -342,6 +342,185 @@ describe('dispatch security-review coverage (Stage 4)', () => {
   });
 });
 
+describe('BUG-MUSE-003 T3 — projectMuse resolution (AC-MUSE-046, FR-MUSE-002)', () => {
+  // Hermetic project-block fixture (recording-upstream-fake pattern: no
+  // repo-root reads, no network, no keys). Shape mirrors the T1
+  // `resolveMuseSection` value object `{ models, presets }`. The pinned
+  // model is an allow-listed non-default for the route ('sam-3.1' on
+  // 'reason', whose proxy default is 'muse-spark-1.3'); preset params use
+  // allow-listed keys only (reason: reasoning_effort/include_reasoning/strict).
+  function projectMuse() {
+    return {
+      models: { reason: 'sam-3.1' },
+      presets: {
+        'reason-default': {
+          route: 'reason',
+          params: { reasoning_effort: 'low', strict: true },
+        },
+      },
+    };
+  }
+
+  it('absent projectMuse keeps today\u2019s wire shape: params verbatim, no model key', async () => {
+    const { dispatch } = loadImpl();
+    const upstream = okUpstream({});
+    await dispatch(
+      { route: 'reason', params: { reasoning_effort: 'high' } },
+      ctxWith(upstream),
+    );
+    assert.equal(upstream.calls.length, 1);
+    assert.deepEqual(upstream.calls[0].body.params, { reasoning_effort: 'high' });
+    assert.ok(!('model' in upstream.calls[0].body), 'absent projectMuse must not add a model key');
+  });
+
+  it('pinned allow-listed model reaches the upstream call', async () => {
+    const { dispatch } = loadImpl();
+    const upstream = okUpstream({});
+    await dispatch(
+      { route: 'reason', params: { reasoning_effort: 'high' }, projectMuse: projectMuse() },
+      ctxWith(upstream),
+    );
+    assert.equal(upstream.calls.length, 1);
+    // ASSUMPTION (see unit-tests/T3.md): the resolved model rides
+    // `body.model`; the plan Interface pins resolution, not the wire key.
+    assert.equal(upstream.calls[0].body.model, 'sam-3.1');
+  });
+
+  it('merges preset params under caller params with caller-wins on conflict (D1)', async () => {
+    const { dispatch } = loadImpl();
+    const upstream = okUpstream({});
+    await dispatch(
+      {
+        route: 'reason',
+        params: { reasoning_effort: 'high' },
+        preset: 'reason-default',
+        projectMuse: projectMuse(),
+      },
+      ctxWith(upstream),
+    );
+    assert.equal(upstream.calls.length, 1);
+    assert.deepEqual(upstream.calls[0].body.params, {
+      reasoning_effort: 'high',
+      strict: true,
+    });
+  });
+
+  it('preset supplies defaults the caller omitted', async () => {
+    const { dispatch } = loadImpl();
+    const upstream = okUpstream({});
+    await dispatch(
+      { route: 'reason', params: {}, preset: 'reason-default', projectMuse: projectMuse() },
+      ctxWith(upstream),
+    );
+    assert.equal(upstream.calls.length, 1);
+    assert.deepEqual(upstream.calls[0].body.params, {
+      reasoning_effort: 'low',
+      strict: true,
+    });
+  });
+
+  it('pinned model resolves without a preset while params pass through verbatim', async () => {
+    const { dispatch } = loadImpl();
+    const upstream = okUpstream({});
+    await dispatch(
+      { route: 'reason', params: { reasoning_effort: 'high' }, projectMuse: projectMuse() },
+      ctxWith(upstream),
+    );
+    assert.equal(upstream.calls.length, 1);
+    assert.equal(upstream.calls[0].body.model, 'sam-3.1');
+    assert.deepEqual(upstream.calls[0].body.params, { reasoning_effort: 'high' });
+  });
+
+  it('empty projectMuse maps behave like an absent block (ASSUMPTION)', async () => {
+    const { dispatch } = loadImpl();
+    const upstream = okUpstream({});
+    await dispatch(
+      { route: 'reason', params: { reasoning_effort: 'high' }, projectMuse: { models: {}, presets: {} } },
+      ctxWith(upstream),
+    );
+    assert.equal(upstream.calls.length, 1);
+    assert.deepEqual(upstream.calls[0].body.params, { reasoning_effort: 'high' });
+    assert.ok(!('model' in upstream.calls[0].body), 'unpinned route must not add a model key');
+  });
+
+  it('still rejects an unknown route with projectMuse present and zero upstream calls', async () => {
+    const { dispatch } = loadImpl();
+    const upstream = okUpstream({});
+    await assertProxyError(
+      dispatch({ route: 'speak', params: {}, projectMuse: projectMuse() }, ctxWith(upstream)),
+      'unknown-route',
+      'speak',
+    );
+    assert.equal(upstream.calls.length, 0);
+  });
+
+  it('still rejects an unlisted caller param with projectMuse present and zero upstream calls', async () => {
+    const { dispatch } = loadImpl();
+    const upstream = okUpstream({});
+    await assertProxyError(
+      dispatch(
+        { route: 'reason', params: { reasoning_effort: 'high', evil: 1 }, projectMuse: projectMuse() },
+        ctxWith(upstream),
+      ),
+      'unlisted-param',
+      'reason',
+    );
+    assert.equal(upstream.calls.length, 0);
+  });
+
+  it('still rejects an unknown preset with projectMuse present and zero upstream calls', async () => {
+    const { dispatch } = loadImpl();
+    const upstream = okUpstream({});
+    await assertProxyError(
+      dispatch(
+        { route: 'reason', params: {}, preset: 'no-such-preset-xyz', projectMuse: projectMuse() },
+        ctxWith(upstream),
+      ),
+      'unknown-preset',
+      'reason',
+    );
+    assert.equal(upstream.calls.length, 0);
+  });
+
+  it('still rejects a preset shaped as a raw non-Muse model id with projectMuse present', async () => {
+    const { dispatch } = loadImpl();
+    const upstream = okUpstream({});
+    await assertProxyError(
+      dispatch(
+        { route: 'reason', params: {}, preset: 'gpt-4', projectMuse: projectMuse() },
+        ctxWith(upstream),
+      ),
+      'non-muse-model',
+      'reason',
+    );
+    assert.equal(upstream.calls.length, 0);
+  });
+
+  // T3-hardening (review MAJOR 2 + plan T3-hardening): artefact values are
+  // untrusted input, so dispatch re-validates merged keys pre-upstream. The
+  // `__proto__` preset param is not in ALLOW_PARAMS[reason], so the hardened
+  // code rejects `unlisted-param` with zero upstream calls — nothing reaches
+  // the merge (fail-closed, AC-MUSE-046 "unlisted param anywhere rejects").
+  it('merging preset params never pollutes Object.prototype (T3-hardening: __proto__ preset param rejects unlisted-param pre-upstream)', async () => {
+    const { dispatch } = loadImpl();
+    const upstream = okUpstream({});
+    const poisoned = projectMuse();
+    poisoned.presets['reason-default'].params = JSON.parse(
+      '{"reasoning_effort":"low","__proto__":{"polluted":"yes"}}',
+    );
+    await assertProxyError(
+      dispatch(
+        { route: 'reason', params: {}, preset: 'reason-default', projectMuse: poisoned },
+        ctxWith(upstream),
+      ),
+      'unlisted-param',
+      'reason',
+    );
+    assert.equal(upstream.calls.length, 0);
+    assert.equal({}.polluted, undefined, 'Object.prototype must not be polluted');
+  });
+});
+
 describe('dispatch streaming passthrough', () => {
   it('passes reason SSE chunks through opaquely in order (ASSUMPTION: chunks array passthrough)', async () => {
     const { dispatch } = loadImpl();

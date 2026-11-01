@@ -112,11 +112,14 @@ describe('validateMuseSection', () => {
     assertConfigError(() => validateMuseSection(yaml, allowList()), 'gpt-4');
   });
 
-  it('throws ConfigError on a model that disagrees with the allow-list for its route', () => {
+  // T2/AC-MUSE-046/A1 licensed update (plan T6): segment: muse-spark-1.3 is an
+  // allow-listed member on a known route and must validate clean — the old
+  // exact-equality throw contradicted the active spec and the T2 contract.
+  it('accepts an allow-listed model for its route (segment: muse-spark-1.3)', () => {
     const { validateMuseSection } = loadImpl();
     const yaml = validYaml();
     yaml.muse.models.segment = 'muse-spark-1.3';
-    assertConfigError(() => validateMuseSection(yaml, allowList()), 'segment');
+    assert.deepEqual(validateMuseSection(yaml, allowList()), { ok: true });
   });
 
   it('throws ConfigError with file muse-native.yaml and a helpful expected string', () => {
@@ -395,5 +398,157 @@ describe('BUG-TSX-010 security — parseMuseSubtree rejects dangerous keys', () 
       assert.equal(err.key, 'prototype');
       return true;
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// BUG-MUSE-003 Batch 1 — T1: `resolveMuseSection` returns the validated block
+// for the build to persist. Hermetic: node:test + node:assert/strict only; no
+// fs, no env, no network, no live services. Inline allow-list mirrors the
+// proxy T1 verified IDs (same fixture as above); only dummy IDs used.
+// Interface (plan verbatim):
+// `resolveMuseSection(yaml, allowList): { models: Record<string,string>,
+// presets: Record<string,{route:string,params:Record<string,unknown>}> }` —
+// pure, throws `ConfigError` on the same violations `validateMuseSection`
+// throws; `build.js` writes the returned object to the per-project artefact
+// path and never to the repo root.
+// ---------------------------------------------------------------------------
+describe('BUG-MUSE-003 T1 — resolveMuseSection returns the validated block', () => {
+  function loadResolver() {
+    const mod = require('../lib/muse-models.js');
+    assert.equal(typeof mod.resolveMuseSection, 'function', 'resolveMuseSection must be exported (T1)');
+    return mod.resolveMuseSection;
+  }
+
+  it('returns the identical models+presets for a valid block', () => {
+    const resolveMuseSection = loadResolver();
+    const yaml = validYaml();
+    assert.deepEqual(resolveMuseSection(yaml, allowList()), {
+      models: yaml.muse.models,
+      presets: yaml.muse.presets,
+    });
+  });
+
+  it('resolved values come from the yaml, never substituted from the allow-list', () => {
+    const resolveMuseSection = loadResolver();
+    const yaml = validYaml();
+    const resolved = resolveMuseSection(yaml, allowList());
+    assert.equal(resolved.models.reason, 'muse-spark-1.3');
+    assert.deepEqual(resolved.presets['reason-default'], { route: 'reason', params: { reasoning_effort: 'high' } });
+  });
+
+  it('models-only yaml resolves with empty presets (ASSUMPTION: absent presets resolve to {})', () => {
+    const resolveMuseSection = loadResolver();
+    const yaml = validYaml();
+    delete yaml.muse.presets;
+    assert.deepEqual(resolveMuseSection(yaml, allowList()), { models: yaml.muse.models, presets: {} });
+  });
+
+  it('absent muse section resolves to empty maps (ASSUMPTION: muse: optional, nothing to persist)', () => {
+    const resolveMuseSection = loadResolver();
+    assert.deepEqual(resolveMuseSection({}, allowList()), { models: {}, presets: {} });
+  });
+
+  it('throws ConfigError naming the model on a non-Muse model (parity with validate)', () => {
+    const resolveMuseSection = loadResolver();
+    const yaml = validYaml();
+    yaml.muse.models.reason = 'gpt-4';
+    assertConfigError(() => resolveMuseSection(yaml, allowList()), 'gpt-4');
+  });
+
+  it('throws ConfigError naming the route on an unknown route', () => {
+    const resolveMuseSection = loadResolver();
+    const yaml = validYaml();
+    yaml.muse.models.speak = 'muse-spark-1.3';
+    assertConfigError(() => resolveMuseSection(yaml, allowList()), 'speak');
+  });
+
+  it('throws ConfigError naming the param on an unlisted preset param', () => {
+    const resolveMuseSection = loadResolver();
+    const yaml = validYaml();
+    yaml.muse.presets['reason-default'].params.evil = 1;
+    assertConfigError(() => resolveMuseSection(yaml, allowList()), 'evil');
+  });
+
+  it('throws ConfigError (never a value object) on a null allowList — fail-closed parity', () => {
+    const resolveMuseSection = loadResolver();
+    let result;
+    let err;
+    try {
+      result = resolveMuseSection(validYaml(), null);
+    } catch (e) {
+      err = e;
+    }
+    assert.ok(err, 'null allowList must throw, never resolve');
+    assert.equal(err.name, 'ConfigError');
+    assert.ok(result === undefined, 'must never return a resolved block on a null allowList');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// BUG-MUSE-003 Batch 1 — T2: `validateMuseSection` loosened from
+// exact-equality to allow-list membership. Hermetic: node:test +
+// node:assert/strict only; no fs, no env, no network. Fixtures use only
+// dummy/verified IDs (ALLOW_MODELS members), never secrets.
+// Interface (plan verbatim):
+// `validateMuseSection(yaml, allowList): { ok: true }` — same signature,
+// same throw type (`ConfigError` naming key/file/expected); only the
+// acceptance set for `muse.models[route]` widens (any `ALLOW_MODELS` member
+// valid for a known route, route-mismatch still throws).
+// NOTE (existing-test conflict, T2-licensed update for T6): the pre-existing
+// case 'throws ConfigError on a model that disagrees with the allow-list for
+// its route' (segment: muse-spark-1.3) asserts exact-equality rejection. Under
+// T2 that pin is an allow-listed member on a known route and must validate
+// clean per AC-MUSE-046/A1; the old case needs the T2-licensed update, named
+// explicitly here — it is NOT edited in this batch (no test weakening).
+// ---------------------------------------------------------------------------
+describe('BUG-MUSE-003 T2 — validateMuseSection allow-list membership', () => {
+  it('accepts an allow-listed non-default model for a known route (segment: muse-spark-1.3)', () => {
+    const { validateMuseSection } = loadImpl();
+    const yaml = validYaml();
+    yaml.muse.models.segment = 'muse-spark-1.3';
+    assert.deepEqual(validateMuseSection(yaml, allowList()), { ok: true });
+  });
+
+  it('accepts another allow-listed swap for a known route (reason: sam-3.1)', () => {
+    const { validateMuseSection } = loadImpl();
+    const yaml = validYaml();
+    yaml.muse.models.reason = 'sam-3.1';
+    assert.deepEqual(validateMuseSection(yaml, allowList()), { ok: true });
+  });
+
+  it('still throws ConfigError on a non-Muse model (gpt-4) — not in ALLOW_MODELS', () => {
+    const { validateMuseSection } = loadImpl();
+    const yaml = validYaml();
+    yaml.muse.models.reason = 'gpt-4';
+    assertConfigError(() => validateMuseSection(yaml, allowList()), 'gpt-4');
+  });
+
+  it('still throws ConfigError on an unknown route even with an allow-listed model', () => {
+    const { validateMuseSection } = loadImpl();
+    const yaml = validYaml();
+    yaml.muse.models.speak = 'muse-spark-1.3';
+    assertConfigError(() => validateMuseSection(yaml, allowList()), 'speak');
+  });
+
+  it('still throws ConfigError on an unlisted preset param (param gate unchanged)', () => {
+    const { validateMuseSection } = loadImpl();
+    const yaml = validYaml();
+    yaml.muse.presets['reason-default'].params.evil = 1;
+    assertConfigError(() => validateMuseSection(yaml, allowList()), 'evil');
+  });
+
+  it('still throws ConfigError (never ok) on a null allowList — fail-closed unchanged', () => {
+    const { validateMuseSection } = loadImpl();
+    let result;
+    let err;
+    try {
+      result = validateMuseSection(validYaml(), null);
+    } catch (e) {
+      err = e;
+    }
+    assert.ok(err, 'null allowList must throw, never return ok');
+    assert.equal(err.name, 'ConfigError');
+    assert.ok(result === undefined, 'must never return { ok: true } on a null allowList');
   });
 });

@@ -53,12 +53,11 @@ function validateMuseSection(yaml, allowList) {
         throw new ConfigError(route, FILE, 'unknown route, expected one of: ' + Object.keys(routes).join(', '));
       }
       const model = muse.models[route];
-      const valid = routes[route] && routes[route].model;
-      if (model !== valid) {
-        const expected = `verified model '${valid}' for route '${route}'`;
-        // Non-Muse IDs name the model; a verified ID on the wrong route
-        // names the route so the mismatch is locatable either way.
-        throw new ConfigError(museModels.has(model) ? route : String(model), FILE, expected);
+      if (!museModels.has(model)) {
+        const expected = `verified model for route '${route}', expected one of: ${[...museModels].join(', ')}`;
+        // Membership failed, so the model names itself (non-Muse ID or an
+        // ID verified for another route under the widened T2 rule).
+        throw new ConfigError(String(model), FILE, expected);
       }
     }
   }
@@ -92,4 +91,29 @@ function validateMuseSection(yaml, allowList) {
   return { ok: true };
 }
 
-module.exports = { validateMuseSection, ConfigError };
+// Resolve the validated `muse:` section to the value object the build
+// persists. Reuses `validateMuseSection` checks (fail-closed gate) so any
+// future widening of the validator flows through; returns the resolved
+// `{ models, presets }` instead of `{ ok: true }`. Values come from the
+// yaml verbatim (allow-lists are reject-only, never substituted). An absent
+// `muse:` section resolves to empty maps; absent `muse.presets` to `{}`.
+function resolveMuseSection(yaml, allowList) {
+  validateMuseSection(yaml, allowList);
+  const muse = yaml && typeof yaml === 'object' ? yaml.muse : undefined;
+  if (muse === undefined) return { models: {}, presets: {} };
+  const models = muse.models !== undefined ? { ...muse.models } : {};
+  let presets = {};
+  if (muse.presets !== undefined) {
+    presets = {};
+    for (const name of Object.keys(muse.presets)) {
+      if (name === '__proto__') {
+        throw new ConfigError(name, FILE, 'a preset name that is safe as an own property');
+      }
+      const preset = muse.presets[name];
+      presets[name] = { route: preset.route, params: { ...(preset.params || {}) } };
+    }
+  }
+  return { models, presets };
+}
+
+module.exports = { validateMuseSection, resolveMuseSection, ConfigError };
