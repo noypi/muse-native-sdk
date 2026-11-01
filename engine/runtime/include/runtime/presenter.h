@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -174,5 +175,80 @@ PresenterError OnForeground();
 //     so no unbounded render-ahead occurs.
 //   - otherwise                -> kOk (frame paced-presented on the deadline).
 PresenterError PresentPaced(const DrawCmds& cmds, ChoreographerDeadline deadline);
+
+// Single Surface host seam (FR-RUNTIME-011 / AC-RUNTIME-034). Component-record
+// path beside the oracle path above; follows the same PresenterError /
+// PresenterCode convention. DrawCmds above is reused directly (no second list
+// type); CompiledTreeRef is new here — tree.h carries CompiledNode/RuntimeTree
+// input fixtures with no rootKind/unknownKind fields, so there is no existing
+// type to alias for the evaluated-tree reference. Definitions land in T2;
+// this item declares the seam only. No gallery term appears in any name here.
+// Opaque integer handle; 0 is never a live surface.
+using SurfaceHandle = std::uint64_t;
+
+// Evaluated-tree reference carried into attachSurface. unknownKind marks a
+// root kind the component set cannot build; attach then fails closed with
+// kCreateFailed and never builds a fallback box.
+struct CompiledTreeRef {
+  std::string rootKind;
+  bool unknownKind = false;
+};
+
+enum class ThemeId {
+  kLight = 0,
+  kDark = 1,
+};
+
+// Lifetime counters observable without device-only calls.
+struct FrameStats {
+  std::uint64_t presented = 0;
+  std::uint64_t dropped = 0;
+  std::uint64_t deadlineMissed = 0;
+};
+
+// attachSurface outcome: a handle plus the fail-closed error. On any error
+// the handle is not usable; renderFrame on it is rejected.
+struct AttachResult {
+  SurfaceHandle handle = 0;
+  PresenterError error;
+};
+
+// Attach the evaluated tree to the opaque window handle (never dereferenced
+// as a View, never freed, retained only until detach/destroy/invalidate).
+// Fail-closed: nullptr -> kNullWindow; non-null non-window -> kInvalidWindow;
+// already bound -> kAlreadyAttached (state untouched); unknown root kind ->
+// kCreateFailed (no usable handle, never a fallback box); else kOk.
+AttachResult attachSurface(const CompiledTreeRef& tree, void* opaque_window);
+
+// Present the DAG-recorded current-frame cmds for the surface.
+// kOk | kNoSwapchain | kNoCurrentFrame; unknown-kind handles are rejected
+// here as well (kCreateFailed/kNoSurface/kNoSwapchain/kNoCurrentFrame).
+PresenterError renderFrame(SurfaceHandle h, const DrawCmds& cmds);
+
+// Raw touch fields (action, pointer id, x/y in px, event time in ms); no
+// View object crosses. kOk on a live surface, else kNoSurface.
+PresenterError dispatchTouch(SurfaceHandle h, std::int32_t action,
+                             std::int32_t pointerId, float xPx, float yPx,
+                             std::int64_t eventTimeMs);
+
+// In-place theme switch; no re-attach. kOk live, else kNoSurface.
+PresenterError setTheme(SurfaceHandle h, ThemeId theme);
+
+// In-place bottom inset in px, applied within one frame; no re-attach.
+// kOk live, else kNoSurface.
+PresenterError setImeBottom(SurfaceHandle h, std::int32_t bottomPx);
+
+// Idempotent release; always kOk, safe to repeat.
+PresenterError detachSurface(SurfaceHandle h);
+
+// Idempotent teardown; always kOk, safe to repeat.
+PresenterError destroySurface(SurfaceHandle h);
+
+// Read lifetime counters; kOk live with *out filled, else kNoSurface.
+PresenterError getFrameStats(SurfaceHandle h, FrameStats* out);
+
+// DAG currency helper for the surface path (test-owned): marks cmds as the
+// recorded current-frame set for h so a later renderFrame may return kOk.
+void NoteFrameRecordedForSurface(SurfaceHandle h, const DrawCmds& cmds);
 
 }  // namespace runtime

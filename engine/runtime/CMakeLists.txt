@@ -524,3 +524,8 @@ add_executable(renderer_preference_fallback_test tests/renderer_preference_fallb
 target_link_libraries(renderer_preference_fallback_test PRIVATE runtime)
 target_compile_options(renderer_preference_fallback_test PRIVATE -Wall -Wextra -Wpedantic)
 add_test(NAME renderer_preference_fallback COMMAND renderer_preference_fallback_test)
+
+add_executable(surface_contract_test tests/surface_contract_test.cpp)
+target_link_libraries(surface_contract_test PRIVATE runtime)
+target_compile_options(surface_contract_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME surface_contract_test COMMAND surface_contract_test)

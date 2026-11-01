@@ -20,6 +20,10 @@ PresenterError HostOnSurfaceDestroyed(Host& host) {
   // Surface-only teardown: the tree handle is untouched (RULE-RUNTIME-004).
   // destroy_host() is NOT used here — it releases the tree for full host
   // teardown, while a surface destroy must preserve it for recreate.
+  // FR-RUNTIME-011 T2: swapchain-before-window ordering rides
+  // OnSurfaceDestroyed (which tears down the swapchain, drops currency, and
+  // releases every retained seam handle before the window is freed); the
+  // host tree (tree_nodes) is never re-instantiated here.
   host.surface_live = false;
   return OnSurfaceDestroyed();
 }
