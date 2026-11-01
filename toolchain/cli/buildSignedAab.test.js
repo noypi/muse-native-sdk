@@ -151,4 +151,117 @@ describe('T2 — signing inputs missing throw unsigned-artifact', () => {
     assert.match(message, /^unsigned-artifact: \S.+/);
     assert.doesNotMatch(message, /fake-secret|token|BEGIN PRIVATE KEY/);
   });
+
+  it('sentinel alias never appears in any thrown unsigned-artifact message', () => {
+    const { buildSignedAab } = loadImpl();
+    // Obvious dummy sentinel per header convention — never real key material.
+    const SENTINEL = 'S3CR3T-ALIAS-PROBE-6F3A9C-dummy-not-real';
+    const messages = [];
+    function collectThrow(fn, label) {
+      let message = '';
+      try {
+        fn();
+      } catch (err) {
+        message = String(err && err.message ? err.message : err);
+      }
+      assert.ok(message.length > 0, `${label} must throw (red if it returns)`);
+      assert.match(message, /^unsigned-artifact: \S.+/, `${label} must carry unsigned-artifact reason`);
+      assert.equal(
+        message.includes(SENTINEL),
+        false,
+        `${label} must not echo the sentinel alias`
+      );
+      messages.push(message);
+    }
+
+    // (a) missing keyAlias — no alias supplied; sentinel must still be absent.
+    {
+      const root = mkTmp('aab-sentinel-a-');
+      const projectDir = writeProject(path.join(root, 'app'));
+      collectThrow(() => buildSignedAab({ projectDir }), 'missing keyAlias');
+    }
+    // (b) empty keyAlias.
+    {
+      const root = mkTmp('aab-sentinel-b-');
+      const projectDir = writeProject(path.join(root, 'app'));
+      collectThrow(() => buildSignedAab({ projectDir, keyAlias: '' }), 'empty keyAlias');
+    }
+    // (c1) missing projectDir string (undefined) with sentinel alias supplied.
+    {
+      collectThrow(() => buildSignedAab({ keyAlias: SENTINEL }), 'missing projectDir');
+    }
+    // (c2) project-not-found via os.tmpdir()-joined absent dir.
+    {
+      const root = mkTmp('aab-sentinel-c-');
+      collectThrow(
+        () => buildSignedAab({ projectDir: path.join(root, 'absent-not-real'), keyAlias: SENTINEL }),
+        'project not found'
+      );
+    }
+    // (c3) projectDir is not a directory (buildSignedAab.js:130).
+    {
+      const root = mkTmp('aab-sentinel-c3-');
+      const notDir = path.join(root, 'not-a-dir-not-real');
+      fs.writeFileSync(notDir, 'file-not-dir-not-real\n');
+      collectThrow(
+        () => buildSignedAab({ projectDir: notDir, keyAlias: SENTINEL }),
+        'projectDir is not a directory'
+      );
+    }
+    // (c4) cannot read project (buildSignedAab.js:138) via fault injection.
+    {
+      const root = mkTmp('aab-sentinel-c4-');
+      const projectDir = writeProject(path.join(root, 'app'));
+      const origReaddir = fs.readdirSync;
+      const fault = Object.assign(new Error('fault-not-real'), { code: 'EIO-FAULT-NOT-REAL' });
+      fs.readdirSync = () => { throw fault; };
+      try {
+        collectThrow(() => buildSignedAab({ projectDir, keyAlias: SENTINEL }), 'cannot read project');
+      } finally {
+        fs.readdirSync = origReaddir;
+      }
+    }
+    // (d) tampered-inputs fixture (.tampered sidecar).
+    {
+      const root = mkTmp('aab-sentinel-d-');
+      const projectDir = writeProject(path.join(root, 'app'));
+      fs.writeFileSync(path.join(projectDir, 'muse-native.yaml.tampered'), 'tampered-not-real\n');
+      collectThrow(() => buildSignedAab({ projectDir, keyAlias: SENTINEL }), 'tampered inputs');
+    }
+    // (e) missing input (remove one of the three required files).
+    {
+      const root = mkTmp('aab-sentinel-e-');
+      const projectDir = writeProject(path.join(root, 'app'));
+      fs.rmSync(path.join(projectDir, 'bundle.stub.js'));
+      collectThrow(() => buildSignedAab({ projectDir, keyAlias: SENTINEL }), 'missing input');
+    }
+    // (e2) cannot read input (buildSignedAab.js:160) via fault injection on read.
+    {
+      const root = mkTmp('aab-sentinel-e2-');
+      const projectDir = writeProject(path.join(root, 'app'));
+      const origRead = fs.readFileSync;
+      const fault = Object.assign(new Error('fault-not-real'), { code: 'EIO-FAULT-NOT-REAL' });
+      fs.readFileSync = () => { throw fault; };
+      try {
+        collectThrow(() => buildSignedAab({ projectDir, keyAlias: SENTINEL }), 'cannot read input');
+      } finally {
+        fs.readFileSync = origRead;
+      }
+    }
+    // (f) signing-failure path via fault injection on write.
+    {
+      const root = mkTmp('aab-sentinel-f-');
+      const projectDir = writeProject(path.join(root, 'app'));
+      const origWrite = fs.writeFileSync;
+      const fault = Object.assign(new Error('fault-not-real'), { code: 'EIO-FAULT-NOT-REAL' });
+      fs.writeFileSync = () => { throw fault; };
+      try {
+        collectThrow(() => buildSignedAab({ projectDir, keyAlias: SENTINEL }), 'signing failure');
+      } finally {
+        fs.writeFileSync = origWrite;
+      }
+    }
+
+    assert.equal(messages.length, 10, 'sentinel-alias loop covers missing/empty keyAlias, missing projectDir, project-not-found, not-a-directory (:130), cannot-read-project (:138), tampered inputs, missing input, cannot-read-input (:160), signing failure');
+  });
 });
