@@ -12,7 +12,7 @@
 # (12/12); this script is the live-device complement.
 #
 # Usage (run from the _run checkout root):
-#   SERIAL=127.0.0.1:6569 bash t6-acceptance/drive_t6.sh
+#   SERIAL=127.0.0.1:6569 bash acceptance/t6/drive_t6.sh
 # Exit 0 only when every automatable device check holds; prints a per-check
 # PASS/FAIL/UNVERIFIED table either way for the test report.
 set -u

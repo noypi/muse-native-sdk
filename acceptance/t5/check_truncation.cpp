@@ -4,7 +4,7 @@
 // capacity shortfall must be a typed denial (ok == false, out.size == 0),
 // never ok == true with nodes missing.
 // Usage (from the _run checkout root):
-//   g++ -std=c++17 t5-acceptance/check_truncation.cpp \
+//   g++ -std=c++17 acceptance/t5/check_truncation.cpp \
 //       engine/platform-views/src/semantics.cpp \
 //       -I engine/platform-views/include -o /tmp/check_truncation && /tmp/check_truncation
 // Exit 0 only if every assertion below holds; prints PASS/FAIL per check.
