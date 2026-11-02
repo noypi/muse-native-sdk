@@ -194,6 +194,17 @@ class TestSkiaDynamicInitGate(unittest.TestCase):
                     ),
                 )
 
+    def test_truthy_non_true_extended_denied(self):
+        """Lock: True-adjacent values ('True',1.0,[True],2) never admit."""
+        for wrong in ("True", "TRUE", "1", 1.0, 2, [True], {"v": True}):
+            with self.subTest(value=wrong):
+                self.assertIn(
+                    CHECK_DYNAMIC_INIT,
+                    self.checks_for(
+                        good_entry(SKIA_NAME, dynamic_init_clean=wrong)
+                    ),
+                )
+
     def test_only_dynamic_init_fails_in_isolation(self):
         """A False verdict fails exactly one check (no cascading)."""
         entry = good_entry(SKIA_NAME, dynamic_init_clean=False)

@@ -216,11 +216,64 @@ class TestSkiaSizeDeltaGate(unittest.TestCase):
             self.checks_for(good_entry(SKIA_NAME, size_delta_bytes=True)),
         )
 
+    def test_float_value_denied(self):
+        """A float (47.68, 120.0, nan, inf) is not an int measurement."""
+        for wrong in (47.68, 120.0, float("nan"), float("inf")):
+            with self.subTest(value=wrong):
+                self.assertIn(
+                    CHECK_SIZE_DELTA,
+                    self.checks_for(
+                        good_entry(SKIA_NAME, size_delta_bytes=wrong)
+                    ),
+                )
+
     def test_only_size_delta_fails_in_isolation(self):
         """A missing value fails exactly one check (no cascading)."""
         entry = good_entry(SKIA_NAME)
         del entry["size_delta_bytes"]
         self.assertEqual(find_failures([entry]), [(SKIA_NAME, CHECK_SIZE_DELTA)])
+
+
+class TestSkiaDuplicateRowFailClosed(unittest.TestCase):
+    """Two Skia Graphite rows must fail admission (order-dependent helpers)."""
+
+    def test_duplicate_skia_rows_deny(self):
+        """A duplicated Skia row denies fail-closed naming the artifact."""
+        entries = [good_entry(SKIA_NAME), good_entry(SKIA_NAME)]
+        failures = find_failures(entries)
+        self.assertTrue(
+            failures,
+            "duplicate Skia Graphite rows admitted silently — "
+            "admission must reject duplicate names fail-closed",
+        )
+        names = [name for name, _ in failures]
+        self.assertIn(SKIA_NAME, names)
+
+
+class TestSkiaSizeDeltaLaneEvidence(unittest.TestCase):
+    """Lane-output binding: manifest value must equal lane transcript."""
+
+    EVIDENCE = os.path.join(
+        REPO_ROOT, "workflow.local", "runs", "deps-skia-admission",
+        "lane-evidence", "size-delta.stdout",
+    )
+
+    def test_manifest_matches_lane_evidence(self):
+        """Committed size_delta.sh stdout equals the manifest value."""
+        try:
+            with open(self.EVIDENCE, "r", encoding="utf-8") as handle:
+                transcript = handle.read()
+        except OSError:
+            self.skipTest(
+                "no committed lane evidence yet — tester/coder must commit "
+                "size_delta.sh stdout at T10/T11 close-out (EXTERNAL)"
+            )
+        row = find_skia(load_manifest())
+        self.assertIsNotNone(row, "manifest missing Skia Graphite row")
+        self.assertIn(
+            "size_delta_bytes=%d" % row.get("size_delta_bytes", -1),
+            transcript,
+        )
 
 
 if __name__ == "__main__":
