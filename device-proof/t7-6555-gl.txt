@@ -1,0 +1,12 @@
+11-02 08:17:08.908  3732  3732 I RenderThread: type=1400 audit(0.0:487): avc:  denied  { read } for  name="libandroidemu.so" dev="vda4" ino=4447 scontext=u:r:untrusted_app:s0:c122,c256,c512,c768 tcontext=u:object_r:vendor_file:s0 tclass=file permissive=1 app=com.muse.host
+11-02 08:17:08.908  3732  3732 I RenderThread: type=1400 audit(0.0:488): avc:  denied  { open } for  path="/system/vendor/lib64/libandroidemu.so" dev="vda4" ino=4447 scontext=u:r:untrusted_app:s0:c122,c256,c512,c768 tcontext=u:object_r:vendor_file:s0 tclass=file permissive=1 app=com.muse.host
+11-02 08:17:08.908  3732  3732 I RenderThread: type=1400 audit(0.0:489): avc:  denied  { getattr } for  path="/system/vendor/lib64/libandroidemu.so" dev="vda4" ino=4447 scontext=u:r:untrusted_app:s0:c122,c256,c512,c768 tcontext=u:object_r:vendor_file:s0 tclass=file permissive=1 app=com.muse.host
+11-02 08:17:08.908  3732  3732 I RenderThread: type=1400 audit(0.0:490): avc:  denied  { map } for  path="/system/vendor/lib64/libandroidemu.so" dev="vda4" ino=4447 scontext=u:r:untrusted_app:s0:c122,c256,c512,c768 tcontext=u:object_r:vendor_file:s0 tclass=file permissive=1 app=com.muse.host
+11-02 08:17:08.908  3732  3732 I RenderThread: type=1400 audit(0.0:491): avc:  denied  { execute } for  path="/system/vendor/lib64/libdrm.so" dev="vda4" ino=4468 scontext=u:r:untrusted_app:s0:c122,c256,c512,c768 tcontext=u:object_r:vendor_file:s0 tclass=file permissive=1 app=com.muse.host
+11-02 08:17:08.925  3732  3732 W HWUI    : Unknown dataspace 0
+11-02 08:17:08.931  3732  3745 I EGL_emulation: Opening libGLESv1_CM_emulation.so
+11-02 08:17:08.932  3732  3745 I EGL_emulation: Opening libGLESv2_emulation.so
+11-02 08:17:08.936  3732  3745 W HWUI    : Failed to choose config with EGL_SWAP_BEHAVIOR_PRESERVED, retrying without...
+11-02 08:17:08.937  3732  3745 W HWUI    : Failed to initialize 101010-2 format, error = EGL_SUCCESS
+11-02 08:17:08.959  3732  3745 I Gralloc4: mapper 4.x is not supported
+11-02 08:17:08.959  3732  3745 W Gralloc3: mapper 3.x is not supported

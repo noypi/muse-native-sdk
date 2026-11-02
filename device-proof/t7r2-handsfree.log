@@ -1,0 +1,40 @@
+▶ T3 — canonical ability names (AC-SAMPLE-038)
+  ✔ phoneAbilities exports exactly the five demo verbs (1.839424ms)
+✔ T3 — canonical ability names (AC-SAMPLE-038) (3.407713ms)
+▶ T3 — five utterances route with calling turnId (AC-SAMPLE-038)
+  ✔ "open profile settings" routes to profile.open-settings stamped with the calling turnId (1.117093ms)
+  ✔ "open gallery" routes to gallery.open stamped with the calling turnId (0.259053ms)
+  ✔ "select this gallery" routes to gallery.select stamped with the calling turnId (0.255002ms)
+  ✔ "select this image" routes to gallery.image.select stamped with the calling turnId (0.383656ms)
+  ✔ "close the app" routes to app.close stamped with the calling turnId (0.208905ms)
+  ✔ each routing stamps its own calling turnId, not a fixed one (0.357534ms)
+✔ T3 — five utterances route with calling turnId (AC-SAMPLE-038) (3.410576ms)
+▶ T3 — every voice ability has a non-null touch equivalent (AC-SAMPLE-038)
+  ✔ profile.open-settings has a { screen, action } touch equivalent (0.474104ms)
+  ✔ gallery.open has a { screen, action } touch equivalent (0.144857ms)
+  ✔ gallery.select has a { screen, action } touch equivalent (0.968813ms)
+  ✔ gallery.image.select has a { screen, action } touch equivalent (0.239846ms)
+  ✔ app.close has a { screen, action } touch equivalent (0.113986ms)
+  ✔ reason-fallback also carries a touch equivalent (never a dead end) (0.239567ms)
+✔ T3 — every voice ability has a non-null touch equivalent (AC-SAMPLE-038) (4.4104ms)
+▶ T3 — unknown utterances resolve to reason-fallback, never silent (AC-SAMPLE-038)
+  ✔ gibberish falls through to reason-fallback with the calling turnId (0.216518ms)
+  ✔ empty/blank utterance falls through to reason-fallback, never silent (0.139969ms)
+  ✔ every routeUtterance resolves to a defined shape (no undefined, no throw) (0.243478ms)
+✔ T3 — unknown utterances resolve to reason-fallback, never silent (AC-SAMPLE-038) (0.76368ms)
+▶ T3 — ungranted ability denies with capability-denied and performs no action (AC-SAMPLE-038)
+  ✔ restricted-capability handle throws capability-denied via real merged modules and invoke never executes (0.73665ms)
+  ✔ router maps the thrown denial to { ok: false, code: capability-denied, ability, turnId } (0.192771ms)
+✔ T3 — ungranted ability denies with capability-denied and performs no action (AC-SAMPLE-038) (1.057515ms)
+▶ T4 — verifyHandsFreeFlow voice-only 5-step flow + denial (TC-SAMPLE-038)
+  ✔ flows through all five abilities in order with echo + touchEquivalent, denial named, verdict pass (0.580757ms)
+  ✔ flow denial names the code and never performs a silent action (0.35495ms)
+✔ T4 — verifyHandsFreeFlow voice-only 5-step flow + denial (TC-SAMPLE-038) (1.060728ms)
+ℹ tests 20
+ℹ suites 6
+ℹ pass 20
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 142.575596

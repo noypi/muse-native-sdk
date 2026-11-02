@@ -1,0 +1,4 @@
+--------- beginning of main
+11-02 08:17:08.923  3732  3732 I muse-host: nativeLoadTree: bytes=92822 rows=89 -> handle acquired
+11-02 08:17:08.923  3732  3732 I muse-host: nativeProvenance: engine-sha=9769755 gallery_present-sha=7fa3ad732049847d8f6fedf573faeb01b0a0edb2
+11-02 08:17:08.923  3732  3732 I GalleryPage: gallery-rows=89

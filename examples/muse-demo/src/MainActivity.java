@@ -2,6 +2,9 @@ package com.muse.host;
 
 import android.app.Activity;
 import android.os.Bundle;
+import android.util.Log;
+import android.view.Choreographer;
+import android.view.MotionEvent;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
 import java.io.ByteArrayOutputStream;
@@ -31,11 +34,100 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     /** Render one frame for the given engine handle; no-op when handle is 0. */
     private static native void nativeRenderFrame(long handle);
 
+    /** Attach the ANativeWindow surface for the given engine handle. */
+    private static native void nativeAttachSurface(long handle, android.view.Surface surface);
+
+    /** Release the attached surface without destroying the handle. */
+    private static native void nativeDetachSurface(long handle);
+
+    /**
+     * Dispatch a raw touch event to the native tap chain. Forwards raw
+     * MotionEvent fields only; the node resolves natively from laid-out
+     * bounds. Returns the claimed node id, or -1 when nothing fired.
+     */
+    private static native int nativeDispatchTouch(
+            long handle, int action, float x, float y, int pointerId, long timestampMs);
+
+    private static final String TAG = "muse-host";
+
+    /** True while the surface lives; gates the Choreographer render loop. */
+    private volatile boolean surfaceLive = false;
+
+    /** True between onPause and onResume; gates loop restart while hidden. */
+    private volatile boolean paused = false;
+
+    /** First-frame-present log fires at most once per process. */
+    private boolean firstFrameLogged = false;
+
+    /** Continuous render loop: one native frame per vsync while surface lives. */
+    private final Choreographer.FrameCallback frameCallback = new Choreographer.FrameCallback() {
+        @Override
+        public void doFrame(long frameTimeNanos) {
+            if (!surfaceLive || paused) {
+                return;
+            }
+            Choreographer.getInstance().postFrameCallback(frameCallback);
+            if (engineHandle == 0) {
+                return;
+            }
+            try {
+                nativeRenderFrame(engineHandle);
+            } catch (Throwable ignored) {
+                // Fail-closed: a bad frame never kills the loop.
+                return;
+            }
+            if (!firstFrameLogged) {
+                firstFrameLogged = true;
+                Log.i(TAG, "first-frame-present: engine frame rendered");
+            }
+        }
+    };
+
+    private void startRenderLoop() {
+        if (paused || surfaceLive) {
+            return;
+        }
+        surfaceLive = true;
+        Choreographer.getInstance().postFrameCallback(frameCallback);
+    }
+
+    private void stopRenderLoop() {
+        surfaceLive = false;
+        try {
+            Choreographer.getInstance().removeFrameCallback(frameCallback);
+        } catch (Throwable ignored) {
+        }
+    }
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         SurfaceView surfaceView = new SurfaceView(this);
         surfaceView.getHolder().addCallback(this);
+        surfaceView.setOnTouchListener((v, event) -> {
+            if (engineHandle == 0) {
+                return false;
+            }
+            int index = event.getActionIndex();
+            try {
+                float x = event.getX(index);
+                float y = event.getY(index);
+                if (!Float.isFinite(x) || !Float.isFinite(y)) {
+                    // Fail-closed: non-finite touch never reaches native.
+                    return true;
+                }
+                nativeDispatchTouch(
+                        engineHandle,
+                        event.getActionMasked(),
+                        x,
+                        y,
+                        event.getPointerId(index),
+                        event.getEventTime());
+            } catch (Throwable ignored) {
+                // Fail-closed: touch never crashes the host.
+            }
+            return true;
+        });
         setContentView(surfaceView);
         byte[] treeBytes = readTreeAsset();
         if (treeBytes != null) {
@@ -44,7 +136,36 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     }
 
     @Override
+    protected void onPause() {
+        paused = true;
+        try {
+            Choreographer.getInstance().removeFrameCallback(frameCallback);
+        } catch (Throwable ignored) {
+        }
+        super.onPause();
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        paused = false;
+        // Restart only when the surface is still attached (detach-safe).
+        if (surfaceLive) {
+            try {
+                Choreographer.getInstance().removeFrameCallback(frameCallback);
+            } catch (Throwable ignored) {
+            }
+            Choreographer.getInstance().postFrameCallback(frameCallback);
+        }
+    }
+
+    @Override
     protected void onDestroy() {
+        stopRenderLoop();
+        try {
+            nativeDetachSurface(engineHandle);
+        } catch (Throwable ignored) {
+        }
         engineHandle = 0;
         super.onDestroy();
     }
@@ -69,18 +190,29 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
 
     @Override
     public void surfaceCreated(SurfaceHolder holder) {
-        // Attach the render surface: drive one frame through the bridge.
-        nativeRenderFrame(engineHandle);
+        // Attach the render surface, then run the continuous loop.
+        try {
+            nativeAttachSurface(engineHandle, holder.getSurface());
+        } catch (Throwable ignored) {
+        }
+        startRenderLoop();
     }
 
     @Override
     public void surfaceChanged(SurfaceHolder holder, int format, int width, int height) {
-        nativeRenderFrame(engineHandle);
+        try {
+            nativeAttachSurface(engineHandle, holder.getSurface());
+        } catch (Throwable ignored) {
+        }
+        startRenderLoop();
     }
 
     @Override
     public void surfaceDestroyed(SurfaceHolder holder) {
-        // No-op: surface release is owned by the framework; engine state
-        // is keyed by engineHandle only.
+        stopRenderLoop();
+        try {
+            nativeDetachSurface(engineHandle);
+        } catch (Throwable ignored) {
+        }
     }
 }
