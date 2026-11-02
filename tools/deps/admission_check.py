@@ -128,7 +128,7 @@ def find_failures(entries):
         if isinstance(entry, dict):
             name = entry.get("name")
             if isinstance(name, str) and name.strip():
-                seen[name] = seen.get(name, 0) + 1
+                seen[name.strip()] = seen.get(name.strip(), 0) + 1
     for entry in entries:
         label = _label(entry)
         if _fail_size_delta(entry):
@@ -147,7 +147,7 @@ def find_failures(entries):
             isinstance(entry, dict)
             and isinstance(entry.get("name"), str)
             and entry.get("name").strip()
-            and seen.get(entry.get("name"), 0) > 1
+            and seen.get(entry.get("name").strip(), 0) > 1
         ):
             failures.append((label, CHECK_DUPLICATE_ROW))
     return failures

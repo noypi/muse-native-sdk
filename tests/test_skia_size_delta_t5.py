@@ -249,6 +249,18 @@ class TestSkiaDuplicateRowFailClosed(unittest.TestCase):
         names = [name for name, _ in failures]
         self.assertIn(SKIA_NAME, names)
 
+    def test_whitespace_variant_duplicate_denies(self):
+        """A trailing-space variant is still a duplicate (canonicalization)."""
+        entries = [good_entry(SKIA_NAME), good_entry(SKIA_NAME + " ")]
+        failures = find_failures(entries)
+        checks = [c for _, c in failures]
+        self.assertIn(
+            "duplicate-row",
+            checks,
+            "whitespace-variant duplicate rows admitted silently — "
+            "admission must key duplicates on the stripped name",
+        )
+
 
 class TestSkiaSizeDeltaLaneEvidence(unittest.TestCase):
     """Lane-output binding: manifest value must equal lane transcript."""
