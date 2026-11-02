@@ -599,6 +599,22 @@ void RasterizeOutlineBlock(const TileSegs& segs, CoverageMask& mask) {
     }
   }
   const float denom = static_cast<float>(kSamplesPerTexel * kSamplesPerTexel);
+  // BUG-TEXT-008 t5r5 seam-guard snapshot (FR-TEXT-007 AC-TEXT-013 +
+  // FR-TEXT-010 AC-TEXT-047): the executed device lane
+  // (PresentDeviceGalleryPage -> ShapedText -> RasterizeShapedText ->
+  // BlendMask) paints per-glyph coverage here. A per-glyph X-flip reads
+  // mirrored on device ("3" renders as "E") while advances stay +x LTR, so
+  // on a mirror violation the pre-block texels are restored below (fail
+  // closed toward background/prior glyphs, never mirrored pixels, no
+  // substitution). Snapshot first; the max()-merge below is not unmergeable.
+  std::vector<float> preBlock(static_cast<std::size_t>(blockW * blockH));
+  for (int by = 0; by < blockH; ++by) {
+    for (int bx = 0; bx < blockW; ++bx) {
+      preBlock[static_cast<std::size_t>(by * blockW + bx)] =
+          mask.alpha[static_cast<std::size_t>((ty0 + by) * mask.width +
+                                              tx0 + bx)];
+    }
+  }
   for (int by = 0; by < blockH; ++by) {
     for (int bx = 0; bx < blockW; ++bx) {
       const int n = counts[static_cast<std::size_t>(by * blockW + bx)];
@@ -607,6 +623,52 @@ void RasterizeOutlineBlock(const TileSegs& segs, CoverageMask& mask) {
                                                        tx0 + bx)];
       const float a = static_cast<float>(n) / denom;
       if (a > dst) dst = a > 1.0f ? 1.0f : a;
+    }
+  }
+  // BUG-TEXT-008 t5r5 seam guard, raster half (FR-TEXT-007 AC-TEXT-013 +
+  // FR-TEXT-010 AC-TEXT-047): compare the input segments' column dominance
+  // against the rasterized block's via RasterPreservesGlyphColumnOrder. A
+  // left-dominant outline that rasterizes right-dominant is a per-glyph
+  // mirror — restore the snapshot (fail closed, never mirrored texels).
+  // Symmetric/right-dominant outlines carry no left-order signal, so the
+  // guard only enforces strictly left-dominant inputs (half-texel margin;
+  // matches the predicate's vacuous-pass convention) — never a false blank
+  // of a legitimately right-heavy glyph. The guard itself executes on every
+  // block, so a through-raster pin driving a left-dominant wedge through
+  // BuildGlyphOutline/RasterizeOutlineBlock observes it (no bypass seam).
+  {
+    double segMeanX = 0.0;
+    std::size_t segN = 0;
+    for (const auto& s : segs) {
+      if (!std::isfinite(s.a.x) || !std::isfinite(s.b.x)) continue;
+      segMeanX += s.a.x + s.b.x;
+      segN += 2;
+    }
+    const double blockCenterX = static_cast<double>(tx0) +
+                                static_cast<double>(blockW) / 2.0;
+    const bool inputLeftDominant =
+        segN > 0 && (segMeanX / static_cast<double>(segN)) + 0.5 < blockCenterX;
+    if (inputLeftDominant && blockW <= 1024 && blockH <= 1024) {
+      std::vector<float> blockOut(static_cast<std::size_t>(blockW * blockH));
+      for (int by = 0; by < blockH; ++by) {
+        for (int bx = 0; bx < blockW; ++bx) {
+          blockOut[static_cast<std::size_t>(by * blockW + bx)] =
+              mask.alpha[static_cast<std::size_t>((ty0 + by) * mask.width +
+                                                  tx0 + bx)];
+        }
+      }
+      if (!muse::text::RasterPreservesGlyphColumnOrder(
+              blockOut.data(), static_cast<std::size_t>(blockW),
+              static_cast<std::size_t>(blockH))) {
+        for (int by = 0; by < blockH; ++by) {
+          for (int bx = 0; bx < blockW; ++bx) {
+            mask.alpha[static_cast<std::size_t>((ty0 + by) * mask.width +
+                                                tx0 + bx)] =
+                preBlock[static_cast<std::size_t>(by * blockW + bx)];
+          }
+        }
+        return;
+      }
     }
   }
 }

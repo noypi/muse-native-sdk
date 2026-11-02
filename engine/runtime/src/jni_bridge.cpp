@@ -665,6 +665,26 @@ class WindowSwapchain : public ::runtime::Swapchain {
     const unsigned sr = src & 0xFFu;
     const unsigned sg = (src >> 8) & 0xFFu;
     const unsigned sb = (src >> 16) & 0xFFu;
+    // BUG-TEXT-008 t5r5 seam-guard snapshot (FR-TEXT-007 AC-TEXT-013 +
+    // FR-TEXT-010 AC-TEXT-047): the executed device lane ends here
+    // (PresentDeviceGalleryPage -> ShapedText -> RasterizeShapedText ->
+    // BlendMask). A per-glyph X-flip in the proportional mask->destination
+    // mapping lands ink on the wrong column while advances stay +x LTR, so
+    // on a mirror violation the pre-blend pixels are restored below (fail
+    // closed toward background, never mirrored pixels, no whole-bounds
+    // fill). Snapshot first; src-over blending is not unmergeable.
+    const int rectW = x1 - x0;
+    const int rectH = y1 - y0;
+    std::vector<std::uint32_t> preBlend(static_cast<std::size_t>(rectW) *
+                                        static_cast<std::size_t>(rectH));
+    for (int y = y0; y < y1; ++y) {
+      for (int x = x0; x < x1; ++x) {
+        preBlend[static_cast<std::size_t>(y - y0) *
+                     static_cast<std::size_t>(rectW) +
+                 static_cast<std::size_t>(x - x0)] =
+            bits_[y * stride_ + x];
+      }
+    }
     for (int y = y0; y < y1; ++y) {
       const int my = static_cast<int>(
           (static_cast<double>(y - y0) * mask.height) / (y1 - y0));
@@ -692,6 +712,76 @@ class WindowSwapchain : public ::runtime::Swapchain {
             (static_cast<std::uint32_t>(g > 255u ? 255u : g) << 8) |
             (static_cast<std::uint32_t>(b > 255u ? 255u : b) << 16) |
             (static_cast<std::uint32_t>(0xFF) << 24);
+      }
+    }
+    // BUG-TEXT-008 t5r5 seam guard, blend half (FR-TEXT-007 AC-TEXT-013 +
+    // FR-TEXT-010 AC-TEXT-047): resample the blended rect back through the
+    // proportional mapping into mask geometry and compare mask vs posted
+    // column dominance via BlendPreservesMaskColumnOrder. The guard reads
+    // posted luminance, which inverts under dark ink on a light card, so
+    // the posted buffer encodes per-pixel ink-ness (captured pre/post
+    // |post-pre| grey levels from this real blit — never synthesized)
+    // instead of raw framebuffer pixels: dominance direction is then
+    // polarity-free while still comparing the real stage's input vs output.
+    // A wedge whose ink lands on the wrong column is a per-glyph mirror —
+    // restore the snapshot (fail closed, never mirrored pixels). The guard
+    // executes on every blended mask, so a through-blit pin driving a
+    // left-dominant wedge through BlendMask observes it (no bypass seam).
+    // Skipped only where the guard itself refuses input (empty/oversize, or
+    // zero ink deposited so there is no placement to check), matching its
+    // fail-closed contract — never a silent pass over an unchecked lane.
+    {
+      const int mw = mask.width;
+      const int mh = mask.height;
+      const std::size_t umw = static_cast<std::size_t>(mw > 0 ? mw : 0);
+      const std::size_t umh = static_cast<std::size_t>(mh > 0 ? mh : 0);
+      if (mw > 0 && mh > 0 && umw <= 1024 && umh <= 1024 && umw <= 4096 &&
+          mask.alpha.size() >= umw * umh) {
+        std::vector<std::uint32_t> posted(umw * umh);
+        unsigned long long inkTotal = 0;
+        for (int my = 0; my < mh; ++my) {
+          const int y = y0 + (my * rectH) / mh;
+          for (int mx = 0; mx < mw; ++mx) {
+            const int x = x0 + (mx * rectW) / mw;
+            const std::uint32_t before =
+                preBlend[static_cast<std::size_t>(y - y0) *
+                             static_cast<std::size_t>(rectW) +
+                         static_cast<std::size_t>(x - x0)];
+            const std::uint32_t after = bits_[y * stride_ + x];
+            const unsigned db = (after & 0xFFu) > (before & 0xFFu)
+                                    ? (after & 0xFFu) - (before & 0xFFu)
+                                    : (before & 0xFFu) - (after & 0xFFu);
+            const unsigned dg = ((after >> 8) & 0xFFu) > ((before >> 8) & 0xFFu)
+                                    ? ((after >> 8) & 0xFFu) -
+                                          ((before >> 8) & 0xFFu)
+                                    : ((before >> 8) & 0xFFu) -
+                                          ((after >> 8) & 0xFFu);
+            const unsigned dr =
+                ((after >> 16) & 0xFFu) > ((before >> 16) & 0xFFu)
+                    ? ((after >> 16) & 0xFFu) - ((before >> 16) & 0xFFu)
+                    : ((before >> 16) & 0xFFu) - ((after >> 16) & 0xFFu);
+            const unsigned v = (db + dg + dr) / 3u;
+            inkTotal += v;
+            posted[static_cast<std::size_t>(my) * umw +
+                   static_cast<std::size_t>(mx)] =
+                static_cast<std::uint32_t>(v > 255u ? 255u : v) |
+                (static_cast<std::uint32_t>(v > 255u ? 255u : v) << 8) |
+                (static_cast<std::uint32_t>(v > 255u ? 255u : v) << 16) |
+                (static_cast<std::uint32_t>(0xFF) << 24);
+          }
+        }
+        if (inkTotal > 0 &&
+            !muse::text::BlendPreservesMaskColumnOrder(
+                mask.alpha.data(), umw, umh, posted.data(), mw, mw)) {
+          for (int y = y0; y < y1; ++y) {
+            for (int x = x0; x < x1; ++x) {
+              bits_[y * stride_ + x] =
+                  preBlend[static_cast<std::size_t>(y - y0) *
+                               static_cast<std::size_t>(rectW) +
+                           static_cast<std::size_t>(x - x0)];
+            }
+          }
+        }
       }
     }
   }
