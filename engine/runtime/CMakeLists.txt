@@ -221,7 +221,6 @@ if(DEFINED ANDROID_ABI AND NOT TARGET Runtime)
     src/text_field.cpp
     src/gallery_present.cpp
     src/presenter.cpp
-    src/text_field.cpp
     ../graphics/vector/slug_msdf.cc
     ../text/src/shaper.cpp
     ../text/src/layout_cache.cpp
