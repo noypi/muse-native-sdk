@@ -269,14 +269,46 @@ if(DEFINED ANDROID_ABI AND NOT TARGET Runtime)
       target_link_libraries(Runtime PRIVATE ${MUSE_LOG_LIB})
     endif()
   endif()
-  # FR-DEPS-008 D3: same real HarfBuzz/ICU/FreeType stack as the static
-  # `runtime` target above (locked-mirror resolution only on this lane —
-  # never host paths). Empty MUSE_TEXT_D3_LIBS links nothing.
-  if(MUSE_TEXT_D3_LIBS)
+  # FR-DEPS-008/009 T4 (vendor-d3): the Android `Runtime` SHARED target
+  # links the vendored D3 static objects from the T3 sub-builds
+  # (engine/text in-tree static harfbuzz + freetype + icu archives under
+  # MUSE_TEXT_D3_ROOT), never the shared find_library mirror above.
+  # Static-only posture: exact-path `.a` archive resolution (EXISTS, no
+  # find_library search), so no system shared lib can slip onto this lane
+  # regardless of the NDK toolchain's find-root modes. A lane with no D3
+  # archives links nothing (reference backend in shaper.cpp); configure
+  # never fails here. Host `runtime` lane untouched (its own block above
+  # is unchanged).
+  set(_muse_runtime_d3_static_names
+    harfbuzz freetype icuuc icudata icui18n)
+  set(MUSE_RUNTIME_D3_STATIC_LIBS "")
+  foreach(_muse_d3_static IN LISTS _muse_runtime_d3_static_names)
+    set(_muse_d3_static_archive "${MUSE_TEXT_D3_ROOT}/lib/lib${_muse_d3_static}.a")
+    if(NOT EXISTS "${_muse_d3_static_archive}")
+      set(_muse_d3_static_archive "${MUSE_TEXT_D3_ROOT}/lib${_muse_d3_static}.a")
+    endif()
+    if(EXISTS "${_muse_d3_static_archive}")
+      list(APPEND MUSE_RUNTIME_D3_STATIC_LIBS "${_muse_d3_static_archive}")
+    endif()
+  endforeach()
+  if(MUSE_RUNTIME_D3_STATIC_LIBS)
+    # T7: whole-archive so the vendored D3 objects (HarfBuzz/FreeType/ICU)
+    # define their entry points in the shared link. Archive-member extraction
+    # alone pulls nothing: shaper.cpp references D3 only through weak probes
+    # (hb_shape/FT_Init_FreeType/u_getVersion, null on hermetic builds), and
+    # weak-undefined refs do not extract archive members — leaving the probes
+    # weak-undefined (`w` in nm -D) instead of defined (`T`). Whole-archive
+    # pins the DT entries and the nm-visible symbols the proof checks.
     target_link_libraries(Runtime PRIVATE
-      "-Wl,--push-state,--no-as-needed"
-      ${MUSE_TEXT_D3_LIBS}
-      "-Wl,--pop-state")
+      "-Wl,--push-state,--whole-archive"
+      ${MUSE_RUNTIME_D3_STATIC_LIBS}
+      "-Wl,--no-whole-archive,--pop-state")
+  else()
+    # vendor-d3 review follow-up (MINOR): message-only note so a lane with
+    # no D3 archives (misconfigured MUSE_TEXT_D3_ROOT mirror) is
+    # distinguishable from the no-D3 lane at configure time. No behavior
+    # change: the reference backend in shaper.cpp still applies.
+    message(STATUS "MUSE D3: no vendored static archives under '${MUSE_TEXT_D3_ROOT}' (MUSE_RUNTIME_D3_STATIC_LIBS empty); linking reference backend")
   endif()
 endif()
 

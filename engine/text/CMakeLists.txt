@@ -5,6 +5,185 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+# T3 (vendor-d3, FR-DEPS-008 AC-DEPS-019): in-tree static D3 sub-builds
+# (HarfBuzz 15.0.0 + FreeType 2.15.0 + ICU 79.1) for the host lane and the
+# Android NDK lane. Sources resolve via $MUSE_NATIVE_THIRD_PARTY_DIR (sibling
+# of the repo checkout, outside git); pins live in
+# tools/deps/third_party_pins.json and are enforced by
+# toolchain/cli/thirdPartyEnv.js. The vendored trees are consumed read-only
+# and every sub-build lands out-of-source under CMAKE_BINARY_DIR — never
+# in-source, never into the repo. There is intentionally no
+# system-libs lookup here: hermetic static objects only.
+option(MUSE_TEXT_WITH_D3 "Build muse_text against in-tree static D3 (HarfBuzz/FreeType/ICU)" ON)
+if(MUSE_TEXT_WITH_D3)
+  if(NOT DEFINED ENV{MUSE_NATIVE_THIRD_PARTY_DIR} OR "$ENV{MUSE_NATIVE_THIRD_PARTY_DIR}" STREQUAL "")
+    message(FATAL_ERROR "engine/text: MUSE_NATIVE_THIRD_PARTY_DIR is not set (in-tree D3 sub-builds need the shared third-party directory). Example: export MUSE_NATIVE_THIRD_PARTY_DIR=<shared-workspace>/third-party")
+  endif()
+  set(MUSE_NATIVE_THIRD_PARTY_DIR "$ENV{MUSE_NATIVE_THIRD_PARTY_DIR}")
+  set(MUSE_HARFBUZZ_SRC "${MUSE_NATIVE_THIRD_PARTY_DIR}/harfbuzz-15.0.0")
+  set(MUSE_FREETYPE_SRC "${MUSE_NATIVE_THIRD_PARTY_DIR}/freetype-2.15.0")
+  set(MUSE_ICU_SRC "${MUSE_NATIVE_THIRD_PARTY_DIR}/icu-79.1/source")
+  foreach(_muse_d3_src IN ITEMS "${MUSE_HARFBUZZ_SRC}" "${MUSE_FREETYPE_SRC}" "${MUSE_ICU_SRC}")
+    if(NOT IS_DIRECTORY "${_muse_d3_src}")
+      message(FATAL_ERROR "engine/text: D3 source dir missing: ${_muse_d3_src} (check MUSE_NATIVE_THIRD_PARTY_DIR; example: export MUSE_NATIVE_THIRD_PARTY_DIR=<shared-workspace>/third-party)")
+    endif()
+  endforeach()
+
+  # FreeType 2.15.0 first: the vendored tree configures itself from its own
+  # include/freetype/config/ftoption.h toggles, the modules list
+  # (include/freetype/config/ftmodule.h generated from modules.cfg) and the
+  # src/base/ftsystem.c system interface (SD8) — no invented flags, only the
+  # real FT_DISABLE_* options from the vendored CMakeLists. FT_DISABLE_HARFBUZZ
+  # breaks the HarfBuzz<->FreeType configure cycle and keeps the lane hermetic
+  # (no system harfbuzz picked up); the compression backends stay off so no
+  # system zlib/bzip2/png/brotli sneaks into the static objects.
+  set(FT_DISABLE_HARFBUZZ ON CACHE BOOL "T3: FreeType without HarfBuzz helper (breaks the HB<->FT configure cycle)" FORCE)
+  set(FT_DISABLE_ZLIB ON CACHE BOOL "T3: no system zlib in the static objects" FORCE)
+  set(FT_DISABLE_BZIP2 ON CACHE BOOL "T3: no system bzip2 in the static objects" FORCE)
+  set(FT_DISABLE_PNG ON CACHE BOOL "T3: no system libpng in the static objects" FORCE)
+  set(FT_DISABLE_BROTLI ON CACHE BOOL "T3: no system brotli in the static objects" FORCE)
+  add_subdirectory("${MUSE_FREETYPE_SRC}" "${CMAKE_BINARY_DIR}/d3/freetype")
+
+  # HarfBuzz 15.0.0: -DHB_HAVE_ICU=OFF is the verified upstream default (SD6);
+  # HB_HAVE_FREETYPE interop flips ON automatically because TARGET freetype
+  # already exists (see the vendored CMakeLists "if (TARGET freetype)").
+  # HB_BUILD_UTILS stays OFF (upstream default, kept); the optional
+  # subset/raster/vector/gpu modules default ON upstream and are turned OFF —
+  # the engine text stack needs none of them.
+  set(HB_HAVE_ICU OFF CACHE BOOL "T3: HarfBuzz without ICU unicode functions (SD6 verified default)" FORCE)
+  set(HB_BUILD_UTILS OFF CACHE BOOL "T3: no harfbuzz utils (needs cairo/glib)" FORCE)
+  set(HB_BUILD_SUBSET OFF CACHE BOOL "T3: no harfbuzz-subset (unused by the engine)" FORCE)
+  set(HB_BUILD_RASTER OFF CACHE BOOL "T3: no harfbuzz-raster (unused by the engine)" FORCE)
+  set(HB_BUILD_VECTOR OFF CACHE BOOL "T3: no harfbuzz-vector (unused by the engine)" FORCE)
+  set(HB_BUILD_GPU OFF CACHE BOOL "T3: no harfbuzz-gpu (unused by the engine)" FORCE)
+  set(HB_BUILD_GPU_DEMO OFF CACHE STRING "T3: no hb-gpu demo tool" FORCE)
+  add_subdirectory("${MUSE_HARFBUZZ_SRC}" "${CMAKE_BINARY_DIR}/d3/harfbuzz")
+
+  # ICU 79.1: host-tools-first split (SD7). The host tools build
+  # (runConfigureICU) runs first in its own out-of-source dir; the target
+  # build then configures --with-cross-build=<ABS host build dir> with
+  # --enable-static --disable-shared --with-data-packaging=archive (archive
+  # mode needs the app to point at the data at runtime — T4 wires the
+  # u_setDataDirectory/udata_setCommonData call site; until then the static
+  # libicudata archive ships inside the link) and -DU_CHARSET_IS_UTF8=1,
+  # always out-of-source, never in-source. Without the host-tools script the
+  # target configure cannot be staged, so it fails closed here.
+  if(NOT EXISTS "${MUSE_ICU_SRC}/runConfigureICU")
+    message(FATAL_ERROR "engine/text: ICU host-tools script missing: ${MUSE_ICU_SRC}/runConfigureICU — cannot stage the host/cross-build split (re-extract the icu4c tarball per tools/deps/third_party_pins.json)")
+  endif()
+  include(ExternalProject)
+  set(MUSE_ICU_HOST_DIR "${CMAKE_BINARY_DIR}/d3/icu-host")
+  set(MUSE_ICU_TARGET_DIR "${CMAKE_BINARY_DIR}/d3/icu-target")
+  set(MUSE_ICU_INSTALL_DIR "${CMAKE_BINARY_DIR}/d3/icu-install")
+  file(MAKE_DIRECTORY "${MUSE_ICU_INSTALL_DIR}/include")
+  file(MAKE_DIRECTORY "${MUSE_ICU_INSTALL_DIR}/lib")
+  # T7: D3 static archives link into the Android `Runtime` SHARED target, so
+  # every D3 object must be position-independent (a non-PIC archive fails the
+  # shared link with TEXTREL/R_AARCH64 errors). Applies to the HarfBuzz +
+  # FreeType sub-builds below (read at target-creation time) and to the ICU
+  # CFLAGS/CXXFLAGS (MUSE_ICU_PIC_FLAGS); harmless on the host lane.
+  set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+  set(MUSE_ICU_PIC_FLAGS "-fPIC")
+  set(MUSE_ICU_UTF8_FLAGS "-DU_CHARSET_IS_UTF8=1")
+  if(ANDROID)
+    # Android NDK lane: the host tools build with the host compiler, then the
+    # target build cross-configures against the NDK clang for ANDROID_ABI.
+    if(ANDROID_ABI STREQUAL "arm64-v8a")
+      set(_muse_icu_triplet "aarch64-linux-android")
+    elseif(ANDROID_ABI STREQUAL "armeabi-v7a")
+      set(_muse_icu_triplet "armv7a-linux-androideabi")
+    elseif(ANDROID_ABI STREQUAL "x86_64")
+      set(_muse_icu_triplet "x86_64-linux-android")
+    elseif(ANDROID_ABI STREQUAL "x86")
+      set(_muse_icu_triplet "i686-linux-android")
+    else()
+      message(FATAL_ERROR "engine/text: no ICU cross-build triplet for ANDROID_ABI '${ANDROID_ABI}' (expected arm64-v8a, armeabi-v7a, x86_64, or x86)")
+    endif()
+    string(REGEX MATCH "[0-9]+" _muse_icu_api "${ANDROID_PLATFORM}")
+    if(_muse_icu_api STREQUAL "")
+      set(_muse_icu_api "29")
+    endif()
+    if(NOT DEFINED ANDROID_TOOLCHAIN_ROOT OR ANDROID_TOOLCHAIN_ROOT STREQUAL "")
+      get_filename_component(_muse_ndk_bin "${CMAKE_CXX_COMPILER}" DIRECTORY)
+      get_filename_component(ANDROID_TOOLCHAIN_ROOT "${_muse_ndk_bin}" DIRECTORY)
+    endif()
+    ExternalProject_Add(icu_host
+      SOURCE_DIR "${MUSE_ICU_SRC}"
+      BINARY_DIR "${MUSE_ICU_HOST_DIR}"
+      CONFIGURE_COMMAND ${CMAKE_COMMAND} -E env
+        "CFLAGS=${MUSE_ICU_UTF8_FLAGS} ${MUSE_ICU_PIC_FLAGS}"
+        "CXXFLAGS=${MUSE_ICU_UTF8_FLAGS} ${MUSE_ICU_PIC_FLAGS}"
+        sh "${MUSE_ICU_SRC}/runConfigureICU" Linux
+        "--prefix=${MUSE_ICU_HOST_DIR}"
+        --enable-static --disable-shared --with-data-packaging=archive
+      BUILD_COMMAND make -j
+      INSTALL_COMMAND ""
+      BUILD_BYPRODUCTS "${MUSE_ICU_HOST_DIR}/lib/libicuuc.a"
+    )
+    ExternalProject_Add(icu_target
+      DEPENDS icu_host
+      SOURCE_DIR "${MUSE_ICU_SRC}"
+      BINARY_DIR "${MUSE_ICU_TARGET_DIR}"
+      CONFIGURE_COMMAND ${CMAKE_COMMAND} -E env
+        "CC=${ANDROID_TOOLCHAIN_ROOT}/bin/${_muse_icu_triplet}${_muse_icu_api}-clang"
+        "CXX=${ANDROID_TOOLCHAIN_ROOT}/bin/${_muse_icu_triplet}${_muse_icu_api}-clang++"
+        "CFLAGS=${MUSE_ICU_UTF8_FLAGS} ${MUSE_ICU_PIC_FLAGS}"
+        "CXXFLAGS=${MUSE_ICU_UTF8_FLAGS} ${MUSE_ICU_PIC_FLAGS}"
+        sh "${MUSE_ICU_SRC}/configure"
+        "--prefix=${MUSE_ICU_INSTALL_DIR}"
+        "--host=${_muse_icu_triplet}"
+        "--with-cross-build=${MUSE_ICU_HOST_DIR}"
+        --enable-static --disable-shared --with-data-packaging=archive
+      BUILD_COMMAND make -j
+      INSTALL_COMMAND make install
+      BUILD_BYPRODUCTS
+        "${MUSE_ICU_INSTALL_DIR}/lib/libicuuc.a"
+        "${MUSE_ICU_INSTALL_DIR}/lib/libicui18n.a"
+        "${MUSE_ICU_INSTALL_DIR}/lib/libicudata.a"
+    )
+  else()
+    # Host lane: single native build (runConfigureICU host-tools shape),
+    # installed to the in-build prefix; the target IS the host.
+    ExternalProject_Add(icu_host
+      SOURCE_DIR "${MUSE_ICU_SRC}"
+      BINARY_DIR "${MUSE_ICU_HOST_DIR}"
+      CONFIGURE_COMMAND ${CMAKE_COMMAND} -E env
+        "CFLAGS=${MUSE_ICU_UTF8_FLAGS} ${MUSE_ICU_PIC_FLAGS}"
+        "CXXFLAGS=${MUSE_ICU_UTF8_FLAGS} ${MUSE_ICU_PIC_FLAGS}"
+        sh "${MUSE_ICU_SRC}/runConfigureICU" Linux
+        "--prefix=${MUSE_ICU_INSTALL_DIR}"
+        --enable-static --disable-shared --with-data-packaging=archive
+      BUILD_COMMAND make -j
+      INSTALL_COMMAND make install
+      BUILD_BYPRODUCTS
+        "${MUSE_ICU_INSTALL_DIR}/lib/libicuuc.a"
+        "${MUSE_ICU_INSTALL_DIR}/lib/libicui18n.a"
+        "${MUSE_ICU_INSTALL_DIR}/lib/libicudata.a"
+    )
+  endif()
+  add_library(icuuc_static STATIC IMPORTED GLOBAL)
+  add_library(icui18n_static STATIC IMPORTED GLOBAL)
+  add_library(icudata_static STATIC IMPORTED GLOBAL)
+  set_target_properties(icuuc_static PROPERTIES
+    IMPORTED_LOCATION "${MUSE_ICU_INSTALL_DIR}/lib/libicuuc.a"
+    INTERFACE_INCLUDE_DIRECTORIES "${MUSE_ICU_INSTALL_DIR}/include")
+  set_target_properties(icui18n_static PROPERTIES
+    IMPORTED_LOCATION "${MUSE_ICU_INSTALL_DIR}/lib/libicui18n.a"
+    INTERFACE_INCLUDE_DIRECTORIES "${MUSE_ICU_INSTALL_DIR}/include")
+  set_target_properties(icudata_static PROPERTIES
+    IMPORTED_LOCATION "${MUSE_ICU_INSTALL_DIR}/lib/libicudata.a"
+    INTERFACE_INCLUDE_DIRECTORIES "${MUSE_ICU_INSTALL_DIR}/include")
+  if(ANDROID)
+    add_dependencies(icuuc_static icu_target)
+    add_dependencies(icui18n_static icu_target)
+    add_dependencies(icudata_static icu_target)
+  else()
+    add_dependencies(icuuc_static icu_host)
+    add_dependencies(icui18n_static icu_host)
+    add_dependencies(icudata_static icu_host)
+  endif()
+endif()
+
 add_library(muse_text STATIC
   src/shaper.cpp
   src/font_discovery.cpp
@@ -32,6 +211,20 @@ add_library(muse_text STATIC
 )
 target_include_directories(muse_text PUBLIC include)
 target_compile_options(muse_text PRIVATE -Wall -Wextra -Wpedantic)
+
+# T3: muse_text links the in-tree static D3 objects (harfbuzz + freetype +
+# icuuc/icui18n/icudata). ICU recommends UTF-8 charset handling
+# (-DU_CHARSET_IS_UTF8=1, same flag the ICU sub-builds use); with
+# --with-data-packaging=archive the data archive rides inside libicudata and
+# the app points at it at runtime via u_setDataDirectory/udata_setCommonData
+# (T4 call site; MUSE_ICU_DATA_DIR records the packaged location for it).
+if(MUSE_TEXT_WITH_D3)
+  add_dependencies(muse_text icuuc_static icui18n_static icudata_static)
+  target_link_libraries(muse_text PUBLIC harfbuzz freetype icui18n_static icuuc_static icudata_static)
+  target_compile_definitions(muse_text PUBLIC U_CHARSET_IS_UTF8=1)
+  set(MUSE_ICU_DATA_DIR "${MUSE_ICU_INSTALL_DIR}/share/icu/79.1" CACHE PATH
+      "T3: packaged ICU data dir (T4 app call: u_setDataDirectory/udata_setCommonData)")
+endif()
 
 add_executable(jni_free_path_test tests/jni_free_path_test.cpp)
 target_link_libraries(jni_free_path_test PRIVATE muse_text)

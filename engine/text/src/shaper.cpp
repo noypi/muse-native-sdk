@@ -24,6 +24,11 @@ extern "C" {
 void hb_shape() __attribute__((weak));
 void FT_Init_FreeType() __attribute__((weak));
 void u_getVersion() __attribute__((weak));
+// T7: ICU 79 ships the entry point under its versioned alias
+// (u_getVersion_79, UVERNUM-renamed); the unversioned probe above never
+// resolves against the real archive, so the versioned spelling is probed
+// alongside it. Hermetic builds link neither and both stay null.
+void u_getVersion_79() __attribute__((weak));
 }  // extern "C"
 
 #include <cmath>
@@ -37,7 +42,7 @@ namespace {
 // True when the link target provided the real admitted D3 stack.
 bool RealTextStackLinked() {
   return hb_shape != nullptr && FT_Init_FreeType != nullptr &&
-         u_getVersion != nullptr;
+         (u_getVersion != nullptr || u_getVersion_79 != nullptr);
 }
 
 // Strict UTF-8 decode of one codepoint starting at [pos, len).
