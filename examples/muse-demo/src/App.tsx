@@ -227,6 +227,10 @@ export default function App() {
   const goTab = (name: Tab): void => {
     onOpenTabLink(tabLink(name));
   };
+  // T4 hands-free contract: unknown routes fail closed with a NAMED denial
+  // that stays on glass (never blank) and carries its own tappable fallback.
+  // Declared above the closures that use it (hooks-first convention).
+  const [deniedLink, setDeniedLink] = useState<string | undefined>(undefined);
   // T4 deep-link/tap entry (mirrors gallery onOpenStoryLink): every tab move
   // resolves through the demoNav link shape + push (single navigate path),
   // then lands on glass via setTab with a repaint log. Unknown ids keep the
@@ -264,9 +268,6 @@ export default function App() {
       console.info('[DemoPage] fallback fire action=return-to-lens tab=lens repaint=1');
     }
   };
-  // T4 hands-free contract: unknown routes fail closed with a NAMED denial
-  // that stays on glass (never blank) and carries its own tappable fallback.
-  const [deniedLink, setDeniedLink] = useState<string | undefined>(undefined);
   const onToggleTheme = (): void => {
     const next = theme.primary === 'primary' ? 'dark' : 'light';
     applyTheme(next, true);

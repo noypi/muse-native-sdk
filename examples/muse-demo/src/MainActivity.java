@@ -152,9 +152,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                         // setter, then repaint. Java carries state only (no tab
                         // machine); unknown tabs never reach here.
                         if (engineHandle != 0) {
-                            nativeSetDemoShellState(engineHandle, currentDemoTab, "");
+                            applyValidatedTab(currentDemoTab, "");
                         }
-                        nativeRenderFrame(engineHandle);
                     } catch (Throwable ignored) {
                     }
                     Log.i("DemoPage", "tap advance node=" + claimed + " tab=" + currentDemoTab + " repaint=1");
@@ -228,53 +227,29 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     }
 
     /**
-     * T7 pushValidatedTab-equivalent: validate a `muse-demo://tab/<id>` link
-     * string fail-closed (unknown/host/scheme never blank), carry the valid
-     * tab through the T6 state-carriage setter, then repaint. Java carries
-     * state only — TSX demoNav.parseTabLink stays the allowlist source of
-     * truth; no tab machine, no banner copy beyond the denied-link string.
-     * Returns true applied, false denied ({ applied: false,
-     * code: 'unknown-route' } equivalent: unknown-route logged with
-     * destinationReached=false, current tab kept).
+     * Single setter→repaint funnel (MINOR dedupe): every validated tab lands
+     * here. Stores the tab via the T6 state-carriage setter, repaints, and
+     * records it as the current tab. Returns true applied, false on
+     * setter failure (fail-closed, caller logs + keeps current tab).
      */
-    private boolean pushValidatedTab(String link) {
-        if (link == null || !link.startsWith("muse-demo://tab/")) {
-            Log.w("DemoPage", "deep-link rejected (unknown-route): " + link + " destinationReached=false engineHosted=true");
-            return false;
-        }
-        String id = link.substring("muse-demo://tab/".length());
-        // Fail-closed: query strings never extend the allowlist.
-        int cut = id.indexOf('?');
-        if (cut >= 0) {
-            Log.w("DemoPage", "deep-link rejected (unknown-route): " + link + " destinationReached=false engineHosted=true");
-            return false;
-        }
-        if (!("lens".equals(id) || "field".equals(id) || "list".equals(id))) {
-            Log.w("DemoPage", "deep-link rejected (unknown-route): " + link + " destinationReached=false engineHosted=true");
-            return false;
-        }
-        if (engineHandle == 0) {
-            pendingDeepLink = android.net.Uri.parse(link);
-            Log.i("DemoPage", "deep-link stashed (engine not ready): " + link);
-            return false;
-        }
+    private boolean applyValidatedTab(String id, String deniedLink) {
         int rc = 0;
         try {
-            rc = nativeSetDemoShellState(engineHandle, id, "");
+            rc = nativeSetDemoShellState(engineHandle, id, deniedLink != null ? deniedLink : "");
         } catch (Throwable ignored) {
             rc = 0;
         }
         if (rc != 1) {
-            Log.w("DemoPage", "deep-link rejected (unknown-route): " + link + " destinationReached=false engineHosted=true");
             return false;
         }
         currentDemoTab = id;
-        try {
-            nativeRenderFrame(engineHandle);
-        } catch (Throwable ignored) {
-            // Fail-closed: a bad frame never kills the host.
+        if (engineHandle != 0) {
+            try {
+                nativeRenderFrame(engineHandle);
+            } catch (Throwable ignored) {
+                // Fail-closed: a bad frame never kills the host.
+            }
         }
-        Log.i("DemoPage", "deep-link tab=" + id + " link=" + link + " destinationReached=true engineHosted=true repaint=1");
         return true;
     }
 
@@ -286,8 +261,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     private void onFallbackRecover() {
         try {
             if (engineHandle != 0) {
-                nativeSetDemoShellState(engineHandle, currentDemoTab, "");
-                nativeRenderFrame(engineHandle);
+                applyValidatedTab(currentDemoTab, "");
             }
         } catch (Throwable ignored) {
             // Fail-closed: recovery never crashes the host.
@@ -310,6 +284,14 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             Log.w("DemoPage", "deep-link rejected (unknown-route host): " + link + " destinationReached=false engineHosted=true");
             return;
         }
+        // Fail-closed query denial (matches parseTabLink): query-suffixed
+        // links are denied, never stripped. getPathSegments() ignores the
+        // query, so without this check `muse-demo://tab/lens?seed=1` would
+        // wrongly apply while the JS seam classifies it unknown-route.
+        if (link.getEncodedQuery() != null) {
+            Log.w("DemoPage", "deep-link rejected (unknown-route): " + link + " destinationReached=false engineHosted=true");
+            return;
+        }
         java.util.List<String> segs = link.getPathSegments();
         String rawId = segs.isEmpty() ? "" : segs.get(0);
         String id;
@@ -326,23 +308,9 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         // carriage only — no routing decision here) and repaint the landed
         // shell so the visible tab/page actually changes on warm + cold
         // delivery. Setter failure keeps the current tab (fail-closed).
-        int rc = 0;
-        try {
-            rc = nativeSetDemoShellState(engineHandle, id, "");
-        } catch (Throwable ignored) {
-            rc = 0;
-        }
-        if (rc != 1) {
+        if (!applyValidatedTab(id, "")) {
             Log.w("DemoPage", "deep-link rejected (unknown-route): " + link + " destinationReached=false engineHosted=true");
             return;
-        }
-        currentDemoTab = id;
-        if (engineHandle != 0) {
-            try {
-                nativeRenderFrame(engineHandle);
-            } catch (Throwable ignored) {
-                // Fail-closed: a bad frame never kills the host.
-            }
         }
         Log.i("DemoPage", "deep-link tab=" + id + " link=" + link + " destinationReached=true engineHosted=true repaint=1");
     }
