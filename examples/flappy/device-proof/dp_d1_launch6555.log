@@ -1,0 +1,4 @@
+Starting: Intent { cmp=com.muse.host/.MainActivity }
+  mFocusedApp=ActivityRecord{ef884e9 u0 com.muse.host/.MainActivity t241}
+
+  mHoldScreenWindow=null

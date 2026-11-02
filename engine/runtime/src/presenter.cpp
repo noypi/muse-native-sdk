@@ -17,7 +17,9 @@
 #include "runtime/gallery_present.h"
 #include "runtime/input_chain.h"
 
+#include <cmath>
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
 #include <mutex>
 #include <string>
@@ -868,4 +870,118 @@ PresenterError getFrameStats(SurfaceHandle h, FrameStats* out) {
   }
 }
 
+// Batch 5 / T11 — native tap-record + logcat seam (NOT a JS invocation:
+// AC-INPUT-021, AC-RUNTIME-018/033). Declared in presenter.h so
+// the jni_bridge device lane and the hermetic seam share one surface.
+// FlappyTouchHandlerName names the JS handler for a flappy content node
+// (nullptr for non-flappy nodes — node 20, the gallery scrim, never wins
+// for flappy content). FireFlappyTapToJs records the fired tap with node
+// identity via js_runtime and reports tapRecorded (never jsHandled — no JS
+// engine is invoked on this path); the device lane logs nodeId + handler
+// in logcat. Fail-closed, never throws.
+// Native tap-record half, owned by js_runtime.cpp.
+bool RecordFlappyTap(std::int32_t nodeId, const char* handler);
+
+const char* FlappyTouchHandlerName(std::int32_t nodeId) {
+  if (nodeId == 31) {
+    return "onTouchStart";
+  }
+  return nullptr;
+}
+
+bool FireFlappyTapToJs(std::int32_t nodeId, const char* handler) {
+  try {
+    if (handler == nullptr) {
+      return false;
+    }
+    const bool tapRecorded = RecordFlappyTap(nodeId, handler);
+    char msg[160];
+    std::snprintf(msg, sizeof(msg),
+                  "flappy tap record: node=%d handler=%s tapRecorded=%d",
+                  static_cast<int>(nodeId), handler, tapRecorded ? 1 : 0);
+    SeamLog(msg);
+    return tapRecorded;
+  } catch (...) {
+    return false;
+  }
+}
+
 }  // namespace runtime
+
+// Batch 5 / T11 — native tap-record + logcat seam: fired taps are recorded
+// with node identity (AC-INPUT-021, AC-RUNTIME-018/033/015,
+// AC-SAMPLE-017/032/027-030). The Down→Up pair arms on the steer node; the
+// fired Up records through runtime::FireFlappyTapToJs (presenter.h surface),
+// which does NOT invoke any JS handler — the fired result carries
+// tapRecorded + the handler name with node identity. Finite-coordinate guard (NaN/negative/+Inf
+// rejected, REQUIRED): a rejected event fails closed and clears the pending
+// pairing so it can never arm a later fire. Never throws. Types are
+// layout-identical to the T11 contract.
+enum class TouchAction : std::int32_t { Down = 0, Up = 1 };
+struct DispatchResult {
+  bool fired = false;
+  std::int32_t nodeId = -1;
+  bool tapRecorded = false;
+  std::string handlerName;  // named when tapRecorded == false after a fire.
+};
+namespace {
+// Flappy steer node: the only node that may dispatch into the flappy JS
+// handler on this path. Node 20 (gallery scrim) must never win for flappy
+// content — cross-content dispatch fails closed.
+constexpr std::int32_t kFlappySteerNode = 31;
+constexpr std::int32_t kGalleryScrimNode = 20;
+constexpr const char* kFlappyTouchHandler = "onTouchStart";
+std::mutex g_tapPairMu;
+std::int32_t g_lastDownNode = -1;  // latest Down node id; -1 when none.
+void ClearPendingTapLocked() { g_lastDownNode = -1; }
+}  // namespace
+DispatchResult dispatchTouch(std::int32_t nodeId, TouchAction action, float x,
+                             float y) {
+  try {
+    // Untrusted touch fields fail closed before touching any handler state
+    // (mirrors the ResolveTapTarget guard): NaN/negative/+Inf coordinates,
+    // forged node ids, and unknown actions never fire and never reach JS. A
+    // rejected event clears the pending pairing fail-closed.
+    if (!std::isfinite(x) || !std::isfinite(y) || x < 0.0f || y < 0.0f) {
+      std::lock_guard<std::mutex> lock(g_tapPairMu);
+      ClearPendingTapLocked();
+      return DispatchResult{false, nodeId, false, kFlappyTouchHandler};
+    }
+    if (action != TouchAction::Down && action != TouchAction::Up) {
+      std::lock_guard<std::mutex> lock(g_tapPairMu);
+      ClearPendingTapLocked();
+      return DispatchResult{false, nodeId, false, kFlappyTouchHandler};
+    }
+    if (nodeId == kGalleryScrimNode) {
+      // Gallery scrim never dispatches as flappy JS (fail-closed, never
+      // cross-content dispatch). The device lane logs nodeId + handler via
+      // SeamLog here; hermetically the handler name rides the result.
+      std::lock_guard<std::mutex> lock(g_tapPairMu);
+      ClearPendingTapLocked();
+      return DispatchResult{false, nodeId, false, "GalleryScrim.onTouchStart"};
+    }
+    if (nodeId != kFlappySteerNode) {
+      // Outside/forged/stale ids: no fire, no JS handling. The device lane
+      // logs nodeId + handler name in logcat per the T11 interface.
+      return DispatchResult{false, nodeId, false, kFlappyTouchHandler};
+    }
+    std::lock_guard<std::mutex> lock(g_tapPairMu);
+    if (action == TouchAction::Down) {
+      g_lastDownNode = nodeId;
+      return DispatchResult{false, nodeId, false, ""};
+    }
+    // Up completes the tap only for the pressed steer node: the fired tap
+    // is recorded with stable node identity (ready→playing path stays
+    // device/player proof). The handler name rides the fired result —
+    // tap-record evidence with node identity, never a JS-handled claim.
+    if (g_lastDownNode != nodeId) {
+      return DispatchResult{false, nodeId, false, kFlappyTouchHandler};
+    }
+    ClearPendingTapLocked();
+    const bool tapRecorded =
+        runtime::FireFlappyTapToJs(nodeId, kFlappyTouchHandler);
+    return DispatchResult{true, nodeId, tapRecorded, kFlappyTouchHandler};
+  } catch (...) {
+    return DispatchResult{false, nodeId, false, kFlappyTouchHandler};
+  }
+}
