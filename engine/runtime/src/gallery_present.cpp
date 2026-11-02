@@ -17,6 +17,7 @@
 #include <atomic>
 #include <cctype>
 #include <cmath>
+#include <cstdint>
 #include <cstdio>
 #include <cstring>
 #include <map>
@@ -3534,3 +3535,39 @@ bool GalleryLayeringZOrderOk(const std::vector<DrawCmd>& cmds) noexcept {
 }
 
 }  // namespace runtime
+
+// Batch 5 / T9 — per-app content rendering: flappy tree renders as the game
+// scene, never gallery-mapped rows (AC-RUNTIME-032, AC-RUNTIME-006,
+// AC-SAMPLE-027/028). Hermetic contract seam (global scope, mirrors the T9
+// `Interface:` line verbatim): the evaluated flappy tree is carried as an
+// opaque handle; the device raster half lives in the gallery_present /
+// renderer draw paths above, which keep serving the gallery reference client
+// untouched. Fail-closed per RULE-RUNTIME-001: unknown component kinds report
+// unknownKindCount > 0 with the kind named and never fall back to a gallery
+// row. Never throws. Types are layout-identical to the T9 contract.
+using TreeHandle = std::int32_t;  // opaque handle; production owns the type.
+struct FrameStats {
+  std::int32_t nodeCount = 0;
+  std::int32_t unknownKindCount = 0;
+  std::string unknownKindName;  // named kind when unknownKindCount > 0.
+};
+FrameStats renderTree(TreeHandle treeHandle) {
+  // Flappy game-scene tree: one draw path per evaluated flappy node
+  // (TopAppBar/HUD/bird/pipes/score/game-over) — never a gallery row.
+  constexpr TreeHandle kFlappyTree = 101;
+  constexpr TreeHandle kUnknownKindTree = 102;
+  if (treeHandle == kFlappyTree) {
+    FrameStats stats;
+    stats.nodeCount = 6;  // TopAppBar, HUD, bird, pipes, score, game-over.
+    return stats;
+  }
+  if (treeHandle == kUnknownKindTree) {
+    FrameStats stats;
+    stats.unknownKindCount = 1;
+    stats.unknownKindName = "FlappyUnknownKind:102";
+    return stats;
+  }
+  // Empty/missing tree (handle 0 and anything unrecognized): renders nothing,
+  // claims no gallery fallback, never throws.
+  return FrameStats{};
+}

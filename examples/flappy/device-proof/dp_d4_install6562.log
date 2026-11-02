@@ -1,0 +1,18 @@
+Unknown command: install-incremental
+Performing Streamed Install
+Success
+Starting: Intent { cmp=com.muse.host/.MainActivity }
+  topDisplayFocusedStack=ActivityStack{2ae2186 stackId=1 type=standard mode=fullscreen visible=true translucent=false, 1 tasks}
+   mLastFocusedStack=ActivityStack{2ae2186 stackId=1 type=standard mode=fullscreen visible=true translucent=false, 1 tasks}
+    mLastNonFullscreenBounds=null
+    * TaskRecord{5db83ba #3 A=com.muse.host U=0 StackId=1 sz=1}
+      userId=0 effectiveUid=u0a101 mCallingUid=0 mUserSetupComplete=true mCallingPackage=com.android.shell
+      affinity=com.muse.host
+      intent={flg=0x10000000 cmp=com.muse.host/.MainActivity}
+      mActivityComponent=com.muse.host/.MainActivity
+      autoRemoveRecents=false isPersistable=true numFullscreen=1 activityType=1
+      rootWasReset=false mNeverRelinquishIdentity=true mReuseTask=false mLockTaskAuth=LOCK_TASK_AUTH_PINNABLE
+      Activities=[ActivityRecord{6688325 u0 com.muse.host/.MainActivity t3}]
+      askedCompatMode=false inRecents=true isAvailable=true
+      mRootProcess=ProcessRecord{c75f26b 2638:com.muse.host/u0a101}
+      stackId=1

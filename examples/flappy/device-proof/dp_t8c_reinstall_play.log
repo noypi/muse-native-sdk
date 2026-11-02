@@ -1,0 +1,11 @@
+11-02 08:46:47.082  4622  4622 I muse-host: nativeLoadTree: bytes=12944 rows=41 -> handle acquired
+11-02 08:46:47.082  4622  4622 I muse-host: nativeProvenance: engine-sha=1b44313 gallery_present-sha=7fa3ad732049847d8f6fedf573faeb01b0a0edb2
+11-02 08:46:52.372  4622  4622 D MainActivity: touch x=540.0 y=930.0 claimed=-1
+11-02 08:46:54.964  4622  4622 I muse-host: nativeDispatchTouch: tap fired node=20 repaint=1
+11-02 08:46:54.964  4622  4622 D MainActivity: touch x=540.0 y=930.0 claimed=20
+11-02 08:46:58.823  4622  4622 D MainActivity: touch x=540.0 y=930.0 claimed=-1
+11-02 08:47:01.407  4622  4622 I muse-host: nativeDispatchTouch: tap fired node=20 repaint=1
+11-02 08:47:01.407  4622  4622 D MainActivity: touch x=540.0 y=930.0 claimed=20
+11-02 08:47:05.267  4622  4622 D MainActivity: touch x=540.0 y=930.0 claimed=-1
+11-02 08:47:07.860  4622  4622 I muse-host: nativeDispatchTouch: tap fired node=20 repaint=1
+11-02 08:47:07.860  4622  4622 D MainActivity: touch x=540.0 y=930.0 claimed=20

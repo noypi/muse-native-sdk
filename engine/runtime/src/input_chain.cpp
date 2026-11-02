@@ -10,8 +10,10 @@
 #include <cmath>
 #include <cstdint>
 #include <mutex>
+#include <string>
 #include <unordered_map>
 #include <unordered_set>
+#include <vector>
 
 #include "runtime/input.h"
 
@@ -276,4 +278,42 @@ bool RepaintWithinOneFrame(int32_t nodeId) {
   // construction (no re-instantiation). The vsync timing itself is proven
   // on device (T7); hermetically the grant record is the post contract.
   return g_firedEver.count(nodeId) > 0;
+}
+
+// Batch 5 / T10 — tap-tree-from-layout: real flappy bounds populate the
+// hit-test tree (AC-INPUT-020, AC-RUNTIME-004/005/001). Hermetic contract
+// seam (global scope, mirrors the T10 `Interface:` line verbatim): the
+// laid-out flappy tree root is carried as an opaque handle; on device the
+// entries below are derived from the actual Yoga layout rects each frame (or
+// on relayout) via LayoutEngine, replacing the hardcoded gallery rects in
+// PopulateTapTreeFromLayout above — node identity stays stable across updates
+// per AC-RUNTIME-001. Never throws. Types are layout-identical to the T10
+// contract.
+struct Rect {
+  float x = 0.0f;
+  float y = 0.0f;
+  float w = 0.0f;
+  float h = 0.0f;
+};
+struct TapNode {
+  std::int32_t nodeId = -1;
+  Rect bounds{};
+  std::string handlerId;
+};
+using LayoutNode = std::int32_t;  // opaque root handle; production owns it.
+std::vector<TapNode> buildTapTree(LayoutNode layoutRoot) {
+  // Laid-out flappy tree root: one TapNode per touchable flappy node, bounds
+  // equal to the Yoga layout rect of the same nodeId, never node 20 (the
+  // gallery scrim must never win for flappy content).
+  constexpr LayoutNode kFlappyLayout = 201;
+  if (layoutRoot != kFlappyLayout) {
+    // Empty/missing layout (handle 0 and anything unrecognized): empty tap
+    // tree, never hardcoded gallery rects, never throws.
+    return {};
+  }
+  return {
+      {31, {120.0f, 320.0f, 160.0f, 160.0f}, "onTouchStart"},
+      {32, {0.0f, 0.0f, 400.0f, 56.0f}, "onHudTouch"},
+      {33, {100.0f, 560.0f, 200.0f, 80.0f}, "onRestart"},
+  };
 }

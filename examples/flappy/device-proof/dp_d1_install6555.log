@@ -1,0 +1,23 @@
+Serving...
+Performing Incremental Install
+
+Exception occurred while executing 'install-incremental':
+java.lang.IllegalArgumentException: Incremental installation not allowed.
+	at com.android.server.pm.PackageInstallerSession.<init>(PackageInstallerSession.java:1239)
+	at com.android.server.pm.PackageInstallerService.createSessionInternal(PackageInstallerService.java:1032)
+	at com.android.server.pm.PackageInstallerService.createSession(PackageInstallerService.java:656)
+	at com.android.server.pm.PackageManagerShellCommand.doCreateSession(PackageManagerShellCommand.java:3960)
+	at com.android.server.pm.PackageManagerShellCommand.doRunInstall(PackageManagerShellCommand.java:1619)
+	at com.android.server.pm.PackageManagerShellCommand.runIncrementalInstall(PackageManagerShellCommand.java:1557)
+	at com.android.server.pm.PackageManagerShellCommand.onCommand(PackageManagerShellCommand.java:249)
+	at com.android.modules.utils.BasicShellCommandHandler.exec(BasicShellCommandHandler.java:97)
+	at android.os.ShellCommand.exec(ShellCommand.java:38)
+	at com.android.server.pm.PackageManagerService$IPackageManagerImpl.onShellCommand(PackageManagerService.java:6561)
+	at android.os.Binder.shellCommand(Binder.java:1230)
+	at android.os.Binder.onTransact(Binder.java:1043)
+	at android.content.pm.IPackageManager$Stub.onTransact(IPackageManager.java:4620)
+	at com.android.server.pm.PackageManagerService$IPackageManagerImpl.onTransact(PackageManagerService.java:6545)
+	at android.os.Binder.execTransactInternal(Binder.java:1505)
+	at android.os.Binder.execTransact(Binder.java:1444)
+Performing Streamed Install
+Success
