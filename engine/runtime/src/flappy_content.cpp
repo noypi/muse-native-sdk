@@ -352,6 +352,9 @@ bool IsFlappySceneContent(const void* data, std::size_t len) {
 // gallery-mapping it. Never throws.
 TreeHandle RegisterFlappyContentTree(const void* data, std::size_t len) {
   try {
+    if (data == nullptr) {
+      return 0;
+    }
     std::uint32_t hash = 2166136261u;
     const unsigned char* bytes = static_cast<const unsigned char*>(data);
     for (std::size_t i = 0; i < len; ++i) {

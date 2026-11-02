@@ -761,6 +761,15 @@ target_link_libraries(flappy_tap_js_dispatch_test PRIVATE runtime)
 target_compile_options(flappy_tap_js_dispatch_test PRIVATE -Wall -Wextra -Wpedantic)
 add_test(NAME flappy_tap_js_dispatch_test COMMAND flappy_tap_js_dispatch_test)
 
+# Run bug-runtime-009-010 security-review pins (5 cases). Test owned by
+# code-unit-tester; binds only to the Real seams named in security-review.md
+# "Security Tests Requested". Definitions land in src/flappy_content.cpp.
+add_executable(flappy_security_test tests/flappy_security_test.cpp)
+target_sources(flappy_security_test PRIVATE src/flappy_content.cpp)
+target_link_libraries(flappy_security_test PRIVATE runtime)
+target_compile_options(flappy_security_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME flappy_security_test COMMAND flappy_security_test)
+
 # Batch 1 / T1+T2: content-tag registry seam (FR-RUNTIME-013 /
 # AC-RUNTIME-038/039). Test owned by code-unit-tester; binds only to the T1
 # `Interface:` line. Definitions land in src/content_registry.cpp.
