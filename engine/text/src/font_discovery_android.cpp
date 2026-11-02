@@ -83,6 +83,13 @@ constexpr std::uint64_t kSansKhmrId = 0x00070001u;
 constexpr std::uint64_t kSansMymrId = 0x00080001u;
 constexpr std::uint64_t kSansHaniHansId = 0x00090001u;
 
+constexpr std::uint32_t kUnset = 0u;  // T5: gallery sends script_tag=0
+// T5 (BUG-TEXT-008 script-0): unset script defaults to Latn routing so
+// device Roboto faces enter the chain. Mirrors font_discovery.cpp.
+constexpr std::uint32_t EffectiveScript(std::uint32_t scriptTag) noexcept {
+  return scriptTag == kUnset ? kLatn : scriptTag;
+}
+
 std::uint64_t RobotoFaceForScript(std::uint32_t scriptTag) {
   switch (scriptTag) {
     case kArab:
@@ -135,7 +142,7 @@ bool IsKnownFamily(const std::string& family) {
 }  // namespace
 
 bool SystemFontEnumerator::SupportsScript(std::uint32_t scriptTag) const {
-  switch (scriptTag) {
+  switch (EffectiveScript(scriptTag)) {
     case kLatn:
     case kArab:
     case kCyrl:
@@ -163,6 +170,7 @@ bool SystemFontEnumerator::HasFamily(const std::string& family) const {
 
 std::vector<FontHandle> SystemFontEnumerator::FacesForFamily(
     const std::string& family, std::uint32_t scriptTag) const {
+  scriptTag = EffectiveScript(scriptTag);
   // Fail-closed (RULE-RUNTIME-001 + font_discovery.h contract): unknown
   // script or unknown family yields empty, never a substitute face; the
   // caller (discoverFonts) falls back through script -> generic -> bundled
@@ -182,6 +190,7 @@ std::vector<FontHandle> SystemFontEnumerator::FacesForFamily(
 
 std::vector<FontHandle> SystemFontEnumerator::GenericFaces(
     std::uint32_t scriptTag) const {
+  scriptTag = EffectiveScript(scriptTag);
   // Per-script generic fallback: Roboto is the generic family on Android,
   // so the generic step resolves to the same per-script Roboto coverage.
   if (!SupportsScript(scriptTag)) return {};

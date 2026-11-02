@@ -25,6 +25,7 @@
 #include <vector>
 
 #include "muse/text/shaper.h"
+#include "muse/text/font_discovery.h"
 
 // ASSUMPTION (structural): shapeRun keeps its committed signature; the T5
 // coder swaps the stub backend for reference-matching shaping WITHOUT
@@ -325,6 +326,84 @@ static bool check_shaper_names_hb_and_missing_glyph_reasons() {
     }                                  \
   } while (0)
 
+// --- Follow-up batch (BUG-TEXT-008 T5-FAIL, 2026-11-03). Device proof on
+// 6555 (workflow.local/runs/bug-text-008/device-proof/logcat-t5.txt +
+// test-report.md T5 section): the script-agnostic gallery request arrives
+// with script_tag=0; only the last-resort face (id 16777215, file-less) is
+// ever probed ([reason=path], no file candidates); device Roboto files
+// exist but no Roboto face enters the chain; 5/5 frames drawn=0
+// [reason=missing-glyph]. These hermetic pins lock the fixed behavior on
+// host through the public font_discovery boundary (Real-only: no Fake, the
+// stub-backed enumerator IS the ordering-logic Real on host; the NDK
+// enumerator plugs the same seam on device). All three are RED pre-fix by
+// construction (SupportsScript(0)==false today) and GREEN post-fix.
+// ASSUMPTION: unset script (0) must default to Latn routing (or script
+// detection must route Latin text to Latn) — the gallery never sends a tag.
+// ASSUMPTION: 'Latn' tag literal 0x4C61746E and LastResort id 0x00FFFFFF
+// mirror font_discovery.cpp; if the coder renames the constants (not the
+// behavior), update the literals, not the expectations (GR-08 T1.9). ---
+
+namespace {
+constexpr std::uint32_t kPinLatnTag = 0x4C61746Eu;  // 'Latn'
+constexpr std::uint64_t kPinLastResortId = 0x00FFFFFFu;  // id 16777215
+}  // namespace
+
+// T5a: script-0 defaults to Latn — resolveFallbackChain(0) must resolve a
+// real (non-last-resort) face, never terminate at the file-less LastResort.
+static bool check_script_zero_defaults_to_latn_face() {
+  try {
+    // Positive control: explicit Latn already resolves a real face, so a
+    // T5a failure is specific to the unset-script default, not the chain.
+    auto latn = muse::text::resolveFallbackChain(kPinLatnTag, nullptr,
+                                                 nullptr);
+    if (!latn.ok() || (*latn).id == kPinLastResortId) return false;
+    auto result = muse::text::resolveFallbackChain(0, nullptr, nullptr);
+    if (!result.ok()) return false;
+    return (*result).id != kPinLastResortId;
+  } catch (...) {
+    return false;
+  }
+}
+
+// T5b: the file-less last-resort face never terminates a resolvable chain
+// alone — discoverFonts for the unset script must succeed with at least one
+// non-last-resort face ahead of the LastResort tail.
+static bool check_unset_script_chain_has_resolvable_face_before_lastresort() {
+  try {
+    muse::text::FontQuery q;
+    q.scriptTag = 0;
+    auto result = muse::text::discoverFonts(q);
+    if (!result.ok()) return false;
+    const std::vector<muse::text::FontHandle>& chain = *result;
+    if (chain.size() < 2) return false;
+    if (chain.back().id != kPinLastResortId) return false;
+    for (std::size_t i = 0; i + 1 < chain.size(); ++i) {
+      if (chain[i].id != kPinLastResortId) return true;
+    }
+    return false;
+  } catch (...) {
+    return false;
+  }
+}
+
+// T5c: Roboto candidate faces enter the chain for Latin text arriving with
+// an unset script — FacesForFamily("Roboto", 0) must be non-empty and carry
+// no last-resort face.
+static bool check_roboto_covers_unset_script_latin() {
+  try {
+    const muse::text::SystemFontEnumerator enumerator;
+    const std::vector<muse::text::FontHandle> faces =
+        enumerator.FacesForFamily("Roboto", 0);
+    if (faces.empty()) return false;
+    for (std::size_t i = 0; i < faces.size(); ++i) {
+      if (faces[i].id == kPinLastResortId) return false;
+    }
+    return true;
+  } catch (...) {
+    return false;
+  }
+}
+
 int main() {
   int failures = 0;
   RUN_CASE(check_latin_basic_row);
@@ -343,6 +422,9 @@ int main() {
   RUN_CASE(check_device_shape_run_with_fallback_latin_label_ok);
   RUN_CASE(check_shaper_logs_ft_init_and_new_face_return_codes);
   RUN_CASE(check_shaper_names_hb_and_missing_glyph_reasons);
+  RUN_CASE(check_script_zero_defaults_to_latn_face);
+  RUN_CASE(check_unset_script_chain_has_resolvable_face_before_lastresort);
+  RUN_CASE(check_roboto_covers_unset_script_latin);
   if (failures > 0) {
     std::printf("script_shaping_test: %d failing\n", failures);
     return 1;

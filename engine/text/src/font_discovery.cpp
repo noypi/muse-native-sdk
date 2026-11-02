@@ -60,6 +60,13 @@ constexpr std::uint64_t kGenericCyrlId = 0x00F00003u;
 constexpr std::uint64_t kGenericDevaId = 0x00F00004u;
 constexpr std::uint64_t kLastResortId = 0x00FFFFFFu;
 
+constexpr std::uint32_t kUnset = 0u;  // T5: gallery sends script_tag=0
+// T5 (BUG-TEXT-008 script-0): unset script defaults to Latn routing so
+// device Roboto faces enter the chain. Normalizes at every seam entry.
+constexpr std::uint32_t EffectiveScript(std::uint32_t scriptTag) noexcept {
+  return scriptTag == kUnset ? kLatn : scriptTag;
+}
+
 bool IsKnownFamily(const std::string& family) {
   // T2: Roboto is the production device family (NDK lookup on Android,
   // compiled-in stand-ins on host); the generic families below keep their
@@ -133,7 +140,7 @@ void PushUnique(std::vector<FontHandle>& out, FontHandle face) {
 // on both because it only drives the seam above.
 #ifndef MUSE_TEXT_ANDROID_NDK
 bool SystemFontEnumerator::SupportsScript(std::uint32_t scriptTag) const {
-  switch (scriptTag) {
+  switch (EffectiveScript(scriptTag)) {
     case kLatn:
     case kArab:
     case kCyrl:
@@ -155,13 +162,14 @@ bool SystemFontEnumerator::HasFamily(const std::string& family) const {
 
 std::vector<FontHandle> SystemFontEnumerator::FacesForFamily(
     const std::string& family, std::uint32_t scriptTag) const {
+  scriptTag = EffectiveScript(scriptTag);
   if (!SupportsScript(scriptTag) || !HasFamily(family)) return {};
   return {FontHandle(FamilyFaceId(family, scriptTag))};
 }
 
 std::vector<FontHandle> SystemFontEnumerator::GenericFaces(
     std::uint32_t scriptTag) const {
-  switch (scriptTag) {
+  switch (EffectiveScript(scriptTag)) {
     case kArab:
       return {FontHandle(kGenericArabId)};
     case kCyrl:
@@ -193,7 +201,8 @@ FontHandle SystemFontEnumerator::LastResortFace(
 
 StatusOr<std::vector<FontHandle>> discoverFonts(const FontQuery& q) {
   const SystemFontEnumerator enumerator;
-  if (!enumerator.SupportsScript(q.scriptTag)) {
+  const std::uint32_t tag = EffectiveScript(q.scriptTag);
+  if (!enumerator.SupportsScript(tag)) {
     return Status::kNoFaceAvailable;
   }
 
@@ -201,7 +210,7 @@ StatusOr<std::vector<FontHandle>> discoverFonts(const FontQuery& q) {
   // 1. Requested family (exact match, script-covered).
   if (!q.family.empty()) {
     for (const FontHandle& face :
-         enumerator.FacesForFamily(q.family, q.scriptTag)) {
+         enumerator.FacesForFamily(q.family, tag)) {
       PushUnique(chain, face);
     }
   }
@@ -210,22 +219,22 @@ StatusOr<std::vector<FontHandle>> discoverFonts(const FontQuery& q) {
   // the slot is ordered before generic fallback so locale-aware faces win
   // once the NDK backend lands. The chain content stays deterministic per
   // (family, script, locale, weight).
-  if (q.scriptTag == kArab) {
+  if (tag == kArab) {
     PushUnique(chain, FontHandle(kSansArabId));
     PushUnique(chain, FontHandle(kSerifArabId));
-  } else if (q.scriptTag == kCyrl) {
+  } else if (tag == kCyrl) {
     PushUnique(chain, FontHandle(kSansCyrlId));
-  } else if (q.scriptTag == kDeva) {
+  } else if (tag == kDeva) {
     PushUnique(chain, FontHandle(kSansDevaId));
-  } else if (q.scriptTag == kHebr) {
+  } else if (tag == kHebr) {
     PushUnique(chain, FontHandle(kSansHebrId));
-  } else if (q.scriptTag == kThai) {
+  } else if (tag == kThai) {
     PushUnique(chain, FontHandle(kSansThaiId));
-  } else if (q.scriptTag == kKhmr) {
+  } else if (tag == kKhmr) {
     PushUnique(chain, FontHandle(kSansKhmrId));
-  } else if (q.scriptTag == kMymr) {
+  } else if (tag == kMymr) {
     PushUnique(chain, FontHandle(kSansMymrId));
-  } else if (q.scriptTag == kHani) {
+  } else if (tag == kHani) {
     PushUnique(chain, FontHandle(kSansHaniHansId));
     PushUnique(chain, FontHandle(kSansHaniJpanId));
   } else {
@@ -234,11 +243,11 @@ StatusOr<std::vector<FontHandle>> discoverFonts(const FontQuery& q) {
     PushUnique(chain, FontHandle(kMonoLatnId));
   }
   // 3. Generic family fallback.
-  for (const FontHandle& face : enumerator.GenericFaces(q.scriptTag)) {
+  for (const FontHandle& face : enumerator.GenericFaces(tag)) {
     PushUnique(chain, face);
   }
   // 4. Bundled last-resort face, always last.
-  PushUnique(chain, enumerator.LastResortFace(q.scriptTag));
+  PushUnique(chain, enumerator.LastResortFace(tag));
 
   if (chain.empty()) return Status::kNoFaceAvailable;
   return chain;
@@ -250,6 +259,7 @@ StatusOr<std::vector<FontHandle>> discoverFonts(const FontQuery& q) {
 // treatment — script coverage decides, locale only selects the Hani variant.
 StatusOr<FontHandle> resolveFallbackForScript(
     std::uint32_t script_tag, const char* bcp47_locale) noexcept {
+  script_tag = EffectiveScript(script_tag);
   const SystemFontEnumerator enumerator;
   if (!enumerator.SupportsScript(script_tag)) {
     return Status::kMissingGlyph;
@@ -309,6 +319,7 @@ StatusOr<FontHandle> resolveFallbackForScript(
 StatusOr<FontHandle> resolveFallbackChain(
     std::uint32_t script_tag, const char* bcp47_locale,
     const char* generic_family) noexcept {
+  script_tag = EffectiveScript(script_tag);
   // Step 1: T1 matcher (covers every supported script; locale selects only
   // the Hani variant, unknown/null/empty locale falls back to Hans).
   auto specific = resolveFallbackForScript(script_tag, bcp47_locale);
