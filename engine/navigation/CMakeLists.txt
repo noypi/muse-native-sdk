@@ -26,6 +26,7 @@ add_library(navigation
   src/predictive_transition.cpp
   src/entry_funnel.cpp
   src/back_dispatch.cpp
+  src/router_facade_gate.cpp
 )
 target_include_directories(navigation PUBLIC include)
 target_compile_options(navigation PRIVATE -Wall -Wextra -Wpedantic)
@@ -172,6 +173,11 @@ add_executable(rollback_flag_test tests/rollback_flag_test.cpp)
 target_link_libraries(rollback_flag_test PRIVATE navigation)
 target_compile_options(rollback_flag_test PRIVATE -Wall -Wextra -Wpedantic)
 add_test(NAME rollback_flag_test COMMAND rollback_flag_test)
+
+add_executable(router_facade_gate_test tests/router_facade_gate_test.cpp)
+target_link_libraries(router_facade_gate_test PRIVATE navigation)
+target_compile_options(router_facade_gate_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME router_facade_gate_test COMMAND router_facade_gate_test)
 
 # FR-NAV-006 T2 (NAV-APPLINKS codegen invocation — documentation only, no new
 # engine target added here):
