@@ -44,7 +44,7 @@ const { join } = require('node:path');
 const SRC_DIR = join(__dirname, '..', 'src');
 const APP_PATH = join(SRC_DIR, 'App.tsx');
 const NAV_PATH = '../src/galleryNav.js';
-const EXPECTED_ACTION = 'muse.native.NATIVE_ADVANCE_PAGE';
+const EXPECTED_ACTION = 'muse.native.NAVIGATE';
 
 function readApp() {
   return readFileSync(APP_PATH, 'utf8');
@@ -131,8 +131,12 @@ describe('T4b graphic-shape Button Prev/Next chrome (static source pins — RED 
     for (const [name, block, dir] of [['onPrev', prevBlock, -1], ['onNext', nextBlock, 1]]) {
       assert.ok(/isPagingGesture\(origin,\s*'tap'\)/.test(block), `${name} must keep the isPagingGesture(origin, 'tap') guard`);
       assert.ok(
-        block.includes(`requestShellAdvance(${dir}, 'shell-chrome')`),
-        `${name} must keep requestShellAdvance(${dir}, 'shell-chrome')`,
+        block.includes(`requestShellAdvance(${dir}, 'shell-chrome',`),
+        `${name} must keep requestShellAdvance(${dir}, 'shell-chrome', route, params) (4-arg explicit-route seam)`,
+      );
+      assert.ok(
+        /requestShellAdvance\([^)]*gallery:\/\/story\//.test(block),
+        `${name} must pass an explicit gallery://story/<id> route (routeless calls deny fail-closed)`,
       );
       assert.ok(/setSelectedIndex/.test(block), `${name} must keep setSelectedIndex`);
     }
@@ -179,11 +183,11 @@ describe('T4b same paging path via galleryNav (behavioral pins — hold pre/post
     const nav = freshRequireNav();
     globalThis.__museTestBroadcasts = [];
     try {
-      assert.equal(nav.requestShellAdvance(-1, 'shell-chrome'), true);
-      assert.equal(nav.requestShellAdvance(1, 'shell-chrome'), true);
+      assert.equal(nav.requestShellAdvance(-1, 'shell-chrome', 'gallery://story/b', {}), true);
+      assert.equal(nav.requestShellAdvance(1, 'shell-chrome', 'gallery://story/c', {}), true);
       assert.deepEqual(globalThis.__museTestBroadcasts, [
-        { action: EXPECTED_ACTION, direction: -1, origin: 'shell-chrome' },
-        { action: EXPECTED_ACTION, direction: 1, origin: 'shell-chrome' },
+        { action: EXPECTED_ACTION, route: 'gallery://story/b', params: {}, origin: 'shell-chrome' },
+        { action: EXPECTED_ACTION, route: 'gallery://story/c', params: {}, origin: 'shell-chrome' },
       ]);
     } finally {
       delete globalThis.__museTestBroadcasts;
