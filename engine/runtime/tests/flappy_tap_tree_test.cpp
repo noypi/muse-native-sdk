@@ -199,6 +199,44 @@ static bool check_jni_lane_plus_inf_fails_closed() {
   return true;
 }
 
+// ---- T2 (bug-runtime-009-010 Option A) precondition ----
+// T4 dispatches taps on any evaluated/hit-test node with a registered
+// handler (never only 31). This case pins the surface T4 builds on: the
+// tap tree exposes non-31 touchables (32/33) with Yoga-derived bounds and
+// named handlers. Expected GREEN today and after T4; the RED dispatch
+// half lives in flappy_tap_js_dispatch_test.cpp.
+static bool check_tap_tree_exposes_non31_touchables_with_handlers() {
+  const std::vector<TapNode> nodes = buildTapTree(kFlappyLayoutA);
+  bool saw32 = false;
+  bool saw33 = false;
+  for (const auto& n : nodes) {
+    if (n.nodeId == 32 || n.nodeId == 33) {
+      if (n.handlerId.empty()) {
+        std::printf("  detail: node %d has empty handlerId\n",
+                    static_cast<int>(n.nodeId));
+        return false;
+      }
+      if (n.bounds.w <= 0.0f || n.bounds.h <= 0.0f) {
+        std::printf("  detail: node %d has empty bounds\n",
+                    static_cast<int>(n.nodeId));
+        return false;
+      }
+      if (is_canned_gallery_rect(n.bounds)) {
+        std::printf("  detail: node %d has canned gallery rect\n",
+                    static_cast<int>(n.nodeId));
+        return false;
+      }
+      if (n.nodeId == 32) saw32 = true;
+      if (n.nodeId == 33) saw33 = true;
+    }
+  }
+  if (!saw32 || !saw33) {
+    std::printf("  detail: tap tree exposes no non-31 touchables\n");
+    return false;
+  }
+  return true;
+}
+
 #define RUN_CASE(name)                                  \
   do {                                                  \
     if (!(name)()) {                                    \
@@ -219,6 +257,7 @@ int main() {
   RUN_CASE(check_relayout_moves_bounds_identity_stable);
   RUN_CASE(check_empty_layout_fails_closed_no_gallery_rects);
   RUN_CASE(check_jni_lane_plus_inf_fails_closed);
+  RUN_CASE(check_tap_tree_exposes_non31_touchables_with_handlers);
   if (failures > 0) {
     std::printf("flappy_tap_tree_test: %d failing\n", failures);
     return 1;

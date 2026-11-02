@@ -314,6 +314,84 @@ static bool check_record_seam_denies_forged_node_and_handler() {
   return true;
 }
 
+// ---- T2 (bug-runtime-009-010 Option A) RED cases ----
+// Plan `Interface:` line (verbatim): `dispatchTouch(nodeId: int,
+// action: TouchAction, x: float, y: float) -> DispatchResult
+// { fired: bool, nodeId: int, jsHandled: bool }` — a tap on any
+// evaluated/hit-test node (not only 31) with a registered handler returns
+// `jsHandled=true` via `JsRuntime` invocation; unregistered/miss returns
+// `fired=false`. Store contract: `EvaluatedFlappyTrees()` is empty at
+// startup (no 101/102/103 without registration/evaluation).
+// Production JsRuntime dispatch surface (T4 coder implements in
+// engine/runtime/src/js_runtime.cpp + engine/runtime/src/presenter.cpp,
+// handler resolved per node via registration in
+// engine/runtime/src/flappy_content.cpp): declared here against the plan;
+// the definition lands with T4, so linking the jsHandled case below before
+// then MUST fail (expected red). The two probes below it compile and run
+// today and FAIL on current behavior (literal-31 gate, static seeder).
+
+// Desired Option-A dispatch result: jsHandled comes from a real JsRuntime
+// invocation of the node's registered handler, never record-plus-logcat.
+struct JsDispatchResult {
+  bool fired = false;
+  std::int32_t nodeId = -1;
+  bool jsHandled = false;
+};
+JsDispatchResult DispatchTapViaJsRuntime(std::int32_t nodeId,
+                                         const char* handler);
+
+// Named case (JsRuntime dispatch): a tap on evaluated non-31 touchable node
+// 32 reaches JsRuntime and returns jsHandled — the literal-31 gate fails it.
+static bool check_non31_touchable_dispatches_via_jsruntime() {
+  const JsDispatchResult r = DispatchTapViaJsRuntime(32, "onHudTouch");
+  if (!r.fired || r.nodeId != 32 || !r.jsHandled) {
+    std::printf("  detail: expected {fired, node 32, jsHandled} via JsRuntime\n");
+    return false;
+  }
+  return true;
+}
+
+// Named case (registration gate): every evaluated touchable (31/32/33)
+// names its handler through registration — never a literal-31 gate.
+// Compiles and runs today; FAILS (32/33 resolve nullptr) until T4.
+static bool check_every_touchable_names_handler_via_registration() {
+  if (runtime::ContentTouchHandlerName(31) == nullptr) {
+    std::printf("  detail: steer node 31 names no handler\n");
+    return false;
+  }
+  if (runtime::ContentTouchHandlerName(32) == nullptr) {
+    std::printf("  detail: touchable node 32 names no handler (31-gate)\n");
+    return false;
+  }
+  if (runtime::ContentTouchHandlerName(33) == nullptr) {
+    std::printf("  detail: touchable node 33 names no handler (31-gate)\n");
+    return false;
+  }
+  if (runtime::ContentTouchHandlerName(kGalleryScrimNode) != nullptr) {
+    std::printf("  detail: scrim node 20 named a flappy handler\n");
+    return false;
+  }
+  return true;
+}
+
+// Named case (store starts empty): handles 101/102/103 do not resolve
+// before registration/evaluation. Compiles and runs today; FAILS (static
+// seeder pre-seeds them) until T4 deletes the seeder.
+static bool check_startup_store_has_no_preseeded_handles() {
+  const FrameStats a = renderTree(101);
+  const FrameStats b = renderTree(102);
+  const FrameStats c = renderTree(103);
+  if (a.nodeCount != 0 || b.nodeCount != 0 || c.nodeCount != 0) {
+    std::printf("  detail: pre-seeded handles resolve without registration\n");
+    return false;
+  }
+  if (b.unknownKindCount != 0) {
+    std::printf("  detail: pre-seeded unknown tree present at startup\n");
+    return false;
+  }
+  return true;
+}
+
 #define RUN_CASE(name)                                  \
   do {                                                  \
     if (!(name)()) {                                    \
@@ -341,6 +419,9 @@ int main() {
   RUN_CASE(check_nonfinite_coordinates_rejected);
   RUN_CASE(check_record_seam_denies_forged_node_and_handler);
   RUN_CASE(check_tap_record_evidence_is_log_literal_safe);
+  RUN_CASE(check_non31_touchable_dispatches_via_jsruntime);
+  RUN_CASE(check_every_touchable_names_handler_via_registration);
+  RUN_CASE(check_startup_store_has_no_preseeded_handles);
   if (failures > 0) {
     std::printf("flappy_tap_js_dispatch_test: %d failing\n", failures);
     return 1;

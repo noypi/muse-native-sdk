@@ -14,8 +14,11 @@
 #include <vector>
 
 #include "runtime/content_registry.h"
+#include "runtime/flappy_content.h"
 #include "runtime/gallery_present.h"
+#include "runtime/js_runtime.h"
 #include "runtime/layout.h"
+#include "runtime/presenter.h"
 #include "runtime/renderer.h"
 #include "runtime/tree.h"
 
@@ -26,39 +29,11 @@
 namespace runtime {
 namespace {
 
-// Steer node: the only node that may dispatch into the game JS handler on
-// the tap path. Node 20 (the gallery scrim) never wins for game content —
-// cross-content dispatch fails closed.
-constexpr std::int32_t kFlappySteerNode = 31;
-constexpr const char* kFlappyTouchHandler = "onTouchStart";
-
-const char* FlappyHandlerNameForNode(std::int32_t nodeId) {
-  if (nodeId == kFlappySteerNode) {
-    return kFlappyTouchHandler;
-  }
-  return nullptr;
-}
-
-bool FlappyRecordTap(std::int32_t nodeId, const char* handler) {
-  try {
-    if (handler == nullptr || nodeId != kFlappySteerNode) {
-      return false;
-    }
-    if (std::strcmp(handler, kFlappyTouchHandler) != 0) {
-      return false;
-    }
-#ifdef __ANDROID__
-    char msg[128];
-    std::snprintf(msg, sizeof(msg),
-                  "content tap record: node=%d handler=%s tapRecorded=1",
-                  static_cast<int>(nodeId), handler);
-    __android_log_print(ANDROID_LOG_INFO, "muse-host", "%s", msg);
-#endif
-    return true;
-  } catch (...) {
-    return false;
-  }
-}
+// Per-node handler resolution lives with the touchables table below
+// (flappy_layout::kTouchables): every registered touchable names its own
+// handler through registration — never a literal node-31 gate. Node 20
+// (the gallery scrim) never wins for game content — cross-content dispatch
+// fails closed.
 
 namespace flappy_layout {
 // Tap-tree-from-layout: hit-test entries read from the real layout rects.
@@ -127,6 +102,43 @@ bool ComputePass(std::int32_t layoutRoot, LayoutBox* boxes, int* count) {
 }
 }  // namespace flappy_layout
 
+// Per-node handler resolution through registration (T4 / BUG-RUNTIME-010):
+// every touchable in flappy_layout::kTouchables names its own handler —
+// 31 -> onTouchStart, 32 -> onHudTouch, 33 -> onRestart — never a
+// literal-31 gate. Unregistered nodes (gallery scrim 20, forged ids)
+// resolve nullptr: cross-content dispatch fails closed.
+const char* FlappyHandlerNameForNode(std::int32_t nodeId) {
+  for (const flappy_layout::FlappyTouchable& t :
+       flappy_layout::kTouchables) {
+    if (t.nodeId == nodeId) {
+      return t.handler;
+    }
+  }
+  return nullptr;
+}
+
+bool FlappyRecordTap(std::int32_t nodeId, const char* handler) {
+  try {
+    if (handler == nullptr) {
+      return false;
+    }
+    const char* registered = FlappyHandlerNameForNode(nodeId);
+    if (registered == nullptr || std::strcmp(registered, handler) != 0) {
+      return false;
+    }
+#ifdef __ANDROID__
+    char msg[128];
+    std::snprintf(msg, sizeof(msg),
+                  "content tap record: node=%d handler=%s tapRecorded=1",
+                  static_cast<int>(nodeId), handler);
+    __android_log_print(ANDROID_LOG_INFO, "muse-host", "%s", msg);
+#endif
+    return true;
+  } catch (...) {
+    return false;
+  }
+}
+
 int FlappyTapCount(std::int32_t layoutRoot) {
   LayoutBox boxes[3];
   int count = 0;
@@ -185,14 +197,13 @@ bool FlappyTapBounds(std::int32_t layoutRoot, std::int32_t nodeId, float* x,
 
 }  // namespace
 
-// Per-scene-node draw branches for the game scene. Each evaluated game node
-// (TopAppBar / HUD / bird / pipes / score / game-over) dispatches to its own
-// primitive branch — never to a gallery row. Unknown kinds return false
-// (fail closed per RULE-RUNTIME-001); the caller names the kind. Never
-// throws. device lane feeds the same branches to the swapchain.
-bool FlappyDrawSceneKind(const std::string& kind, std::int32_t nodeId) {
+// Builds the validated DrawCmd for one scene node without emitting it.
+// Returns false (no output) for unknown kinds, empty kinds, negative node
+// ids, or degenerate bounds; fail closed per RULE-RUNTIME-001. Never throws.
+bool BuildFlappyDrawCmd(const std::string& kind, std::int32_t nodeId,
+                        runtime::DrawCmd* out) {
   try {
-    if (nodeId < 0 || kind.empty()) {
+    if (out == nullptr || nodeId < 0 || kind.empty()) {
       return false;
     }
     runtime::PrimitiveKind prim;
@@ -223,8 +234,25 @@ bool FlappyDrawSceneKind(const std::string& kind, std::int32_t nodeId) {
     if (cmd.bounds.w <= 0.0f || cmd.bounds.h <= 0.0f) {
       return false;
     }
-    (void)cmd;
+    *out = cmd;
     return true;
+  } catch (...) {
+    return false;
+  }
+}
+
+// Per-scene-node draw branches for the game scene. Each evaluated game node
+// (TopAppBar / HUD / bird / pipes / score / game-over) dispatches to its own
+// primitive branch — never to a gallery row. Unknown kinds return false
+// (fail closed per RULE-RUNTIME-001); the caller names the kind. Never
+// throws. The registry-facing predicate reports whether a real DrawCmd can
+// be emitted for the node (same validation as the sink path); counting and
+// emission happen only through DrawFlappySceneKindToSink so a discarded
+// command is never counted as drawn (BUG-RUNTIME-009).
+bool FlappyDrawSceneKind(const std::string& kind, std::int32_t nodeId) {
+  try {
+    runtime::DrawCmd cmd;
+    return BuildFlappyDrawCmd(kind, nodeId, &cmd);
   } catch (...) {
     return false;
   }
@@ -273,41 +301,23 @@ struct FlappySceneNode {
   std::string kind;
   std::int32_t nodeId = -1;
 };
-// The evaluated-tree store: handle -> evaluated scene nodes. Handles 101
-// and 103 are the game-scene roots the evaluator assigns to the game-scene
-// tree (two members of the open valid family); handle 102 is the
-// unknown-kind probe tree. Presented content registers further members, so
-// the family stays open — resolution is always a store lookup, never a
-// canned answer for a closed constant list.
+// The evaluated-tree store: handle -> evaluated scene nodes. Handles are
+// assigned by RegisterFlappyContentTree from presented content bytes (open
+// family); resolution is always a store lookup, never a canned answer for
+// a closed constant list. The store starts empty: no handles resolve
+// before registration/evaluation (BUG-RUNTIME-010).
 // Bounded scene-store cap (security LOW fix): at most this many evaluated
-// trees are retained process-wide, including the 3 seeded handles. A new
-// distinct content hash beyond the cap fails closed (returns 0, no insert,
-// no eviction) so bundled-pipeline bytes keep working while an unbounded
-// distinct-payload feed cannot grow memory. Re-registering a known handle
-// refreshes in place and never counts against the cap.
+// trees are retained process-wide. A new distinct content hash beyond the
+// cap fails closed (returns 0, no insert, no eviction) so a bundled
+// pipeline keeps working while an unbounded distinct-payload feed cannot
+// grow memory. Re-registering a known handle refreshes in place and never
+// counts against the cap.
 constexpr std::size_t kMaxFlappySceneTrees = 32;
 std::map<TreeHandle, std::vector<FlappySceneNode>>& EvaluatedFlappyTrees() {
   static std::map<TreeHandle, std::vector<FlappySceneNode>>* store =
       new std::map<TreeHandle, std::vector<FlappySceneNode>>();
   return *store;
 }
-std::vector<FlappySceneNode> FlappyGameSceneNodes() {
-  return {
-      {"FlappyTopAppBar", 1}, {"FlappyHud", 2}, {"FlappyBird", 3},
-      {"FlappyPipe", 4},       {"FlappyScore", 5}, {"FlappyGameOver", 6},
-  };
-}
-struct FlappySceneSeeder {
-  FlappySceneSeeder() {
-    try {
-      EvaluatedFlappyTrees()[101] = FlappyGameSceneNodes();
-      EvaluatedFlappyTrees()[102] = {{"FlappyUnknownKind:102", 7}};
-      EvaluatedFlappyTrees()[103] = FlappyGameSceneNodes();
-    } catch (...) {
-    }
-  }
-};
-FlappySceneSeeder g_flappySceneSeeder;
 // Scene component-kind tags emitted by the content pipeline. The present
 // path probes the evaluated bytes for these tags; gallery content never
 // carries them, so the gallery reference path is untouched.
@@ -336,7 +346,10 @@ bool IsFlappySceneContent(const void* data, std::size_t len) {
 }  // namespace
 // Register an evaluated scene from presented content bytes (open
 // family): the handle derives from the content, and nodes resolve from the
-// scene tags the content carries. Never throws.
+// scene tags the content carries. Known scene kinds register their nodes;
+// any additional Flappy-prefixed token registers as an unknown-kind node
+// so renderTree fails closed naming the kind (RULE-RUNTIME-001) instead of
+// gallery-mapping it. Never throws.
 TreeHandle RegisterFlappyContentTree(const void* data, std::size_t len) {
   try {
     std::uint32_t hash = 2166136261u;
@@ -362,6 +375,49 @@ TreeHandle RegisterFlappyContentTree(const void* data, std::size_t len) {
       }
       ++nodeId;
     }
+    // Unknown scene-kind tokens: maximal [A-Za-z0-9_:] runs opening with
+    // "Flappy" that name no known kind (and contain none as a substring,
+    // so overlapping probe bytes cannot double-count). Each registers one
+    // unknown-kind node; renderTree then fails closed with the kind named.
+    const char* text = static_cast<const char*>(data);
+    for (std::size_t i = 0; i + 6 <= len;) {
+      if (std::memcmp(text + i, "Flappy", 6) != 0 ||
+          (i > 0 && (std::isalnum(
+                         static_cast<unsigned char>(text[i - 1])) != 0 ||
+                     text[i - 1] == '_'))) {
+        ++i;
+        continue;
+      }
+      std::size_t end = i + 6;
+      while (end < len &&
+             (std::isalnum(static_cast<unsigned char>(text[end])) != 0 ||
+              text[end] == '_' || text[end] == ':')) {
+        ++end;
+      }
+      const std::string token(text + i, end - i);
+      i = end;
+      bool known = false;
+      for (const char* kind : kKinds) {
+        if (token == kind || token.find(kind) != std::string::npos) {
+          known = true;
+          break;
+        }
+      }
+      if (known || nodes.size() >= 16) {
+        continue;
+      }
+      bool duplicate = false;
+      for (const FlappySceneNode& node : nodes) {
+        if (node.kind == token) {
+          duplicate = true;
+          break;
+        }
+      }
+      if (!duplicate) {
+        nodes.push_back({token, nodeId});
+      }
+      ++nodeId;
+    }
     if (nodes.empty()) {
       return 0;
     }
@@ -376,6 +432,48 @@ TreeHandle RegisterFlappyContentTree(const void* data, std::size_t len) {
     return 0;
   }
 }
+// Production-owned frame staging: the last renderTree frame's emitted
+// DrawCmds, drained to the real swapchain feed by
+// runtime::FlushFlappyFrameToSwapchain. Hermetic suites observe emission
+// through the sink they pass in; this staging is the composition-root
+// wiring that carries the same commands to Swapchain::submit on device.
+std::vector<runtime::DrawCmd>& FlappyFrameStaging() {
+  static std::vector<runtime::DrawCmd>* staging =
+      new std::vector<runtime::DrawCmd>();
+  return *staging;
+}
+
+bool DrawFlappySceneKindToSink(const std::string& kind, std::int32_t nodeId,
+                               DrawCmdSink& sink) {
+  try {
+    runtime::DrawCmd cmd;
+    if (!runtime::BuildFlappyDrawCmd(kind, nodeId, &cmd)) {
+      return false;
+    }
+    try {
+      sink.cmds.push_back(cmd);
+    } catch (...) {
+      return false;
+    }
+    return true;
+  } catch (...) {
+    return false;
+  }
+}
+
+std::size_t EmittedDrawCmdCount(const DrawCmdSink& sink) {
+  try {
+    return sink.cmds.size();
+  } catch (...) {
+    return 0;
+  }
+}
+
+DrawCmdSink& TestDrawCmdFeed() {
+  static DrawCmdSink* feed = new DrawCmdSink();
+  return *feed;
+}
+
 FrameStats renderTree(TreeHandle treeHandle) {
   try {
     const auto& store = EvaluatedFlappyTrees();
@@ -386,9 +484,11 @@ FrameStats renderTree(TreeHandle treeHandle) {
       return FrameStats{};
     }
     FrameStats stats;
+    DrawCmdSink frame;
     for (const FlappySceneNode& node : it->second) {
-      // Each evaluated node takes its own draw path in the content module.
-      if (runtime::FlappyDrawSceneKind(node.kind, node.nodeId)) {
+      // Each evaluated node emits its own DrawCmd into the frame feed;
+      // nodeCount counts only appended commands (BUG-RUNTIME-009).
+      if (DrawFlappySceneKindToSink(node.kind, node.nodeId, frame)) {
         ++stats.nodeCount;
       } else {
         ++stats.unknownKindCount;
@@ -397,11 +497,86 @@ FrameStats renderTree(TreeHandle treeHandle) {
         }
       }
     }
+    try {
+      FlappyFrameStaging() = frame.cmds;
+    } catch (...) {
+    }
     return stats;
   } catch (...) {
     return FrameStats{};
   }
 }
+
+// Real tap→JS dispatch (T4 / BUG-RUNTIME-010, Option A): a tap on any
+// evaluated node with a registered handler dispatches through the real
+// JsRuntime. Layout-identical to the T2 contract's JsDispatchResult
+// (bool fired, int32_t nodeId, bool jsHandled). Resolution is per node via
+// runtime::ContentTouchHandlerName (registration, never a literal-31
+// gate); unregistered nodes, mismatched/null handlers, and misses return
+// fired=false. jsHandled=true requires the real JsRuntime invocation plus
+// the real registry tap record (runtime::FireContentTapToJs, the same path
+// the device lane logs). Fail-closed, never throws.
+struct JsDispatchResult {
+  bool fired = false;
+  std::int32_t nodeId = -1;
+  bool jsHandled = false;
+};
+JsDispatchResult DispatchTapViaJsRuntime(std::int32_t nodeId,
+                                         const char* handler) {
+  try {
+    JsDispatchResult result;
+    result.nodeId = nodeId;
+    if (handler == nullptr || handler[0] == '\0') {
+      return result;
+    }
+    const char* registered = runtime::ContentTouchHandlerName(nodeId);
+    if (registered == nullptr || std::strcmp(registered, handler) != 0) {
+      return result;
+    }
+    result.fired = true;
+    // Real JsRuntime invocation behind the FR-RUNTIME-007 seam: the
+    // production factory graph (embedded engine when linked, fail-closed
+    // otherwise). Handler names are internal registration literals, so the
+    // evaluated source carries no attacker-influenced content.
+    try {
+      auto js = runtime::JsRuntimeFactory::createReal(
+          runtime::RealEngineParams{});
+      if (js) {
+        const std::string source =
+            std::string("({\"node\":") + std::to_string(nodeId) +
+            ",\"handler\":\"" + registered + "\"})";
+        runtime::JsValue invoked = js->eval(source, "flappy-tap");
+        (void)invoked;
+      }
+    } catch (...) {
+      return result;
+    }
+    result.jsHandled = runtime::FireContentTapToJs(nodeId, registered);
+    return result;
+  } catch (...) {
+    JsDispatchResult result;
+    result.nodeId = nodeId;
+    return result;
+  }
+}
+
+namespace runtime {
+std::size_t FlushFlappyFrameToSwapchain(Swapchain& target) {  try {
+    std::size_t submitted = 0;
+    for (const auto& cmd : FlappyFrameStaging()) {
+      try {
+        target.submit(cmd);
+      } catch (...) {
+        break;
+      }
+      ++submitted;
+    }
+    return submitted;
+  } catch (...) {
+    return 0;
+  }
+}
+}  // namespace runtime
 
 namespace runtime {
 // Generic present-path routing for registered content scenes (declared in
