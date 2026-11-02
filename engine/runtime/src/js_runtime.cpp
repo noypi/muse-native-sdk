@@ -12,6 +12,7 @@
 #include <cstring>
 #include <string>
 
+#include "runtime/content_registry.h"
 #include "runtime/gallery_present.h"
 
 #ifdef __ANDROID__
@@ -51,30 +52,28 @@ std::unique_ptr<JsRuntime> JsRuntimeFactory::createReal(
   return std::unique_ptr<JsRuntime>(new RealJsRuntime(params));
 }
 
-// Batch 5 / T11 — native tap-record + logcat seam (NOT a JS invocation:
+// Batch 2 / T3 — content-agnostic tap-record seam (NOT a JS invocation:
 // AC-INPUT-021, AC-RUNTIME-018/033). No JsRuntime/JsEngine handle reaches
 // this TU, so no script is evaluated and no App.tsx/loop.ts handler runs
 // here — that end-to-end leg stays device/player proof. Records the fired
-// tap (node 31 + "onTouchStart" gate) and reports tapRecorded (never
-// jsHandled); the device lane logs nodeId + handler in logcat.
-// Fail-closed, never throws: unknown handlers and forged node ids report
-// false and record nothing.
-bool RecordFlappyTap(std::int32_t nodeId, const char* handler) {
+// tap through the registered content recorders (resolved by tag from the
+// ContentRegistry) and reports tapRecorded (never jsHandled).
+// Fail-closed, never throws: unknown handlers and unregistered node ids
+// report false and record nothing.
+bool RecordTap(std::int32_t nodeId, const char* handler) {
   try {
-    if (handler == nullptr || nodeId != 31) {
+    if (handler == nullptr) {
       return false;
     }
-    if (std::strcmp(handler, "onTouchStart") != 0) {
-      return false;
-    }
-#ifdef __ANDROID__
-    char msg[128];
-    std::snprintf(msg, sizeof(msg),
-                  "flappy tap record: node=%d handler=%s tapRecorded=1",
-                  static_cast<int>(nodeId), handler);
-    __android_log_print(ANDROID_LOG_INFO, "muse-host", "%s", msg);
-#endif
-    return true;
+    bool recorded = false;
+    GlobalContentRegistry().ForEach(
+        [&](ContentTag tag, const ContentHandlers& handlers) {
+          (void)tag;
+          if (!recorded && handlers.recordTap != nullptr) {
+            recorded = handlers.recordTap(nodeId, handler);
+          }
+        });
+    return recorded;
   } catch (...) {
     return false;
   }

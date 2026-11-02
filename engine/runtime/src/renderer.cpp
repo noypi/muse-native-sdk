@@ -4,6 +4,7 @@
 
 #include "engine/graphics/vector/slug_msdf.h"
 #include "engine/graphics/vector/tile_raster.h"
+#include "runtime/content_registry.h"
 #include "runtime/gallery_present.h"
 
 namespace runtime {
@@ -852,49 +853,27 @@ std::string Renderer::lastError() const { return lastError_; }
 
 }  // namespace runtime
 
-// Batch 5 / T9 — per-app content rendering (global scope): one draw path
-// per flappy scene
-// node kind (AC-RUNTIME-032). Each evaluated flappy node (TopAppBar / HUD /
-// bird / pipes / score / game-over) dispatches to its own primitive branch
-// below — never to a gallery row. Unknown kinds return false (fail closed
-// per RULE-RUNTIME-001); the caller names the kind. Never throws. The
-// hermetic seam validates kind-specific command construction through the
-// real renderer types; on device the same branches feed the swapchain.
-bool DrawFlappySceneKind(const std::string& kind, std::int32_t nodeId) {
+// Batch 2 / T4 — content-agnostic scene-kind draw (FR-RUNTIME-013). The
+// evaluated scene kind dispatches through the registered content draw
+// branches by tag — never to a per-app branch in this file. Unknown kinds
+// return false (fail closed per RULE-RUNTIME-001); the caller names the
+// kind. The hermetic seam validates kind-specific command construction
+// through the real renderer types; on device the same branches feed the
+// swapchain. Never throws.
+bool DrawSceneKind(const std::string& kind, std::int32_t nodeId) {
   try {
     if (nodeId < 0 || kind.empty()) {
       return false;
     }
-    runtime::PrimitiveKind prim;
-    if (kind == "FlappyTopAppBar") {
-      prim = runtime::PrimitiveKind::Rect;
-    } else if (kind == "FlappyHud") {
-      prim = runtime::PrimitiveKind::StateLayer;
-    } else if (kind == "FlappyBird") {
-      prim = runtime::PrimitiveKind::CircleArc;
-    } else if (kind == "FlappyPipe") {
-      prim = runtime::PrimitiveKind::RoundedRect;
-    } else if (kind == "FlappyScore") {
-      prim = runtime::PrimitiveKind::Text;
-    } else if (kind == "FlappyGameOver") {
-      prim = runtime::PrimitiveKind::OverlayScrim;
-    } else {
-      return false;
-    }
-    // Kind-specific geometry through the real DrawCmd shape: distinct
-    // per-kind placement derived from the stable node id, always
-    // non-degenerate. Gallery row geometry is never produced here.
-    runtime::DrawCmd cmd;
-    cmd.kind = prim;
-    const float slot = static_cast<float>(nodeId >= 0 ? nodeId % 6 : 0);
-    cmd.bounds = {40.0f + slot * 100.0f, 96.0f + slot * 48.0f, 120.0f, 64.0f};
-    cmd.nodeId = static_cast<std::uint32_t>(nodeId);
-    cmd.opacity = 1.0f;
-    if (cmd.bounds.w <= 0.0f || cmd.bounds.h <= 0.0f) {
-      return false;
-    }
-    (void)cmd;
-    return true;
+    bool drawn = false;
+    ::GlobalContentRegistry().ForEach(
+        [&](runtime::ContentTag tag, const runtime::ContentHandlers& handlers) {
+          (void)tag;
+          if (!drawn && handlers.drawSceneKind != nullptr) {
+            drawn = handlers.drawSceneKind(kind, nodeId);
+          }
+        });
+    return drawn;
   } catch (...) {
     return false;
   }

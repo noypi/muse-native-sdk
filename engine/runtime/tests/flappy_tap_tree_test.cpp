@@ -15,6 +15,11 @@
 // gallery_layering_test.cpp — no CMake change).
 #include "../../input/include/hit_test.h"
 
+// T6 seam setup header: buildTapTree resolves layout providers through the
+// content-tag registry; explicit registration keeps the suite independent
+// of static-init order.
+#include "runtime/flappy_content.h"
+
 // --- T10 `Interface:` line (plan verbatim) -------------------------------
 // `buildTapTree(layoutRoot: LayoutNode) -> TapNode[] — returns one TapNode
 // per touchable flappy node with {nodeId: int, bounds: Rect,
@@ -206,6 +211,9 @@ static bool check_jni_lane_plus_inf_fails_closed() {
 
 int main() {
   int failures = 0;
+  // T6 seam setup (FR-RUNTIME-013): layout providers resolve through the
+  // content-tag registry via explicit registration. Idempotent.
+  (void)runtime::RegisterFlappyContent();
   RUN_CASE(check_harness_entry_reached);
   RUN_CASE(check_every_touchable_node_has_id_bounds_handler);
   RUN_CASE(check_relayout_moves_bounds_identity_stable);

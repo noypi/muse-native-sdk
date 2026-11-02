@@ -19,6 +19,8 @@ set(MUSE_INPUT_SOURCES
 
 add_library(runtime
   src/tree.cpp
+  src/content_registry.cpp
+  src/flappy_content.cpp
   src/frame.cpp
   src/layout.cpp
   src/js_runtime.cpp
@@ -267,6 +269,8 @@ endif()
 if(DEFINED ANDROID_ABI AND NOT TARGET Runtime)
   add_library(Runtime SHARED
     src/tree.cpp
+    src/content_registry.cpp
+    src/flappy_content.cpp
     src/frame.cpp
     src/layout.cpp
     src/js_runtime.cpp
@@ -724,10 +728,17 @@ target_link_libraries(present_real_components_test PRIVATE runtime)
 target_compile_options(present_real_components_test PRIVATE -Wall -Wextra -Wpedantic)
 add_test(NAME present_real_components_test COMMAND present_real_components_test)
 
-# Batch 5 / T9: per-app content rendering (flappy game scene, never
-# gallery-mapped rows). Test owned by code-unit-tester; binds only to the T9
-# `Interface:` line. Definitions land in src/gallery_present.cpp.
+# Batch 5 / T9 + engine-content-isolation T5: per-app content rendering
+# (flappy game scene, never gallery-mapped rows). Test owned by
+# code-unit-tester; binds only to the T9 `Interface:` line. Scene-block
+# definitions relocated to src/flappy_content.cpp (T5); gallery_present.cpp
+# keeps only the generic present path.
+# Batch 2 / T3+T4: content-bound suites resolve dispatch through the
+# registry, so the content module TU links into these executables directly
+# (static-archive members otherwise drop when unreferenced). Test scope
+# unchanged — linkage only; T6 owns the seam revision.
 add_executable(flappy_render_path_test tests/flappy_render_path_test.cpp)
+target_sources(flappy_render_path_test PRIVATE src/flappy_content.cpp)
 target_link_libraries(flappy_render_path_test PRIVATE runtime)
 target_compile_options(flappy_render_path_test PRIVATE -Wall -Wextra -Wpedantic)
 add_test(NAME flappy_render_path_test COMMAND flappy_render_path_test)
@@ -736,6 +747,7 @@ add_test(NAME flappy_render_path_test COMMAND flappy_render_path_test)
 # code-unit-tester; binds only to the T10 `Interface:` line. Definitions land
 # in src/input_chain.cpp.
 add_executable(flappy_tap_tree_test tests/flappy_tap_tree_test.cpp)
+target_sources(flappy_tap_tree_test PRIVATE src/flappy_content.cpp)
 target_link_libraries(flappy_tap_tree_test PRIVATE runtime)
 target_compile_options(flappy_tap_tree_test PRIVATE -Wall -Wextra -Wpedantic)
 add_test(NAME flappy_tap_tree_test COMMAND flappy_tap_tree_test)
@@ -744,9 +756,18 @@ add_test(NAME flappy_tap_tree_test COMMAND flappy_tap_tree_test)
 # code-unit-tester; binds only to the T11 `Interface:` line. Definitions land
 # in src/presenter.cpp.
 add_executable(flappy_tap_js_dispatch_test tests/flappy_tap_js_dispatch_test.cpp)
+target_sources(flappy_tap_js_dispatch_test PRIVATE src/flappy_content.cpp)
 target_link_libraries(flappy_tap_js_dispatch_test PRIVATE runtime)
 target_compile_options(flappy_tap_js_dispatch_test PRIVATE -Wall -Wextra -Wpedantic)
 add_test(NAME flappy_tap_js_dispatch_test COMMAND flappy_tap_js_dispatch_test)
+
+# Batch 1 / T1+T2: content-tag registry seam (FR-RUNTIME-013 /
+# AC-RUNTIME-038/039). Test owned by code-unit-tester; binds only to the T1
+# `Interface:` line. Definitions land in src/content_registry.cpp.
+add_executable(content_registry_test tests/content_registry_test.cpp)
+target_link_libraries(content_registry_test PRIVATE runtime)
+target_compile_options(content_registry_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME content_registry_test COMMAND content_registry_test)
 
 # FR-GRAPHICS-015 batch 2 (T3): RULE-GRAPHICS-003 oracle-painter
 # reachability gate. Hermetic shell case (grep/nm over the page-target
