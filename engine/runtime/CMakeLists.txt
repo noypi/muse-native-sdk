@@ -84,8 +84,15 @@ target_sources(runtime PRIVATE
   ../text/src/font_discovery.cpp
   ../text/src/font_discovery_android.cpp
   ../text/src/glyph_atlas.cpp
+  ../text/src/glyph_raster_orientation.cpp
   ../text/src/rich_buffer.cpp
 )
+
+# BUG-TEXT-008 t5r4: the shipped `runtime` graph compiles its own copies of
+# the text TUs above (engine/text itself is consumed, never modified), so the
+# orientation guard ships here too — without this TU the device raster path
+# never executes GlyphUploadPreservesAdvanceDirection (PR #258 wired it only
+# into muse_text; libRuntime.so sizes stayed byte-identical).
 
 # BUG-M3-FIDELITY-005 T6: Swapchain rasterization of ShapedText runs consumes
 # the slug_msdf placement + tile_raster CPU mirror directly (consume-only:
@@ -288,6 +295,7 @@ if(DEFINED ANDROID_ABI AND NOT TARGET Runtime)
     ../text/src/font_discovery.cpp
     ../text/src/font_discovery_android.cpp
     ../text/src/glyph_atlas.cpp
+    ../text/src/glyph_raster_orientation.cpp
     ../text/src/rich_buffer.cpp
     ../graphics/vector/tile_raster.cc
     ../graphics/skia/present_skia.cpp
