@@ -2333,7 +2333,8 @@ bool PresentGallery(const void* mui1Data, std::size_t len, Renderer& renderer,
     // per RULE-RUNTIME-001 with a named diagnostic; non-content bytes fall
     // through to the gallery rows untouched.
     std::string contentError;
-    if (TryPresentContentScene(mui1Data, len, &contentError)) {
+    if (TryPresentContentScene(mui1Data, len, renderer, target,
+                               &contentError)) {
       return true;
     }
     if (!contentError.empty()) {
