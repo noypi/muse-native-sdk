@@ -83,6 +83,33 @@ class ProductionLinkGateTest(unittest.TestCase):
         finally:
             os.unlink(path)
 
+    def test_skia_graphite_allowlisted_with_ac_deps_028_values(self):
+        """AC-DEPS-028 prerequisite: exactly one Skia Graphite allow-list
+        row (owner graphics; need names GraphiteRender + BSD-3-Clause),
+        and the gate passes a manifest entry for it (denies without it)."""
+        rows = [
+            item for item in get_allowlist()
+            if item["name"] == "Skia Graphite"
+        ]
+        self.assertEqual(
+            len(rows), 1,
+            "allow-list must hold exactly one Skia Graphite row "
+            "(AC-DEPS-028)",
+        )
+        row = rows[0]
+        self.assertEqual(row["owner"], "graphics")
+        self.assertIn("GraphiteRender", row["need"])
+        self.assertIn("BSD-3-Clause", row["need"])
+        self.assertEqual(
+            self._check_entries([_entry(
+                "Skia Graphite",
+                owner="graphics",
+                interface="GraphiteRender",
+                licence="BSD-3-Clause",
+            )]),
+            [],
+        )
+
     def test_unknown_dep_fails_naming_it(self):
         bad = "evil-lib-not-allowlisted-xyz"
         violations = self._check_entries([_entry(bad)])
