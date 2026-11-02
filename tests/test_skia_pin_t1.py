@@ -2,7 +2,7 @@
 
 Covers FR-DEPS-011 / AC-DEPS-027 per specs-cpp-dependencies.md:
 ``tools/deps/third_party_pins.json`` records ``skia-m158.tar.gz`` with sha256
-``9335578c0c5c29c1438618019a67238b6241e7bcc1124606c6f5f3d39ec1f390e``;
+``9335578c0c5c29c1438618019a67238b6241e7bcc1124606c5f3d39ec1f390e9``;
 an unpinned or hash-mismatched tarball fails setup before any compile
 (TC-DEPS-027).
 
