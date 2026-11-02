@@ -85,4 +85,32 @@ StatusOr<FontHandle> resolveFallbackChain(std::uint32_t script_tag,
                                           const char* bcp47_locale,
                                           const char* generic_family) noexcept;
 
+// BUG-TEXT-007 T8 (FR-TEXT-007 / AC-TEXT-011; FR-TEXT-016 Notes):
+// resolves a face handle to a system font file path for FT_New_Face.
+// Device (Android) build: the NDK SystemFontEnumerator-selected per-script
+// Roboto face maps to its /system/fonts/*.ttf path (C API only, no JNI);
+// the bundled last-resort face, the null handle, and unknown handles have
+// no file and fail closed with Status::kNoFaceAvailable. A resolved path
+// is only returned when the file is present and readable, so the caller
+// can open it directly. Hermetic host build: no NDK fonts exist, so every
+// face fails closed with Status::kNoFaceAvailable (deterministic, never
+// throws, never empty-ok, never an id-only answer).
+StatusOr<std::string> FontPathForFace(FontHandle face);
+
+// BUG-TEXT-007 T9 test seam (hermetic host builds only): the in-memory
+// font the real FT_New_Face + hb shape path binds when no system file
+// resolves. Carries the compiled-in minimal test face (upem 1000;
+// U+0041->gid 1/adv 800, U+0042->gid 2/adv 400); registered in the test
+// path only — production device builds bind system Roboto through the
+// NDK enumerator above and carry no bundled binary.
+// RegisterTestOnlyMemoryFont swaps the bytes a later test needs; the
+// default is the embedded face, so hermetic tests need no setup call.
+// No-op on Android (always kNoFaceAvailable there). Never throws.
+struct MemoryFontBytes {
+  const std::uint8_t* data = nullptr;
+  std::size_t size = 0;
+};
+StatusOr<MemoryFontBytes> TestOnlyMemoryFont();
+void RegisterTestOnlyMemoryFont(const std::uint8_t* data, std::size_t size);
+
 }  // namespace muse::text

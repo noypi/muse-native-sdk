@@ -65,10 +65,13 @@ struct FontRequest {
 // Resolves the fallback chain, applies the variation vector, and shapes in
 // a single synchronous layout pass: a failed download degrades to the
 // bundled-face shaping in the same call (no second-frame retry on the
-// measurement path). Only malformed UTF-8 is an error
-// (Status::kInvalidInput); missing fonts and failed downloads degrade to
-// ok() bundled-face shaping, never kMissingGlyph. Empty input (len == 0)
-// is a valid empty run. Never throws. Pure C++: no JNI types.
+// measurement path). Malformed UTF-8 is Status::kInvalidInput; input no
+// resolved face covers is Status::kMissingGlyph — uncovered codepoints
+// fail closed and are never degraded to a substitute glyph (BUG-TEXT-007
+// T9; the plan Interface governs over the pre-T9 never-kMissingGlyph
+// note). Lanes with no resolvable font keep the hermetic fallback inside
+// shapeRun. Empty input (len == 0) is a valid empty run. Never throws.
+// Pure C++: no JNI types.
 // FR-DEPS-008 D3: backend routing behind this seam — requests carrying no
 // variation vector and no usable downloadable face shape through the
 // unperturbed reference backend (checked-in HarfBuzz dumps, AC-TEXT-013);

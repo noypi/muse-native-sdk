@@ -11,9 +11,17 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
+#include <cmath>
+#include <string>
 #include <type_traits>
 #include <vector>
 
+#include <ft2build.h>
+#include FT_FREETYPE_H
+#include <hb.h>
+#include <hb-ft.h>
+
+#include "muse/text/font_discovery.h"
 #include "muse/text/shaper.h"
 
 // ASSUMPTION: muse::text::JniCallCounter is a value struct exposed alongside
@@ -398,6 +406,262 @@ static bool check_strict_decode_mirror_maps_hostile_to_fffd() {
   return true;
 }
 
+// --- Batch 4 (BUG-TEXT-007 T8/T9): real-font path resolution + backend ---
+// T8: FontPathForFace resolves a FontHandle to a filesystem path through the
+// NDK SystemFontEnumerator seam (system Roboto, C API only, no JNI). The
+// hermetic host build has no NDK fonts, so every face fails closed with
+// kNoFaceAvailable; the device build returns an existing .ttf (EXTERNAL leg,
+// owned by tester — see contract T8.md).
+// ASSUMPTION: the production signature is
+//   muse::text::StatusOr<std::string> muse::text::FontPathForFace(
+//       muse::text::FontHandle face)
+// exactly as the plan Interface line states (return-by-value status-or).
+// ASSUMPTION: discoverFonts({"Roboto",'Latn',"en-US"}) succeeds on host via
+// compiled-in stand-ins, so the T8 cases can obtain a real Roboto handle
+// without touching the NDK enumerator directly.
+
+static muse::text::FontHandle robotoLatnFace(bool* ok) {
+  muse::text::FontQuery q;
+  q.family = "Roboto";
+  q.scriptTag = 0x4C61746Eu;  // 'Latn'
+  q.locale = "en-US";
+  q.weight = 400;
+  muse::text::StatusOr<std::vector<muse::text::FontHandle>> chain =
+      muse::text::discoverFonts(q);
+  if (!chain.ok() || (*chain).empty()) {
+    *ok = false;
+    return muse::text::FontHandle{};
+  }
+  *ok = true;
+  return (*chain)[0];
+}
+
+static bool check_font_path_roboto_latn_fail_closed_on_host() {
+  // T8 core: on the hermetic host build no font file exists, so the resolved
+  // Roboto Latn face fails closed — never an id-only answer, never empty-ok.
+  static_assert(std::is_same_v<decltype(&muse::text::FontPathForFace),
+                               muse::text::StatusOr<std::string> (*)(
+                                   muse::text::FontHandle)>);
+  bool ok = false;
+  muse::text::FontHandle face = robotoLatnFace(&ok);
+  if (!ok) return false;
+  muse::text::StatusOr<std::string> path = muse::text::FontPathForFace(face);
+  if (path.ok()) return false;
+  return path.status() == muse::text::Status::kNoFaceAvailable;
+}
+
+static bool check_font_path_last_resort_face_is_no_face() {
+  // kLastResort is a bundled face with no file: path lookup fails closed.
+  bool ok = false;
+  (void)ok;
+  muse::text::SystemFontEnumerator enumerator;
+  muse::text::FontHandle last =
+      enumerator.LastResortFace(0x4C61746Eu);  // 'Latn'
+  muse::text::StatusOr<std::string> path = muse::text::FontPathForFace(last);
+  if (path.ok()) return false;
+  return path.status() == muse::text::Status::kNoFaceAvailable;
+}
+
+static bool check_font_path_unknown_face_is_no_face() {
+  // Boundary: a fabricated handle never resolves — fail closed, never throw.
+  muse::text::StatusOr<std::string> path =
+      muse::text::FontPathForFace(muse::text::FontHandle{0xDEADBEEFu});
+  if (path.ok()) return false;
+  return path.status() == muse::text::Status::kNoFaceAvailable;
+}
+
+static bool check_font_path_default_face_is_no_face() {
+  // Boundary: the default (null) handle never resolves.
+  muse::text::StatusOr<std::string> path =
+      muse::text::FontPathForFace(muse::text::FontHandle{});
+  if (path.ok()) return false;
+  return path.status() == muse::text::Status::kNoFaceAvailable;
+}
+
+static bool check_font_path_is_deterministic() {
+  // Same face twice yields the same outcome (both status and payload).
+  bool ok = false;
+  muse::text::FontHandle face = robotoLatnFace(&ok);
+  if (!ok) return false;
+  muse::text::StatusOr<std::string> a = muse::text::FontPathForFace(face);
+  muse::text::StatusOr<std::string> b = muse::text::FontPathForFace(face);
+  if (a.ok() != b.ok()) return false;
+  if (!a.ok()) return a.status() == b.status();
+  return (*a) == (*b);
+}
+
+// T9: real-shape-vs-stub through the static FreeType/HarfBuzz stack using a
+// minimal test font compiled INTO this TU (440 bytes, 3 glyphs, upem 1000:
+// 'A'->gid1 adv800, 'B'->gid2 adv400). No downloads, no device font reads,
+// no /system read — every byte comes from the array below.
+// RED state: shapeRun still serves the salted-fallback backend, so the
+// font-backed expectations below FAIL until the coder binds FT_New_Face(path)
+// + hb_ft_font_create behind shapeRun for all inputs (T9) and gates the stub
+// to hermetic/test only. On the hermetic host build FontPathForFace reports
+// kNoFaceAvailable, so the coder may expose a test-only in-memory face
+// registration to green these on host; otherwise the host stays RED and the
+// device build (T8 path resolves system Roboto) owns GREEN — see T9.md.
+// ASSUMPTION: U+FFFF is covered by no face, so shaping it must fail closed
+// with kMissingGlyph rather than degrading to a fallback glyph.
+
+static const unsigned char kTestFontBytes[] = {
+    0x00, 0x01, 0x00, 0x00, 0x00, 0x09, 0x00, 0x80, 0x00, 0x03, 0x00, 0x10,
+    0x63, 0x6D, 0x61, 0x70, 0x00, 0x0C, 0x00, 0x75, 0x00, 0x00, 0x00, 0x9C,
+    0x00, 0x00, 0x00, 0x2C, 0x67, 0x6C, 0x79, 0x66, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0xC8, 0x00, 0x00, 0x00, 0x1E, 0x68, 0x65, 0x61, 0x64,
+    0x5F, 0x12, 0x40, 0xDD, 0x00, 0x00, 0x00, 0xE8, 0x00, 0x00, 0x00, 0x36,
+    0x68, 0x68, 0x65, 0x61, 0x03, 0x22, 0x02, 0x5C, 0x00, 0x00, 0x01, 0x20,
+    0x00, 0x00, 0x00, 0x24, 0x68, 0x6D, 0x74, 0x78, 0x03, 0x84, 0x03, 0x20,
+    0x00, 0x00, 0x01, 0x44, 0x00, 0x00, 0x00, 0x0C, 0x6C, 0x6F, 0x63, 0x61,
+    0x00, 0x0A, 0x00, 0x14, 0x00, 0x00, 0x01, 0x50, 0x00, 0x00, 0x00, 0x08,
+    0x6D, 0x61, 0x78, 0x70, 0x00, 0x04, 0x00, 0x00, 0x00, 0x00, 0x01, 0x58,
+    0x00, 0x00, 0x00, 0x20, 0x6E, 0x61, 0x6D, 0x65, 0x00, 0xED, 0x04, 0xDC,
+    0x00, 0x00, 0x01, 0x78, 0x00, 0x00, 0x00, 0x1A, 0x70, 0x6F, 0x73, 0x74,
+    0x00, 0x03, 0x00, 0x00, 0x00, 0x00, 0x01, 0x94, 0x00, 0x00, 0x00, 0x24,
+    0x00, 0x00, 0x00, 0x01, 0x00, 0x03, 0x00, 0x01, 0x00, 0x00, 0x00, 0x0C,
+    0x00, 0x04, 0x00, 0x20, 0x00, 0x00, 0x00, 0x04, 0x00, 0x04, 0x00, 0x01,
+    0x00, 0x00, 0x00, 0x42, 0xFF, 0xFF, 0x00, 0x00, 0x00, 0x41, 0xFF, 0xFF,
+    0xFF, 0xC0, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x27, 0x68, 0x39, 0x77, 0x5F, 0x0F, 0x3C, 0xF5, 0x00, 0x00, 0x03, 0xE8,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x01, 0x00, 0x00, 0x03, 0x20, 0xFF, 0x38, 0x00, 0x00, 0x03, 0x20,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x03,
+    0x01, 0xF4, 0x03, 0x20, 0x01, 0x90, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x05, 0x00, 0x0A, 0x00, 0x0F, 0x00, 0x01, 0x00, 0x00,
+    0x00, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x12, 0x00, 0x03,
+    0x00, 0x01, 0x04, 0x09, 0x00, 0x01, 0x00, 0x08, 0x00, 0x00, 0x00, 0x54,
+    0x00, 0x65, 0x00, 0x73, 0x00, 0x74, 0x00, 0x00, 0x00, 0x03, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+};
+
+// Shapes "AB" with the in-TU test font through FT+HB directly (the reference
+// the wired shaper must agree with). Scale is pinned to 16px so advances
+// come out in px: A=800*16/1000=12.8, B=400*16/1000=6.4.
+static bool shapeAbWithTestFont(float* out_adv_a, float* out_adv_b,
+                                unsigned* out_gid_a, unsigned* out_gid_b) {
+  if (out_adv_a == nullptr || out_adv_b == nullptr || out_gid_a == nullptr ||
+      out_gid_b == nullptr)
+    return false;
+  FT_Library lib = nullptr;
+  if (FT_Init_FreeType(&lib) != 0) return false;
+  bool ok = false;
+  FT_Face face = nullptr;
+  if (FT_New_Memory_Face(lib, kTestFontBytes,
+                          static_cast<FT_Long>(sizeof(kTestFontBytes)), 0,
+                          &face) == 0) {
+    if (face->num_glyphs == 3 && face->units_per_EM == 1000 &&
+        FT_Get_Char_Index(face, 0x41u) == 1u &&
+        FT_Get_Char_Index(face, 0x42u) == 2u) {
+      hb_font_t* hbfont = hb_ft_font_create(face, nullptr);
+      hb_buffer_t* buf = hb_buffer_create();
+      hb_buffer_add_utf8(buf, "AB", 2, 0, 2);
+      hb_buffer_guess_segment_properties(buf);
+      hb_font_set_scale(hbfont, 16 * 64, 16 * 64);
+      hb_shape(hbfont, buf, nullptr, 0);
+      const unsigned count = hb_buffer_get_length(buf);
+      hb_glyph_info_t* info = hb_buffer_get_glyph_infos(buf, nullptr);
+      hb_glyph_position_t* pos = hb_buffer_get_glyph_positions(buf, nullptr);
+      if (count == 2 && info != nullptr && pos != nullptr) {
+        *out_gid_a = info[0].codepoint;
+        *out_gid_b = info[1].codepoint;
+        *out_adv_a = static_cast<float>(pos[0].x_advance) / 64.0f;
+        *out_adv_b = static_cast<float>(pos[1].x_advance) / 64.0f;
+        ok = true;
+      }
+      hb_buffer_destroy(buf);
+      hb_font_destroy(hbfont);
+    }
+    FT_Done_Face(face);
+  }
+  FT_Done_FreeType(lib);
+  return ok;
+}
+
+static bool check_test_font_opens_hermetically() {
+  // Hermetic-FT seam proof: the in-TU bytes open under FreeType with the
+  // expected face shape — no font file, no /system read, no download. If this
+  // fails, the T9 reference itself is broken (test bug, not production bug).
+  float adv_a = 0.0f;
+  float adv_b = 0.0f;
+  unsigned gid_a = 0u;
+  unsigned gid_b = 0u;
+  if (!shapeAbWithTestFont(&adv_a, &adv_b, &gid_a, &gid_b)) return false;
+  if (gid_a != 1u || gid_b != 2u) return false;
+  if (std::fabs(adv_a - 6.4f) > 0.05f) return false;
+  if (std::fabs(adv_b - 0.0f) > 0.05f) return false;
+  return true;
+}
+
+static bool check_real_shape_advances_match_font_output() {
+  // T9 core: shapeRun advances for "AB" must equal the font-backed reference
+  // (12.8/6.4px at 16px) within 0.5px. RED: the salted fallback serves
+  // ~9-11px class advances, so the reference comparison fails.
+  float adv_a = 0.0f;
+  float adv_b = 0.0f;
+  unsigned gid_a = 0u;
+  unsigned gid_b = 0u;
+  if (!shapeAbWithTestFont(&adv_a, &adv_b, &gid_a, &gid_b)) return false;
+  (void)gid_a;
+  (void)gid_b;
+  const float kRef[] = {adv_a, adv_b};
+  muse::text::TextStyle style;
+  style.size_px = 16.0f;
+  muse::text::StatusOr<muse::text::ShapedRun> r = muse::text::shapeRun(
+      reinterpret_cast<const std::uint8_t*>("AB"), 2, muse::text::FontHandle{},
+      style);
+  if (!r.ok()) return false;
+  return muse::text::advancesMatchReference(muse::text::ShapedRunView{*r},
+                                            kRef, 2, 0.5f);
+}
+
+static bool check_real_shape_ids_are_font_glyph_ids() {
+  // T9 core: shapeRun glyph ids for "AB" must be the font glyph indices
+  // (1, 2), not salted codepoint fallbacks. RED: the fallback salts every
+  // codepoint by face, so ids never equal (1, 2).
+  float adv_a = 0.0f;
+  float adv_b = 0.0f;
+  unsigned gid_a = 0u;
+  unsigned gid_b = 0u;
+  if (!shapeAbWithTestFont(&adv_a, &adv_b, &gid_a, &gid_b)) return false;
+  (void)adv_a;
+  (void)adv_b;
+  muse::text::TextStyle style;
+  style.size_px = 16.0f;
+  muse::text::StatusOr<muse::text::ShapedRun> r = muse::text::shapeRun(
+      reinterpret_cast<const std::uint8_t*>("AB"), 2, muse::text::FontHandle{},
+      style);
+  if (!r.ok()) return false;
+  if ((*r).glyph_ids.size() != 2) return false;
+  return (*r).glyph_ids[0] == gid_a && (*r).glyph_ids[1] == gid_b;
+}
+
+static bool check_uncovered_codepoint_is_missing_glyph() {
+  // T9 boundary/error: U+FFFF is covered by no face, so shaping it must fail
+  // closed with kMissingGlyph — never degrade to a fallback glyph. RED: the
+  // current seam degrades uncovered input to ok() bundled-face shaping.
+  // NOTE: conflicts with shaper.h:70 ("never kMissingGlyph"); the T9 plan
+  // Interface line governs — flagged in contract T9.md for planner/coder.
+  const std::uint8_t kUnassigned[] = {0xEF, 0xBF, 0xBF};  // U+FFFF
+  muse::text::TextStyle style;
+  style.size_px = 16.0f;
+  muse::text::FontRequest req;
+  muse::text::StatusOr<muse::text::ShapedRun> shaped =
+      muse::text::shapeRunWithFallback(kUnassigned, sizeof(kUnassigned), style,
+                                       req);
+  if (shaped.ok()) return false;
+  return shaped.status() == muse::text::Status::kMissingGlyph;
+}
+
 #define RUN_CASE(name)                           \
   do {                                           \
     if (!(name)()) {                             \
@@ -428,6 +692,15 @@ int main() {
   RUN_CASE(check_fallback_modified_utf8_nul_overlong_rejected);
   RUN_CASE(check_faces_sharing_low_byte_produce_distinct_ids);
   RUN_CASE(check_strict_decode_mirror_maps_hostile_to_fffd);
+  RUN_CASE(check_font_path_roboto_latn_fail_closed_on_host);
+  RUN_CASE(check_font_path_last_resort_face_is_no_face);
+  RUN_CASE(check_font_path_unknown_face_is_no_face);
+  RUN_CASE(check_font_path_default_face_is_no_face);
+  RUN_CASE(check_font_path_is_deterministic);
+  RUN_CASE(check_test_font_opens_hermetically);
+  RUN_CASE(check_real_shape_advances_match_font_output);
+  RUN_CASE(check_real_shape_ids_are_font_glyph_ids);
+  RUN_CASE(check_uncovered_codepoint_is_missing_glyph);
   if (failures > 0) {
     std::printf("harfbuzz_parity_test: %d failing\n", failures);
     return 1;
