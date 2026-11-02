@@ -1,7 +1,7 @@
 'use strict';
 
 function createRoutes(defs) {
-  const routes = {};
+  const routes = Object.create(null);
   for (const def of defs || []) {
     routes[def.id] = {
       id: def.id,
@@ -98,7 +98,8 @@ function createRouter({ routes, home, transport }) {
   async function navigate(dest, isReplace) {
     const from = stack[stack.length - 1];
     const { id: to, params } = normalizeDest(dest, from);
-    const route = routes ? routes[to] : undefined;
+    const route =
+      routes && Object.prototype.hasOwnProperty.call(routes, to) ? routes[to] : undefined;
     if (!route) {
       return { ok: false, code: 'unknown-route' };
     }
@@ -118,7 +119,10 @@ function createRouter({ routes, home, transport }) {
       }
     }
     const result = await transport.invoke('navigate', { route: to, params });
-    if (!result || result.ok !== true) {
+    if (!result || typeof result !== 'object') {
+      return { ok: false, code: 'transport-error' };
+    }
+    if (result.ok !== true) {
       return result;
     }
     if (isReplace) {

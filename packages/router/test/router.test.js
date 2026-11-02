@@ -240,3 +240,98 @@ describe('navigation semantics (AC-NAV-040)', () => {
     assert.equal(router.current, 'lens');
   });
 });
+
+// --- Security-review pins (2026-11-02) --------------------------------------
+
+describe('security-review pins', () => {
+  it('prototype-key route ids deny unknown-route with zero transport calls', async () => {
+    const transport = fakeTransport();
+    const routes = createRoutes([
+      { id: 'home', link: 'muse-demo://tab/home', params: {} },
+    ]);
+    const router = createRouter({ routes, home: 'home', transport });
+    for (const id of ['__proto__', 'constructor', 'toString']) {
+      assert.deepEqual(await router.push(id), { ok: false, code: 'unknown-route' });
+    }
+    assert.equal(transport.calls.length, 0);
+    assert.equal(router.current, 'home');
+    assert.equal({}.polluted, undefined);
+    assert.equal(Object.prototype.hasOwnProperty.call(routes, 'toString'), false);
+  });
+
+  it('extra unknown param keys: JS structural-only divergence (gate denies UNKNOWN_PARAM)', async () => {
+    const transport = fakeTransport();
+    const routes = createRoutes([
+      { id: 'home', link: 'muse-demo://tab/home', params: {} },
+      {
+        id: 'lensReq',
+        link: 'muse-demo://tab/lens',
+        params: { id: { type: 'string', required: true } },
+      },
+    ]);
+    const router = createRouter({ routes, home: 'home', transport });
+    // JS allows extras (structural-only, T1 A3); C++ gate stays authoritative.
+    const res = await router.push({ id: 'lensReq', params: { id: 'p1', extra: 'x' } });
+    assert.deepEqual(res, { ok: true });
+    assert.equal(transport.calls.length, 1);
+  });
+
+  it('params with __proto__ key do not pollute router state across navigations', async () => {
+    const transport = fakeTransport();
+    const { router } = fixtures(transport);
+    const evil = JSON.parse('{"__proto__":{"polluted":true},"id":"p1"}');
+    const res = await router.push({ id: 'lens', params: evil });
+    assert.deepEqual(res, { ok: true });
+    assert.equal({}.polluted, undefined);
+    assert.equal(Object.prototype.hasOwnProperty.call(transport.calls[0].payload.params, '__proto__'), true);
+    const res2 = await router.push('home');
+    assert.deepEqual(res2, { ok: true });
+    assert.equal({}.polluted, undefined);
+  });
+
+  it('falsy/non-object transport resolution normalizes to transport-error', async () => {
+    for (const value of [undefined, null, 0, 'ok']) {
+      const calls = [];
+      const transport = {
+        calls,
+        invoke: async () => {
+          calls.push(value);
+          return value;
+        },
+      };
+      const { router } = fixtures(transport);
+      assert.deepEqual(await router.push('lens'), { ok: false, code: 'transport-error' });
+      assert.equal(router.current, 'home');
+    }
+  });
+
+  it('beforeEach deny skips beforeEnter AND transport', async () => {
+    const transport = fakeTransport();
+    const routes = createRoutes([
+      { id: 'home', link: 'muse-demo://tab/home', params: {} },
+      {
+        id: 'guarded2',
+        link: 'muse-demo://tab/guarded2',
+        params: {},
+        beforeEnter: () => {
+          throw new Error('must not run');
+        },
+      },
+    ]);
+    const router = createRouter({ routes, home: 'home', transport });
+    router.beforeEach(() => false);
+    const res = await router.push('guarded2');
+    assert.deepEqual(res, { ok: false, code: 'guard-denied' });
+    assert.equal(transport.calls.length, 0);
+    assert.equal(router.current, 'home');
+  });
+
+  it('beforeEnter deny skips transport', async () => {
+    const transport = fakeTransport();
+    const { router } = fixtures(transport);
+    const res = await router.push('guarded');
+    assert.deepEqual(res, { ok: false, code: 'guard-denied' });
+    assert.equal(transport.calls.length, 0);
+    assert.equal(router.current, 'home');
+  });
+});
