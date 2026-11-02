@@ -1,0 +1,134 @@
+--------- beginning of system
+11-02 06:03:39.136   711   732 I DropBoxManagerService: add tag=system_server_strictmode isTagEnabled=true flags=0x2
+--------- beginning of main
+11-02 06:03:55.151  3913  3913 I muse-host: nativeAdvancePage: page 2
+11-02 06:03:55.151  3913  3913 I GalleryPage: PROOF_ADVANCE_PAGE page=1
+11-02 06:03:55.169  3913  3947 I GalleryPage: [layering] slice page=1 rows=[5,11] comps={NavigationDrawer|BottomAppBar|SearchBar|SegmentedButton|ButtonGroup|SplitButton|Button} labels={NavigationDrawer selected=home|gallery|Search settings|SegmentedButton selected=day|ButtonGroup selected=bold|Create new|Primary action}
+11-02 06:03:55.541  3913  3947 I GalleryPage: gallery-rows=121 gallery-pages=18
+11-02 06:03:55.541  3913  3947 I GalleryPage: gallery-page=2/18
+11-02 06:03:58.191   442   442 D gralloc_ranchu: gralloc_alloc: Creating ashmem region of size 2805760
+11-02 06:03:58.192   442   442 E         : open_verbose:32: Could not open '/dev/goldfish_pipe': No such file or directory
+11-02 06:03:58.194   167   167 I hwservicemanager: getTransport: Cannot find entry android.hardware.graphics.mapper@3.0::IMapper/default in either framework or device manifest.
+11-02 06:03:58.194  3968  3968 W Gralloc3: mapper 3.x is not supported
+11-02 06:03:58.196  3968  3968 D HostConnection: createUnique: call
+11-02 06:03:58.196  3968  3968 D HostConnection: HostConnection::get() New Host Connection established 0xf17a9200, pid 3968, tid 3968
+11-02 06:03:39.179   711   732 I chatty  : uid=1000(system) android.io identical 6 lines
+11-02 06:03:39.185   711   732 I DropBoxManagerService: add tag=system_server_strictmode isTagEnabled=true flags=0x2
+11-02 06:03:58.197   267  3971 D local_opengl: Sending id 40 to host
+11-02 06:03:58.197  3968  3968 D HostConnection: HostComposition ext ANDROID_EMU_host_composition_v1 ANDROID_EMU_host_composition_v2 ANDROID_EMU_sync_buffer_data GL_OES_EGL_image_external_essl3 GL_OES_vertex_array_object GL_KHR_texture_compression_astc_ldr ANDROID_EMU_host_side_tracing ANDROID_EMU_gles_max_version_3_1 
+11-02 06:03:58.197  3968  3968 E         : open_verbose:32: Could not open '/dev/goldfish_pipe': No such file or directory
+11-02 06:03:58.197  3968  3968 W         : Process pipe failed
+11-02 06:04:00.000   874   874 D KeyguardClockSwitch: Updating clock: 604
+11-02 06:04:04.452  3979  3979 D AndroidRuntime: >>>>>> START com.android.internal.os.RuntimeInit uid 0 <<<<<<
+11-02 06:04:04.453  3979  3979 I AndroidRuntime: Using default boot image
+11-02 06:04:04.453  3979  3979 I AndroidRuntime: Leaving lock profiling enabled
+11-02 06:04:04.454  3979  3979 I app_process: Core platform API reporting enabled, enforcing=false
+11-02 06:04:04.477  3979  3979 D ICU     : Time zone APEX file found: /apex/com.android.tzdata/etc/icu/icu_tzdata.dat
+11-02 06:04:04.479  3979  3979 W app_process: Unexpected CPU variant for X86 using defaults: x86
+11-02 06:04:04.480  3979  3979 I app_process: The ClassLoaderContext is a special shared library.
+11-02 06:04:04.485  3979  3979 W app_process: JNI RegisterNativeMethods: attempt to register 0 native methods for android.media.AudioAttributes
+11-02 06:04:04.486  3979  3979 D AndroidRuntime: Calling main entry com.android.commands.input.Input
+11-02 06:04:04.487  3913  3913 I muse-host: nativeDispatchTouch: action=0 x=500.0 y=117.0 pointer=0
+11-02 06:04:04.487  3913  3913 I muse-host: SEAM-STEP:touch:ok
+11-02 06:04:04.487   711   747 V DisplayPowerController: Brightness [102] reason changing to: 'manual', previous reason: 'manual [ dim ]'.
+11-02 06:04:04.487  3913  3913 D MainActivity: touch x=500.0 y=117.0 claimed=-1
+11-02 06:04:04.487  3913  3913 I muse-host: SEAM-STEP:touch:ok
+11-02 06:04:04.487  3913  3913 D MainActivity: touch x=500.0 y=117.0 claimed=-1
+11-02 06:04:04.487  3913  3913 I muse-host: SEAM-STEP:render:ok
+11-02 06:04:04.488  3979  3979 D AndroidRuntime: Shutting down VM
+11-02 06:04:04.503  3913  3947 I GalleryPage: [layering] slice page=1 rows=[5,11] comps={NavigationDrawer|BottomAppBar|SearchBar|SegmentedButton|ButtonGroup|SplitButton|Button} labels={NavigationDrawer selected=home|gallery|Search settings|SegmentedButton selected=day|ButtonGroup selected=bold|Create new|Primary action}
+11-02 06:04:04.503   443   443 W EmuHWC2 : TODO: setDisplayBrightness() is not implemented yet: brightness=0.050980
+11-02 06:04:04.520   443   443 W EmuHWC2 : TODO: setDisplayBrightness() is not implemented yet: brightness=0.062745
+11-02 06:04:04.537   443   443 W EmuHWC2 : TODO: setDisplayBrightness() is not implemented yet: brightness=0.074510
+11-02 06:04:04.553   443   443 W EmuHWC2 : TODO: setDisplayBrightness() is not implemented yet: brightness=0.086275
+11-02 06:04:04.570   443   443 W EmuHWC2 : TODO: setDisplayBrightness() is not implemented yet: brightness=0.098039
+11-02 06:04:04.587   443   443 W EmuHWC2 : TODO: setDisplayBrightness() is not implemented yet: brightness=0.109804
+11-02 06:04:04.603   443   443 W EmuHWC2 : TODO: setDisplayBrightness() is not implemented yet: brightness=0.121569
+11-02 06:04:04.620   443   443 W EmuHWC2 : TODO: setDisplayBrightness() is not implemented yet: brightness=0.133333
+11-02 06:04:04.637   443   443 W EmuHWC2 : TODO: setDisplayBrightness() is not implemented yet: brightness=0.145098
+11-02 06:04:04.654   443   443 W EmuHWC2 : TODO: setDisplayBrightness() is not implemented yet: brightness=0.156863
+11-02 06:04:04.670   443   443 W EmuHWC2 : TODO: setDisplayBrightness() is not implemented yet: brightness=0.168627
+11-02 06:04:04.687   443   443 W EmuHWC2 : TODO: setDisplayBrightness() is not implemented yet: brightness=0.180392
+11-02 06:04:04.703   443   443 W EmuHWC2 : TODO: setDisplayBrightness() is not implemented yet: brightness=0.192157
+11-02 06:04:04.720   443   443 W EmuHWC2 : TODO: setDisplayBrightness() is not implemented yet: brightness=0.203922
+11-02 06:04:04.737   443   443 W EmuHWC2 : TODO: setDisplayBrightness() is not implemented yet: brightness=0.215686
+11-02 06:04:04.753   443   443 W EmuHWC2 : TODO: setDisplayBrightness() is not implemented yet: brightness=0.227451
+11-02 06:04:04.770   443   443 W EmuHWC2 : TODO: setDisplayBrightness() is not implemented yet: brightness=0.239216
+11-02 06:04:04.787   443   443 W EmuHWC2 : TODO: setDisplayBrightness() is not implemented yet: brightness=0.250980
+11-02 06:04:04.803   443   443 W EmuHWC2 : TODO: setDisplayBrightness() is not implemented yet: brightness=0.262745
+11-02 06:04:04.820   443   443 W EmuHWC2 : TODO: setDisplayBrightness() is not implemented yet: brightness=0.274510
+11-02 06:04:04.837   443   443 W EmuHWC2 : TODO: setDisplayBrightness() is not implemented yet: brightness=0.286275
+11-02 06:04:04.853   443   443 W EmuHWC2 : TODO: setDisplayBrightness() is not implemented yet: brightness=0.298039
+11-02 06:04:04.872   443   443 W EmuHWC2 : TODO: setDisplayBrightness() is not implemented yet: brightness=0.309804
+11-02 06:04:04.881  3913  3947 I GalleryPage: gallery-rows=121 gallery-pages=18
+11-02 06:04:04.881  3913  3947 I GalleryPage: gallery-page=2/18
+11-02 06:04:04.887   443   587 W EmuHWC2 : TODO: setDisplayBrightness() is not implemented yet: brightness=0.321569
+11-02 06:04:04.904   443   443 W EmuHWC2 : TODO: setDisplayBrightness() is not implemented yet: brightness=0.333333
+11-02 06:04:04.920   443   443 W EmuHWC2 : TODO: setDisplayBrightness() is not implemented yet: brightness=0.345098
+11-02 06:04:04.937   443   443 W EmuHWC2 : TODO: setDisplayBrightness() is not implemented yet: brightness=0.356863
+11-02 06:04:04.954   443   443 W EmuHWC2 : TODO: setDisplayBrightness() is not implemented yet: brightness=0.368627
+11-02 06:04:04.970   443   443 W EmuHWC2 : TODO: setDisplayBrightness() is not implemented yet: brightness=0.380392
+11-02 06:04:04.987   443   443 W EmuHWC2 : TODO: setDisplayBrightness() is not implemented yet: brightness=0.392157
+11-02 06:04:05.003   443   443 W EmuHWC2 : TODO: setDisplayBrightness() is not implemented yet: brightness=0.400000
+11-02 06:04:06.536   442   442 D gralloc_ranchu: gralloc_alloc: Creating ashmem region of size 2805760
+11-02 06:04:06.537   442   442 E         : open_verbose:32: Could not open '/dev/goldfish_pipe': No such file or directory
+11-02 06:04:06.539   167   167 I hwservicemanager: getTransport: Cannot find entry android.hardware.graphics.mapper@3.0::IMapper/default in either framework or device manifest.
+11-02 06:04:06.539  3995  3995 W Gralloc3: mapper 3.x is not supported
+11-02 06:04:06.541  3995  3995 D HostConnection: createUnique: call
+11-02 06:04:06.541  3995  3995 D HostConnection: HostConnection::get() New Host Connection established 0xe50cf200, pid 3995, tid 3995
+11-02 06:04:06.541   267  3998 D local_opengl: Sending id 41 to host
+11-02 06:04:06.542  3995  3995 D HostConnection: HostComposition ext ANDROID_EMU_host_composition_v1 ANDROID_EMU_host_composition_v2 ANDROID_EMU_sync_buffer_data GL_OES_EGL_image_external_essl3 GL_OES_vertex_array_object GL_KHR_texture_compression_astc_ldr ANDROID_EMU_host_side_tracing ANDROID_EMU_gles_max_version_3_1 
+11-02 06:04:06.542  3995  3995 E         : open_verbose:32: Could not open '/dev/goldfish_pipe': No such file or directory
+11-02 06:04:06.542  3995  3995 W         : Process pipe failed
+11-02 06:04:23.702  4003  4003 D AndroidRuntime: >>>>>> START com.android.internal.os.RuntimeInit uid 0 <<<<<<
+11-02 06:04:23.703  4003  4003 I AndroidRuntime: Using default boot image
+11-02 06:04:23.703  4003  4003 I AndroidRuntime: Leaving lock profiling enabled
+11-02 06:04:23.703  4003  4003 I app_process: Core platform API reporting enabled, enforcing=false
+11-02 06:04:23.725  4003  4003 D ICU     : Time zone APEX file found: /apex/com.android.tzdata/etc/icu/icu_tzdata.dat
+11-02 06:04:23.726  4003  4003 W app_process: Unexpected CPU variant for X86 using defaults: x86
+11-02 06:04:23.727  4003  4003 I app_process: The ClassLoaderContext is a special shared library.
+11-02 06:04:23.732  4003  4003 W app_process: JNI RegisterNativeMethods: attempt to register 0 native methods for android.media.AudioAttributes
+11-02 06:04:23.733  4003  4003 D AndroidRuntime: Calling main entry com.android.commands.input.Input
+11-02 06:04:23.734  3913  3913 I muse-host: nativeDispatchTouch: action=0 x=50.0 y=117.0 pointer=0
+11-02 06:04:23.734  3913  3913 I muse-host: SEAM-STEP:touch:ok
+11-02 06:04:23.734  3913  3913 D MainActivity: touch x=50.0 y=117.0 claimed=-1
+11-02 06:04:23.735  3913  3913 I muse-host: nativeDispatchTouch: tap fired node=21 repaint=1
+11-02 06:04:23.735  3913  3913 I muse-host: SEAM-STEP:touch:ok
+11-02 06:04:23.735  3913  3913 D MainActivity: touch x=50.0 y=117.0 claimed=21
+11-02 06:04:23.735   711  3880 D AutofillManagerServiceImpl: Reset component for user 0:
+11-02 06:04:23.735   711   731 D AutofillUI: destroySaveUiUiThread(): already destroyed
+11-02 06:04:23.736  3913  3913 I muse-host: SEAM-STEP:render:ok
+11-02 06:04:23.736  4003  4003 D AndroidRuntime: Shutting down VM
+11-02 06:04:23.748  3913  3947 I GalleryPage: [layering] slice page=1 rows=[5,11] comps={NavigationDrawer|BottomAppBar|SearchBar|SegmentedButton|ButtonGroup|SplitButton|Button} labels={NavigationDrawer selected=home|gallery|Search settings|SegmentedButton selected=day|ButtonGroup selected=bold|Create new|Primary action}
+11-02 06:04:24.114  3913  3947 I GalleryPage: gallery-rows=121 gallery-pages=18
+11-02 06:04:24.114  3913  3947 I GalleryPage: gallery-page=2/18
+11-02 06:04:24.114   442   442 D gralloc_ranchu: gralloc_alloc: Creating ashmem region of size 2580480
+11-02 06:04:24.115   442   442 E         : open_verbose:32: Could not open '/dev/goldfish_pipe': No such file or directory
+11-02 06:04:24.130  3913  3947 I GalleryPage: [layering] slice page=1 rows=[5,11] comps={NavigationDrawer|BottomAppBar|SearchBar|SegmentedButton|ButtonGroup|SplitButton|Button} labels={NavigationDrawer selected=home|gallery|Search settings|SegmentedButton selected=day|ButtonGroup selected=bold|Create new|Primary action}
+11-02 06:04:24.495  3913  3947 I GalleryPage: gallery-rows=121 gallery-pages=18
+11-02 06:04:24.495  3913  3947 I GalleryPage: gallery-page=2/18
+11-02 06:04:25.786   442   442 D gralloc_ranchu: gralloc_alloc: Creating ashmem region of size 2805760
+11-02 06:04:25.788   442   442 E         : open_verbose:32: Could not open '/dev/goldfish_pipe': No such file or directory
+11-02 06:04:25.790   167   167 I hwservicemanager: getTransport: Cannot find entry android.hardware.graphics.mapper@3.0::IMapper/default in either framework or device manifest.
+11-02 06:04:25.790  4022  4022 W Gralloc3: mapper 3.x is not supported
+11-02 06:04:25.792  4022  4022 D HostConnection: createUnique: call
+11-02 06:04:25.792  4022  4022 D HostConnection: HostConnection::get() New Host Connection established 0xebf8f200, pid 4022, tid 4022
+11-02 06:04:25.792   267  4025 D local_opengl: Sending id 42 to host
+11-02 06:04:25.792  4022  4022 D HostConnection: HostComposition ext ANDROID_EMU_host_composition_v1 ANDROID_EMU_host_composition_v2 ANDROID_EMU_sync_buffer_data GL_OES_EGL_image_external_essl3 GL_OES_vertex_array_object GL_KHR_texture_compression_astc_ldr ANDROID_EMU_host_side_tracing ANDROID_EMU_gles_max_version_3_1 
+11-02 06:04:25.792  4022  4022 E         : open_verbose:32: Could not open '/dev/goldfish_pipe': No such file or directory
+11-02 06:04:25.792  4022  4022 W         : Process pipe failed
+11-02 06:04:25.855  3913  3913 I muse-host: nativeAdvancePage: page 3
+11-02 06:04:25.856  3913  3913 I GalleryPage: PROOF_ADVANCE_PAGE page=2
+11-02 06:04:25.870  3913  3947 I GalleryPage: [layering] slice page=2 rows=[12,19] comps={Button|Button|Button|Button|IconButton|Fab|ExtendedFab|Card} labels={Tonal action|Outlined action|Text action|Elevated action|IconButton variant=filled icon=favorite|Fab size=medium icon=add|Compose|Card variant=elevated}
+11-02 06:04:26.191  3913  3947 I GalleryPage: gallery-rows=121 gallery-pages=18
+11-02 06:04:26.191  3913  3947 I GalleryPage: gallery-page=3/18
+11-02 06:04:28.891   442   442 D gralloc_ranchu: gralloc_alloc: Creating ashmem region of size 2805760
+11-02 06:04:28.892   442   442 E         : open_verbose:32: Could not open '/dev/goldfish_pipe': No such file or directory
+11-02 06:04:28.894   167   167 I hwservicemanager: getTransport: Cannot find entry android.hardware.graphics.mapper@3.0::IMapper/default in either framework or device manifest.
+11-02 06:04:28.894  4033  4033 W Gralloc3: mapper 3.x is not supported
+11-02 06:04:28.896  4033  4033 D HostConnection: createUnique: call
+11-02 06:04:28.896  4033  4033 D HostConnection: HostConnection::get() New Host Connection established 0xf641f200, pid 4033, tid 4033
+11-02 06:04:28.896   267  4036 D local_opengl: Sending id 43 to host
+11-02 06:04:28.897  4033  4033 D HostConnection: HostComposition ext ANDROID_EMU_host_composition_v1 ANDROID_EMU_host_composition_v2 ANDROID_EMU_sync_buffer_data GL_OES_EGL_image_external_essl3 GL_OES_vertex_array_object GL_KHR_texture_compression_astc_ldr ANDROID_EMU_host_side_tracing ANDROID_EMU_gles_max_version_3_1 
+11-02 06:04:28.897  4033  4033 E         : open_verbose:32: Could not open '/dev/goldfish_pipe': No such file or directory
+11-02 06:04:28.897  4033  4033 W         : Process pipe failed
