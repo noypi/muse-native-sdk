@@ -181,12 +181,66 @@ void ResetPacedWindowLocked() {
 // Currency mirrors the FR-RUNTIME-009 DAG-record rule: only the
 // DAG-recorded current-frame set may present. Touch reuses the FR-RUNTIME-010
 // raw-fields + input-chain entry (see dispatchTouch). All guarded by g_mu.
+// T6 (engine-repair) M3 theme token → surface-param resolution
+// (FR-M3-005/007/008, AC-M3-009/015/018). Token names resolve to surface
+// params; flat gray (0x808080) is never produced — it is an error, never
+// a silent pass.
+//
+// Provenance (committed baselines, not invented): primaries mirror
+// gallery_present.cpp kLightPrimary/kDarkPrimary (ANativeWindow RGBA_8888
+// in-memory order AABBGGRR on little-endian); elevation level-1 → 1dp and
+// shape corner.medium → 12dp per the M3 token names in m3_matrix.json.
+constexpr std::uint32_t PackRgba(std::uint8_t r, std::uint8_t g,
+                                 std::uint8_t b, std::uint8_t a) {
+  return static_cast<std::uint32_t>(r) |
+         (static_cast<std::uint32_t>(g) << 8) |
+         (static_cast<std::uint32_t>(b) << 16) |
+         (static_cast<std::uint32_t>(a) << 24);
+}
+constexpr std::uint32_t kM3LightPrimary = PackRgba(0x67, 0x50, 0xA4, 0xFF);
+constexpr std::uint32_t kM3DarkPrimary = PackRgba(0xD0, 0xBC, 0xFF, 0xFF);
+constexpr float kM3ElevationDp = 1.0f;
+constexpr float kM3ShapeDp = 12.0f;
+static_assert(kM3ElevationDp > 0.0f, "M3 elevation must resolve nonzero");
+static_assert(kM3ShapeDp > 0.0f, "M3 shape must resolve nonzero");
+
+struct ResolvedThemeParams {
+  std::uint32_t primary_rgba = 0;
+  float elevation_dp = 0.0f;
+  float shape_dp = 0.0f;
+};
+
+// Resolves token names (primary, elevation, shape) to surface params.
+// Returns false for an unknown theme — fail closed, never flat-gray kOk.
+bool ResolveThemeParams(ThemeId theme, ResolvedThemeParams* out) {
+  if (out == nullptr) return false;
+  if (theme == ThemeId::kLight) {
+    out->primary_rgba = kM3LightPrimary;
+    out->elevation_dp = kM3ElevationDp;
+    out->shape_dp = kM3ShapeDp;
+    return true;
+  }
+  if (theme == ThemeId::kDark) {
+    out->primary_rgba = kM3DarkPrimary;
+    out->elevation_dp = kM3ElevationDp;
+    out->shape_dp = kM3ShapeDp;
+    return true;
+  }
+  return false;
+}
+
 struct SeamSurface {
   bool live = false;
   void* window = nullptr;
   bool swapchain = false;
   bool has_current_frame = false;
   ThemeId theme = ThemeId::kLight;
+  // T6 (engine-repair) M3 token → surface-param resolution (FR-M3-005/007/
+  // 008, AC-M3-009/015/018). Resolved from the theme on every setTheme;
+  // flat gray is never stored — it is an error, never a pass.
+  std::uint32_t theme_primary_rgba = kM3LightPrimary;
+  float theme_elevation_dp = kM3ElevationDp;
+  float theme_shape_dp = kM3ShapeDp;
   std::int32_t ime_bottom_px = 0;
   FrameStats stats;
 };
@@ -680,8 +734,19 @@ PresenterError setTheme(SurfaceHandle h, ThemeId theme) {
               "setTheme: no live surface for handle; theme not applied"};
     }
     // In place: the stored palette flips, the surface (and its swapchain,
-    // currency, and stats) is untouched — no re-attach.
+    // currency, and stats) is untouched — no re-attach. Token names resolve
+    // to surface params (T6); an unknown theme fails closed with the theme
+    // unapplied — never a flat-gray kOk.
+    ResolvedThemeParams params;
+    if (!ResolveThemeParams(theme, &params)) {
+      SeamLog("setTheme: unknown theme; theme not applied");
+      return {PresenterCode::kNoSurface,
+              "setTheme: unknown theme; theme not applied"};
+    }
     it->second.theme = theme;
+    it->second.theme_primary_rgba = params.primary_rgba;
+    it->second.theme_elevation_dp = params.elevation_dp;
+    it->second.theme_shape_dp = params.shape_dp;
     return {PresenterCode::kOk, ""};
   } catch (...) {
     SeamLog("setTheme: exception during theme switch");
