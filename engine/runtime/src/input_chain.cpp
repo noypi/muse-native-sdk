@@ -168,12 +168,16 @@ void AppendSeededNodes(HitTestTree& tree, float w, float h) {
 // 20 from the same viewport rect and content 21 from the laid-out button
 // bounds. Reseeds on layout/viewport change: a tree that already resolves
 // inside both the origin probe and the far-corner probe keeps its nodes
-// (safe to call at load, re-attach, and every frame); otherwise the new
-// geometry is appended. Append-only is safe here because reseeds reuse the
-// same node ids at the same depths — HitTestTree::HitTest is depth-wins
-// with first-wins ties, so duplicate ids resolve identically and only
-// genuinely new coverage changes verdicts (bounded by kMaxNodes=64; growth
-// reseeds are viewport-change-rare).
+// (safe to call at load, re-attach, and every frame); growth appends the
+// new geometry. A shrink rebuilds instead: if the live tree serves any
+// point outside the new viewport the old (larger) geometry went stale, so
+// the tree is reset to fresh and seeded exactly once from the new geometry
+// — stale-rect taps then fail closed instead of firing (T5). Append-only
+// is safe on the growth path because reseeds reuse the same node ids at
+// the same depths — HitTestTree::HitTest is depth-wins with first-wins
+// ties, so duplicate ids resolve identically and only genuinely new
+// coverage changes verdicts (bounded by kMaxNodes=64; growth reseeds are
+// viewport-change-rare).
 // Invalid/empty geometry keeps the prior tree (fail-closed, no phantom
 // nodes); an unpopulated tree keeps resolving -1. Never bypasses
 // `target >= 0`.
@@ -182,8 +186,14 @@ void PopulateTapTreeFromLayout(HitTestTree& tree, float viewportW,
   if (!ViewportUsable(viewportW, viewportH)) {
     return;
   }
-  if (tree.HitTest(1.0f, 1.0f) != -1 &&
-      tree.HitTest(viewportW - 1.0f, viewportH - 1.0f) != -1) {
+  if (tree.HitTest(viewportW, viewportH - 1.0f) != -1 ||
+      tree.HitTest(viewportW - 1.0f, viewportH) != -1 ||
+      tree.HitTest(viewportW, viewportH) != -1) {
+    // Stale larger geometry still serves outside the new viewport: reset
+    // to a fresh tree so the append below seeds exactly the new bounds.
+    tree = HitTestTree();
+  } else if (tree.HitTest(1.0f, 1.0f) != -1 &&
+             tree.HitTest(viewportW - 1.0f, viewportH - 1.0f) != -1) {
     return;
   }
   AppendSeededNodes(tree, viewportW, viewportH);
@@ -256,9 +266,15 @@ ArenaAction ClaimTap(GestureArena& arena, int32_t pointerId, int32_t targetId) {
 
 void RecordTapDown(int32_t pointerId, float x, float y) {
   // Untrusted MotionEvent fields fail closed before touching the ledger
-  // (mirrors the ResolveTapTarget guard): a NaN/negative origin is dropped
-  // with no store and no latest-gesture update, so ClaimTap for the pointer
-  // finds no origin and stays unclaimed.
+  // (mirrors the ResolveTapTarget guard): a NaN/negative/non-finite origin
+  // is dropped with no store and no latest-gesture update, so ClaimTap for
+  // the pointer finds no origin and stays unclaimed. The finite check
+  // matters: +Inf passes `!(x >= 0)` yet poisons the slop displacement
+  // (inf-inf is NaN, and `NaN >= kTouchSlopPx` is false), which would
+  // wrongly claim the tap.
+  if (!std::isfinite(x) || !std::isfinite(y)) {
+    return;
+  }
   if (!(x >= 0.0f) || !(y >= 0.0f)) {
     return;
   }
