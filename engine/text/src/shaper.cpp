@@ -24,6 +24,7 @@
 #include <hb-ft.h>
 
 #include <cmath>
+#include <climits>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -46,6 +47,12 @@
 
 namespace muse::text {
 namespace {
+
+// Batch 4 LOW (size_t->int truncation): fail-closed bounds before the
+// narrowing casts in ShapeWithHarfBuzz. HB takes int; inputs beyond these
+// maxima are rejected, never wrapped.
+constexpr std::size_t kMaxShapeBytes = 1u << 20;  // 1 MiB label cap
+constexpr float kMaxSizePx = 1000000.0f;          // 1e6 px size cap
 
 // Strict UTF-8 decode of one codepoint starting at [pos, len).
 // Returns false on any malformed/truncated/over-long/surrogate/out-of-range
@@ -335,15 +342,35 @@ bool ShapeWithHarfBuzz(FT_Face ftface, const std::uint8_t* data,
   if (ftface == nullptr || data == nullptr || len == 0 || out == nullptr) {
     return false;
   }
+  // Fail closed before narrowing: reject non-finite sizes and lengths
+  // that cannot fit int (never wrap via static_cast); saturate
+  // out-of-range-but-finite sizes into [0, kMaxSizePx] so shaping stays
+  // deterministic instead of truncating into attacker-influenced behavior.
+  if (!std::isfinite(style.size_px)) {
+    return false;
+  }
+  const float clamped_size =
+      style.size_px < 0.0f
+          ? 0.0f
+          : (style.size_px > kMaxSizePx ? kMaxSizePx : style.size_px);
+  if (len > kMaxShapeBytes ||
+      len > static_cast<std::size_t>(INT_MAX)) {
+    return false;
+  }
+  const double scaled = static_cast<double>(clamped_size) * 64.0;
+  if (scaled > static_cast<double>(INT_MAX)) {
+    return false;
+  }
   hb_font_t* hbfont = hb_ft_font_create(ftface, nullptr);
   if (hbfont == nullptr) return false;
-  const int scale = static_cast<int>(style.size_px * 64.0f);
+  const int scale = static_cast<int>(scaled);
   hb_font_set_scale(hbfont, scale, scale);
   hb_buffer_t* buf = hb_buffer_create();
   bool ok = false;
   if (buf != nullptr) {
+    const int len32 = static_cast<int>(len);
     hb_buffer_add_utf8(buf, reinterpret_cast<const char*>(data),
-                       static_cast<int>(len), 0, static_cast<int>(len));
+                       len32, 0, len32);
     hb_buffer_guess_segment_properties(buf);
     hb_shape(hbfont, buf, nullptr, 0);
     const unsigned n = hb_buffer_get_length(buf);
@@ -397,6 +424,20 @@ StatusOr<ShapedRun> shapeRun(const std::uint8_t* utf8, std::size_t len,
   if (utf8 == nullptr) {
     return Status::kInvalidScript;
   }
+  // Fail closed before any narrowing cast downstream (ShapeWithHarfBuzz):
+  // reject non-finite sizes and over-cap lengths; saturate finite
+  // out-of-range sizes into [0, kMaxSizePx] (deterministic, never wrapped).
+  if (!std::isfinite(style.size_px)) {
+    return Status::kInvalidScript;
+  }
+  if (len > kMaxShapeBytes ||
+      len > static_cast<std::size_t>(INT_MAX)) {
+    return Status::kInvalidScript;
+  }
+  TextStyle clamped_style = style;
+  if (clamped_style.size_px < 0.0f) clamped_style.size_px = 0.0f;
+  if (clamped_style.size_px > kMaxSizePx) clamped_style.size_px = kMaxSizePx;
+  const TextStyle& eff = clamped_style;
   ShapedRun run;
   run.cluster_map.resize(len);
   // Decode the whole input first: malformed/truncated UTF-8 is rejected
@@ -422,11 +463,11 @@ StatusOr<ShapedRun> shapeRun(const std::uint8_t* utf8, std::size_t len,
   // dumps. Advances are quoted @16px, so they scale with the requested
   // size and shift with letter spacing like the fallback mapping does.
   if (const ReferenceRow* ref = FindReferenceRow(utf8, len)) {
-    const float scale = style.size_px / 16.0f;
+    const float scale = eff.size_px / 16.0f;
     for (std::size_t i = 0; i < ref->glyph_count; ++i) {
       run.glyph_ids.push_back(ref->glyph_ids[i]);
       run.advances.push_back(ref->advances[i] * scale +
-                             style.letter_spacing_px);
+                             eff.letter_spacing_px);
       run.offsets.push_back(GlyphOffset{});
     }
     for (std::size_t i = 0; i < ref->glyph_count; ++i) {
@@ -450,7 +491,7 @@ StatusOr<ShapedRun> shapeRun(const std::uint8_t* utf8, std::size_t len,
     if (ResolveRealFont(font, &real) &&
         FontCoversAll(real.face, codepoints.data(), codepoints.size())) {
       ShapedRun shaped;
-      if (ShapeWithHarfBuzz(real.face, utf8, len, style, &shaped)) {
+      if (ShapeWithHarfBuzz(real.face, utf8, len, eff, &shaped)) {
         return shaped;
       }
     }
@@ -467,7 +508,7 @@ StatusOr<ShapedRun> shapeRun(const std::uint8_t* utf8, std::size_t len,
     // the way the reference rows do. Keyed by the resolved face, independent
     // of the requested size (a reshape at a new width keeps glyph ids).
     run.glyph_ids.push_back(FallbackGlyphId(codepoint, font.id));
-    run.advances.push_back(FallbackAdvance(codepoint, style));
+    run.advances.push_back(FallbackAdvance(codepoint, eff));
     run.offsets.push_back(GlyphOffset{});
     for (std::size_t k = 0; k < seq_len; ++k) {
       run.cluster_map[pos + k] = glyph_index;

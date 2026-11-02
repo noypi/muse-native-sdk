@@ -829,6 +829,174 @@ static bool check_all_or_nothing_coverage_no_mixed_runs() {
   }
 }
 
+// Batch 4 re-review pins (see unit-tests/T12.md). Hermetic: inline
+// fixtures only, no device, no font files beyond the in-TU bytes, no
+// downloads. Case 4 of the re-review (FontPathForFace fail-closed) is
+// already pinned by the five T8 check_font_path_* cases above — not
+// duplicated. The production int-cast clamps at shaper.cpp:340,346 do not
+// exist in this checkout, so the clamp itself is coder-owned; the cases
+// below pin the halves that hold today (fail-closed entries, FT-error
+// fail-closed, no stale ids across face swaps).
+
+namespace {
+struct ResetMemoryFontOnExit {
+  ~ResetMemoryFontOnExit() {
+    muse::text::RegisterTestOnlyMemoryFont(nullptr, 0);
+  }
+};
+}  // namespace
+
+static bool check_extreme_len_and_size_capped_or_deterministic() {
+  // Entry-cap direction for the Batch 4 LOW (size_t->int truncation at
+  // shaper.cpp:340,346): degenerate/extreme entries fail closed or stay
+  // deterministic instead of truncating into attacker-influenced behavior.
+  // The production clamp is coder-owned; this pins the null-guard +
+  // determinism halves at the current seams.
+  try {
+    muse::text::TextStyle style;
+    const std::uint8_t kA[] = {0x41};
+    // SIZE_MAX length with null bytes fails closed before any reserve or
+    // int cast, on both seams, never throws.
+    {
+      auto r = muse::text::shapeRun(nullptr, SIZE_MAX,
+                                    muse::text::FontHandle{}, style);
+      if (r.ok()) return false;
+      if (r.status() != muse::text::Status::kInvalidScript) return false;
+    }
+    {
+      muse::text::FontRequest req;
+      req.script_tag = kT11Latn;
+      auto f = muse::text::shapeRunWithFallback(nullptr, SIZE_MAX, style,
+                                                req);
+      if (f.ok()) return false;
+    }
+    // Negative and zero sizes stay deterministic with finite advances
+    // (no overflow/NaN smuggled through the float->int scale cast).
+    const float kSizes[] = {-16.0f, 0.0f};
+    for (float size : kSizes) {
+      muse::text::TextStyle sized;
+      sized.size_px = size;
+      auto a = muse::text::shapeRun(kA, sizeof(kA), muse::text::FontHandle{},
+                                    sized);
+      auto b = muse::text::shapeRun(kA, sizeof(kA), muse::text::FontHandle{},
+                                    sized);
+      if (a.ok() != b.ok()) return false;
+      if (!a.ok()) return false;
+      if ((*a).glyph_ids != (*b).glyph_ids) return false;
+      if ((*a).advances != (*b).advances) return false;
+      for (float adv : (*a).advances) {
+        if (!std::isfinite(adv)) return false;
+      }
+    }
+    return true;
+  } catch (...) {
+    return false;
+  }
+}
+
+static bool check_corrupt_memory_font_fail_closed() {
+  // Corrupt-font direction via the test-only memory-font seam
+  // (RegisterTestOnlyMemoryFont): hostile/truncated bytes fed to
+  // FT_New_Memory_Face fail closed — never a crash, never a throw, never
+  // font glyph ids served from bytes FreeType rejected.
+  try {
+    ResetMemoryFontOnExit guard;
+    const std::uint8_t kAb[] = {0x41, 0x42};
+    muse::text::TextStyle style;
+    style.size_px = 16.0f;
+    // Fixture 1: invalid sfnt signature (FT rejects at header parse).
+    const std::uint8_t kGarbage[] = {
+        0x4E, 0x4F, 0x54, 0x20, 0x41, 0x20, 0x46, 0x4F,
+        0x4E, 0x54, 0x21, 0x21, 0x21, 0x00, 0xFF, 0xFF};
+    // Fixture 2: truncated valid font (first half of the in-TU bytes;
+    // table directory cut mid-way, FT fails on access if not at open).
+    const std::size_t kHalf = sizeof(kTestFontBytes) / 2;
+    const std::uint8_t* kFixtures[] = {
+        kGarbage,
+        reinterpret_cast<const std::uint8_t*>(kTestFontBytes)};
+    const std::size_t kSizes[] = {sizeof(kGarbage), kHalf};
+    for (int i = 0; i < 2; ++i) {
+      muse::text::RegisterTestOnlyMemoryFont(kFixtures[i], kSizes[i]);
+      auto r = muse::text::shapeRun(kAb, sizeof(kAb),
+                                    muse::text::FontHandle{}, style);
+      if (r.ok()) {
+        // Degraded to the hermetic salted fallback: never font ids (1, 2),
+        // glyph count sane, advances finite.
+        if ((*r).glyph_ids.size() != 2) return false;
+        if ((*r).glyph_ids[0] == 1u && (*r).glyph_ids[1] == 2u) return false;
+        for (float adv : (*r).advances) {
+          if (!std::isfinite(adv)) return false;
+        }
+      } else {
+        // Fail-closed statuses only.
+        muse::text::Status st = r.status();
+        if (st != muse::text::Status::kMissingGlyph &&
+            st != muse::text::Status::kInvalidScript &&
+            st != muse::text::Status::kInvalidInput &&
+            st != muse::text::Status::kNoFaceAvailable) {
+          return false;
+        }
+      }
+    }
+    return true;
+  } catch (...) {
+    return false;
+  }
+}
+
+static bool check_face_swap_never_serves_stale_ids() {
+  // Cross-face cache non-reuse after the T9 id change (font-backed ids vs
+  // stub-era keys): swapping the registered face (or unregistering) is
+  // immediately observable — stale ids from the previous backend are never
+  // served again.
+  try {
+    ResetMemoryFontOnExit guard;
+    const std::uint8_t kAb[] = {0x41, 0x42};
+    muse::text::TextStyle style;
+    style.size_px = 16.0f;
+    auto shapeAb = [&]() {
+      return muse::text::shapeRun(kAb, sizeof(kAb), muse::text::FontHandle{},
+                                  style);
+    };
+    auto baseline = shapeAb();
+    if (!baseline.ok()) return false;
+    // Register the valid in-TU font: font-backed ids (1, 2) must appear,
+    // proving the swap took effect (no stale pre-registration run).
+    muse::text::RegisterTestOnlyMemoryFont(
+        reinterpret_cast<const std::uint8_t*>(kTestFontBytes),
+        sizeof(kTestFontBytes));
+    auto fonted = shapeAb();
+    if (!fonted.ok()) return false;
+    if ((*fonted).glyph_ids.size() != 2) return false;
+    if ((*fonted).glyph_ids[0] != 1u || (*fonted).glyph_ids[1] != 2u) {
+      return false;
+    }
+    // Swap to corrupt bytes: the font ids must disappear (fail closed or
+    // stub), never served stale.
+    const std::uint8_t kGarbage[] = {0x4E, 0x4F, 0x54, 0x41, 0x46, 0x4F,
+                                     0x4E, 0x54, 0x00, 0xFF};
+    muse::text::RegisterTestOnlyMemoryFont(kGarbage, sizeof(kGarbage));
+    auto corrupted = shapeAb();
+    if (corrupted.ok()) {
+      if ((*corrupted).glyph_ids.size() == 2 &&
+          (*corrupted).glyph_ids[0] == 1u &&
+          (*corrupted).glyph_ids[1] == 2u) {
+        return false;
+      }
+    }
+    // Unregister (back to the embedded default): the baseline run returns
+    // exactly — no stale override run lingers.
+    muse::text::RegisterTestOnlyMemoryFont(nullptr, 0);
+    auto restored = shapeAb();
+    if (restored.ok() != baseline.ok()) return false;
+    if (!restored.ok()) return false;
+    return (*restored).glyph_ids == (*baseline).glyph_ids &&
+           (*restored).advances == (*baseline).advances;
+  } catch (...) {
+    return false;
+  }
+}
+
 #define RUN_CASE(name)                           \
   do {                                           \
     if (!(name)()) {                             \
@@ -872,6 +1040,9 @@ int main() {
   RUN_CASE(check_non_index_zero_face_fails_closed);
   RUN_CASE(check_corrupt_bytes_fail_closed_before_shaping);
   RUN_CASE(check_all_or_nothing_coverage_no_mixed_runs);
+  RUN_CASE(check_extreme_len_and_size_capped_or_deterministic);
+  RUN_CASE(check_corrupt_memory_font_fail_closed);
+  RUN_CASE(check_face_swap_never_serves_stale_ids);
   if (failures > 0) {
     std::printf("harfbuzz_parity_test: %d failing\n", failures);
     return 1;
