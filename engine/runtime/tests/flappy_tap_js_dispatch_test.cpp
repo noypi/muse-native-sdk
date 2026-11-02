@@ -14,6 +14,7 @@
 #include <limits>
 #include <string>
 
+#include "runtime/flappy_content.h"
 #include "runtime/presenter.h"
 
 // --- T11 `Interface:` line (retyped honest tap-record per Batch 5 halt) ---
@@ -325,6 +326,10 @@ static bool check_record_seam_denies_forged_node_and_handler() {
 
 int main() {
   int failures = 0;
+  // T6 seam setup (FR-RUNTIME-013): reach dispatch through the content-tag
+  // registry via explicit registration (never app name; never static-init
+  // order). Idempotent; first registration wins.
+  (void)runtime::RegisterFlappyContent();
   RUN_CASE(check_harness_entry_reached);
   RUN_CASE(check_fired_steer_tap_records_with_identity);
   RUN_CASE(check_tap_miss_fails_closed_naming_node_and_handler);

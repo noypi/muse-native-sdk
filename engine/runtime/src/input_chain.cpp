@@ -344,25 +344,9 @@ bool RepaintWithinOneFrame(int32_t nodeId) {
 
 // Batch 2 / T3 — tap-tree-from-registry: hit-test entries resolve through
 // the registered content layout providers (AC-INPUT-020,
-// AC-RUNTIME-004/005/001). The laid-out content tree root is carried as an
-// opaque handle; every entry below is read from the actual layout rects
-// each call (each frame, or on relayout) through the content module's
-// provider callbacks registered by tag — replacing the hardcoded gallery
-// rects in PopulateTapTreeFromLayout above. Node identity stays stable
-// across updates per AC-RUNTIME-001. Never throws. Types are
-// layout-identical to the T10 contract.
-struct Rect {
-  float x = 0.0f;
-  float y = 0.0f;
-  float w = 0.0f;
-  float h = 0.0f;
-};
-struct TapNode {
-  std::int32_t nodeId = -1;
-  Rect bounds{};
-  std::string handlerId;
-};
-using LayoutNode = std::int32_t;  // opaque root handle; production owns it.
+// AC-RUNTIME-004/005/001). Types owned by runtime/input_chain.h
+// (BUG-RUNTIME-011: single production definition; the contract suite keeps
+// a layout-identical mirror). Never throws.
 std::vector<TapNode> buildTapTree(LayoutNode layoutRoot) {
   try {
     // One TapNode per touchable content node; bounds are the layout rect of

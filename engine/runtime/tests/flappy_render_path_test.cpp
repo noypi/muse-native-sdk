@@ -10,24 +10,23 @@
 #include <cstdio>
 #include <string>
 
+// T6 seam setup header (FR-RUNTIME-013): scene-block types and entry points
+// are owned by the content module (runtime/flappy_content.h, relocated from
+// gallery_present.cpp by coder T5); explicit registration keeps the suite
+// independent of static-init order. Assertions below are unchanged in
+// behavior, reached via RegisterFlappyContent() + tag resolution.
+#include "runtime/flappy_content.h"
+
 // --- T9 `Interface:` line (plan verbatim) --------------------------------
 // `renderTree(treeHandle: TreeHandle) -> FrameStats — maps each evaluated
 // flappy node (TopAppBar/HUD/bird/pipes/score/game-over) to its own draw
 // path; returns per-frame node count + unknownKind count; unknownKind > 0
 // fails closed with the node kind named, never falls back to a gallery row`
-using TreeHandle = int32_t;  // opaque handle; production owns the real type.
-struct FrameStats {
-  int32_t nodeCount = 0;
-  int32_t unknownKindCount = 0;
-  std::string unknownKindName;  // named kind when unknownKindCount > 0.
-};
-FrameStats renderTree(TreeHandle treeHandle);
-
-// Null-preamble registration (gallery_present.cpp, global namespace):
-// null/empty input registers nothing (returns 0, no dereference). Security-
-// review pin: safe today only by call-site ordering; the guard belongs at
-// the function boundary, and this case locks the boundary contract.
-TreeHandle RegisterFlappyContentTree(const void* data, std::size_t len);
+//
+// T5/T6 seam binding (FR-RUNTIME-013): TreeHandle/FrameStats plus
+// renderTree/RegisterFlappyContentTree are owned by
+// runtime/flappy_content.h (single production definition, included above);
+// the cases below bind those symbols directly. No test-local mirror.
 
 // Test-owned flappy tree fixtures (handles only; production owns content).
 namespace {
@@ -189,6 +188,9 @@ static bool check_register_null_empty_preamble_returns_zero() {
 
 int main() {
   int failures = 0;
+  // T6 seam setup (FR-RUNTIME-013): register content tags before asserting
+  // render outcomes. Idempotent.
+  (void)runtime::RegisterFlappyContent();
   RUN_CASE(check_harness_entry_reached);
   RUN_CASE(check_flappy_tree_renders_game_scene_no_unknown_kinds);
   RUN_CASE(check_unknown_kind_fails_closed_with_kind_named);

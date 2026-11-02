@@ -728,9 +728,11 @@ target_link_libraries(present_real_components_test PRIVATE runtime)
 target_compile_options(present_real_components_test PRIVATE -Wall -Wextra -Wpedantic)
 add_test(NAME present_real_components_test COMMAND present_real_components_test)
 
-# Batch 5 / T9: per-app content rendering (flappy game scene, never
-# gallery-mapped rows). Test owned by code-unit-tester; binds only to the T9
-# `Interface:` line. Definitions land in src/gallery_present.cpp.
+# Batch 5 / T9 + engine-content-isolation T5: per-app content rendering
+# (flappy game scene, never gallery-mapped rows). Test owned by
+# code-unit-tester; binds only to the T9 `Interface:` line. Scene-block
+# definitions relocated to src/flappy_content.cpp (T5); gallery_present.cpp
+# keeps only the generic present path.
 # Batch 2 / T3+T4: content-bound suites resolve dispatch through the
 # registry, so the content module TU links into these executables directly
 # (static-archive members otherwise drop when unreferenced). Test scope

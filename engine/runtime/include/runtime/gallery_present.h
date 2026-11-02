@@ -63,6 +63,18 @@ bool PresentRealGalleryPage(const std::vector<GalleryRow>& rows, int page,
 bool PresentGallery(const void* mui1Data, std::size_t len, Renderer& renderer,
                     Swapchain& target, std::string* error);
 
+// Content-scene present routing (FR-RUNTIME-013 / AC-RUNTIME-039, T5).
+// Implemented by the content module (engine/runtime/src/flappy_content.cpp);
+// the generic present path calls through here without naming any content
+// bundle, so this header and gallery_present.cpp stay per-app-token-free.
+// Returns true when the bytes were recognized as a registered content scene
+// and presented (*error untouched). Returns false otherwise: a recognized
+// scene that failed closed leaves its named diagnostic in *error, while
+// non-content bytes leave *error untouched so the caller falls through to
+// the gallery rows. Never throws; error == nullptr is tolerated.
+bool TryPresentContentScene(const void* data, std::size_t len,
+                            std::string* error);
+
 // Realized window for the virtualized gallery scroll path (FR-LISTS-007 /
 // AC-LISTS-033): the visible row range plus velocity-derived prefetch headroom.
 // `firstVisible`/`lastVisible` are inclusive row indices clamped to

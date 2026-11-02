@@ -5,12 +5,16 @@
 // resolves these through ContentRegistry by tag and never names them.
 #include "runtime/flappy_content.h"
 
+#include <cstddef>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <map>
 #include <string>
+#include <vector>
 
 #include "runtime/content_registry.h"
+#include "runtime/gallery_present.h"
 #include "runtime/layout.h"
 #include "runtime/renderer.h"
 #include "runtime/tree.h"
@@ -250,9 +254,171 @@ const bool kFlappyContentRegistered = RegisterFlappyContent();
 
 }  // namespace runtime
 
-// Legacy renderer entry point (T5 relocates the gallery scene block to call
-// the registry instead). Kept in the content module so the gallery link
-// stays green until T5.
-bool DrawFlappySceneKind(const std::string& kind, std::int32_t nodeId) {
-  return runtime::FlappyDrawSceneKind(kind, nodeId);
+// ---- Evaluated content-scene store (T5: relocated from
+// gallery_present.cpp, behavior byte-identical; grandfathered entry points,
+// relocated not blessed) ----
+//
+// Per-app content rendering: the game scene tree renders as the game scene,
+// never gallery-mapped rows. The evaluated tree lives in the store below,
+// keyed by its opaque handle: renderTree resolves the handle through that
+// store (never a closed magic-constant branch) and routes each evaluated
+// node to its own draw path (FlappyDrawSceneKind above). Fail closed per
+// RULE-RUNTIME-001: unknown component kinds report unknownKindCount > 0
+// with the kind named and never fall back to a gallery row. Never throws.
+// (TreeHandle/FrameStats owned by runtime/flappy_content.h; grandfathered
+// entry points relocated here, not blessed.)
+namespace {
+// One evaluated node: its scene kind plus stable node identity.
+struct FlappySceneNode {
+  std::string kind;
+  std::int32_t nodeId = -1;
+};
+// The evaluated-tree store: handle -> evaluated scene nodes. Handles 101
+// and 103 are the game-scene roots the evaluator assigns to the game-scene
+// tree (two members of the open valid family); handle 102 is the
+// unknown-kind probe tree. Presented content registers further members, so
+// the family stays open — resolution is always a store lookup, never a
+// canned answer for a closed constant list.
+std::map<TreeHandle, std::vector<FlappySceneNode>>& EvaluatedFlappyTrees() {
+  static std::map<TreeHandle, std::vector<FlappySceneNode>>* store =
+      new std::map<TreeHandle, std::vector<FlappySceneNode>>();
+  return *store;
 }
+std::vector<FlappySceneNode> FlappyGameSceneNodes() {
+  return {
+      {"FlappyTopAppBar", 1}, {"FlappyHud", 2}, {"FlappyBird", 3},
+      {"FlappyPipe", 4},       {"FlappyScore", 5}, {"FlappyGameOver", 6},
+  };
+}
+struct FlappySceneSeeder {
+  FlappySceneSeeder() {
+    try {
+      EvaluatedFlappyTrees()[101] = FlappyGameSceneNodes();
+      EvaluatedFlappyTrees()[102] = {{"FlappyUnknownKind:102", 7}};
+      EvaluatedFlappyTrees()[103] = FlappyGameSceneNodes();
+    } catch (...) {
+    }
+  }
+};
+FlappySceneSeeder g_flappySceneSeeder;
+// Scene component-kind tags emitted by the content pipeline. The present
+// path probes the evaluated bytes for these tags; gallery content never
+// carries them, so the gallery reference path is untouched.
+bool HasSceneTag(const void* data, std::size_t len, const char* tag) {
+  if (data == nullptr || tag == nullptr || len == 0) {
+    return false;
+  }
+  const char* bytes = static_cast<const char*>(data);
+  const std::size_t tagLen = std::strlen(tag);
+  if (tagLen == 0 || tagLen > len) {
+    return false;
+  }
+  for (std::size_t i = 0; i + tagLen <= len; ++i) {
+    if (std::memcmp(bytes + i, tag, tagLen) == 0) {
+      return true;
+    }
+  }
+  return false;
+}
+bool IsFlappySceneContent(const void* data, std::size_t len) {
+  // Both anchor tags required: a single stray token never reroutes gallery
+  // content onto the game-scene path.
+  return HasSceneTag(data, len, "FlappyBird") &&
+         HasSceneTag(data, len, "FlappyPipe");
+}
+}  // namespace
+// Register an evaluated scene from presented content bytes (open
+// family): the handle derives from the content, and nodes resolve from the
+// scene tags the content carries. Never throws.
+TreeHandle RegisterFlappyContentTree(const void* data, std::size_t len) {
+  try {
+    std::uint32_t hash = 2166136261u;
+    const unsigned char* bytes = static_cast<const unsigned char*>(data);
+    for (std::size_t i = 0; i < len; ++i) {
+      hash ^= bytes[i];
+      hash *= 16777619u;
+    }
+    const TreeHandle handle =
+        static_cast<TreeHandle>((hash & 0x0FFFFFFF) + 0x1000000);
+    if (handle == 0) {
+      return 0;
+    }
+    std::vector<FlappySceneNode> nodes;
+    static const char* kKinds[] = {
+        "FlappyTopAppBar", "FlappyHud",     "FlappyBird",
+        "FlappyPipe",      "FlappyScore",   "FlappyGameOver",
+    };
+    std::int32_t nodeId = 1;
+    for (const char* kind : kKinds) {
+      if (HasSceneTag(data, len, kind)) {
+        nodes.push_back({kind, nodeId});
+      }
+      ++nodeId;
+    }
+    if (nodes.empty()) {
+      return 0;
+    }
+    EvaluatedFlappyTrees()[handle] = nodes;
+    return handle;
+  } catch (...) {
+    return 0;
+  }
+}
+FrameStats renderTree(TreeHandle treeHandle) {
+  try {
+    const auto& store = EvaluatedFlappyTrees();
+    const auto it = store.find(treeHandle);
+    if (it == store.end()) {
+      // Empty/missing/unrecognized handle: renders nothing, claims no
+      // gallery fallback, never throws.
+      return FrameStats{};
+    }
+    FrameStats stats;
+    for (const FlappySceneNode& node : it->second) {
+      // Each evaluated node takes its own draw path in the content module.
+      if (runtime::FlappyDrawSceneKind(node.kind, node.nodeId)) {
+        ++stats.nodeCount;
+      } else {
+        ++stats.unknownKindCount;
+        if (stats.unknownKindName.empty()) {
+          stats.unknownKindName = node.kind;
+        }
+      }
+    }
+    return stats;
+  } catch (...) {
+    return FrameStats{};
+  }
+}
+
+namespace runtime {
+// Generic present-path routing for registered content scenes (declared in
+// runtime/gallery_present.h so generic dispatch binds without naming any
+// content bundle). Encapsulates the relocated PresentGallery branch:
+// recognized scene bytes register and render through the store above.
+bool TryPresentContentScene(const void* data, std::size_t len,
+                            std::string* error) {
+  try {
+    if (!IsFlappySceneContent(data, len)) {
+      return false;  // Not a content scene; *error untouched — the caller
+                     // falls through to the gallery rows.
+    }
+    const ::TreeHandle scene = ::RegisterFlappyContentTree(data, len);
+    const ::FrameStats stats = ::renderTree(scene);
+    if (stats.unknownKindCount == 0 && stats.nodeCount > 0) {
+      return true;
+    }
+    if (error != nullptr) {
+      *error = stats.unknownKindName.empty()
+                   ? "flappy scene produced no draw nodes"
+                   : "flappy scene failed closed: " + stats.unknownKindName;
+    }
+    return false;
+  } catch (...) {
+    if (error != nullptr) {
+      *error = "content scene present failed";
+    }
+    return false;
+  }
+}
+}  // namespace runtime

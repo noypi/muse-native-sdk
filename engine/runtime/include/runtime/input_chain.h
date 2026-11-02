@@ -1,9 +1,12 @@
 #pragma once
 
 #include <cstdint>
+#include <string>
+#include <vector>
 
 #include "gesture_arena.h"
 #include "hit_test.h"
+#include "runtime/renderer.h"
 
 // Device tap chain wiring (BUG-M3-FIDELITY-007 T4; FR-INPUT-011 /
 // AC-INPUT-020): native hit-test over real laid-out bounds plus
@@ -15,6 +18,30 @@
 // Chain position: JNI nativeDispatchTouch (T3) feeds raw MotionEvent fields
 // through input::NormalizeMotion into GestureArena::AddPointer; the winning
 // tap is decided here, then T5 routes it to the component handler.
+
+// Tap-tree-from-registry (FR-RUNTIME-013 / T5; BUG-RUNTIME-011): single
+// production definition of the tap-tree types, owned here. The laid-out
+// content tree root is carried as an opaque handle; every entry below is
+// read from the actual layout rects each call through the content module's
+// provider callbacks registered by tag (replacing hardcoded gallery rects).
+// Node identity stays stable across updates per AC-RUNTIME-001. The hermetic
+// contract suite keeps a layout-identical mirror of these types. Never
+// throws.
+struct TapNode {
+  std::int32_t nodeId = -1;
+  runtime::Rect bounds{};
+  std::string handlerId;
+};
+
+// Opaque laid-out content tree root; production owns the type.
+using LayoutNode = std::int32_t;
+
+// Returns one TapNode per touchable content node with the handler that would
+// fire for it; bounds equal the layout rect of the same nodeId. The first
+// registration answering a root wins that root; unregistered roots resolve
+// empty. Empty/missing layout and any failure yield an empty tree, never
+// hardcoded gallery rects. Never throws.
+std::vector<TapNode> buildTapTree(LayoutNode layoutRoot);
 
 // Returns the tap-tree population entry point (BUG-M3-FIDELITY-007 review
 // BLOCKER; BUG-INPUT-002 T2): fills a HitTestTree from the real laid-out
