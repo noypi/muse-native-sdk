@@ -21,56 +21,34 @@
 namespace runtime {
 namespace {
 
-// In-process fake engine driven by the injected hooks. Every hook call is
-// guarded so a throwing hook still surfaces as ok=false (eval) or a no-op
-// (drain/collect) — exceptions never cross the JsRuntime boundary.
-class FakeJsRuntime : public JsRuntime {
+// Production runtime behind the seam: fail-closed on lanes with no
+// embedded engine linked. eval reports ok=false with a plain-string
+// message (never success without work); drain and collect are no-ops.
+// Exceptions never cross the JsRuntime boundary.
+class RealJsRuntime : public JsRuntime {
  public:
-  explicit FakeJsRuntime(FakeEngineHooks hooks) : hooks_(std::move(hooks)) {}
+  explicit RealJsRuntime(RealEngineParams params) { (void)params; }
 
   JsValue eval(const std::string& source,
                const std::string& origin) override {
-    if (!hooks_.eval) {
-      return JsValue{false, "fake engine: no eval hook"};
-    }
-    try {
-      return hooks_.eval(source, origin);
-    } catch (const std::exception& e) {
-      return JsValue{false, e.what()};
-    } catch (...) {
-      return JsValue{false, "fake engine: unknown eval failure"};
-    }
+    (void)source;
+    (void)origin;
+    return JsValue{false, "no embedded engine linked: eval unavailable"};
   }
 
-  void drainMicrotasks() override {
-    if (!hooks_.drain) {
-      return;
-    }
-    try {
-      hooks_.drain();
-    } catch (...) {
-    }
-  }
+  void drainMicrotasks() override {}
 
-  void collectGarbage() override {
-    if (!hooks_.collect) {
-      return;
-    }
-    try {
-      hooks_.collect();
-    } catch (...) {
-    }
-  }
+  void collectGarbage() override {}
 
  private:
-  FakeEngineHooks hooks_;
+  RealEngineParams params_{};
 };
 
 }  // namespace
 
-std::unique_ptr<JsRuntime> JsRuntimeFactory::createFake(
-    FakeEngineHooks hooks) {
-  return std::unique_ptr<JsRuntime>(new FakeJsRuntime(std::move(hooks)));
+std::unique_ptr<JsRuntime> JsRuntimeFactory::createReal(
+    RealEngineParams params) {
+  return std::unique_ptr<JsRuntime>(new RealJsRuntime(params));
 }
 
 // Batch 5 / T11 — native tap-record + logcat seam (NOT a JS invocation:
@@ -107,8 +85,7 @@ bool RecordFlappyTap(std::int32_t nodeId, const char* handler) {
 // ---- T2 live probe text field (BUG-M3-FIDELITY-003 / FR-M3-006) ----
 //
 // Device-path note: the probe-page field does not evaluate through
-// FakeJsRuntime (FR-RUNTIME-010 is consumed, not reimplemented — the fake
-// stays as the hermetic fallback); it binds the RULE-M3-004 text-subsystem
+// JsRuntime (FR-RUNTIME-010 is consumed, not reimplemented); it binds the RULE-M3-004 text-subsystem
 // engines directly (FR-TEXT-008 InputConnection bridge, FR-TEXT-009 editing
 // engine, FR-TEXT-013 clipboard transport) plus the live FR-LAYOUT-012
 // `PresentDeps().insets.imeBottom` feed, reusing the anchorSheetToImeInset

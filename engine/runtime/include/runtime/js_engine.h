@@ -35,7 +35,7 @@ class JsEngine {
   // Lifecycle (FR-RUNTIME-007 / AC-RUNTIME-020). Bootstrap creates exactly
   // one isolate via the factory; destroy releases all handles and the
   // isolate; double-destroy is a no-op.
-  static std::unique_ptr<JsEngine> create(FakeEngineHooks hooks);
+  static std::unique_ptr<JsEngine> create(RealEngineParams params);
   void destroy();
   int liveIsolates() const;
   int liveHandles() const;

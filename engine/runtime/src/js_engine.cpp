@@ -8,9 +8,9 @@ namespace runtime {
 
 JsEngine::JsEngine(JsRuntime& rt) : rt_(&rt) {}
 
-std::unique_ptr<JsEngine> JsEngine::create(FakeEngineHooks hooks) {
+std::unique_ptr<JsEngine> JsEngine::create(RealEngineParams params) {
   std::unique_ptr<JsRuntime> rt =
-      JsRuntimeFactory::createFake(std::move(hooks));
+      JsRuntimeFactory::createReal(params);
   std::unique_ptr<JsEngine> engine(new JsEngine(*rt));
   engine->owned_rt_ = std::move(rt);
   // Bootstrap yields exactly one isolate; no handles exist yet.
@@ -48,11 +48,11 @@ InstanceId JsEngine::mount(const std::string& bodySource) {
   }
   JsValue result = rt_->eval(bodySource, "body");
   rt_->drainMicrotasks();
-  ++live_handles_;
   if (!result.ok) {
     throw JsError{result.error.empty() ? "body evaluation failed"
                                        : result.error};
   }
+  ++live_handles_;
   const InstanceId id = next_id_++;
   if (next_id_ == kInvalidInstanceId) {
     ++next_id_;
