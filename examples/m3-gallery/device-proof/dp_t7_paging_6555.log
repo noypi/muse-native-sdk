@@ -1,0 +1,28 @@
+== T7 paging battery 6555 2026-11-02T07:29:49Z ==
+--- tap Prev @ start (150,2030), expect NO change ---
+--- tap Next (930,2030) ---
+--- tap story surface center (540,1100), expect NO pagination ---
+-rw-r--r-- 1 saif saif 37092 Nov  2 03:01 examples/m3-gallery/device-proof/dp_t7_adv1.png
+-rw-r--r-- 1 saif saif 37109 Nov  2 02:57 examples/m3-gallery/device-proof/dp_t7_app2.png
+-rw-r--r-- 1 saif saif 37355 Nov  2 02:59 examples/m3-gallery/device-proof/dp_t7_base.png
+-rw-r--r-- 1 saif saif 33439 Nov  2 03:05 examples/m3-gallery/device-proof/dp_t7_g1_post.png
+-rw-r--r-- 1 saif saif 33058 Nov  2 03:03 examples/m3-gallery/device-proof/dp_t7_g1_pre2.png
+-rw-r--r-- 1 saif saif 34124 Nov  2 03:03 examples/m3-gallery/device-proof/dp_t7_g1_pre.png
+-rw-r--r-- 1 saif saif 33488 Nov  2 03:05 examples/m3-gallery/device-proof/dp_t7_g2_focus.png
+-rw-r--r-- 1 saif saif 79190 Nov  2 03:05 examples/m3-gallery/device-proof/dp_t7_g2_typed.png
+-rw-r--r-- 1 saif saif 34150 Nov  2 03:07 examples/m3-gallery/device-proof/dp_t7_g4_post.png
+-rw-r--r-- 1 saif saif 34146 Nov  2 03:07 examples/m3-gallery/device-proof/dp_t7_g4_pre.png
+-rw-r--r-- 1 saif saif 37304 Nov  2 03:02 examples/m3-gallery/device-proof/dp_t7_g5_p0.png
+-rw-r--r-- 1 saif saif 37304 Nov  2 03:02 examples/m3-gallery/device-proof/dp_t7_g5_pN.png
+-rw-r--r-- 1 saif saif 37364 Nov  2 03:02 examples/m3-gallery/device-proof/dp_t7_g5_prev.png
+-rw-r--r-- 1 saif saif 37334 Nov  2 03:02 examples/m3-gallery/device-proof/dp_t7_g5_surf.png
+-rw-r--r-- 1 saif saif 33298 Nov  2 03:04 examples/m3-gallery/device-proof/dp_t7_menu_pre.png
+-rw-rw-r-- 1 saif saif 38508 Nov  2 15:29 examples/m3-gallery/device-proof/dp_t7_next1_6555.png
+-rw-rw-r-- 1 saif saif 60498 Nov  2 15:26 examples/m3-gallery/device-proof/dp_t7_page0_6555.png
+-rw-rw-r-- 1 saif saif 38508 Nov  2 15:29 examples/m3-gallery/device-proof/dp_t7_prev0_6555.png
+-rw-rw-r-- 1 saif saif 38508 Nov  2 15:29 examples/m3-gallery/device-proof/dp_t7_surfacetap_6555.png
+-rw-r--r-- 1 saif saif 37142 Nov  2 03:01 examples/m3-gallery/device-proof/dp_t7_tapscan.png
+-rw-r--r-- 1 saif saif 19290 Nov  2 03:01 examples/m3-gallery/device-proof/dp_t7_walkend.png
+0e7482613e1f302ffa36eeacf89ca42b  examples/m3-gallery/device-proof/dp_t7_prev0_6555.png
+0e7482613e1f302ffa36eeacf89ca42b  examples/m3-gallery/device-proof/dp_t7_next1_6555.png
+0e7482613e1f302ffa36eeacf89ca42b  examples/m3-gallery/device-proof/dp_t7_surfacetap_6555.png

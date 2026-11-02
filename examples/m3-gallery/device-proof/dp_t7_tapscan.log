@@ -1,0 +1,60 @@
+11-02 03:00:19.602  8891  8891 I muse-host: SEAM-STEP:touch:ok
+11-02 03:00:19.602  8891  8891 D MainActivity: touch x=360.0 y=105.0 claimed=-1
+11-02 03:00:19.628  8891  8949 I GalleryPage: [layering] slice page=0 rows=[0,7] comps={TopAppBar|TopAppBar|TopAppBar|NavigationBar|NavigationRail|NavigationDrawer|BottomAppBar|SearchBar} labels={m3-gallery|m3-gallery|m3-gallery|NavigationBar selected=home|NavigationRail selected=home|NavigationDrawer selected=home|gallery|Search settings}
+11-02 03:00:22.530  8891  8949 I GalleryPage: gallery-rows=121 gallery-pages=12
+11-02 03:00:22.530  8891  8949 I GalleryPage: gallery-page=1/12
+11-02 03:00:22.531  8891  8891 I muse-host: SEAM-STEP:touch:ok
+11-02 03:00:22.531  8891  8891 D MainActivity: touch x=360.0 y=105.0 claimed=20
+11-02 03:00:22.550  8891  8949 I GalleryPage: [layering] slice page=0 rows=[0,7] comps={TopAppBar|TopAppBar|TopAppBar|NavigationBar|NavigationRail|NavigationDrawer|BottomAppBar|SearchBar} labels={m3-gallery|m3-gallery|m3-gallery|NavigationBar selected=home|NavigationRail selected=home|NavigationDrawer selected=home|gallery|Search settings}
+11-02 03:00:25.401  8891  8949 I GalleryPage: gallery-rows=121 gallery-pages=12
+11-02 03:00:25.401  8891  8949 I GalleryPage: gallery-page=1/12
+11-02 03:00:25.418  8891  8949 I GalleryPage: [layering] slice page=0 rows=[0,7] comps={TopAppBar|TopAppBar|TopAppBar|NavigationBar|NavigationRail|NavigationDrawer|BottomAppBar|SearchBar} labels={m3-gallery|m3-gallery|m3-gallery|NavigationBar selected=home|NavigationRail selected=home|NavigationDrawer selected=home|gallery|Search settings}
+11-02 03:00:28.266  8891  8949 I GalleryPage: gallery-rows=121 gallery-pages=12
+11-02 03:00:28.266  8891  8949 I GalleryPage: gallery-page=1/12
+11-02 03:00:28.267  8891  8891 I muse-host: SEAM-STEP:touch:ok
+11-02 03:00:28.267  8891  8891 D MainActivity: touch x=360.0 y=205.0 claimed=-1
+11-02 03:00:28.283  8891  8949 I GalleryPage: [layering] slice page=0 rows=[0,7] comps={TopAppBar|TopAppBar|TopAppBar|NavigationBar|NavigationRail|NavigationDrawer|BottomAppBar|SearchBar} labels={m3-gallery|m3-gallery|m3-gallery|NavigationBar selected=home|NavigationRail selected=home|NavigationDrawer selected=home|gallery|Search settings}
+11-02 03:00:31.132  8891  8949 I GalleryPage: gallery-rows=121 gallery-pages=12
+11-02 03:00:31.132  8891  8949 I GalleryPage: gallery-page=1/12
+11-02 03:00:31.134  8891  8891 I muse-host: SEAM-STEP:touch:ok
+11-02 03:00:31.134  8891  8891 D MainActivity: touch x=360.0 y=205.0 claimed=20
+11-02 03:00:31.150  8891  8949 I GalleryPage: [layering] slice page=0 rows=[0,7] comps={TopAppBar|TopAppBar|TopAppBar|NavigationBar|NavigationRail|NavigationDrawer|BottomAppBar|SearchBar} labels={m3-gallery|m3-gallery|m3-gallery|NavigationBar selected=home|NavigationRail selected=home|NavigationDrawer selected=home|gallery|Search settings}
+11-02 03:00:33.996  8891  8949 I GalleryPage: gallery-rows=121 gallery-pages=12
+11-02 03:00:33.996  8891  8949 I GalleryPage: gallery-page=1/12
+11-02 03:00:34.013  8891  8949 I GalleryPage: [layering] slice page=0 rows=[0,7] comps={TopAppBar|TopAppBar|TopAppBar|NavigationBar|NavigationRail|NavigationDrawer|BottomAppBar|SearchBar} labels={m3-gallery|m3-gallery|m3-gallery|NavigationBar selected=home|NavigationRail selected=home|NavigationDrawer selected=home|gallery|Search settings}
+11-02 03:00:36.862  8891  8949 I GalleryPage: gallery-rows=121 gallery-pages=12
+11-02 03:00:36.863  8891  8949 I GalleryPage: gallery-page=1/12
+11-02 03:00:36.864  8891  8891 I muse-host: SEAM-STEP:touch:ok
+11-02 03:00:36.865  8891  8891 D MainActivity: touch x=360.0 y=305.0 claimed=-1
+11-02 03:00:36.881  8891  8949 I GalleryPage: [layering] slice page=0 rows=[0,7] comps={TopAppBar|TopAppBar|TopAppBar|NavigationBar|NavigationRail|NavigationDrawer|BottomAppBar|SearchBar} labels={m3-gallery|m3-gallery|m3-gallery|NavigationBar selected=home|NavigationRail selected=home|NavigationDrawer selected=home|gallery|Search settings}
+11-02 03:00:39.731  8891  8949 I GalleryPage: gallery-rows=121 gallery-pages=12
+11-02 03:00:39.731  8891  8949 I GalleryPage: gallery-page=1/12
+11-02 03:00:39.732  8891  8891 I muse-host: SEAM-STEP:touch:ok
+11-02 03:00:39.732  8891  8891 D MainActivity: touch x=360.0 y=305.0 claimed=20
+11-02 03:00:39.748  8891  8949 I GalleryPage: [layering] slice page=0 rows=[0,7] comps={TopAppBar|TopAppBar|TopAppBar|NavigationBar|NavigationRail|NavigationDrawer|BottomAppBar|SearchBar} labels={m3-gallery|m3-gallery|m3-gallery|NavigationBar selected=home|NavigationRail selected=home|NavigationDrawer selected=home|gallery|Search settings}
+11-02 03:00:42.605  8891  8949 I GalleryPage: gallery-rows=121 gallery-pages=12
+11-02 03:00:42.605  8891  8949 I GalleryPage: gallery-page=1/12
+11-02 03:00:42.621  8891  8949 I GalleryPage: [layering] slice page=0 rows=[0,7] comps={TopAppBar|TopAppBar|TopAppBar|NavigationBar|NavigationRail|NavigationDrawer|BottomAppBar|SearchBar} labels={m3-gallery|m3-gallery|m3-gallery|NavigationBar selected=home|NavigationRail selected=home|NavigationDrawer selected=home|gallery|Search settings}
+11-02 03:00:45.469  8891  8949 I GalleryPage: gallery-rows=121 gallery-pages=12
+11-02 03:00:45.469  8891  8949 I GalleryPage: gallery-page=1/12
+11-02 03:00:45.471  8891  8891 I muse-host: SEAM-STEP:touch:ok
+11-02 03:00:45.471  8891  8891 D MainActivity: touch x=360.0 y=455.0 claimed=-1
+11-02 03:00:45.487  8891  8949 I GalleryPage: [layering] slice page=0 rows=[0,7] comps={TopAppBar|TopAppBar|TopAppBar|NavigationBar|NavigationRail|NavigationDrawer|BottomAppBar|SearchBar} labels={m3-gallery|m3-gallery|m3-gallery|NavigationBar selected=home|NavigationRail selected=home|NavigationDrawer selected=home|gallery|Search settings}
+11-02 03:00:48.337  8891  8949 I GalleryPage: gallery-rows=121 gallery-pages=12
+11-02 03:00:48.337  8891  8949 I GalleryPage: gallery-page=1/12
+11-02 03:00:48.339  8891  8891 I muse-host: SEAM-STEP:touch:ok
+11-02 03:00:48.339  8891  8891 D MainActivity: touch x=360.0 y=455.0 claimed=20
+11-02 03:00:48.355  8891  8949 I GalleryPage: [layering] slice page=0 rows=[0,7] comps={TopAppBar|TopAppBar|TopAppBar|NavigationBar|NavigationRail|NavigationDrawer|BottomAppBar|SearchBar} labels={m3-gallery|m3-gallery|m3-gallery|NavigationBar selected=home|NavigationRail selected=home|NavigationDrawer selected=home|gallery|Search settings}
+11-02 03:00:51.203  8891  8949 I GalleryPage: gallery-rows=121 gallery-pages=12
+11-02 03:00:51.203  8891  8949 I GalleryPage: gallery-page=1/12
+11-02 03:00:51.220  8891  8949 I GalleryPage: [layering] slice page=0 rows=[0,7] comps={TopAppBar|TopAppBar|TopAppBar|NavigationBar|NavigationRail|NavigationDrawer|BottomAppBar|SearchBar} labels={m3-gallery|m3-gallery|m3-gallery|NavigationBar selected=home|NavigationRail selected=home|NavigationDrawer selected=home|gallery|Search settings}
+11-02 03:00:54.070  8891  8949 I GalleryPage: gallery-rows=121 gallery-pages=12
+11-02 03:00:54.070  8891  8949 I GalleryPage: gallery-page=1/12
+11-02 03:00:54.071  8891  8891 I muse-host: SEAM-STEP:touch:ok
+11-02 03:00:54.072  8891  8891 D MainActivity: touch x=360.0 y=655.0 claimed=-1
+11-02 03:00:54.088  8891  8949 I GalleryPage: [layering] slice page=0 rows=[0,7] comps={TopAppBar|TopAppBar|TopAppBar|NavigationBar|NavigationRail|NavigationDrawer|BottomAppBar|SearchBar} labels={m3-gallery|m3-gallery|m3-gallery|NavigationBar selected=home|NavigationRail selected=home|NavigationDrawer selected=home|gallery|Search settings}
+11-02 03:00:56.938  8891  8949 I GalleryPage: gallery-rows=121 gallery-pages=12
+11-02 03:00:56.938  8891  8949 I GalleryPage: gallery-page=1/12
+11-02 03:00:56.939  8891  8891 I muse-host: SEAM-STEP:touch:ok
+11-02 03:00:56.939  8891  8891 D MainActivity: touch x=360.0 y=655.0 claimed=20
+11-02 03:00:56.955  8891  8949 I GalleryPage: [layering] slice page=0 rows=[0,7] comps={TopAppBar|TopAppBar|TopAppBar|NavigationBar|NavigationRail|NavigationDrawer|BottomAppBar|SearchBar} labels={m3-gallery|m3-gallery|m3-gallery|NavigationBar selected=home|NavigationRail selected=home|NavigationDrawer selected=home|gallery|Search settings}

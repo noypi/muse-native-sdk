@@ -1,0 +1,101 @@
+11-02 03:04:59.092  1126  1876 I HwBatteryService: switch not open, return, mWirelessTxFlag : 0
+11-02 03:04:59.393 11772 11772 W app_process: [MemLeak.JavaTrack]: failed to dlopen libmemleak_tracker.so
+11-02 03:04:59.397 11772 11772 E         : open file error
+11-02 03:04:59.605 11554 11554 D MainActivity: touch x=360.0 y=205.0 claimed=-1
+11-02 03:04:59.610 11554 11554 D MainActivity: touch x=360.0 y=205.0 claimed=20
+11-02 03:04:59.628 11554 11606 I GalleryPage: [layering] slice page=4 rows=[40,48] comps={Divider|TextFieldEditCore|TextInput|Dialog|BottomSheet|Menu|SnackbarHost|Tooltip|Carousel} labels={Divider orientation=horizontal|Search settings|Search settings|Confirm delete dialog|BottomSheet|Menu|Saved to library snackbar|Favorite tooltip|Carousel}
+11-02 03:05:00.006   674  9902 I APM_AudioPolicyManager: getOutputsForDevices, openOutputs size is 2, outputs size is 2
+11-02 03:05:00.824 11787 11787 W app_process: [MemLeak.JavaTrack]: failed to dlopen libmemleak_tracker.so
+11-02 03:05:00.834 11787 11787 E         : open file error
+11-02 03:05:01.010   674  9902 I APM_AudioPolicyManager: getOutputsForDevices, openOutputs size is 2, outputs size is 2
+11-02 03:05:01.137 11554 11606 I GalleryPage: gallery-rows=121 gallery-pages=12
+11-02 03:05:01.137 11554 11606 I GalleryPage: gallery-page=5/12
+11-02 03:05:01.154 11554 11606 I GalleryPage: [layering] slice page=4 rows=[40,48] comps={Divider|TextFieldEditCore|TextInput|Dialog|BottomSheet|Menu|SnackbarHost|Tooltip|Carousel} labels={Divider orientation=horizontal|Search settings|Search settings|Confirm delete dialog|BottomSheet|Menu|Saved to library snackbar|Favorite tooltip|Carousel}
+11-02 03:05:02.015   674  9902 I APM_AudioPolicyManager: getOutputsForDevices, openOutputs size is 2, outputs size is 2
+11-02 03:05:02.664 11554 11606 I GalleryPage: gallery-rows=121 gallery-pages=12
+11-02 03:05:02.664 11554 11606 I GalleryPage: gallery-page=5/12
+11-02 03:05:02.665 11554 11554 D MainActivity: touch x=360.0 y=355.0 claimed=-1
+11-02 03:05:02.681 11554 11606 I GalleryPage: [layering] slice page=4 rows=[40,48] comps={Divider|TextFieldEditCore|TextInput|Dialog|BottomSheet|Menu|SnackbarHost|Tooltip|Carousel} labels={Divider orientation=horizontal|Search settings|Search settings|Confirm delete dialog|BottomSheet|Menu|Saved to library snackbar|Favorite tooltip|Carousel}
+11-02 03:05:03.019   674  9902 I APM_AudioPolicyManager: getOutputsForDevices, openOutputs size is 2, outputs size is 2
+11-02 03:05:04.024   674  9902 I APM_AudioPolicyManager: getOutputsForDevices, openOutputs size is 2, outputs size is 2
+11-02 03:05:04.196 11554 11606 I GalleryPage: gallery-rows=121 gallery-pages=12
+11-02 03:05:04.196 11554 11606 I GalleryPage: gallery-page=5/12
+11-02 03:05:04.197 11554 11554 D MainActivity: touch x=360.0 y=355.0 claimed=20
+11-02 03:05:04.213 11554 11606 I GalleryPage: [layering] slice page=4 rows=[40,48] comps={Divider|TextFieldEditCore|TextInput|Dialog|BottomSheet|Menu|SnackbarHost|Tooltip|Carousel} labels={Divider orientation=horizontal|Search settings|Search settings|Confirm delete dialog|BottomSheet|Menu|Saved to library snackbar|Favorite tooltip|Carousel}
+11-02 03:05:05.028   674  9902 I APM_AudioPolicyManager: getOutputsForDevices, openOutputs size is 2, outputs size is 2
+11-02 03:05:05.060 11818 11818 W app_process: [MemLeak.JavaTrack]: failed to dlopen libmemleak_tracker.so
+11-02 03:05:05.064 11818 11818 E         : open file error
+11-02 03:05:05.728 11554 11606 I GalleryPage: gallery-rows=121 gallery-pages=12
+11-02 03:05:05.728 11554 11606 I GalleryPage: gallery-page=5/12
+11-02 03:05:05.744 11554 11606 I GalleryPage: [layering] slice page=4 rows=[40,48] comps={Divider|TextFieldEditCore|TextInput|Dialog|BottomSheet|Menu|SnackbarHost|Tooltip|Carousel} labels={Divider orientation=horizontal|Search settings|Search settings|Confirm delete dialog|BottomSheet|Menu|Saved to library snackbar|Favorite tooltip|Carousel}
+11-02 03:05:06.031   674  9902 I APM_AudioPolicyManager: getOutputsForDevices, openOutputs size is 2, outputs size is 2
+11-02 03:05:07.035   674  9902 I APM_AudioPolicyManager: getOutputsForDevices, openOutputs size is 2, outputs size is 2
+11-02 03:05:07.253 11554 11606 I GalleryPage: gallery-rows=121 gallery-pages=12
+11-02 03:05:07.253 11554 11606 I GalleryPage: gallery-page=5/12
+11-02 03:05:07.255 11554 11554 D MainActivity: touch x=360.0 y=505.0 claimed=-1
+11-02 03:05:07.271 11554 11606 I GalleryPage: [layering] slice page=4 rows=[40,48] comps={Divider|TextFieldEditCore|TextInput|Dialog|BottomSheet|Menu|SnackbarHost|Tooltip|Carousel} labels={Divider orientation=horizontal|Search settings|Search settings|Confirm delete dialog|BottomSheet|Menu|Saved to library snackbar|Favorite tooltip|Carousel}
+11-02 03:05:08.040   674  9902 I APM_AudioPolicyManager: getOutputsForDevices, openOutputs size is 2, outputs size is 2
+11-02 03:05:08.782 11554 11606 I GalleryPage: gallery-rows=121 gallery-pages=12
+11-02 03:05:08.782 11554 11606 I GalleryPage: gallery-page=5/12
+11-02 03:05:08.784 11554 11554 D MainActivity: touch x=360.0 y=505.0 claimed=20
+11-02 03:05:08.800 11554 11606 I GalleryPage: [layering] slice page=4 rows=[40,48] comps={Divider|TextFieldEditCore|TextInput|Dialog|BottomSheet|Menu|SnackbarHost|Tooltip|Carousel} labels={Divider orientation=horizontal|Search settings|Search settings|Confirm delete dialog|BottomSheet|Menu|Saved to library snackbar|Favorite tooltip|Carousel}
+11-02 03:05:09.044   674  9902 I APM_AudioPolicyManager: getOutputsForDevices, openOutputs size is 2, outputs size is 2
+11-02 03:05:09.948 11835 11835 W app_process: [MemLeak.JavaTrack]: failed to dlopen libmemleak_tracker.so
+11-02 03:05:09.957 11835 11835 E         : open file error
+11-02 03:05:10.048   674  9902 I APM_AudioPolicyManager: getOutputsForDevices, openOutputs size is 2, outputs size is 2
+11-02 03:05:10.313 11554 11606 I GalleryPage: gallery-rows=121 gallery-pages=12
+11-02 03:05:10.313 11554 11606 I GalleryPage: gallery-page=5/12
+11-02 03:05:10.329 11554 11606 I GalleryPage: [layering] slice page=4 rows=[40,48] comps={Divider|TextFieldEditCore|TextInput|Dialog|BottomSheet|Menu|SnackbarHost|Tooltip|Carousel} labels={Divider orientation=horizontal|Search settings|Search settings|Confirm delete dialog|BottomSheet|Menu|Saved to library snackbar|Favorite tooltip|Carousel}
+11-02 03:05:11.052   674  9902 I APM_AudioPolicyManager: getOutputsForDevices, openOutputs size is 2, outputs size is 2
+11-02 03:05:11.837 11554 11606 I GalleryPage: gallery-rows=121 gallery-pages=12
+11-02 03:05:11.837 11554 11606 I GalleryPage: gallery-page=5/12
+11-02 03:05:11.838 11554 11554 D MainActivity: touch x=360.0 y=655.0 claimed=-1
+11-02 03:05:11.854 11554 11606 I GalleryPage: [layering] slice page=4 rows=[40,48] comps={Divider|TextFieldEditCore|TextInput|Dialog|BottomSheet|Menu|SnackbarHost|Tooltip|Carousel} labels={Divider orientation=horizontal|Search settings|Search settings|Confirm delete dialog|BottomSheet|Menu|Saved to library snackbar|Favorite tooltip|Carousel}
+11-02 03:05:12.056   674  9902 I APM_AudioPolicyManager: getOutputsForDevices, openOutputs size is 2, outputs size is 2
+11-02 03:05:13.060   674  9902 I APM_AudioPolicyManager: getOutputsForDevices, openOutputs size is 2, outputs size is 2
+11-02 03:05:13.365 11554 11606 I GalleryPage: gallery-rows=121 gallery-pages=12
+11-02 03:05:13.365 11554 11606 I GalleryPage: gallery-page=5/12
+11-02 03:05:13.366 11554 11554 D MainActivity: touch x=360.0 y=655.0 claimed=20
+11-02 03:05:13.382 11554 11606 I GalleryPage: [layering] slice page=4 rows=[40,48] comps={Divider|TextFieldEditCore|TextInput|Dialog|BottomSheet|Menu|SnackbarHost|Tooltip|Carousel} labels={Divider orientation=horizontal|Search settings|Search settings|Confirm delete dialog|BottomSheet|Menu|Saved to library snackbar|Favorite tooltip|Carousel}
+11-02 03:05:14.064   674  9902 I APM_AudioPolicyManager: getOutputsForDevices, openOutputs size is 2, outputs size is 2
+11-02 03:05:14.533 11855 11855 W app_process: [MemLeak.JavaTrack]: failed to dlopen libmemleak_tracker.so
+11-02 03:05:14.541 11855 11855 E         : open file error
+11-02 03:05:14.891 11554 11606 I GalleryPage: gallery-rows=121 gallery-pages=12
+11-02 03:05:14.891 11554 11606 I GalleryPage: gallery-page=5/12
+11-02 03:05:14.908 11554 11606 I GalleryPage: [layering] slice page=4 rows=[40,48] comps={Divider|TextFieldEditCore|TextInput|Dialog|BottomSheet|Menu|SnackbarHost|Tooltip|Carousel} labels={Divider orientation=horizontal|Search settings|Search settings|Confirm delete dialog|BottomSheet|Menu|Saved to library snackbar|Favorite tooltip|Carousel}
+11-02 03:05:15.068   674  9902 I APM_AudioPolicyManager: getOutputsForDevices, openOutputs size is 2, outputs size is 2
+11-02 03:05:16.071   674  9902 I APM_AudioPolicyManager: getOutputsForDevices, openOutputs size is 2, outputs size is 2
+11-02 03:05:16.415 11554 11606 I GalleryPage: gallery-rows=121 gallery-pages=12
+11-02 03:05:16.415 11554 11606 I GalleryPage: gallery-page=5/12
+11-02 03:05:16.416 11554 11554 D MainActivity: touch x=360.0 y=805.0 claimed=-1
+11-02 03:05:16.422 11554 11554 D MainActivity: touch x=360.0 y=805.0 claimed=-1
+11-02 03:05:16.439 11554 11606 I GalleryPage: [layering] slice page=4 rows=[40,48] comps={Divider|TextFieldEditCore|TextInput|Dialog|BottomSheet|Menu|SnackbarHost|Tooltip|Carousel} labels={Divider orientation=horizontal|Search settings|Search settings|Confirm delete dialog|BottomSheet|Menu|Saved to library snackbar|Favorite tooltip|Carousel}
+11-02 03:05:17.076   674  9902 I APM_AudioPolicyManager: getOutputsForDevices, openOutputs size is 2, outputs size is 2
+11-02 03:05:17.537 11869 11869 W app_process: [MemLeak.JavaTrack]: failed to dlopen libmemleak_tracker.so
+11-02 03:05:17.545 11869 11869 E         : open file error
+11-02 03:05:17.948 11554 11606 I GalleryPage: gallery-rows=121 gallery-pages=12
+11-02 03:05:17.948 11554 11606 I GalleryPage: gallery-page=5/12
+11-02 03:05:17.975 11554 11554 D MainActivity: touch x=360.0 y=955.0 claimed=-1
+11-02 03:05:17.978 11554 11554 D MainActivity: touch x=360.0 y=955.0 claimed=-1
+11-02 03:05:18.000 11554 11606 I GalleryPage: [layering] slice page=4 rows=[40,48] comps={Divider|TextFieldEditCore|TextInput|Dialog|BottomSheet|Menu|SnackbarHost|Tooltip|Carousel} labels={Divider orientation=horizontal|Search settings|Search settings|Confirm delete dialog|BottomSheet|Menu|Saved to library snackbar|Favorite tooltip|Carousel}
+11-02 03:05:18.079   674  9902 I APM_AudioPolicyManager: getOutputsForDevices, openOutputs size is 2, outputs size is 2
+11-02 03:05:19.084   674  9902 I APM_AudioPolicyManager: getOutputsForDevices, openOutputs size is 2, outputs size is 2
+11-02 03:05:19.108 11884 11884 W app_process: [MemLeak.JavaTrack]: failed to dlopen libmemleak_tracker.so
+11-02 03:05:19.117 11884 11884 E         : open file error
+11-02 03:05:19.533 11554 11606 I GalleryPage: gallery-rows=121 gallery-pages=12
+11-02 03:05:19.533 11554 11606 I GalleryPage: gallery-page=5/12
+11-02 03:05:19.551 11554 11554 D MainActivity: touch x=360.0 y=1105.0 claimed=-1
+11-02 03:05:19.554 11554 11554 D MainActivity: touch x=360.0 y=1105.0 claimed=-1
+11-02 03:05:19.572 11554 11606 I GalleryPage: [layering] slice page=4 rows=[40,48] comps={Divider|TextFieldEditCore|TextInput|Dialog|BottomSheet|Menu|SnackbarHost|Tooltip|Carousel} labels={Divider orientation=horizontal|Search settings|Search settings|Confirm delete dialog|BottomSheet|Menu|Saved to library snackbar|Favorite tooltip|Carousel}
+11-02 03:05:20.087   674  9902 I APM_AudioPolicyManager: getOutputsForDevices, openOutputs size is 2, outputs size is 2
+11-02 03:05:20.672 11899 11899 W app_process: [MemLeak.JavaTrack]: failed to dlopen libmemleak_tracker.so
+11-02 03:05:20.680 11899 11899 E         : open file error
+11-02 03:05:21.092   674  9902 I APM_AudioPolicyManager: getOutputsForDevices, openOutputs size is 2, outputs size is 2
+11-02 03:05:21.103 11554 11606 I GalleryPage: gallery-rows=121 gallery-pages=12
+11-02 03:05:21.103 11554 11606 I GalleryPage: gallery-page=5/12
+11-02 03:05:21.124 11554 11554 D MainActivity: touch x=360.0 y=1255.0 claimed=-1
+11-02 03:05:21.127 11554 11554 D MainActivity: touch x=360.0 y=1255.0 claimed=-1
+11-02 03:05:21.143 11554 11606 I GalleryPage: [layering] slice page=4 rows=[40,48] comps={Divider|TextFieldEditCore|TextInput|Dialog|BottomSheet|Menu|SnackbarHost|Tooltip|Carousel} labels={Divider orientation=horizontal|Search settings|Search settings|Confirm delete dialog|BottomSheet|Menu|Saved to library snackbar|Favorite tooltip|Carousel}
+11-02 03:05:22.096   674  9902 I APM_AudioPolicyManager: getOutputsForDevices, openOutputs size is 2, outputs size is 2
+11-02 03:05:22.651 11554 11606 I GalleryPage: gallery-rows=121 gallery-pages=12
+11-02 03:05:22.651 11554 11606 I GalleryPage: gallery-page=5/12

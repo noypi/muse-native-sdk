@@ -1,0 +1,15 @@
+== 6562 matrix 2026-11-02T07:31:19Z ==
+29
+x86
+Performing Streamed Install
+Success
+Starting: Intent { cmp=com.muse.host/.MainActivity }
+Status: ok
+LaunchState: COLD
+Activity: com.muse.host/.MainActivity
+TotalTime: 62
+WaitTime: 62
+Complete
+--- crash grep ---
+(grep done)
+-rw-rw-r-- 1 saif saif 18166 Nov  2 15:31 examples/m3-gallery/device-proof/dp_6562_main.png

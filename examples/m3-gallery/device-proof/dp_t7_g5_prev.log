@@ -1,0 +1,6 @@
+11-02 03:02:26.144 10226 10226 D MainActivity: touch x=60.0 y=105.0 claimed=-1
+11-02 03:02:26.177 10226 10280 I GalleryPage: [layering] slice page=0 rows=[0,7] comps={TopAppBar|TopAppBar|TopAppBar|NavigationBar|NavigationRail|NavigationDrawer|BottomAppBar|SearchBar} labels={m3-gallery|m3-gallery|m3-gallery|NavigationBar selected=home|NavigationRail selected=home|NavigationDrawer selected=home|gallery|Search settings}
+11-02 03:02:29.087 10226 10280 I GalleryPage: gallery-rows=121 gallery-pages=12
+11-02 03:02:29.088 10226 10280 I GalleryPage: gallery-page=1/12
+11-02 03:02:29.089 10226 10226 D MainActivity: touch x=60.0 y=105.0 claimed=21
+11-02 03:02:29.108 10226 10280 I GalleryPage: [layering] slice page=0 rows=[0,7] comps={TopAppBar|TopAppBar|TopAppBar|NavigationBar|NavigationRail|NavigationDrawer|BottomAppBar|SearchBar} labels={m3-gallery|m3-gallery|m3-gallery|NavigationBar selected=home|NavigationRail selected=home|NavigationDrawer selected=home|gallery|Search settings}

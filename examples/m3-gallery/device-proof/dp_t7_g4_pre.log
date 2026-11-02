@@ -1,0 +1,6 @@
+11-02 03:07:16.922 12793 12861 I GalleryPage: gallery-rows=121 gallery-pages=12
+11-02 03:07:16.922 12793 12861 I GalleryPage: gallery-page=1/12
+11-02 03:07:16.941 12793 12861 I GalleryPage: [layering] slice page=1 rows=[8,18] comps={SegmentedButton|ButtonGroup|SplitButton|Button|Button|Button|Button|Button|IconButton|Fab|ExtendedFab} labels={SegmentedButton selected=day|ButtonGroup selected=bold|Create new|Primary action|Tonal action|Outlined action|Text action|Elevated action|IconButton variant=filled icon=favorite|Fab size=medium icon=add|Compose}
+11-02 03:07:18.841 12793 12861 I GalleryPage: gallery-rows=121 gallery-pages=12
+11-02 03:07:18.842 12793 12861 I GalleryPage: gallery-page=2/12
+11-02 03:07:24.306 12793 12861 I GalleryPage: [layering] slice page=2 rows=[19,28] comps={Card|Card|Card|Chip|Chip|Chip|Chip|Checkbox|Checkbox|Radio} labels={Card variant=elevated|Card variant=filled|Card variant=outlined|Assist chip|Filter chip|Input chip|Suggestion chip|Checkbox|Checkbox|Radio}

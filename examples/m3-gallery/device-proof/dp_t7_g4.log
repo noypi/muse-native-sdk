@@ -1,0 +1,128 @@
+11-02 03:07:27.409 12793 12793 D MainActivity: touch x=360.0 y=205.0 claimed=-1
+11-02 03:07:27.440 12793 12861 I GalleryPage: [layering] slice page=2 rows=[19,28] comps={Card|Card|Card|Chip|Chip|Chip|Chip|Checkbox|Checkbox|Radio} labels={Card variant=elevated|Card variant=filled|Card variant=outlined|Assist chip|Filter chip|Input chip|Suggestion chip|Checkbox|Checkbox|Radio}
+11-02 03:07:28.973 12793 12861 I GalleryPage: gallery-rows=121 gallery-pages=12
+11-02 03:07:28.973 12793 12861 I GalleryPage: gallery-page=3/12
+11-02 03:07:28.974 12793 12793 D MainActivity: touch x=360.0 y=205.0 claimed=20
+11-02 03:07:28.991 12793 12861 I GalleryPage: [layering] slice page=2 rows=[19,28] comps={Card|Card|Card|Chip|Chip|Chip|Chip|Checkbox|Checkbox|Radio} labels={Card variant=elevated|Card variant=filled|Card variant=outlined|Assist chip|Filter chip|Input chip|Suggestion chip|Checkbox|Checkbox|Radio}
+11-02 03:07:29.784 31670 32042 D iked    : [DEBUG]: ike_sa.c:324: ike_sa: 0x7bf3e9d000 state 9 req_ipsecid 5
+11-02 03:07:29.784 31670 32042 D iked    : [DEBUG]: ike_sa.c:328: child_sa: 0x7bf2828800 state 6
+11-02 03:07:29.784 31670 32042 D iked    : [DEBUG]: ike_sa.c:328: child_sa: 0x7bf3e90000 state 6
+11-02 03:07:29.784 31670 32042 D iked    : [DEBUG]: ike_sa.c:324: ike_sa: 0x7bf2852200 state 7 req_ipsecid 0
+11-02 03:07:29.784 31670 32042 D iked    : [DEBUG]: ike_sa.c:328: child_sa: 0x7bf2828400 state 4
+11-02 03:07:29.784 31670 32042 D iked    : [DEBUG]: ike_sa.c:324: ike_sa: 0x7bf2852800 state 7 req_ipsecid 5
+11-02 03:07:29.784 31670 32042 D iked    : [DEBUG]: ike_sa.c:328: child_sa: 0x7bf2828c00 state 4
+11-02 03:07:30.508 12793 12861 I GalleryPage: gallery-rows=121 gallery-pages=12
+11-02 03:07:30.508 12793 12861 I GalleryPage: gallery-page=3/12
+11-02 03:07:30.524 12793 12861 I GalleryPage: [layering] slice page=2 rows=[19,28] comps={Card|Card|Card|Chip|Chip|Chip|Chip|Checkbox|Checkbox|Radio} labels={Card variant=elevated|Card variant=filled|Card variant=outlined|Assist chip|Filter chip|Input chip|Suggestion chip|Checkbox|Checkbox|Radio}
+11-02 03:07:32.041 12793 12861 I GalleryPage: gallery-rows=121 gallery-pages=12
+11-02 03:07:32.041 12793 12861 I GalleryPage: gallery-page=3/12
+11-02 03:07:32.043 12793 12793 D MainActivity: touch x=360.0 y=355.0 claimed=-1
+11-02 03:07:32.060 12793 12861 I GalleryPage: [layering] slice page=2 rows=[19,28] comps={Card|Card|Card|Chip|Chip|Chip|Chip|Checkbox|Checkbox|Radio} labels={Card variant=elevated|Card variant=filled|Card variant=outlined|Assist chip|Filter chip|Input chip|Suggestion chip|Checkbox|Checkbox|Radio}
+11-02 03:07:32.690  1126  1876 I HwBatteryService: power_ui state= 1 mQuickChargeStatus=1
+11-02 03:07:32.788 31670 32042 D iked    : [DEBUG]: ike_sa.c:324: ike_sa: 0x7bf3e9d000 state 9 req_ipsecid 5
+11-02 03:07:32.788 31670 32042 D iked    : [DEBUG]: ike_sa.c:328: child_sa: 0x7bf2828800 state 6
+11-02 03:07:32.789 31670 32042 D iked    : [DEBUG]: ike_sa.c:328: child_sa: 0x7bf3e90000 state 6
+11-02 03:07:32.789 31670 32042 D iked    : [DEBUG]: ike_sa.c:324: ike_sa: 0x7bf2852200 state 7 req_ipsecid 0
+11-02 03:07:32.789 31670 32042 D iked    : [DEBUG]: ike_sa.c:328: child_sa: 0x7bf2828400 state 4
+11-02 03:07:32.789 31670 32042 D iked    : [DEBUG]: ike_sa.c:324: ike_sa: 0x7bf2852800 state 7 req_ipsecid 5
+11-02 03:07:32.789 31670 32042 D iked    : [DEBUG]: ike_sa.c:328: child_sa: 0x7bf2828c00 state 4
+11-02 03:07:33.580 12793 12861 I GalleryPage: gallery-rows=121 gallery-pages=12
+11-02 03:07:33.580 12793 12861 I GalleryPage: gallery-page=3/12
+11-02 03:07:33.582 12793 12793 D MainActivity: touch x=360.0 y=355.0 claimed=20
+11-02 03:07:33.598 12793 12861 I GalleryPage: [layering] slice page=2 rows=[19,28] comps={Card|Card|Card|Chip|Chip|Chip|Chip|Checkbox|Checkbox|Radio} labels={Card variant=elevated|Card variant=filled|Card variant=outlined|Assist chip|Filter chip|Input chip|Suggestion chip|Checkbox|Checkbox|Radio}
+11-02 03:07:35.116 12793 12861 I GalleryPage: gallery-rows=121 gallery-pages=12
+11-02 03:07:35.116 12793 12861 I GalleryPage: gallery-page=3/12
+11-02 03:07:35.132 12793 12861 I GalleryPage: [layering] slice page=2 rows=[19,28] comps={Card|Card|Card|Chip|Chip|Chip|Chip|Checkbox|Checkbox|Radio} labels={Card variant=elevated|Card variant=filled|Card variant=outlined|Assist chip|Filter chip|Input chip|Suggestion chip|Checkbox|Checkbox|Radio}
+11-02 03:07:35.792 31670 32042 D iked    : [DEBUG]: ike_sa.c:324: ike_sa: 0x7bf3e9d000 state 9 req_ipsecid 5
+11-02 03:07:35.793 31670 32042 D iked    : [DEBUG]: ike_sa.c:328: child_sa: 0x7bf2828800 state 6
+11-02 03:07:35.793 31670 32042 D iked    : [DEBUG]: ike_sa.c:328: child_sa: 0x7bf3e90000 state 6
+11-02 03:07:35.793 31670 32042 D iked    : [DEBUG]: ike_sa.c:324: ike_sa: 0x7bf2852200 state 7 req_ipsecid 0
+11-02 03:07:35.793 31670 32042 D iked    : [DEBUG]: ike_sa.c:328: child_sa: 0x7bf2828400 state 4
+11-02 03:07:35.793 31670 32042 D iked    : [DEBUG]: ike_sa.c:324: ike_sa: 0x7bf2852800 state 7 req_ipsecid 5
+11-02 03:07:35.793 31670 32042 D iked    : [DEBUG]: ike_sa.c:328: child_sa: 0x7bf2828c00 state 4
+11-02 03:07:36.649 12793 12861 I GalleryPage: gallery-rows=121 gallery-pages=12
+11-02 03:07:36.649 12793 12861 I GalleryPage: gallery-page=3/12
+11-02 03:07:36.652 12793 12793 D MainActivity: touch x=360.0 y=505.0 claimed=-1
+11-02 03:07:36.668 12793 12861 I GalleryPage: [layering] slice page=2 rows=[19,28] comps={Card|Card|Card|Chip|Chip|Chip|Chip|Checkbox|Checkbox|Radio} labels={Card variant=elevated|Card variant=filled|Card variant=outlined|Assist chip|Filter chip|Input chip|Suggestion chip|Checkbox|Checkbox|Radio}
+11-02 03:07:37.798 31670 32042 D iked    : [DEBUG]: ikev2_child.c:974: ikev2_wakeup_child_sa child_sa->state 6 
+11-02 03:07:37.803 31670 32042 D iked    : [DEBUG]: ikev2_child.c:162: ikev2_child_state_set,child_sa 0x7bf3e90c00 state REQUEST_PENDING -> REQUEST_SENT ipsecId 5 
+11-02 03:07:37.803 31670 32042 D iked    : [DEBUG]: ikev2_child.c:179: old_state=IKEV2_CHILD_STATE_REQUEST_PENDING[6],state=IKEV2_CHILD_STATE_REQUEST_SENT[7],child_sa->preceding_satype=0
+11-02 03:07:37.864 31670 32042 D iked    : [DEBUG]: ikev2.c:629: dispatching ike_sa 0x7bf2852800 state 7
+11-02 03:07:37.865 31670 32042 D iked    : [DEBUG]: ikev2_child.c:162: ikev2_child_state_set,child_sa 0x7bf3e90c00 state REQUEST_SENT -> EXPIRED ipsecId 5 
+11-02 03:07:37.865 31670 32042 D iked    : [DEBUG]: ikev2_child.c:179: old_state=IKEV2_CHILD_STATE_REQUEST_SENT[7],state=IKEV2_CHILD_STATE_EXPIRED[5],child_sa->preceding_satype=0
+11-02 03:07:38.188 12793 12861 I GalleryPage: gallery-rows=121 gallery-pages=12
+11-02 03:07:38.188 12793 12861 I GalleryPage: gallery-page=3/12
+11-02 03:07:38.190 12793 12793 D MainActivity: touch x=360.0 y=505.0 claimed=20
+11-02 03:07:38.206 12793 12861 I GalleryPage: [layering] slice page=2 rows=[19,28] comps={Card|Card|Card|Chip|Chip|Chip|Chip|Checkbox|Checkbox|Radio} labels={Card variant=elevated|Card variant=filled|Card variant=outlined|Assist chip|Filter chip|Input chip|Suggestion chip|Checkbox|Checkbox|Radio}
+11-02 03:07:38.868 31670 32042 D iked    : [DEBUG]: ike_sa.c:324: ike_sa: 0x7bf3e9d000 state 9 req_ipsecid 5
+11-02 03:07:38.868 31670 32042 D iked    : [DEBUG]: ike_sa.c:328: child_sa: 0x7bf2828800 state 6
+11-02 03:07:38.868 31670 32042 D iked    : [DEBUG]: ike_sa.c:328: child_sa: 0x7bf3e90000 state 6
+11-02 03:07:38.868 31670 32042 D iked    : [DEBUG]: ike_sa.c:324: ike_sa: 0x7bf2852200 state 7 req_ipsecid 0
+11-02 03:07:38.868 31670 32042 D iked    : [DEBUG]: ike_sa.c:328: child_sa: 0x7bf2828400 state 4
+11-02 03:07:38.868 31670 32042 D iked    : [DEBUG]: ike_sa.c:324: ike_sa: 0x7bf2852800 state 7 req_ipsecid 5
+11-02 03:07:38.868 31670 32042 D iked    : [DEBUG]: ike_sa.c:328: child_sa: 0x7bf2828c00 state 4
+11-02 03:07:38.868 31670 32042 D iked    : [DEBUG]: ike_sa.c:328: child_sa: 0x7bf3e90c00 state 5
+11-02 03:07:39.725 12793 12861 I GalleryPage: gallery-rows=121 gallery-pages=12
+11-02 03:07:39.725 12793 12861 I GalleryPage: gallery-page=3/12
+11-02 03:07:39.741 12793 12861 I GalleryPage: [layering] slice page=2 rows=[19,28] comps={Card|Card|Card|Chip|Chip|Chip|Chip|Checkbox|Checkbox|Radio} labels={Card variant=elevated|Card variant=filled|Card variant=outlined|Assist chip|Filter chip|Input chip|Suggestion chip|Checkbox|Checkbox|Radio}
+11-02 03:07:41.257 12793 12861 I GalleryPage: gallery-rows=121 gallery-pages=12
+11-02 03:07:41.257 12793 12861 I GalleryPage: gallery-page=3/12
+11-02 03:07:41.260 12793 12793 D MainActivity: touch x=360.0 y=655.0 claimed=-1
+11-02 03:07:41.275 12793 12861 I GalleryPage: [layering] slice page=2 rows=[19,28] comps={Card|Card|Card|Chip|Chip|Chip|Chip|Checkbox|Checkbox|Radio} labels={Card variant=elevated|Card variant=filled|Card variant=outlined|Assist chip|Filter chip|Input chip|Suggestion chip|Checkbox|Checkbox|Radio}
+11-02 03:07:41.872 31670 32042 D iked    : [DEBUG]: ike_sa.c:324: ike_sa: 0x7bf3e9d000 state 9 req_ipsecid 5
+11-02 03:07:41.872 31670 32042 D iked    : [DEBUG]: ike_sa.c:328: child_sa: 0x7bf2828800 state 6
+11-02 03:07:41.872 31670 32042 D iked    : [DEBUG]: ike_sa.c:328: child_sa: 0x7bf3e90000 state 6
+11-02 03:07:41.873 31670 32042 D iked    : [DEBUG]: ike_sa.c:324: ike_sa: 0x7bf2852200 state 7 req_ipsecid 0
+11-02 03:07:41.873 31670 32042 D iked    : [DEBUG]: ike_sa.c:328: child_sa: 0x7bf2828400 state 4
+11-02 03:07:41.873 31670 32042 D iked    : [DEBUG]: ike_sa.c:324: ike_sa: 0x7bf2852800 state 7 req_ipsecid 5
+11-02 03:07:41.873 31670 32042 D iked    : [DEBUG]: ike_sa.c:328: child_sa: 0x7bf2828c00 state 4
+11-02 03:07:42.795 12793 12861 I GalleryPage: gallery-rows=121 gallery-pages=12
+11-02 03:07:42.795 12793 12861 I GalleryPage: gallery-page=3/12
+11-02 03:07:42.796 12793 12793 D MainActivity: touch x=360.0 y=655.0 claimed=20
+11-02 03:07:42.812 12793 12861 I GalleryPage: [layering] slice page=2 rows=[19,28] comps={Card|Card|Card|Chip|Chip|Chip|Chip|Checkbox|Checkbox|Radio} labels={Card variant=elevated|Card variant=filled|Card variant=outlined|Assist chip|Filter chip|Input chip|Suggestion chip|Checkbox|Checkbox|Radio}
+11-02 03:07:44.330 12793 12861 I GalleryPage: gallery-rows=121 gallery-pages=12
+11-02 03:07:44.330 12793 12861 I GalleryPage: gallery-page=3/12
+11-02 03:07:44.346 12793 12861 I GalleryPage: [layering] slice page=2 rows=[19,28] comps={Card|Card|Card|Chip|Chip|Chip|Chip|Checkbox|Checkbox|Radio} labels={Card variant=elevated|Card variant=filled|Card variant=outlined|Assist chip|Filter chip|Input chip|Suggestion chip|Checkbox|Checkbox|Radio}
+11-02 03:07:44.876 31670 32042 D iked    : [DEBUG]: ike_sa.c:324: ike_sa: 0x7bf3e9d000 state 9 req_ipsecid 5
+11-02 03:07:44.876 31670 32042 D iked    : [DEBUG]: ike_sa.c:328: child_sa: 0x7bf2828800 state 6
+11-02 03:07:44.876 31670 32042 D iked    : [DEBUG]: ike_sa.c:328: child_sa: 0x7bf3e90000 state 6
+11-02 03:07:44.876 31670 32042 D iked    : [DEBUG]: ike_sa.c:324: ike_sa: 0x7bf2852200 state 7 req_ipsecid 0
+11-02 03:07:44.876 31670 32042 D iked    : [DEBUG]: ike_sa.c:328: child_sa: 0x7bf2828400 state 4
+11-02 03:07:44.876 31670 32042 D iked    : [DEBUG]: ike_sa.c:324: ike_sa: 0x7bf2852800 state 7 req_ipsecid 5
+11-02 03:07:44.876 31670 32042 D iked    : [DEBUG]: ike_sa.c:328: child_sa: 0x7bf2828c00 state 4
+11-02 03:07:45.864 12793 12861 I GalleryPage: gallery-rows=121 gallery-pages=12
+11-02 03:07:45.864 12793 12861 I GalleryPage: gallery-page=3/12
+11-02 03:07:45.865 12793 12793 D MainActivity: touch x=360.0 y=805.0 claimed=-1
+11-02 03:07:45.869 12793 12793 D MainActivity: touch x=360.0 y=805.0 claimed=-1
+11-02 03:07:45.886 12793 12861 I GalleryPage: [layering] slice page=2 rows=[19,28] comps={Card|Card|Card|Chip|Chip|Chip|Chip|Checkbox|Checkbox|Radio} labels={Card variant=elevated|Card variant=filled|Card variant=outlined|Assist chip|Filter chip|Input chip|Suggestion chip|Checkbox|Checkbox|Radio}
+11-02 03:07:47.404 12793 12861 I GalleryPage: gallery-rows=121 gallery-pages=12
+11-02 03:07:47.404 12793 12861 I GalleryPage: gallery-page=3/12
+11-02 03:07:47.447 12793 12793 D MainActivity: touch x=360.0 y=955.0 claimed=-1
+11-02 03:07:47.452 12793 12793 D MainActivity: touch x=360.0 y=955.0 claimed=-1
+11-02 03:07:47.491 12793 12861 I GalleryPage: [layering] slice page=2 rows=[19,28] comps={Card|Card|Card|Chip|Chip|Chip|Chip|Checkbox|Checkbox|Radio} labels={Card variant=elevated|Card variant=filled|Card variant=outlined|Assist chip|Filter chip|Input chip|Suggestion chip|Checkbox|Checkbox|Radio}
+11-02 03:07:47.880 31670 32042 D iked    : [DEBUG]: ike_sa.c:324: ike_sa: 0x7bf3e9d000 state 9 req_ipsecid 5
+11-02 03:07:47.880 31670 32042 D iked    : [DEBUG]: ike_sa.c:328: child_sa: 0x7bf2828800 state 6
+11-02 03:07:47.881 31670 32042 D iked    : [DEBUG]: ike_sa.c:328: child_sa: 0x7bf3e90000 state 6
+11-02 03:07:47.881 31670 32042 D iked    : [DEBUG]: ike_sa.c:324: ike_sa: 0x7bf2852200 state 7 req_ipsecid 0
+11-02 03:07:47.881 31670 32042 D iked    : [DEBUG]: ike_sa.c:328: child_sa: 0x7bf2828400 state 4
+11-02 03:07:47.881 31670 32042 D iked    : [DEBUG]: ike_sa.c:324: ike_sa: 0x7bf2852800 state 7 req_ipsecid 5
+11-02 03:07:47.881 31670 32042 D iked    : [DEBUG]: ike_sa.c:328: child_sa: 0x7bf2828c00 state 4
+11-02 03:07:49.026 12793 12861 I GalleryPage: gallery-rows=121 gallery-pages=12
+11-02 03:07:49.026 12793 12861 I GalleryPage: gallery-page=3/12
+11-02 03:07:49.040 12793 12793 D MainActivity: touch x=360.0 y=1105.0 claimed=-1
+11-02 03:07:49.043 12793 12793 D MainActivity: touch x=360.0 y=1105.0 claimed=-1
+11-02 03:07:49.059 12793 12861 I GalleryPage: [layering] slice page=2 rows=[19,28] comps={Card|Card|Card|Chip|Chip|Chip|Chip|Checkbox|Checkbox|Radio} labels={Card variant=elevated|Card variant=filled|Card variant=outlined|Assist chip|Filter chip|Input chip|Suggestion chip|Checkbox|Checkbox|Radio}
+11-02 03:07:50.577 12793 12861 I GalleryPage: gallery-rows=121 gallery-pages=12
+11-02 03:07:50.577 12793 12861 I GalleryPage: gallery-page=3/12
+11-02 03:07:50.610 12793 12793 D MainActivity: touch x=360.0 y=1255.0 claimed=-1
+11-02 03:07:50.614 12793 12793 D MainActivity: touch x=360.0 y=1255.0 claimed=-1
+11-02 03:07:50.651 12793 12861 I GalleryPage: [layering] slice page=2 rows=[19,28] comps={Card|Card|Card|Chip|Chip|Chip|Chip|Checkbox|Checkbox|Radio} labels={Card variant=elevated|Card variant=filled|Card variant=outlined|Assist chip|Filter chip|Input chip|Suggestion chip|Checkbox|Checkbox|Radio}
+11-02 03:07:50.884 31670 32042 D iked    : [DEBUG]: ike_sa.c:324: ike_sa: 0x7bf3e9d000 state 9 req_ipsecid 5
+11-02 03:07:50.884 31670 32042 D iked    : [DEBUG]: ike_sa.c:328: child_sa: 0x7bf2828800 state 6
+11-02 03:07:50.884 31670 32042 D iked    : [DEBUG]: ike_sa.c:328: child_sa: 0x7bf3e90000 state 6
+11-02 03:07:50.885 31670 32042 D iked    : [DEBUG]: ike_sa.c:324: ike_sa: 0x7bf2852200 state 7 req_ipsecid 0
+11-02 03:07:50.885 31670 32042 D iked    : [DEBUG]: ike_sa.c:328: child_sa: 0x7bf2828400 state 4
+11-02 03:07:50.885 31670 32042 D iked    : [DEBUG]: ike_sa.c:324: ike_sa: 0x7bf2852800 state 7 req_ipsecid 5
+11-02 03:07:50.885 31670 32042 D iked    : [DEBUG]: ike_sa.c:328: child_sa: 0x7bf2828c00 state 4
+11-02 03:07:52.185 12793 12861 I GalleryPage: gallery-rows=121 gallery-pages=12
+11-02 03:07:52.185 12793 12861 I GalleryPage: gallery-page=3/12

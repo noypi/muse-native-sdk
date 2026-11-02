@@ -1,0 +1,40 @@
+# APK-inner check is best-effort (skipped with a warning when unzip is absent).
+GATE=../../engine/runtime/tests/jni_contract_test.sh; JAVA_SRC=src/MainActivity.java; BRIDGE=../../engine/runtime/src/jni_bridge.cpp; \
+for abi in arm64-v8a armeabi-v7a x86_64 x86; do \
+  SO="build/staging/lib/$abi/libRuntime.so"; \
+  if [ ! -s "$SO" ]; then echo "error: verify failed: missing staged ABI lib: $SO" >&2; exit 1; fi; \
+  sh "$GATE" "$SO" "$JAVA_SRC" "$BRIDGE" || exit 1; \
+done; \
+if command -v unzip >/dev/null 2>&1; then \
+  TMPD="$(mktemp -d)"; trap 'rm -rf "$TMPD"' EXIT INT TERM; \
+  for abi in arm64-v8a armeabi-v7a x86_64 x86; do \
+    if unzip -l build/m3-gallery-debug.apk | grep -q "lib/$abi/libRuntime.so"; then \
+      mkdir -p "$TMPD/$abi"; unzip -o -j build/m3-gallery-debug.apk "lib/$abi/libRuntime.so" -d "$TMPD/$abi" >/dev/null; \
+      sh "$GATE" "$TMPD/$abi/libRuntime.so" "$JAVA_SRC" "$BRIDGE" || exit 1; \
+    else echo "warning: verify: APK has no lib/$abi/libRuntime.so entry; skipping APK-inner check for $abi" >&2; fi; \
+  done; \
+  rm -rf "$TMPD"; trap - EXIT INT TERM; \
+else echo "warning: verify: unzip not found; skipping APK-inner JNI check (staged libs already gated)" >&2; fi
+jni_contract_test: native declarations: nativeAdvancePage nativeAttachSurface nativeCommitEngineRowText nativeDestroy nativeDetachSurface nativeDispatchTouch nativeLoadTree nativeRenderFrame nativeSeamAttachSurface nativeSeamDestroy nativeSeamDetach nativeSeamDispatchTouch nativeSeamGetFrameStats nativeSeamLastHandle nativeSeamRenderFrame nativeSeamSetImeBottom nativeSeamSetTheme nativeSetImeBottom nativeSetTheme 
+jni_contract_test: PASS — nativeAdvancePage -> Java_com_muse_host_MainActivity_nativeAdvancePage (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeAttachSurface -> Java_com_muse_host_MainActivity_nativeAttachSurface (libRuntime.so dynamic symbols)
+jni_contract_test: FAIL — missing JNI export Java_com_muse_host_MainActivity_nativeCommitEngineRowText for native nativeCommitEngineRowText in build/staging/lib/arm64-v8a/libRuntime.so (AC-RUNTIME-027)
+jni_contract_test: PASS — nativeDestroy -> Java_com_muse_host_MainActivity_nativeDestroy (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeDetachSurface -> Java_com_muse_host_MainActivity_nativeDetachSurface (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeDispatchTouch -> Java_com_muse_host_MainActivity_nativeDispatchTouch (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeLoadTree -> Java_com_muse_host_MainActivity_nativeLoadTree (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeRenderFrame -> Java_com_muse_host_MainActivity_nativeRenderFrame (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeSeamAttachSurface -> Java_com_muse_host_MainActivity_nativeSeamAttachSurface (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeSeamDestroy -> Java_com_muse_host_MainActivity_nativeSeamDestroy (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeSeamDetach -> Java_com_muse_host_MainActivity_nativeSeamDetach (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeSeamDispatchTouch -> Java_com_muse_host_MainActivity_nativeSeamDispatchTouch (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeSeamGetFrameStats -> Java_com_muse_host_MainActivity_nativeSeamGetFrameStats (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeSeamLastHandle -> Java_com_muse_host_MainActivity_nativeSeamLastHandle (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeSeamRenderFrame -> Java_com_muse_host_MainActivity_nativeSeamRenderFrame (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeSeamSetImeBottom -> Java_com_muse_host_MainActivity_nativeSeamSetImeBottom (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeSeamSetTheme -> Java_com_muse_host_MainActivity_nativeSeamSetTheme (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeSetImeBottom -> Java_com_muse_host_MainActivity_nativeSetImeBottom (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeSetTheme -> Java_com_muse_host_MainActivity_nativeSetTheme (libRuntime.so dynamic symbols)
+jni_contract_test: FAIL missing: Java_com_muse_host_MainActivity_nativeCommitEngineRowText (AC-RUNTIME-027: host must pass the surface through JNI as an opaque handle; stale contract = UnsatisfiedLinkError)
+make: *** [Makefile:99: verify] Error 1
+VERIFY_EXIT=2
