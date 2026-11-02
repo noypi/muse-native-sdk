@@ -7,8 +7,13 @@
 // this file before then MUST fail (expected red, not a malformed test).
 #include <cstdint>
 #include <cstdio>
+#include <limits>
 #include <string>
 #include <vector>
+
+// Real device-lane hit-test type (consume-only, relative include per
+// gallery_layering_test.cpp — no CMake change).
+#include "../../input/include/hit_test.h"
 
 // --- T10 `Interface:` line (plan verbatim) -------------------------------
 // `buildTapTree(layoutRoot: LayoutNode) -> TapNode[] — returns one TapNode
@@ -28,6 +33,11 @@ struct TapNode {
 };
 using LayoutNode = int32_t;  // opaque root handle; production owns the type.
 std::vector<TapNode> buildTapTree(LayoutNode layoutRoot);
+
+// JNI device-lane guard (input_chain.cpp, global namespace): deepest laid-out
+// node at (x, y), or -1 outside every bound. Security-review pin: +Inf x/y
+// must resolve -1 (fail closed, never a fire).
+int32_t ResolveTapTarget(const HitTestTree& tree, float x, float y);
 
 namespace {
 // Tightened plan: NO shared magic constant with the implementation. The test
@@ -147,6 +157,43 @@ static bool check_empty_layout_fails_closed_no_gallery_rects() {
   return true;
 }
 
+// Named case (security — JNI-lane +Inf admission, Batch 5 review): +Inf
+// coordinates on the device lane fail closed to -1, never a fire. Green
+// today via finite-geometry miss (HitTest matches no finite rect); pins the
+// observable contract so the coder's isfinite-guard follow-up cannot regress
+// it, and any future Inf-matching geometry fails loudly here.
+static bool check_jni_lane_plus_inf_fails_closed() {
+  const float kInf = std::numeric_limits<float>::infinity();
+  const float kNaN = std::numeric_limits<float>::quiet_NaN();
+  try {
+    HitTestTree tree;
+    tree.AddNode(10, 0, HitRect{0.0f, 0.0f, 400.0f, 800.0f});
+    tree.AddNode(21, 10, HitRect{50.0f, 100.0f, 200.0f, 80.0f});
+    // Sanity: the tree is real — a finite steer-region tap resolves.
+    if (ResolveTapTarget(tree, 150.0f, 140.0f) != 21) {
+      std::printf("  detail: finite probe did not resolve node 21\n");
+      return false;
+    }
+    if (ResolveTapTarget(tree, kInf, kInf) != -1) {
+      std::printf("  detail: (+Inf,+Inf) admitted to a tap target\n");
+      return false;
+    }
+    if (ResolveTapTarget(tree, kInf, 140.0f) != -1 ||
+        ResolveTapTarget(tree, 150.0f, kInf) != -1) {
+      std::printf("  detail: single-lane +Inf admitted to a tap target\n");
+      return false;
+    }
+    if (ResolveTapTarget(tree, kNaN, 140.0f) != -1) {
+      std::printf("  detail: NaN admitted to a tap target\n");
+      return false;
+    }
+  } catch (...) {
+    std::printf("  detail: ResolveTapTarget must never throw\n");
+    return false;
+  }
+  return true;
+}
+
 #define RUN_CASE(name)                                  \
   do {                                                  \
     if (!(name)()) {                                    \
@@ -163,6 +210,7 @@ int main() {
   RUN_CASE(check_every_touchable_node_has_id_bounds_handler);
   RUN_CASE(check_relayout_moves_bounds_identity_stable);
   RUN_CASE(check_empty_layout_fails_closed_no_gallery_rects);
+  RUN_CASE(check_jni_lane_plus_inf_fails_closed);
   if (failures > 0) {
     std::printf("flappy_tap_tree_test: %d failing\n", failures);
     return 1;
