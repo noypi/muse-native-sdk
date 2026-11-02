@@ -1,0 +1,41 @@
+11-02 02:52:48.312 V/ActivityTaskManager( 1126): addAppToken: AppWindowToken{411c22b token=Token{fc9ba7a ActivityRecord{b31ac9c u0 com.muse.host/.MainActivity t4400}}} task={taskId=4400 appTokens=[] mdr=false} at 2147483647
+11-02 02:52:48.313 I/ActivityTaskManager( 1126): setAppStartingWindow: token=Token{fc9ba7a ActivityRecord{b31ac9c u0 com.muse.host/.MainActivity t4400}} pkg=com.muse.host transferFrom=null newTask=true taskSwitch=true processRunning=false allowTaskSnapshot=true activityCreated=false LowRamTaskSnapshots=false
+11-02 02:52:48.315 I/HwAudioServiceEx( 1126): ComponentInfo : className = com.muse.host.MainActivity, flag = showStartingWindow, isHomeActivity = , isTop = false
+11-02 02:52:48.364 I/ActivityManager( 1126): Start proc 5941:com.muse.host/u0a443 for activity {com.muse.host/com.muse.host.MainActivity}
+11-02 02:52:48.366 I/WindowManager( 1126): addWindow: Window{d45b62a u0 Splash Screen com.muse.host} client:android.view.ViewRootImpl$W@78b1315 currentDisplayId:0 requestDisplayId:0 token:Token{fc9ba7a ActivityRecord{b31ac9c u0 com.muse.host/.MainActivity t4400}}
+11-02 02:52:48.401 I/HwRestoreStateManager( 1126): reportAppRestoreScene, app: com.muse.host/.MainActivity ,scene:ColdStart
+11-02 02:52:48.410 I/Hicom_Monitor( 2351): mAppSwitchNotifierEx. uid: 10443, foreground app: com.muse.host, foreground activity: com.muse.host.MainActivity
+11-02 02:52:48.435 I/WindowManager( 1126): Check opening app=AppWindowToken{411c22b token=Token{fc9ba7a ActivityRecord{b31ac9c u0 com.muse.host/.MainActivity t4400}}}: allDrawn=false startingDisplayed=true startingMoved=false isRelaunching()=false startingWindow=Window{d45b62a u0 Splash Screen com.muse.host}
+11-02 02:52:48.443 V/WindowManager( 1126): commitVisibility: AppWindowToken{411c22b token=Token{fc9ba7a ActivityRecord{b31ac9c u0 com.muse.host/.MainActivity t4400}}}: hidden=false hiddenRequested=false
+11-02 02:52:48.571 I/WindowManager( 1126): Animation done in AppWindowToken{411c22b token=Token{fc9ba7a ActivityRecord{b31ac9c u0 com.muse.host/.MainActivity t4400}}} isHidden:false hiddenRequested:false
+11-02 02:52:48.689 D/ActivityThread( 5941): add activity client record, r= ActivityRecord{6e38b8b token=android.os.BinderProxy@6e654f0 {com.muse.host/com.muse.host.MainActivity}} token= android.os.BinderProxy@6e654f0
+11-02 02:52:48.705 I/muse-host( 5941): nativeLoadTree: bytes=51785 rows=121 -> handle acquired
+11-02 02:52:48.705 I/muse-host( 5941): nativeProvenance: engine-sha=1b5e89e gallery_present-sha=17f062b02bdbd8cda3a4ae49706ad002d936a798
+11-02 02:52:48.705 I/GalleryPage( 5941): gallery-rows=121
+11-02 02:52:48.716 I/WindowManager( 1126): addWindow: Window{3e5d363 u0 com.muse.host/com.muse.host.MainActivity} client:android.os.BinderProxy@bbaed92 currentDisplayId:0 requestDisplayId:0 token:Token{fc9ba7a ActivityRecord{b31ac9c u0 com.muse.host/.MainActivity t4400}}
+11-02 02:52:48.723 I/HwAudioServiceEx( 1126): ComponentInfo : className = com.muse.host.MainActivity, flag = onResume, isHomeActivity = , isTop = true
+11-02 02:52:48.723 D/DollieActivityManagerAdapter( 2351): [Resumed] bg:true pid:5941 uid:10443 ComponentInfo{com.muse.host/com.muse.host.MainActivity}
+11-02 02:52:48.723 E/DollieAdapterService( 2351): notifyActivityState pkg:com.muse.host/com.muse.host.MainActivity state:2 fg:true mUid:10443
+11-02 02:52:48.723 I/Hicom_Monitor( 2351): mActivityNotifierEx, className = com.muse.host.MainActivity, uid = 10443
+11-02 02:52:48.736 I/CAWARENESS_AppUsageManager( 5383): onEvent, packageName=com.muse.host, activityName=com.muse.host.MainActivity
+11-02 02:52:48.744 I/WindowManager( 1126): Changing focus from null to Window{3e5d363 u0 com.muse.host/com.muse.host.MainActivity} displayId=0 Callers=com.android.server.wm.RootWindowContainer.updateFocusedWindowLocked:212 com.android.server.wm.WindowManagerService.updateFocusedWindowLocked:6516 com.android.server.wm.WindowManagerService.relayoutWindow:2810 com.android.server.wm.Session.relayout:197 
+11-02 02:52:48.746 V/HwPhoneWindowManager( 1126): updateSystemUiColorLw window=Window{3e5d363 u0 com.muse.host/com.muse.host.MainActivity},EmuiStyle=0,StatusBarColor=0xff000000,NavigationBarColor=0xfffcfcfc, mForceNotchStatusBar=false
+11-02 02:52:48.748 D/StatusBarManagerService( 1126): win:Window{3e5d363 u0 com.muse.host/com.muse.host.MainActivity}mIsColorEnable:truelight:false
+11-02 02:52:48.748 I/StatusBarDisable( 1126): setFlags what=0 which=1 pkg=Window{3e5d363 u0 com.muse.host/com.muse.host.MainActivity}
+11-02 02:52:48.766 I/muse-host( 5941): SEAM-STEP:attach:ok:handle=1
+11-02 02:52:48.767 I/muse-host( 5941): nativeAttachSurface: window 720x1555
+11-02 02:52:48.767 I/muse-host( 5941): SEAM-STEP:render:ok
+11-02 02:52:48.768 I/ActivityTaskManager( 1126): Fully drawn com.muse.host/.MainActivity: +540ms
+11-02 02:52:48.841 I/GalleryPage( 5941): [layering] slice page=0 rows=[0,7] comps={TopAppBar|TopAppBar|TopAppBar|NavigationBar|NavigationRail|NavigationDrawer|BottomAppBar|SearchBar} labels={m3-gallery|m3-gallery|m3-gallery|NavigationBar selected=home|NavigationRail selected=home|NavigationDrawer selected=home|gallery|Search settings}
+11-02 02:52:51.703 I/GalleryPage( 5941): gallery-rows=121 gallery-pages=12
+11-02 02:52:51.703 I/GalleryPage( 5941): gallery-page=1/12
+11-02 02:52:51.704 I/muse-host( 5941): nativeAttachSurface: window 720x1555
+11-02 02:52:51.704 I/muse-host( 5941): SEAM-STEP:render:ok
+11-02 02:52:51.726 I/GalleryPage( 5941): [layering] slice page=0 rows=[0,7] comps={TopAppBar|TopAppBar|TopAppBar|NavigationBar|NavigationRail|NavigationDrawer|BottomAppBar|SearchBar} labels={m3-gallery|m3-gallery|m3-gallery|NavigationBar selected=home|NavigationRail selected=home|NavigationDrawer selected=home|gallery|Search settings}
+11-02 02:52:51.809 I/WindowManager( 1126): dispatchResized : win = Window{3e5d363 u0 com.muse.host/com.muse.host.MainActivity} drawState = READY_TO_SHOW
+11-02 02:52:51.816 I/ActivityTaskManager( 1126): Displayed com.muse.host/.MainActivity: +3s584ms
+11-02 02:52:51.853 V/ActivityTaskManager( 1126): Activity idle: Token{fc9ba7a ActivityRecord{b31ac9c u0 com.muse.host/.MainActivity t4400}}
+11-02 02:52:51.899 I/WindowManager( 1126): Removing Window{d45b62a u0 Splash Screen com.muse.host} from AppWindowToken{411c22b token=Token{fc9ba7a ActivityRecord{b31ac9c u0 com.muse.host/.MainActivity t4400}}}
+11-02 02:52:54.594 I/GalleryPage( 5941): gallery-rows=121 gallery-pages=12
+11-02 02:52:54.594 I/GalleryPage( 5941): gallery-page=1/12
+0

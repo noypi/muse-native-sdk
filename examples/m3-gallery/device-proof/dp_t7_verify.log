@@ -1,0 +1,251 @@
+muse-native gallery-real --assert-no-diagram --page gallery-page-button
+gallery-real ok: no mock painter reachable (1)
+test -s "/media/saif/EXTRA/workspaces/meta-hackathon/muse-native-sdk/build/android-arm64-v8a/libRuntime.so" || { echo "error: missing engine lib for ABI slot arm64-v8a at '/media/saif/EXTRA/workspaces/meta-hackathon/muse-native-sdk/build/android-arm64-v8a/libRuntime.so'" >&2; exit 1; }
+test -s "/media/saif/EXTRA/workspaces/meta-hackathon/muse-native-sdk/build/android-armeabi-v7a/libRuntime.so" || { echo "error: missing engine lib for ABI slot armeabi-v7a at '/media/saif/EXTRA/workspaces/meta-hackathon/muse-native-sdk/build/android-armeabi-v7a/libRuntime.so'" >&2; exit 1; }
+test -s "/media/saif/EXTRA/workspaces/meta-hackathon/muse-native-sdk/build/android-x86_64/libRuntime.so" || { echo "error: missing engine lib for ABI slot x86_64 at '/media/saif/EXTRA/workspaces/meta-hackathon/muse-native-sdk/build/android-x86_64/libRuntime.so'" >&2; exit 1; }
+test -s "/media/saif/EXTRA/workspaces/meta-hackathon/muse-native-sdk/build/android-x86/libRuntime.so" || { echo "error: missing engine lib for ABI slot x86 at '/media/saif/EXTRA/workspaces/meta-hackathon/muse-native-sdk/build/android-x86/libRuntime.so'" >&2; exit 1; }
+rm -f build/m3-gallery-unsigned.apk
+muse-native build .
+configure: ok (2ms)
+typecheck: ok (2ms)
+compile: ok (3ms)
+emit: ok (3ms)
+native-build: ok (0ms)
+package: ok (4ms)
+install: ok (0ms)
+Wrote /media/saif/EXTRA/workspaces/meta-hackathon/muse-native-sdk/.worktrees/demo-m3-gallery/_run/examples/m3-gallery/dist/ir.json
+Wrote /media/saif/EXTRA/workspaces/meta-hackathon/muse-native-sdk/.worktrees/demo-m3-gallery/_run/examples/m3-gallery/dist/tree.mui.bin
+mkdir -p assets && cp dist/tree.mui.bin assets/tree.mui.bin
+mkdir -p build/staging build/gen build/classes build/dex
+aapt2 compile --dir res -o build/compiled.zip
+aapt2 link -o build/base-linked.zip -I /media/saif/EXTRA/sdk/android/platforms/android-35/android.jar --manifest AndroidManifest.xml --java build/gen -A assets build/compiled.zip
+javac -source 17 -target 17 -classpath /media/saif/EXTRA/sdk/android/platforms/android-35/android.jar -d build/classes $(find src -name '*.java') $(find build/gen -name '*.java')
+warning: [options] system modules path not set in conjunction with -source 17
+Note: src/MainActivity.java uses or overrides a deprecated API.
+Note: Recompile with -Xlint:deprecation for details.
+1 warning
+d8 --lib /media/saif/EXTRA/sdk/android/platforms/android-35/android.jar --output build/dex $(find build/classes -name '*.class')
+mkdir -p build/staging/lib/arm64-v8a build/staging/lib/armeabi-v7a build/staging/lib/x86_64 build/staging/lib/x86 build/staging/assets/tree
+unzip -o build/base-linked.zip AndroidManifest.xml resources.arsc -d build/staging
+Archive:  build/base-linked.zip
+  inflating: build/staging/AndroidManifest.xml  
+ extracting: build/staging/resources.arsc  
+cp "/media/saif/EXTRA/workspaces/meta-hackathon/muse-native-sdk/build/android-arm64-v8a/libRuntime.so" build/staging/lib/arm64-v8a/libRuntime.so
+cp "/media/saif/EXTRA/workspaces/meta-hackathon/muse-native-sdk/build/android-armeabi-v7a/libRuntime.so" build/staging/lib/armeabi-v7a/libRuntime.so
+cp "/media/saif/EXTRA/workspaces/meta-hackathon/muse-native-sdk/build/android-x86_64/libRuntime.so" build/staging/lib/x86_64/libRuntime.so
+cp "/media/saif/EXTRA/workspaces/meta-hackathon/muse-native-sdk/build/android-x86/libRuntime.so" build/staging/lib/x86/libRuntime.so
+cp build/dex/classes.dex build/staging/classes.dex
+cp -r tree/* build/staging/assets/tree/ 2>/dev/null || cp -r assets/* build/staging/assets/ 2>/dev/null || true
+# NOTE (T2, AC-023): next line's parent-dir ref stays inside BUILD_DIR staging; exempt from no-traversal rule.
+cd build/staging && zip -r ../m3-gallery-unsigned.apk AndroidManifest.xml classes.dex lib assets && zip -g -0 ../m3-gallery-unsigned.apk resources.arsc
+  adding: AndroidManifest.xml (deflated 62%)
+  adding: classes.dex (deflated 52%)
+  adding: lib/ (stored 0%)
+  adding: lib/x86_64/ (stored 0%)
+  adding: lib/x86_64/libRuntime.so (deflated 74%)
+  adding: lib/arm64-v8a/ (stored 0%)
+  adding: lib/arm64-v8a/libRuntime.so (deflated 75%)
+  adding: lib/armeabi-v7a/ (stored 0%)
+  adding: lib/armeabi-v7a/libRuntime.so (deflated 73%)
+  adding: lib/x86/ (stored 0%)
+  adding: lib/x86/libRuntime.so (deflated 73%)
+  adding: assets/ (stored 0%)
+  adding: assets/tree/ (stored 0%)
+  adding: assets/tree.mui.bin (deflated 82%)
+  adding: resources.arsc (stored 0%)
+zipalign -f 4 build/m3-gallery-unsigned.apk build/m3-gallery-aligned.apk
+apksigner sign --ks ~/.android/debug.keystore --ks-pass pass:android --key-pass pass:android --out build/m3-gallery-debug.apk build/m3-gallery-aligned.apk
+signed debug build: build/m3-gallery-debug.apk (debug key only)
+apksigner verify --verbose build/m3-gallery-debug.apk
+Verifies
+Verified using v1 scheme (JAR signing): false
+Verified using v2 scheme (APK Signature Scheme v2): true
+Verified using v3 scheme (APK Signature Scheme v3): true
+Verified using v3.1 scheme (APK Signature Scheme v3.1): false
+Verified using v4 scheme (APK Signature Scheme v4): false
+Verified for SourceStamp: false
+Number of signers: 1
+for entry in AndroidManifest.xml classes.dex resources.arsc; do if ! unzip -l build/m3-gallery-debug.apk | grep -q "$entry"; then echo "error: verify failed: APK entry missing: $entry in build/m3-gallery-debug.apk" >&2; exit 1; fi; done
+if ! unzip -lv build/m3-gallery-debug.apk | grep "resources.arsc" | grep -q "Stored"; then echo "error: verify failed: resources.arsc must be Stored (method 0) + 4-byte aligned in build/m3-gallery-debug.apk" >&2; exit 1; fi
+if command -v zipalign >/dev/null 2>&1; then if ! zipalign -c 4 build/m3-gallery-debug.apk >/dev/null 2>&1; then echo "error: verify failed: resources.arsc not Stored+aligned (zipalign -c 4 rejected build/m3-gallery-debug.apk)" >&2; exit 1; fi; fi
+if ! apksigner verify build/m3-gallery-debug.apk >/dev/null 2>&1; then echo "error: verify failed: apksigner verify rejected build/m3-gallery-debug.apk" >&2; exit 1; fi
+# JNI contract gate (BUG-TEXT-004 / AC-RUNTIME-027): every native* declared
+# in MainActivity.java must be a `T` dynamic export in each staged ABI lib.
+# APK-inner check is best-effort (skipped with a warning when unzip is absent).
+GATE=../../engine/runtime/tests/jni_contract_test.sh; JAVA_SRC=src/MainActivity.java; BRIDGE=../../engine/runtime/src/jni_bridge.cpp; \
+for abi in arm64-v8a armeabi-v7a x86_64 x86; do \
+  SO="build/staging/lib/$abi/libRuntime.so"; \
+  if [ ! -s "$SO" ]; then echo "error: verify failed: missing staged ABI lib: $SO" >&2; exit 1; fi; \
+  sh "$GATE" "$SO" "$JAVA_SRC" "$BRIDGE" || exit 1; \
+done; \
+if command -v unzip >/dev/null 2>&1; then \
+  TMPD="$(mktemp -d)"; trap 'rm -rf "$TMPD"' EXIT INT TERM; \
+  for abi in arm64-v8a armeabi-v7a x86_64 x86; do \
+    if unzip -l build/m3-gallery-debug.apk | grep -q "lib/$abi/libRuntime.so"; then \
+      mkdir -p "$TMPD/$abi"; unzip -o -j build/m3-gallery-debug.apk "lib/$abi/libRuntime.so" -d "$TMPD/$abi" >/dev/null; \
+      sh "$GATE" "$TMPD/$abi/libRuntime.so" "$JAVA_SRC" "$BRIDGE" || exit 1; \
+    else echo "warning: verify: APK has no lib/$abi/libRuntime.so entry; skipping APK-inner check for $abi" >&2; fi; \
+  done; \
+  rm -rf "$TMPD"; trap - EXIT INT TERM; \
+else echo "warning: verify: unzip not found; skipping APK-inner JNI check (staged libs already gated)" >&2; fi
+jni_contract_test: native declarations: nativeAdvancePage nativeAttachSurface nativeDestroy nativeDetachSurface nativeDispatchTouch nativeLoadTree nativeRenderFrame nativeSeamAttachSurface nativeSeamDestroy nativeSeamDetach nativeSeamDispatchTouch nativeSeamGetFrameStats nativeSeamLastHandle nativeSeamRenderFrame nativeSeamSetImeBottom nativeSeamSetTheme nativeSetImeBottom nativeSetTheme 
+jni_contract_test: PASS — nativeAdvancePage -> Java_com_muse_host_MainActivity_nativeAdvancePage (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeAttachSurface -> Java_com_muse_host_MainActivity_nativeAttachSurface (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeDestroy -> Java_com_muse_host_MainActivity_nativeDestroy (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeDetachSurface -> Java_com_muse_host_MainActivity_nativeDetachSurface (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeDispatchTouch -> Java_com_muse_host_MainActivity_nativeDispatchTouch (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeLoadTree -> Java_com_muse_host_MainActivity_nativeLoadTree (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeRenderFrame -> Java_com_muse_host_MainActivity_nativeRenderFrame (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeSeamAttachSurface -> Java_com_muse_host_MainActivity_nativeSeamAttachSurface (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeSeamDestroy -> Java_com_muse_host_MainActivity_nativeSeamDestroy (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeSeamDetach -> Java_com_muse_host_MainActivity_nativeSeamDetach (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeSeamDispatchTouch -> Java_com_muse_host_MainActivity_nativeSeamDispatchTouch (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeSeamGetFrameStats -> Java_com_muse_host_MainActivity_nativeSeamGetFrameStats (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeSeamLastHandle -> Java_com_muse_host_MainActivity_nativeSeamLastHandle (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeSeamRenderFrame -> Java_com_muse_host_MainActivity_nativeSeamRenderFrame (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeSeamSetImeBottom -> Java_com_muse_host_MainActivity_nativeSeamSetImeBottom (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeSeamSetTheme -> Java_com_muse_host_MainActivity_nativeSeamSetTheme (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeSetImeBottom -> Java_com_muse_host_MainActivity_nativeSetImeBottom (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeSetTheme -> Java_com_muse_host_MainActivity_nativeSetTheme (libRuntime.so dynamic symbols)
+jni_contract_test: all 18 native methods matched (AC-RUNTIME-027)
+jni_contract_test: native declarations: nativeAdvancePage nativeAttachSurface nativeDestroy nativeDetachSurface nativeDispatchTouch nativeLoadTree nativeRenderFrame nativeSeamAttachSurface nativeSeamDestroy nativeSeamDetach nativeSeamDispatchTouch nativeSeamGetFrameStats nativeSeamLastHandle nativeSeamRenderFrame nativeSeamSetImeBottom nativeSeamSetTheme nativeSetImeBottom nativeSetTheme 
+jni_contract_test: PASS — nativeAdvancePage -> Java_com_muse_host_MainActivity_nativeAdvancePage (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeAttachSurface -> Java_com_muse_host_MainActivity_nativeAttachSurface (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeDestroy -> Java_com_muse_host_MainActivity_nativeDestroy (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeDetachSurface -> Java_com_muse_host_MainActivity_nativeDetachSurface (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeDispatchTouch -> Java_com_muse_host_MainActivity_nativeDispatchTouch (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeLoadTree -> Java_com_muse_host_MainActivity_nativeLoadTree (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeRenderFrame -> Java_com_muse_host_MainActivity_nativeRenderFrame (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeSeamAttachSurface -> Java_com_muse_host_MainActivity_nativeSeamAttachSurface (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeSeamDestroy -> Java_com_muse_host_MainActivity_nativeSeamDestroy (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeSeamDetach -> Java_com_muse_host_MainActivity_nativeSeamDetach (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeSeamDispatchTouch -> Java_com_muse_host_MainActivity_nativeSeamDispatchTouch (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeSeamGetFrameStats -> Java_com_muse_host_MainActivity_nativeSeamGetFrameStats (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeSeamLastHandle -> Java_com_muse_host_MainActivity_nativeSeamLastHandle (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeSeamRenderFrame -> Java_com_muse_host_MainActivity_nativeSeamRenderFrame (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeSeamSetImeBottom -> Java_com_muse_host_MainActivity_nativeSeamSetImeBottom (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeSeamSetTheme -> Java_com_muse_host_MainActivity_nativeSeamSetTheme (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeSetImeBottom -> Java_com_muse_host_MainActivity_nativeSetImeBottom (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeSetTheme -> Java_com_muse_host_MainActivity_nativeSetTheme (libRuntime.so dynamic symbols)
+jni_contract_test: all 18 native methods matched (AC-RUNTIME-027)
+jni_contract_test: native declarations: nativeAdvancePage nativeAttachSurface nativeDestroy nativeDetachSurface nativeDispatchTouch nativeLoadTree nativeRenderFrame nativeSeamAttachSurface nativeSeamDestroy nativeSeamDetach nativeSeamDispatchTouch nativeSeamGetFrameStats nativeSeamLastHandle nativeSeamRenderFrame nativeSeamSetImeBottom nativeSeamSetTheme nativeSetImeBottom nativeSetTheme 
+jni_contract_test: PASS — nativeAdvancePage -> Java_com_muse_host_MainActivity_nativeAdvancePage (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeAttachSurface -> Java_com_muse_host_MainActivity_nativeAttachSurface (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeDestroy -> Java_com_muse_host_MainActivity_nativeDestroy (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeDetachSurface -> Java_com_muse_host_MainActivity_nativeDetachSurface (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeDispatchTouch -> Java_com_muse_host_MainActivity_nativeDispatchTouch (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeLoadTree -> Java_com_muse_host_MainActivity_nativeLoadTree (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeRenderFrame -> Java_com_muse_host_MainActivity_nativeRenderFrame (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeSeamAttachSurface -> Java_com_muse_host_MainActivity_nativeSeamAttachSurface (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeSeamDestroy -> Java_com_muse_host_MainActivity_nativeSeamDestroy (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeSeamDetach -> Java_com_muse_host_MainActivity_nativeSeamDetach (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeSeamDispatchTouch -> Java_com_muse_host_MainActivity_nativeSeamDispatchTouch (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeSeamGetFrameStats -> Java_com_muse_host_MainActivity_nativeSeamGetFrameStats (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeSeamLastHandle -> Java_com_muse_host_MainActivity_nativeSeamLastHandle (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeSeamRenderFrame -> Java_com_muse_host_MainActivity_nativeSeamRenderFrame (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeSeamSetImeBottom -> Java_com_muse_host_MainActivity_nativeSeamSetImeBottom (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeSeamSetTheme -> Java_com_muse_host_MainActivity_nativeSeamSetTheme (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeSetImeBottom -> Java_com_muse_host_MainActivity_nativeSetImeBottom (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeSetTheme -> Java_com_muse_host_MainActivity_nativeSetTheme (libRuntime.so dynamic symbols)
+jni_contract_test: all 18 native methods matched (AC-RUNTIME-027)
+jni_contract_test: native declarations: nativeAdvancePage nativeAttachSurface nativeDestroy nativeDetachSurface nativeDispatchTouch nativeLoadTree nativeRenderFrame nativeSeamAttachSurface nativeSeamDestroy nativeSeamDetach nativeSeamDispatchTouch nativeSeamGetFrameStats nativeSeamLastHandle nativeSeamRenderFrame nativeSeamSetImeBottom nativeSeamSetTheme nativeSetImeBottom nativeSetTheme 
+jni_contract_test: PASS — nativeAdvancePage -> Java_com_muse_host_MainActivity_nativeAdvancePage (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeAttachSurface -> Java_com_muse_host_MainActivity_nativeAttachSurface (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeDestroy -> Java_com_muse_host_MainActivity_nativeDestroy (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeDetachSurface -> Java_com_muse_host_MainActivity_nativeDetachSurface (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeDispatchTouch -> Java_com_muse_host_MainActivity_nativeDispatchTouch (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeLoadTree -> Java_com_muse_host_MainActivity_nativeLoadTree (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeRenderFrame -> Java_com_muse_host_MainActivity_nativeRenderFrame (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeSeamAttachSurface -> Java_com_muse_host_MainActivity_nativeSeamAttachSurface (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeSeamDestroy -> Java_com_muse_host_MainActivity_nativeSeamDestroy (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeSeamDetach -> Java_com_muse_host_MainActivity_nativeSeamDetach (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeSeamDispatchTouch -> Java_com_muse_host_MainActivity_nativeSeamDispatchTouch (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeSeamGetFrameStats -> Java_com_muse_host_MainActivity_nativeSeamGetFrameStats (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeSeamLastHandle -> Java_com_muse_host_MainActivity_nativeSeamLastHandle (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeSeamRenderFrame -> Java_com_muse_host_MainActivity_nativeSeamRenderFrame (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeSeamSetImeBottom -> Java_com_muse_host_MainActivity_nativeSeamSetImeBottom (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeSeamSetTheme -> Java_com_muse_host_MainActivity_nativeSeamSetTheme (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeSetImeBottom -> Java_com_muse_host_MainActivity_nativeSetImeBottom (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeSetTheme -> Java_com_muse_host_MainActivity_nativeSetTheme (libRuntime.so dynamic symbols)
+jni_contract_test: all 18 native methods matched (AC-RUNTIME-027)
+jni_contract_test: native declarations: nativeAdvancePage nativeAttachSurface nativeDestroy nativeDetachSurface nativeDispatchTouch nativeLoadTree nativeRenderFrame nativeSeamAttachSurface nativeSeamDestroy nativeSeamDetach nativeSeamDispatchTouch nativeSeamGetFrameStats nativeSeamLastHandle nativeSeamRenderFrame nativeSeamSetImeBottom nativeSeamSetTheme nativeSetImeBottom nativeSetTheme 
+jni_contract_test: PASS — nativeAdvancePage -> Java_com_muse_host_MainActivity_nativeAdvancePage (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeAttachSurface -> Java_com_muse_host_MainActivity_nativeAttachSurface (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeDestroy -> Java_com_muse_host_MainActivity_nativeDestroy (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeDetachSurface -> Java_com_muse_host_MainActivity_nativeDetachSurface (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeDispatchTouch -> Java_com_muse_host_MainActivity_nativeDispatchTouch (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeLoadTree -> Java_com_muse_host_MainActivity_nativeLoadTree (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeRenderFrame -> Java_com_muse_host_MainActivity_nativeRenderFrame (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeSeamAttachSurface -> Java_com_muse_host_MainActivity_nativeSeamAttachSurface (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeSeamDestroy -> Java_com_muse_host_MainActivity_nativeSeamDestroy (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeSeamDetach -> Java_com_muse_host_MainActivity_nativeSeamDetach (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeSeamDispatchTouch -> Java_com_muse_host_MainActivity_nativeSeamDispatchTouch (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeSeamGetFrameStats -> Java_com_muse_host_MainActivity_nativeSeamGetFrameStats (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeSeamLastHandle -> Java_com_muse_host_MainActivity_nativeSeamLastHandle (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeSeamRenderFrame -> Java_com_muse_host_MainActivity_nativeSeamRenderFrame (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeSeamSetImeBottom -> Java_com_muse_host_MainActivity_nativeSeamSetImeBottom (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeSeamSetTheme -> Java_com_muse_host_MainActivity_nativeSeamSetTheme (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeSetImeBottom -> Java_com_muse_host_MainActivity_nativeSetImeBottom (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeSetTheme -> Java_com_muse_host_MainActivity_nativeSetTheme (libRuntime.so dynamic symbols)
+jni_contract_test: all 18 native methods matched (AC-RUNTIME-027)
+jni_contract_test: native declarations: nativeAdvancePage nativeAttachSurface nativeDestroy nativeDetachSurface nativeDispatchTouch nativeLoadTree nativeRenderFrame nativeSeamAttachSurface nativeSeamDestroy nativeSeamDetach nativeSeamDispatchTouch nativeSeamGetFrameStats nativeSeamLastHandle nativeSeamRenderFrame nativeSeamSetImeBottom nativeSeamSetTheme nativeSetImeBottom nativeSetTheme 
+jni_contract_test: PASS — nativeAdvancePage -> Java_com_muse_host_MainActivity_nativeAdvancePage (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeAttachSurface -> Java_com_muse_host_MainActivity_nativeAttachSurface (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeDestroy -> Java_com_muse_host_MainActivity_nativeDestroy (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeDetachSurface -> Java_com_muse_host_MainActivity_nativeDetachSurface (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeDispatchTouch -> Java_com_muse_host_MainActivity_nativeDispatchTouch (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeLoadTree -> Java_com_muse_host_MainActivity_nativeLoadTree (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeRenderFrame -> Java_com_muse_host_MainActivity_nativeRenderFrame (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeSeamAttachSurface -> Java_com_muse_host_MainActivity_nativeSeamAttachSurface (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeSeamDestroy -> Java_com_muse_host_MainActivity_nativeSeamDestroy (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeSeamDetach -> Java_com_muse_host_MainActivity_nativeSeamDetach (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeSeamDispatchTouch -> Java_com_muse_host_MainActivity_nativeSeamDispatchTouch (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeSeamGetFrameStats -> Java_com_muse_host_MainActivity_nativeSeamGetFrameStats (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeSeamLastHandle -> Java_com_muse_host_MainActivity_nativeSeamLastHandle (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeSeamRenderFrame -> Java_com_muse_host_MainActivity_nativeSeamRenderFrame (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeSeamSetImeBottom -> Java_com_muse_host_MainActivity_nativeSeamSetImeBottom (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeSeamSetTheme -> Java_com_muse_host_MainActivity_nativeSeamSetTheme (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeSetImeBottom -> Java_com_muse_host_MainActivity_nativeSetImeBottom (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeSetTheme -> Java_com_muse_host_MainActivity_nativeSetTheme (libRuntime.so dynamic symbols)
+jni_contract_test: all 18 native methods matched (AC-RUNTIME-027)
+jni_contract_test: native declarations: nativeAdvancePage nativeAttachSurface nativeDestroy nativeDetachSurface nativeDispatchTouch nativeLoadTree nativeRenderFrame nativeSeamAttachSurface nativeSeamDestroy nativeSeamDetach nativeSeamDispatchTouch nativeSeamGetFrameStats nativeSeamLastHandle nativeSeamRenderFrame nativeSeamSetImeBottom nativeSeamSetTheme nativeSetImeBottom nativeSetTheme 
+jni_contract_test: PASS — nativeAdvancePage -> Java_com_muse_host_MainActivity_nativeAdvancePage (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeAttachSurface -> Java_com_muse_host_MainActivity_nativeAttachSurface (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeDestroy -> Java_com_muse_host_MainActivity_nativeDestroy (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeDetachSurface -> Java_com_muse_host_MainActivity_nativeDetachSurface (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeDispatchTouch -> Java_com_muse_host_MainActivity_nativeDispatchTouch (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeLoadTree -> Java_com_muse_host_MainActivity_nativeLoadTree (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeRenderFrame -> Java_com_muse_host_MainActivity_nativeRenderFrame (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeSeamAttachSurface -> Java_com_muse_host_MainActivity_nativeSeamAttachSurface (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeSeamDestroy -> Java_com_muse_host_MainActivity_nativeSeamDestroy (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeSeamDetach -> Java_com_muse_host_MainActivity_nativeSeamDetach (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeSeamDispatchTouch -> Java_com_muse_host_MainActivity_nativeSeamDispatchTouch (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeSeamGetFrameStats -> Java_com_muse_host_MainActivity_nativeSeamGetFrameStats (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeSeamLastHandle -> Java_com_muse_host_MainActivity_nativeSeamLastHandle (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeSeamRenderFrame -> Java_com_muse_host_MainActivity_nativeSeamRenderFrame (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeSeamSetImeBottom -> Java_com_muse_host_MainActivity_nativeSeamSetImeBottom (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeSeamSetTheme -> Java_com_muse_host_MainActivity_nativeSeamSetTheme (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeSetImeBottom -> Java_com_muse_host_MainActivity_nativeSetImeBottom (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeSetTheme -> Java_com_muse_host_MainActivity_nativeSetTheme (libRuntime.so dynamic symbols)
+jni_contract_test: all 18 native methods matched (AC-RUNTIME-027)
+jni_contract_test: native declarations: nativeAdvancePage nativeAttachSurface nativeDestroy nativeDetachSurface nativeDispatchTouch nativeLoadTree nativeRenderFrame nativeSeamAttachSurface nativeSeamDestroy nativeSeamDetach nativeSeamDispatchTouch nativeSeamGetFrameStats nativeSeamLastHandle nativeSeamRenderFrame nativeSeamSetImeBottom nativeSeamSetTheme nativeSetImeBottom nativeSetTheme 
+jni_contract_test: PASS — nativeAdvancePage -> Java_com_muse_host_MainActivity_nativeAdvancePage (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeAttachSurface -> Java_com_muse_host_MainActivity_nativeAttachSurface (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeDestroy -> Java_com_muse_host_MainActivity_nativeDestroy (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeDetachSurface -> Java_com_muse_host_MainActivity_nativeDetachSurface (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeDispatchTouch -> Java_com_muse_host_MainActivity_nativeDispatchTouch (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeLoadTree -> Java_com_muse_host_MainActivity_nativeLoadTree (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeRenderFrame -> Java_com_muse_host_MainActivity_nativeRenderFrame (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeSeamAttachSurface -> Java_com_muse_host_MainActivity_nativeSeamAttachSurface (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeSeamDestroy -> Java_com_muse_host_MainActivity_nativeSeamDestroy (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeSeamDetach -> Java_com_muse_host_MainActivity_nativeSeamDetach (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeSeamDispatchTouch -> Java_com_muse_host_MainActivity_nativeSeamDispatchTouch (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeSeamGetFrameStats -> Java_com_muse_host_MainActivity_nativeSeamGetFrameStats (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeSeamLastHandle -> Java_com_muse_host_MainActivity_nativeSeamLastHandle (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeSeamRenderFrame -> Java_com_muse_host_MainActivity_nativeSeamRenderFrame (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeSeamSetImeBottom -> Java_com_muse_host_MainActivity_nativeSeamSetImeBottom (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeSeamSetTheme -> Java_com_muse_host_MainActivity_nativeSeamSetTheme (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeSetImeBottom -> Java_com_muse_host_MainActivity_nativeSetImeBottom (libRuntime.so dynamic symbols)
+jni_contract_test: PASS — nativeSetTheme -> Java_com_muse_host_MainActivity_nativeSetTheme (libRuntime.so dynamic symbols)
+jni_contract_test: all 18 native methods matched (AC-RUNTIME-027)
+EXIT:0

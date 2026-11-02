@@ -1,0 +1,9 @@
+=== GATE 3 muselens LIVE check ===
+manifest components containing lens/field:
+---
+/media/saif/EXTRA/workspaces/meta-hackathon/muse-native-sdk/.worktrees/demo-m3-gallery/_run/packages/native/package.json
+/media/saif/EXTRA/workspaces/meta-hackathon/muse-native-sdk/.worktrees/demo-m3-gallery/_run/packages/native/muse.manifest.json
+/media/saif/EXTRA/workspaces/meta-hackathon/muse-native-sdk/.worktrees/demo-m3-gallery/_run/packages/native/tsconfig.json
+"name": "TextFieldEditCore"
+grep-exit:0
+43
