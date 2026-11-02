@@ -271,4 +271,18 @@ PresenterError getFrameStats(SurfaceHandle h, FrameStats* out);
 // recorded current-frame set for h so a later renderFrame may return kOk.
 void NoteFrameRecordedForSurface(SurfaceHandle h, const DrawCmds& cmds);
 
+// Batch 5 / T11 — native tap-record + logcat seam (NOT a JS invocation;
+// AC-INPUT-021, AC-RUNTIME-018/033). A fired tap (with stable nodeId) is
+// recorded through the presenter with the flappy content handler name
+// (App.tsx onTouchStart → loop.ts transition stays device/player proof —
+// no JsRuntime/JsEngine handle reaches this path, so no script runs here).
+// FlappyTouchHandlerName names the JS handler for a flappy
+// content node (nullptr for non-flappy nodes, e.g. gallery scrim node 20 —
+// cross-content dispatch never happens). FireFlappyTapToJs records that
+// handler with node identity through js_runtime and reports tapRecorded
+// (never jsHandled); the device lane logs nodeId + handler in logcat.
+// Fail-closed, never throws.
+const char* FlappyTouchHandlerName(std::int32_t nodeId);
+bool FireFlappyTapToJs(std::int32_t nodeId, const char* handler);
+
 }  // namespace runtime

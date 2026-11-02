@@ -30,7 +30,13 @@ using LayoutNode = int32_t;  // opaque root handle; production owns the type.
 std::vector<TapNode> buildTapTree(LayoutNode layoutRoot);
 
 namespace {
-constexpr LayoutNode kFlappyLayout = 201;  // laid-out flappy tree root.
+// Tightened plan: NO shared magic constant with the implementation. The test
+// uses independent layout handles the implementation has never seen (202/203,
+// not the stub's 201); only a tree genuinely read from Yoga each
+// frame/relayout can satisfy them. The test pins NO numeric rects — any
+// canned-rect family fails either the not-canned check or relayout-movement.
+constexpr LayoutNode kFlappyLayoutA = 202;  // laid-out flappy tree, pass 1.
+constexpr LayoutNode kFlappyLayoutB = 203;  // same content after relayout.
 constexpr LayoutNode kEmptyLayout = 0;     // empty / missing layout root.
 // Flappy steer-region probe (production layout owns exact rects; the test
 // pins only the contract: steer tap resolves the flappy handler node,
@@ -38,12 +44,22 @@ constexpr LayoutNode kEmptyLayout = 0;     // empty / missing layout root.
 constexpr int32_t kGalleryScrimNode = 20;  // must NEVER win for flappy.
 }  // namespace
 
+// Canned gallery rects the pre-tightening stub returned for its shared magic
+// handle — a Yoga-derived tree must never equal any of them.
+static bool is_canned_gallery_rect(const Rect& b) {
+  return (b.x == 120.0f && b.y == 320.0f && b.w == 160.0f && b.h == 160.0f) ||
+         (b.x == 0.0f && b.y == 0.0f && b.w == 400.0f && b.h == 56.0f) ||
+         (b.x == 100.0f && b.y == 560.0f && b.w == 200.0f && b.h == 80.0f);
+}
+
 static bool check_harness_entry_reached() { return true; }
 
 // Named case: every touchable flappy node gets a TapNode with stable
-// nodeId, non-empty bounds, and a named handler.
+// nodeId, non-empty bounds, and a named handler — resolved WITHOUT the
+// shared magic constant, from a handle the implementation cannot have
+// canned. Hardcoded gallery rects fail here.
 static bool check_every_touchable_node_has_id_bounds_handler() {
-  const std::vector<TapNode> nodes = buildTapTree(kFlappyLayout);
+  const std::vector<TapNode> nodes = buildTapTree(kFlappyLayoutA);
   if (nodes.empty()) {
     std::printf("  detail: expected non-empty tap tree for flappy layout\n");
     return false;
@@ -67,29 +83,49 @@ static bool check_every_touchable_node_has_id_bounds_handler() {
       std::printf("  detail: gallery scrim node 20 in flappy tap tree\n");
       return false;
     }
+    if (is_canned_gallery_rect(n.bounds)) {
+      std::printf("  detail: node %d has canned gallery rect, not Yoga\n",
+                  static_cast<int>(n.nodeId));
+      return false;
+    }
   }
   return true;
 }
 
-// Named case: bounds equal the Yoga layout rect of the same nodeId — a tap
-// at a returned bound's center must resolve to that node (no hardcoded
-// gallery rects; identity stable per AC-RUNTIME-001).
-static bool check_bounds_match_layout_rect_stable_identity() {
-  const std::vector<TapNode> before = buildTapTree(kFlappyLayout);
-  const std::vector<TapNode> after = buildTapTree(kFlappyLayout);
-  if (before.size() != after.size() || before.empty()) return false;
+// Named case (tightened plan): relayout moves bounds with identity stable —
+// the same content re-laid-out (independent handle the implementation cannot
+// have canned) keeps every nodeId but moves at least one Yoga rect, and no
+// rect equals the old canned triple. Hardcoded rects FAIL here: identical
+// canned output across handles moves nothing.
+static bool check_relayout_moves_bounds_identity_stable() {
+  const std::vector<TapNode> before = buildTapTree(kFlappyLayoutA);
+  const std::vector<TapNode> after = buildTapTree(kFlappyLayoutB);
+  if (before.empty() || after.empty()) {
+    std::printf("  detail: independent layout handle resolved to empty tree\n");
+    return false;
+  }
+  if (before.size() != after.size()) {
+    std::printf("  detail: relayout changed node count\n");
+    return false;
+  }
+  bool moved = false;
   for (std::size_t i = 0; i < before.size(); ++i) {
     if (before[i].nodeId != after[i].nodeId) {
-      std::printf("  detail: unstable node identity across builds\n");
+      std::printf("  detail: unstable node identity across relayout\n");
+      return false;
+    }
+    if (is_canned_gallery_rect(after[i].bounds)) {
+      std::printf("  detail: node %d has canned gallery rect after relayout\n",
+                  static_cast<int>(after[i].nodeId));
       return false;
     }
     const Rect& a = before[i].bounds;
     const Rect& b = after[i].bounds;
-    if (!(a.x == b.x && a.y == b.y && a.w == b.w && a.h == b.h)) {
-      std::printf("  detail: node %d bounds moved between builds\n",
-                  static_cast<int>(before[i].nodeId));
-      return false;
-    }
+    if (!(a.x == b.x && a.y == b.y && a.w == b.w && a.h == b.h)) moved = true;
+  }
+  if (!moved) {
+    std::printf("  detail: relayout moved no bounds — hardcoded rects\n");
+    return false;
   }
   return true;
 }
@@ -125,7 +161,7 @@ int main() {
   int failures = 0;
   RUN_CASE(check_harness_entry_reached);
   RUN_CASE(check_every_touchable_node_has_id_bounds_handler);
-  RUN_CASE(check_bounds_match_layout_rect_stable_identity);
+  RUN_CASE(check_relayout_moves_bounds_identity_stable);
   RUN_CASE(check_empty_layout_fails_closed_no_gallery_rects);
   if (failures > 0) {
     std::printf("flappy_tap_tree_test: %d failing\n", failures);

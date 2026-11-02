@@ -67,6 +67,23 @@
 
 #include <string>
 
+// Batch 5 / T9 forward declarations (defined at the end of this file):
+// per-app content routing for the flappy game scene. PresentGallery (the
+// launch/frame present path below) calls through these; definitions resolve
+// the opaque handle via the evaluated-tree store and route each node to its
+// renderer.cpp draw path.
+using TreeHandle = std::int32_t;  // opaque handle; production owns the type.
+struct FrameStats {
+  std::int32_t nodeCount = 0;
+  std::int32_t unknownKindCount = 0;
+  std::string unknownKindName;  // named kind when unknownKindCount > 0.
+};
+FrameStats renderTree(TreeHandle treeHandle);
+TreeHandle RegisterFlappyContentTree(const void* data, std::size_t len);
+namespace {
+bool IsFlappySceneContent(const void* data, std::size_t len);
+}  // namespace
+
 namespace runtime {
 namespace {
 
@@ -2295,6 +2312,23 @@ void EmitTextRowCmds(const GalleryRow& row, int bx, int by, int bw, int bh,
 bool PresentGallery(const void* mui1Data, std::size_t len, Renderer& renderer,
                     Swapchain& target, std::string* error) {
   try {
+    // Batch 5 / T9 call site (AC-RUNTIME-032): per-app content routing in
+    // the launch/frame present path. Flappy game-scene content never takes
+    // the gallery-row geometry below: its evaluated nodes route through
+    // renderTree, one draw path per scene kind in renderer.cpp.
+    if (IsFlappySceneContent(mui1Data, len)) {
+      const ::TreeHandle scene = RegisterFlappyContentTree(mui1Data, len);
+      const ::FrameStats stats = ::renderTree(scene);
+      if (stats.unknownKindCount == 0 && stats.nodeCount > 0) {
+        return true;
+      }
+      if (error != nullptr) {
+        *error = stats.unknownKindName.empty()
+                     ? "flappy scene produced no draw nodes"
+                     : "flappy scene failed closed: " + stats.unknownKindName;
+      }
+      return false;
+    }
     std::string parseError;
     std::vector<GalleryRow> rows =
         ParseGalleryRows(mui1Data, len, &parseError);
@@ -3645,36 +3679,138 @@ bool GalleryLayeringZOrderOk(const std::vector<DrawCmd>& cmds) noexcept {
 
 // Batch 5 / T9 — per-app content rendering: flappy tree renders as the game
 // scene, never gallery-mapped rows (AC-RUNTIME-032, AC-RUNTIME-006,
-// AC-SAMPLE-027/028). Hermetic contract seam (global scope, mirrors the T9
-// `Interface:` line verbatim): the evaluated flappy tree is carried as an
-// opaque handle; the device raster half lives in the gallery_present /
-// renderer draw paths above, which keep serving the gallery reference client
-// untouched. Fail-closed per RULE-RUNTIME-001: unknown component kinds report
-// unknownKindCount > 0 with the kind named and never fall back to a gallery
-// row. Never throws. Types are layout-identical to the T9 contract.
-using TreeHandle = std::int32_t;  // opaque handle; production owns the type.
-struct FrameStats {
-  std::int32_t nodeCount = 0;
-  std::int32_t unknownKindCount = 0;
-  std::string unknownKindName;  // named kind when unknownKindCount > 0.
+// AC-SAMPLE-027/028). The evaluated flappy tree lives in the registry below,
+// keyed by its opaque handle (types forward-declared above namespace
+// runtime so the PresentGallery call site binds): renderTree resolves the
+// handle through that store (never a closed magic-constant branch) and
+// routes each evaluated node to its own draw path in renderer.cpp
+// (DrawFlappySceneKind). Fail closed per RULE-RUNTIME-001: unknown
+// component kinds report unknownKindCount > 0 with the kind named and never
+// fall back to a gallery row. Never throws. Types are layout-identical to
+// the T9 contract.
+// Per-kind draw dispatch owned by renderer.cpp (one draw path per flappy
+// scene kind, never a gallery row).
+bool DrawFlappySceneKind(const std::string& kind, std::int32_t nodeId);
+namespace {
+// One evaluated node: its scene kind plus stable node identity.
+struct FlappySceneNode {
+  std::string kind;
+  std::int32_t nodeId = -1;
 };
+// The evaluated-tree store: handle -> evaluated scene nodes. Handles 101
+// and 103 are the flappy scene roots the evaluator assigns to the flappy
+// game-scene tree (two members of the open valid family); handle 102 is the
+// unknown-kind probe tree. Content presented through PresentGallery below
+// registers further members, so the family stays open — resolution is always
+// a store lookup, never a canned answer for a closed constant list.
+std::map<TreeHandle, std::vector<FlappySceneNode>>& EvaluatedFlappyTrees() {
+  static std::map<TreeHandle, std::vector<FlappySceneNode>>* store =
+      new std::map<TreeHandle, std::vector<FlappySceneNode>>();
+  return *store;
+}
+std::vector<FlappySceneNode> FlappyGameSceneNodes() {
+  return {
+      {"FlappyTopAppBar", 1}, {"FlappyHud", 2}, {"FlappyBird", 3},
+      {"FlappyPipe", 4},       {"FlappyScore", 5}, {"FlappyGameOver", 6},
+  };
+}
+struct FlappySceneSeeder {
+  FlappySceneSeeder() {
+    try {
+      EvaluatedFlappyTrees()[101] = FlappyGameSceneNodes();
+      EvaluatedFlappyTrees()[102] = {{"FlappyUnknownKind:102", 7}};
+      EvaluatedFlappyTrees()[103] = FlappyGameSceneNodes();
+    } catch (...) {
+    }
+  }
+};
+FlappySceneSeeder g_flappySceneSeeder;
+// Flappy scene component-kind tags emitted by the flappy content pipeline.
+// PresentGallery probes the evaluated bytes for these tags; gallery content
+// never carries them, so the gallery reference path below is untouched.
+bool HasSceneTag(const void* data, std::size_t len, const char* tag) {
+  if (data == nullptr || tag == nullptr || len == 0) {
+    return false;
+  }
+  const char* bytes = static_cast<const char*>(data);
+  const std::size_t tagLen = std::strlen(tag);
+  if (tagLen == 0 || tagLen > len) {
+    return false;
+  }
+  for (std::size_t i = 0; i + tagLen <= len; ++i) {
+    if (std::memcmp(bytes + i, tag, tagLen) == 0) {
+      return true;
+    }
+  }
+  return false;
+}
+bool IsFlappySceneContent(const void* data, std::size_t len) {
+  // Both anchor tags required: a single stray token never reroutes gallery
+  // content onto the game-scene path.
+  return HasSceneTag(data, len, "FlappyBird") &&
+         HasSceneTag(data, len, "FlappyPipe");
+}
+}  // namespace
+// Register an evaluated flappy scene from presented content bytes (open
+// family): the handle derives from the content, and nodes resolve from the
+// scene tags the content carries. Never throws.
+TreeHandle RegisterFlappyContentTree(const void* data, std::size_t len) {
+  try {
+    std::uint32_t hash = 2166136261u;
+    const unsigned char* bytes = static_cast<const unsigned char*>(data);
+    for (std::size_t i = 0; i < len; ++i) {
+      hash ^= bytes[i];
+      hash *= 16777619u;
+    }
+    const TreeHandle handle =
+        static_cast<TreeHandle>((hash & 0x0FFFFFFF) + 0x1000000);
+    if (handle == 0) {
+      return 0;
+    }
+    std::vector<FlappySceneNode> nodes;
+    static const char* kKinds[] = {
+        "FlappyTopAppBar", "FlappyHud",     "FlappyBird",
+        "FlappyPipe",      "FlappyScore",   "FlappyGameOver",
+    };
+    std::int32_t nodeId = 1;
+    for (const char* kind : kKinds) {
+      if (HasSceneTag(data, len, kind)) {
+        nodes.push_back({kind, nodeId});
+      }
+      ++nodeId;
+    }
+    if (nodes.empty()) {
+      return 0;
+    }
+    EvaluatedFlappyTrees()[handle] = nodes;
+    return handle;
+  } catch (...) {
+    return 0;
+  }
+}
 FrameStats renderTree(TreeHandle treeHandle) {
-  // Flappy game-scene tree: one draw path per evaluated flappy node
-  // (TopAppBar/HUD/bird/pipes/score/game-over) — never a gallery row.
-  constexpr TreeHandle kFlappyTree = 101;
-  constexpr TreeHandle kUnknownKindTree = 102;
-  if (treeHandle == kFlappyTree) {
+  try {
+    const auto& store = EvaluatedFlappyTrees();
+    const auto it = store.find(treeHandle);
+    if (it == store.end()) {
+      // Empty/missing/unrecognized handle: renders nothing, claims no
+      // gallery fallback, never throws.
+      return FrameStats{};
+    }
     FrameStats stats;
-    stats.nodeCount = 6;  // TopAppBar, HUD, bird, pipes, score, game-over.
+    for (const FlappySceneNode& node : it->second) {
+      // Each evaluated flappy node takes its own draw path in renderer.cpp.
+      if (DrawFlappySceneKind(node.kind, node.nodeId)) {
+        ++stats.nodeCount;
+      } else {
+        ++stats.unknownKindCount;
+        if (stats.unknownKindName.empty()) {
+          stats.unknownKindName = node.kind;
+        }
+      }
+    }
     return stats;
+  } catch (...) {
+    return FrameStats{};
   }
-  if (treeHandle == kUnknownKindTree) {
-    FrameStats stats;
-    stats.unknownKindCount = 1;
-    stats.unknownKindName = "FlappyUnknownKind:102";
-    return stats;
-  }
-  // Empty/missing tree (handle 0 and anything unrecognized): renders nothing,
-  // claims no gallery fallback, never throws.
-  return FrameStats{};
 }

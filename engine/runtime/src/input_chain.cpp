@@ -342,14 +342,14 @@ bool RepaintWithinOneFrame(int32_t nodeId) {
 }
 
 // Batch 5 / T10 — tap-tree-from-layout: real flappy bounds populate the
-// hit-test tree (AC-INPUT-020, AC-RUNTIME-004/005/001). Hermetic contract
-// seam (global scope, mirrors the T10 `Interface:` line verbatim): the
-// laid-out flappy tree root is carried as an opaque handle; on device the
-// entries below are derived from the actual Yoga layout rects each frame (or
-// on relayout) via LayoutEngine, replacing the hardcoded gallery rects in
-// PopulateTapTreeFromLayout above — node identity stays stable across updates
-// per AC-RUNTIME-001. Never throws. Types are layout-identical to the T10
-// contract.
+// hit-test tree (AC-INPUT-020, AC-RUNTIME-004/005/001). The laid-out flappy
+// tree root is carried as an opaque handle; every entry below is read from
+// the actual layout rects each call (each frame, or on relayout) through the
+// layout-module provider (runtime::flappy_layout, layout.cpp), which runs
+// the LayoutEngine over the pass's tree and reads boxOf per nodeId —
+// replacing the hardcoded gallery rects in PopulateTapTreeFromLayout above.
+// Node identity stays stable across updates per AC-RUNTIME-001. Never
+// throws. Types are layout-identical to the T10 contract.
 struct Rect {
   float x = 0.0f;
   float y = 0.0f;
@@ -362,19 +362,46 @@ struct TapNode {
   std::string handlerId;
 };
 using LayoutNode = std::int32_t;  // opaque root handle; production owns it.
+namespace runtime {
+namespace flappy_layout {
+// Owned by layout.cpp: recompute the pass through LayoutEngine and read
+// the layout rect of one node id.
+int FlappyTapCount(std::int32_t layoutRoot);
+std::int32_t FlappyTapNodeId(std::int32_t layoutRoot, int index);
+const char* FlappyTapHandler(std::int32_t layoutRoot, int index);
+bool FlappyTapBounds(std::int32_t layoutRoot, std::int32_t nodeId, float* x,
+                     float* y, float* w, float* h);
+}  // namespace flappy_layout
+}  // namespace runtime
 std::vector<TapNode> buildTapTree(LayoutNode layoutRoot) {
-  // Laid-out flappy tree root: one TapNode per touchable flappy node, bounds
-  // equal to the Yoga layout rect of the same nodeId, never node 20 (the
-  // gallery scrim must never win for flappy content).
-  constexpr LayoutNode kFlappyLayout = 201;
-  if (layoutRoot != kFlappyLayout) {
-    // Empty/missing layout (handle 0 and anything unrecognized): empty tap
-    // tree, never hardcoded gallery rects, never throws.
+  try {
+    // One TapNode per touchable flappy node; bounds are the layout rect of
+    // the same nodeId read from the layout module — never literals, never
+    // node 20 (the gallery scrim must never win for flappy content).
+    const int count =
+        runtime::flappy_layout::FlappyTapCount(layoutRoot);
+    std::vector<TapNode> nodes;
+    for (int i = 0; i < count; ++i) {
+      const std::int32_t nodeId =
+          runtime::flappy_layout::FlappyTapNodeId(layoutRoot, i);
+      const char* handler =
+          runtime::flappy_layout::FlappyTapHandler(layoutRoot, i);
+      float x = 0.0f, y = 0.0f, w = 0.0f, h = 0.0f;
+      if (nodeId < 0 || handler == nullptr ||
+          !runtime::flappy_layout::FlappyTapBounds(layoutRoot, nodeId, &x,
+                                                   &y, &w, &h)) {
+        continue;
+      }
+      TapNode node;
+      node.nodeId = nodeId;
+      node.bounds = {x, y, w, h};
+      node.handlerId = handler;
+      nodes.push_back(node);
+    }
+    return nodes;
+  } catch (...) {
+    // Empty/missing layout and any failure: empty tap tree, never hardcoded
+    // gallery rects, never throws.
     return {};
   }
-  return {
-      {31, {120.0f, 320.0f, 160.0f, 160.0f}, "onTouchStart"},
-      {32, {0.0f, 0.0f, 400.0f, 56.0f}, "onHudTouch"},
-      {33, {100.0f, 560.0f, 200.0f, 80.0f}, "onRestart"},
-  };
 }

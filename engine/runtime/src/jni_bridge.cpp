@@ -1648,6 +1648,28 @@ extern "C" MUSE_JNI_EXPORT jint Java_com_muse_host_MainActivity_nativeDispatchTo
       // never reach here; the seam itself is noexcept).
       ::runtime::ime_commit::SetFocusedEngineRow(
           static_cast<::runtime::NodeId>(firedTarget));
+      // Batch 5 / T11 (AC-INPUT-021, AC-RUNTIME-018/033): native tap-record
+      // with node identity. The fired tap is recorded (NOT JS-invoked —
+      // App.tsx onTouchStart → loop.ts stays device/player proof) via
+      // the declared presenter.h surface; the device lane logs nodeId +
+      // handler in logcat. Non-flappy (gallery) nodes report nullptr and
+      // stay repaint-only — no cross-content dispatch, no behavior change.
+      if (const char* flappyHandler = ::runtime::FlappyTouchHandlerName(
+              static_cast<std::int32_t>(firedTarget))) {
+        const bool tapRecorded = ::runtime::FireFlappyTapToJs(
+            static_cast<std::int32_t>(firedTarget), flappyHandler);
+#ifdef __ANDROID__
+        {
+          char jsMsg[192];
+          std::snprintf(jsMsg, sizeof(jsMsg),
+                        "tap record: node=%d handler=%s tapRecorded=%d",
+                        firedTarget, flappyHandler, tapRecorded ? 1 : 0);
+          MuseLogInfo(jsMsg);
+        }
+#else
+        (void)tapRecorded;
+#endif
+      }
 #ifdef __ANDROID__
       // Same single-owner queue as nativeRenderFrame (coalesce, not backlog).
       EnqueueFrame(g);

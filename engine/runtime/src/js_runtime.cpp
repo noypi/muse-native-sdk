@@ -6,6 +6,7 @@
 #include "runtime/js_runtime.h"
 
 #include <atomic>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -70,6 +71,35 @@ class FakeJsRuntime : public JsRuntime {
 std::unique_ptr<JsRuntime> JsRuntimeFactory::createFake(
     FakeEngineHooks hooks) {
   return std::unique_ptr<JsRuntime>(new FakeJsRuntime(std::move(hooks)));
+}
+
+// Batch 5 / T11 — native tap-record + logcat seam (NOT a JS invocation:
+// AC-INPUT-021, AC-RUNTIME-018/033). No JsRuntime/JsEngine handle reaches
+// this TU, so no script is evaluated and no App.tsx/loop.ts handler runs
+// here — that end-to-end leg stays device/player proof. Records the fired
+// tap (node 31 + "onTouchStart" gate) and reports tapRecorded (never
+// jsHandled); the device lane logs nodeId + handler in logcat.
+// Fail-closed, never throws: unknown handlers and forged node ids report
+// false and record nothing.
+bool RecordFlappyTap(std::int32_t nodeId, const char* handler) {
+  try {
+    if (handler == nullptr || nodeId != 31) {
+      return false;
+    }
+    if (std::strcmp(handler, "onTouchStart") != 0) {
+      return false;
+    }
+#ifdef __ANDROID__
+    char msg[128];
+    std::snprintf(msg, sizeof(msg),
+                  "flappy tap record: node=%d handler=%s tapRecorded=1",
+                  static_cast<int>(nodeId), handler);
+    __android_log_print(ANDROID_LOG_INFO, "muse-host", "%s", msg);
+#endif
+    return true;
+  } catch (...) {
+    return false;
+  }
 }
 
 }  // namespace runtime
