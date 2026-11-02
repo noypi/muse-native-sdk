@@ -171,6 +171,49 @@ class ProdSymbolGateTest(unittest.TestCase):
         violations = scan_prod_symbols(repo_root=_empty_tree_root())
         self.assertEqual(violations, [])
 
+    def test_prod_link_objects_contain_no_fake_symbols(self):
+        """Linkage-level proof: no Fake TU is linked into prod targets.
+
+        Parses the `runtime` static lib source list from
+        `engine/runtime/CMakeLists.txt` (`add_library(runtime ...)`) and
+        fails on any test-double TU (`Fake`, `fake`, `stub`, `mock` in the
+        basename, or the test-local `tests/js_lifecycle_test.cpp` TU that
+        defines `FakeJsRuntime`). Hermetic: stdlib file read only.
+        """
+        cmake_path = os.path.join(
+            _REPO_ROOT, "engine", "runtime", "CMakeLists.txt"
+        )
+        try:
+            with open(cmake_path, "r", encoding="utf-8") as handle:
+                cmake_text = handle.read()
+        except OSError as exc:
+            self.fail(
+                "check_prod_symbols: deny: CMakeLists unreadable (%s); "
+                "failing closed" % exc
+            )
+        match = re.search(
+            r"add_library\s*\(\s*runtime\b(.*?)\)",
+            cmake_text,
+            re.DOTALL,
+        )
+        self.assertIsNotNone(
+            match, "runtime static lib source list not found; failing closed"
+        )
+        sources = re.findall(r"src/\S+\.cpp", match.group(1))
+        self.assertTrue(sources, "no prod sources parsed; failing closed")
+        bad = [
+            src
+            for src in sources
+            if re.search(r"fake|stub|mock", os.path.basename(src), re.I)
+            or "js_lifecycle_test" in src
+        ]
+        self.assertEqual(
+            bad,
+            [],
+            "Fake/test-double TU linked into prod `runtime` lib:\n%s"
+            % "\n".join(bad),
+        )
+
 
 def _empty_tree_root():
     import tempfile

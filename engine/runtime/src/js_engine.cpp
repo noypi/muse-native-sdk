@@ -48,11 +48,11 @@ InstanceId JsEngine::mount(const std::string& bodySource) {
   }
   JsValue result = rt_->eval(bodySource, "body");
   rt_->drainMicrotasks();
-  ++live_handles_;
   if (!result.ok) {
     throw JsError{result.error.empty() ? "body evaluation failed"
                                        : result.error};
   }
+  ++live_handles_;
   const InstanceId id = next_id_++;
   if (next_id_ == kInvalidInstanceId) {
     ++next_id_;

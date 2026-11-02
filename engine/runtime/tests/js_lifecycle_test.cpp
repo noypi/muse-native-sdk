@@ -135,6 +135,64 @@ static bool check_default_mount_fail_closed_throws() {
   return false;
 }
 
+// Named case (security): Real eval fail-closes on adversarial source —
+// oversized input, embedded NULs, and script payloads all report ok=false
+// with a non-empty message and never success-without-work.
+static bool check_createReal_adversarial_sources_fail_closed() {
+  std::unique_ptr<runtime::JsRuntime> rt =
+      runtime::JsRuntimeFactory::createReal(runtime::RealEngineParams{});
+  if (!rt) return false;
+  const std::string oversized(1 << 20, 'x');
+  const std::string with_nuls(std::string("evil\0payload", 12));
+  const std::string payload =
+      "</script><script>alert(1)</script>; require('child_process').exec('id')";
+  const std::string sources[3] = {oversized, with_nuls, payload};
+  for (const auto& src : sources) {
+    runtime::JsValue v = rt->eval(src, "adversarial-origin");
+    if (v.ok) return false;
+    if (v.error.empty()) return false;
+  }
+  return true;
+}
+
+// Named case (security): createReal / JsEngine::create never yield a test
+// double or null — non-null handle whose eval fail-closes (ok=false),
+// unlike the test-local FakeJsRuntime which answers ok=true.
+static bool check_createReal_never_fake_or_null() {
+  std::unique_ptr<runtime::JsRuntime> rt =
+      runtime::JsRuntimeFactory::createReal(runtime::RealEngineParams{});
+  if (!rt) return false;
+  runtime::JsValue v = rt->eval("1 + 1", "probe");
+  if (v.ok) return false;  // a Fake would answer ok=true
+  std::unique_ptr<runtime::JsEngine> engine =
+      runtime::JsEngine::create(runtime::RealEngineParams{});
+  if (!engine) return false;
+  if (engine->liveIsolates() != 1) return false;
+  return true;
+}
+
+// Named case (security): default-path mount surfaces fail-closed as an
+// error — throws JsError and mints no instance id (no handle counted,
+// no body run recorded).
+static bool check_default_mount_throws_without_success_side_effects() {
+  std::unique_ptr<runtime::JsEngine> engine =
+      runtime::JsEngine::create(runtime::RealEngineParams{});
+  if (!engine) return false;
+  const int isolates_before = engine->liveIsolates();
+  try {
+    engine->mount("hostile();");
+  } catch (const runtime::JsError& e) {
+    if (std::string(e.message).empty()) return false;
+    // No instance id minted: the first id (1) records no body run, and
+    // the isolate stays alive for reuse.
+    return engine->bodyRunCount(1) == 0 &&
+           engine->liveIsolates() == isolates_before;
+  } catch (...) {
+    return false;
+  }
+  return false;
+}
+
 #define RUN_CASE(name)                           \
   do {                                           \
     if (!(name)()) {                             \
@@ -154,6 +212,9 @@ int main() {
   RUN_CASE(check_recreate_after_destroy_bootstraps_again);
   RUN_CASE(check_mount_between_create_and_destroy_evals_once);
   RUN_CASE(check_default_mount_fail_closed_throws);
+  RUN_CASE(check_createReal_adversarial_sources_fail_closed);
+  RUN_CASE(check_createReal_never_fake_or_null);
+  RUN_CASE(check_default_mount_throws_without_success_side_effects);
   if (failures > 0) {
     std::printf("js_lifecycle_test: %d failing\n", failures);
     return 1;
