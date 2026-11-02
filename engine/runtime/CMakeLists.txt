@@ -96,6 +96,24 @@ target_sources(runtime PRIVATE
 )
 target_include_directories(runtime PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../..)
 
+# BUG-TEXT-007 runtime NDK fix: the text TUs consumed above (shaper.cpp
+# T9) include <ft2build.h> + <hb.h> directly, but this project never runs
+# the engine/text in-tree D3 sub-builds, so no freetype/harfbuzz target
+# propagates those include dirs here. Mirror the engine/text mechanism:
+# resolve the vendored trees via $MUSE_NATIVE_THIRD_PARTY_DIR (never a
+# hardcoded absolute path) and expose the headers to the text TUs.
+# Guarded: a lane without the env/mirror builds exactly as before.
+if(DEFINED ENV{MUSE_NATIVE_THIRD_PARTY_DIR} AND NOT "$ENV{MUSE_NATIVE_THIRD_PARTY_DIR}" STREQUAL "")
+  set(_muse_runtime_freetype_src "$ENV{MUSE_NATIVE_THIRD_PARTY_DIR}/freetype-2.15.0")
+  set(_muse_runtime_harfbuzz_src "$ENV{MUSE_NATIVE_THIRD_PARTY_DIR}/harfbuzz-15.0.0")
+  if(IS_DIRECTORY "${_muse_runtime_freetype_src}/include")
+    target_include_directories(runtime PRIVATE "${_muse_runtime_freetype_src}/include")
+  endif()
+  if(IS_DIRECTORY "${_muse_runtime_harfbuzz_src}/src")
+    target_include_directories(runtime PRIVATE "${_muse_runtime_harfbuzz_src}/src")
+  endif()
+endif()
+
 # BUG-M3-FIDELITY-007 T5: the valid-env touch dispatch body in jni_bridge.cpp
 # drives ResolveTapTarget/ClaimTap/FireTapHandler (input_chain.cpp) over the
 # consume-only engine/input units, so their TUs compile into the static
@@ -247,6 +265,19 @@ if(DEFINED ANDROID_ABI AND NOT TARGET Runtime)
   # "engine/graphics/pacing/...", so the repo root must be on the include
   # path (mirrors the T4 pinning test's `-I .`).
   target_include_directories(Runtime PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../..)
+  # BUG-TEXT-007 runtime NDK fix (shared lane): same vendored D3 headers
+  # for the text TUs compiled into Runtime (mirrors the static lane
+  # above; $MUSE_NATIVE_THIRD_PARTY_DIR mechanism, guarded, no hardcode).
+  if(DEFINED ENV{MUSE_NATIVE_THIRD_PARTY_DIR} AND NOT "$ENV{MUSE_NATIVE_THIRD_PARTY_DIR}" STREQUAL "")
+    set(_muse_shared_freetype_src "$ENV{MUSE_NATIVE_THIRD_PARTY_DIR}/freetype-2.15.0")
+    set(_muse_shared_harfbuzz_src "$ENV{MUSE_NATIVE_THIRD_PARTY_DIR}/harfbuzz-15.0.0")
+    if(IS_DIRECTORY "${_muse_shared_freetype_src}/include")
+      target_include_directories(Runtime PRIVATE "${_muse_shared_freetype_src}/include")
+    endif()
+    if(IS_DIRECTORY "${_muse_shared_harfbuzz_src}/src")
+      target_include_directories(Runtime PRIVATE "${_muse_shared_harfbuzz_src}/src")
+    endif()
+  endif()
   if(JNI_FOUND)
     target_include_directories(Runtime PUBLIC ${JNI_INCLUDE_DIRS})
   endif()
