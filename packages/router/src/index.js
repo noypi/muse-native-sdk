@@ -26,14 +26,28 @@ function normalizeDest(dest, current) {
   return { id: undefined, params: {} };
 }
 
+// Route-descriptor params follow the manifest source owned by the
+// codegen lane (toolchain/route-codegen → C++ ParamDecl{name, type,
+// required}); the C++ facade gate stays authoritative. Plain `'type'`
+// schema entries are structural-only (checked when present, T1 A3).
+// Entries shaped `{type, required: true}` mirror a required manifest
+// param and are fail-closed here (missing → BAD_PARAMS, matching the gate).
 function paramsValid(schema, params) {
   const s = schema || {};
   const p = params || {};
   for (const key of Object.keys(s)) {
-    if (Object.prototype.hasOwnProperty.call(p, key)) {
-      if (typeof p[key] !== s[key]) {
+    const decl = s[key];
+    const isObj = typeof decl === 'object' && decl !== null;
+    const required = isObj && decl.required === true;
+    const type = isObj ? decl.type : decl;
+    if (!Object.prototype.hasOwnProperty.call(p, key)) {
+      if (required) {
         return false;
       }
+      continue;
+    }
+    if (typeof p[key] !== type) {
+      return false;
     }
   }
   return true;
@@ -70,7 +84,7 @@ function createRouter({ routes, home, transport }) {
       return { ok: false, code: 'no-forward' };
     }
     if (n === 0 || Number.isNaN(n)) {
-      return { ok: true };
+      return { ok: false, code: 'bad-params' };
     }
     let idx = stack.length - 1 + n;
     if (idx < 0) {
@@ -103,7 +117,10 @@ function createRouter({ routes, home, transport }) {
         return { ok: false, code: 'guard-denied' };
       }
     }
-    await transport.invoke('navigate', { route: to, params });
+    const result = await transport.invoke('navigate', { route: to, params });
+    if (!result || result.ok !== true) {
+      return result;
+    }
     if (isReplace) {
       stack[stack.length - 1] = to;
     } else {

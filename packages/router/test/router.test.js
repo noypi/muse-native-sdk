@@ -200,4 +200,43 @@ describe('navigation semantics (AC-NAV-040)', () => {
     assert.deepEqual(res, { ok: true });
     assert.equal(router.current, 'home');
   });
+
+  it('transport guard-denied propagates, stack/current untouched', async () => {
+    const transport = fakeTransport();
+    transport.invoke = async (method, payload) => {
+      transport.calls.push({ method, payload });
+      return { ok: false, code: 'guard-denied' };
+    };
+    const { router } = fixtures(transport);
+    const res = await router.push('lens');
+    assert.deepEqual(res, { ok: false, code: 'guard-denied' });
+    assert.equal(router.current, 'home');
+    assert.equal(transport.calls.length, 1);
+  });
+
+  it('missing required param denies bad-params, page unchanged', async () => {
+    const transport = fakeTransport();
+    const routes = createRoutes([
+      { id: 'home', link: 'muse-demo://tab/home', params: {} },
+      {
+        id: 'lensReq',
+        link: 'muse-demo://tab/lens',
+        params: { id: { type: 'string', required: true } },
+      },
+    ]);
+    const router = createRouter({ routes, home: 'home', transport });
+    const res = await router.push('lensReq');
+    assert.deepEqual(res, { ok: false, code: 'bad-params' });
+    assert.equal(router.current, 'home');
+    assert.equal(transport.calls.length, 0);
+  });
+
+  it('go(0) and go(NaN) deny bad-params, page unchanged', async () => {
+    const transport = fakeTransport();
+    const { router } = fixtures(transport);
+    await router.push('lens');
+    assert.deepEqual(await router.go(0), { ok: false, code: 'bad-params' });
+    assert.deepEqual(await router.go(NaN), { ok: false, code: 'bad-params' });
+    assert.equal(router.current, 'lens');
+  });
 });
