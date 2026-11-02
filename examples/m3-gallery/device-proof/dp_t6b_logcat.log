@@ -1,0 +1,416 @@
+--------- beginning of main
+11-02 03:02:00.451  2698  2698 I abb     : StartCommandInProcess(73657474696e67730067657400656e61 settings.get.ena [truncated])
+11-02 03:02:00.450   889   889 I binder:889_7: type=1400 audit(0.0:594): avc:  denied  { getopt } for  scontext=u:r:system_server:s0 tcontext=u:r:shell:s0 tclass=unix_stream_socket permissive=1
+11-02 03:02:00.452  2698  2698 I abb     : StartCommandInProcess(7061636b61676500696e7374616c6c2d package.install- [truncated])
+11-02 03:02:00.456  2698  2698 I abb     : StartCommandInProcess(7061636b61676500696e7374616c6c00 package.install. [truncated])
+--------- beginning of system
+11-02 03:02:00.489   889  1250 D CompatChangeReporter: Compat change id reported: 240618202; UID 2000; state: ENABLED
+11-02 03:02:00.489   889  1250 E SystemServiceRegistry: No service published for: persistent_data_block
+11-02 03:02:00.489   889  1250 E SystemServiceRegistry: android.os.ServiceManager$ServiceNotFoundException: No service published for: persistent_data_block
+11-02 03:02:00.489   889  1250 E SystemServiceRegistry: 	at android.os.ServiceManager.getServiceOrThrow(ServiceManager.java:203)
+11-02 03:02:00.489   889  1250 E SystemServiceRegistry: 	at android.app.SystemServiceRegistry$81.createService(SystemServiceRegistry.java:1071)
+11-02 03:02:00.489   889  1250 E SystemServiceRegistry: 	at android.app.SystemServiceRegistry$81.createService(SystemServiceRegistry.java:1068)
+11-02 03:02:00.489   889  1250 E SystemServiceRegistry: 	at android.app.SystemServiceRegistry$StaticServiceFetcher.getService(SystemServiceRegistry.java:2293)
+11-02 03:02:00.489   889  1250 E SystemServiceRegistry: 	at android.app.SystemServiceRegistry.getSystemService(SystemServiceRegistry.java:1812)
+11-02 03:02:00.489   889  1250 E SystemServiceRegistry: 	at android.app.ContextImpl.getSystemService(ContextImpl.java:2241)
+11-02 03:02:00.489   889  1250 E SystemServiceRegistry: 	at android.content.Context.getSystemService(Context.java:4503)
+11-02 03:02:00.489   889  1250 E SystemServiceRegistry: 	at com.android.server.pm.PackageInstallerSession.markAsSealed(PackageInstallerSession.java:2394)
+11-02 03:02:00.489   889  1250 E SystemServiceRegistry: 	at com.android.server.pm.PackageInstallerSession.commit(PackageInstallerSession.java:2143)
+11-02 03:02:00.489   889  1250 E SystemServiceRegistry: 	at android.content.pm.PackageInstaller$Session.commit(PackageInstaller.java:1977)
+11-02 03:02:00.489   889  1250 E SystemServiceRegistry: 	at com.android.server.pm.PackageManagerShellCommand.doCommitSession(PackageManagerShellCommand.java:4298)
+11-02 03:02:00.489   889  1250 E SystemServiceRegistry: 	at com.android.server.pm.PackageManagerShellCommand.doRunInstall(PackageManagerShellCommand.java:1634)
+11-02 03:02:00.489   889  1250 E SystemServiceRegistry: 	at com.android.server.pm.PackageManagerShellCommand.runInstall(PackageManagerShellCommand.java:1561)
+11-02 03:02:00.489   889  1250 E SystemServiceRegistry: 	at com.android.server.pm.PackageManagerShellCommand.onCommand(PackageManagerShellCommand.java:245)
+11-02 03:02:00.489   889  1250 E SystemServiceRegistry: 	at com.android.modules.utils.BasicShellCommandHandler.exec(BasicShellCommandHandler.java:97)
+11-02 03:02:00.489   889  1250 E SystemServiceRegistry: 	at android.os.ShellCommand.exec(ShellCommand.java:38)
+11-02 03:02:00.489   889  1250 E SystemServiceRegistry: 	at com.android.server.pm.PackageManagerService$IPackageManagerImpl.onShellCommand(PackageManagerService.java:6561)
+11-02 03:02:00.489   889  1250 E SystemServiceRegistry: 	at android.os.Binder.shellCommand(Binder.java:1230)
+11-02 03:02:00.489   889  1250 E SystemServiceRegistry: 	at android.os.Binder.onTransact(Binder.java:1043)
+11-02 03:02:00.489   889  1250 E SystemServiceRegistry: 	at android.content.pm.IPackageManager$Stub.onTransact(IPackageManager.java:4620)
+11-02 03:02:00.489   889  1250 E SystemServiceRegistry: 	at com.android.server.pm.PackageManagerService$IPackageManagerImpl.onTransact(PackageManagerService.java:6545)
+11-02 03:02:00.489   889  1250 E SystemServiceRegistry: 	at android.os.Binder.execTransactInternal(Binder.java:1505)
+11-02 03:02:00.489   889  1250 E SystemServiceRegistry: 	at android.os.Binder.execTransact(Binder.java:1444)
+11-02 03:02:00.490   889  1250 E SystemServiceRegistry: Manager wrapper not available: persistent_data_block
+11-02 03:02:00.570   889   946 D NativeLibraryHelper: Punching extracted elf file libRuntime.so on fs:61267
+11-02 03:02:00.570   889   946 D FileSystemUtils: Punching holes in file: /data/app/vmdl1215079246.tmp/lib/x86_64/libRuntime.so programHeaderOffset: 64 programHeaderNum: 9
+11-02 03:02:00.570   889   946 D FileSystemUtils: Total number of LOAD segments 3
+11-02 03:02:00.570   889   946 D FileSystemUtils: Size before punching holes st_blocks: 12232, st_blksize: 4096, st_size: 6262656
+11-02 03:02:00.570   889   946 D FileSystemUtils: Size after punching holes st_blocks: 12232, st_blksize: 4096, st_size: 6262656
+11-02 03:02:00.571   889   937 E PackageManager: No required verifiers
+11-02 03:02:00.573   889   988 W RuleEvaluation: Integrity rule files are not available.
+11-02 03:02:00.573   889   937 I PackageManager: Integrity check passed for file:///data/app/vmdl1215079246.tmp
+11-02 03:02:00.599   889   937 E ResilientAtomicFile: Failed to verity-protect package manager settings
+11-02 03:02:00.599   889   937 E ResilientAtomicFile: java.io.IOException: Failed to enable fs-verity on FD(537): Operation not supported on transport endpoint
+11-02 03:02:00.599   889   937 E ResilientAtomicFile: 	at com.android.internal.security.VerityUtils.setUpFsverity(VerityUtils.java:94)
+11-02 03:02:00.599   889   937 E ResilientAtomicFile: 	at com.android.server.security.FileIntegrity.setUpFsVerity(FileIntegrity.java:66)
+11-02 03:02:00.599   889   937 E ResilientAtomicFile: 	at com.android.server.pm.ResilientAtomicFile.finishWrite(ResilientAtomicFile.java:151)
+11-02 03:02:00.599   889   937 E ResilientAtomicFile: 	at com.android.server.pm.Settings.writeLPr(Settings.java:2850)
+11-02 03:02:00.599   889   937 E ResilientAtomicFile: 	at com.android.server.pm.PackageManagerService.writeSettingsLPrTEMP(PackageManagerService.java:7562)
+11-02 03:02:00.599   889   937 E ResilientAtomicFile: 	at com.android.server.pm.PackageManagerService.writeSettingsLPrTEMP(PackageManagerService.java:7567)
+11-02 03:02:00.599   889   937 E ResilientAtomicFile: 	at com.android.server.pm.InstallPackageHelper.updateSettingsInternalLI(InstallPackageHelper.java:2504)
+11-02 03:02:00.599   889   937 E ResilientAtomicFile: 	at com.android.server.pm.InstallPackageHelper.updateSettingsLI(InstallPackageHelper.java:2280)
+11-02 03:02:00.599   889   937 E ResilientAtomicFile: 	at com.android.server.pm.InstallPackageHelper.commitPackagesLocked(InstallPackageHelper.java:2248)
+11-02 03:02:00.599   889   937 E ResilientAtomicFile: 	at com.android.server.pm.InstallPackageHelper.installPackagesLI(InstallPackageHelper.java:1137)
+11-02 03:02:00.599   889   937 E ResilientAtomicFile: 	at com.android.server.pm.InstallPackageHelper.installPackagesTraced(InstallPackageHelper.java:994)
+11-02 03:02:00.599   889   937 E ResilientAtomicFile: 	at com.android.server.pm.PackageManagerService.installPackagesTraced(PackageManagerService.java:8102)
+11-02 03:02:00.599   889   937 E ResilientAtomicFile: 	at com.android.server.pm.InstallingSession.processApkInstallRequests(InstallingSession.java:547)
+11-02 03:02:00.599   889   937 E ResilientAtomicFile: 	at com.android.server.pm.InstallingSession.processInstallRequests(InstallingSession.java:536)
+11-02 03:02:00.599   889   937 E ResilientAtomicFile: 	at com.android.server.pm.InstallingSession.lambda$processPendingInstall$0(InstallingSession.java:297)
+11-02 03:02:00.599   889   937 E ResilientAtomicFile: 	at com.android.server.pm.InstallingSession.$r8$lambda$3YxEVU-qWs8li-YcaWhP_DprQyQ(InstallingSession.java:0)
+11-02 03:02:00.599   889   937 E ResilientAtomicFile: 	at com.android.server.pm.InstallingSession$$ExternalSyntheticLambda1.run(R8$$SyntheticClass:0)
+11-02 03:02:00.599   889   937 E ResilientAtomicFile: 	at android.os.Handler.handleCallback(Handler.java:959)
+11-02 03:02:00.599   889   937 E ResilientAtomicFile: 	at android.os.Handler.dispatchMessage(Handler.java:100)
+11-02 03:02:00.599   889   937 E ResilientAtomicFile: 	at android.os.Looper.loopOnce(Looper.java:232)
+11-02 03:02:00.599   889   937 E ResilientAtomicFile: 	at android.os.Looper.loop(Looper.java:317)
+11-02 03:02:00.599   889   937 E ResilientAtomicFile: 	at android.os.HandlerThread.run(HandlerThread.java:85)
+11-02 03:02:00.599   889   937 E ResilientAtomicFile: 	at com.android.server.ServiceThread.run(ServiceThread.java:46)
+11-02 03:02:00.629   889   935 E ResilientAtomicFile: Failed to verity-protect package restrictions
+11-02 03:02:00.629   889   935 E ResilientAtomicFile: java.io.IOException: Failed to enable fs-verity on FD(537): Operation not supported on transport endpoint
+11-02 03:02:00.629   889   935 E ResilientAtomicFile: 	at com.android.internal.security.VerityUtils.setUpFsverity(VerityUtils.java:94)
+11-02 03:02:00.629   889   935 E ResilientAtomicFile: 	at com.android.server.security.FileIntegrity.setUpFsVerity(FileIntegrity.java:66)
+11-02 03:02:00.629   889   935 E ResilientAtomicFile: 	at com.android.server.pm.ResilientAtomicFile.finishWrite(ResilientAtomicFile.java:151)
+11-02 03:02:00.629   889   935 E ResilientAtomicFile: 	at com.android.server.pm.Settings.writePackageRestrictions(Settings.java:2499)
+11-02 03:02:00.629   889   935 E ResilientAtomicFile: 	at com.android.server.pm.Settings.lambda$writePackageRestrictionsLPr$1(Settings.java:2315)
+11-02 03:02:00.629   889   935 E ResilientAtomicFile: 	at com.android.server.pm.Settings.$r8$lambda$xF8vBosZYCuleRIdy4wr1C_PPCw(Settings.java:0)
+11-02 03:02:00.629   889   935 E ResilientAtomicFile: 	at com.android.server.pm.Settings$$ExternalSyntheticLambda0.run(R8$$SyntheticClass:0)
+11-02 03:02:00.629   889   935 E ResilientAtomicFile: 	at com.android.server.pm.PackageManagerService$2.handleMessage(PackageManagerService.java:1657)
+11-02 03:02:00.629   889   935 E ResilientAtomicFile: 	at android.os.Handler.dispatchMessage(Handler.java:103)
+11-02 03:02:00.629   889   935 E ResilientAtomicFile: 	at android.os.Looper.loopOnce(Looper.java:232)
+11-02 03:02:00.629   889   935 E ResilientAtomicFile: 	at android.os.Looper.loop(Looper.java:317)
+11-02 03:02:00.629   889   935 E ResilientAtomicFile: 	at android.os.HandlerThread.run(HandlerThread.java:85)
+11-02 03:02:00.629   889   935 E ResilientAtomicFile: 	at com.android.server.ServiceThread.run(ServiceThread.java:46)
+11-02 03:02:00.631  4882  4882 I artd    : Starting artd
+11-02 03:02:00.631  4882  4882 I AidlLazyServiceRegistrar: Registering service artd
+11-02 03:02:00.632  4882  4882 I AidlLazyServiceRegistrar: Process has 1 (of 1 available) client(s) in use after notification artd has clients: 1
+11-02 03:02:00.633  4882  4883 I artd    : Merge skipped because there are no existing profiles
+11-02 03:02:00.633   889   937 I ArtService: Adjusting the compiler filter for 'com.muse.host' from 'speed-profile' to 'verify' because there is no valid profile
+11-02 03:02:00.644  4882  4883 I artd    : Dex parent of /data/app/~~3_XYoBAzUzZ2VXBBpl_hfQ==/com.muse.host-AOR-G4fNOQyVc3JiheJZRQ==/base.apk is not writable: Permission denied
+11-02 03:02:00.644  4882  4883 I artd    : GetBestInfo checking odex in dalvik-cache (/data/dalvik-cache/x86_64/data@app@~~3_XYoBAzUzZ2VXBBpl_hfQ==@com.muse.host-AOR-G4fNOQyVc3JiheJZRQ==@base.apk@classes.dex)
+11-02 03:02:00.644  4882  4883 I artd    : Loading /data/dalvik-cache/x86_64/data@app@~~3_XYoBAzUzZ2VXBBpl_hfQ==@com.muse.host-AOR-G4fNOQyVc3JiheJZRQ==@base.apk@classes.dex with executable: 0
+11-02 03:02:00.644  4882  4883 I artd    : OatFileAssistant test for existing oat file /data/dalvik-cache/x86_64/data@app@~~3_XYoBAzUzZ2VXBBpl_hfQ==@com.muse.host-AOR-G4fNOQyVc3JiheJZRQ==@base.apk@classes.dex: File /data/dalvik-cache/x86_64/data@app@~~3_XYoBAzUzZ2VXBBpl_hfQ==@com.muse.host-AOR-G4fNOQyVc3JiheJZRQ==@base.apk@classes.vdex does not exist.
+11-02 03:02:00.644  4882  4883 I artd    : GetBestInfo checking odex next to the dex file (/data/app/~~3_XYoBAzUzZ2VXBBpl_hfQ==/com.muse.host-AOR-G4fNOQyVc3JiheJZRQ==/oat/x86_64/base.odex)
+11-02 03:02:00.644  4882  4883 I artd    : Loading /data/app/~~3_XYoBAzUzZ2VXBBpl_hfQ==/com.muse.host-AOR-G4fNOQyVc3JiheJZRQ==/oat/x86_64/base.odex with executable: 0
+11-02 03:02:00.644  4882  4883 I artd    : OatFileAssistant test for existing oat file /data/app/~~3_XYoBAzUzZ2VXBBpl_hfQ==/com.muse.host-AOR-G4fNOQyVc3JiheJZRQ==/oat/x86_64/base.odex: File /data/app/~~3_XYoBAzUzZ2VXBBpl_hfQ==/com.muse.host-AOR-G4fNOQyVc3JiheJZRQ==/oat/x86_64/base.vdex does not exist.
+11-02 03:02:00.644  4882  4883 I artd    : GetBestInfo checking vdex in dalvik-cache (/data/dalvik-cache/x86_64/data@app@~~3_XYoBAzUzZ2VXBBpl_hfQ==@com.muse.host-AOR-G4fNOQyVc3JiheJZRQ==@base.apk@classes.vdex)
+11-02 03:02:00.644  4882  4883 I artd    : unable to open vdex file /data/dalvik-cache/x86_64/data@app@~~3_XYoBAzUzZ2VXBBpl_hfQ==@com.muse.host-AOR-G4fNOQyVc3JiheJZRQ==@base.apk@classes.vdex: File /data/dalvik-cache/x86_64/data@app@~~3_XYoBAzUzZ2VXBBpl_hfQ==@com.muse.host-AOR-G4fNOQyVc3JiheJZRQ==@base.apk@classes.vdex does not exist.
+11-02 03:02:00.644  4882  4883 I artd    : OatFileAssistant test for existing oat file /data/dalvik-cache/x86_64/data@app@~~3_XYoBAzUzZ2VXBBpl_hfQ==@com.muse.host-AOR-G4fNOQyVc3JiheJZRQ==@base.apk@classes.vdex: File /data/dalvik-cache/x86_64/data@app@~~3_XYoBAzUzZ2VXBBpl_hfQ==@com.muse.host-AOR-G4fNOQyVc3JiheJZRQ==@base.apk@classes.vdex does not exist.
+11-02 03:02:00.644  4882  4883 I artd    : GetBestInfo checking vdex next to the dex file (/data/app/~~3_XYoBAzUzZ2VXBBpl_hfQ==/com.muse.host-AOR-G4fNOQyVc3JiheJZRQ==/oat/x86_64/base.vdex)
+11-02 03:02:00.644  4882  4883 I artd    : unable to open vdex file /data/app/~~3_XYoBAzUzZ2VXBBpl_hfQ==/com.muse.host-AOR-G4fNOQyVc3JiheJZRQ==/oat/x86_64/base.vdex: File /data/app/~~3_XYoBAzUzZ2VXBBpl_hfQ==/com.muse.host-AOR-G4fNOQyVc3JiheJZRQ==/oat/x86_64/base.vdex does not exist.
+11-02 03:02:00.644  4882  4883 I artd    : OatFileAssistant test for existing oat file /data/app/~~3_XYoBAzUzZ2VXBBpl_hfQ==/com.muse.host-AOR-G4fNOQyVc3JiheJZRQ==/oat/x86_64/base.vdex: File /data/app/~~3_XYoBAzUzZ2VXBBpl_hfQ==/com.muse.host-AOR-G4fNOQyVc3JiheJZRQ==/oat/x86_64/base.vdex does not exist.
+11-02 03:02:00.644  4882  4883 I artd    : GetBestInfo checking dm (/data/app/~~3_XYoBAzUzZ2VXBBpl_hfQ==/com.muse.host-AOR-G4fNOQyVc3JiheJZRQ==/base.dm)
+11-02 03:02:00.644  4882  4883 W ziparchive: Unable to open '/data/app/~~3_XYoBAzUzZ2VXBBpl_hfQ==/com.muse.host-AOR-G4fNOQyVc3JiheJZRQ==/base.dm': No such file or directory
+11-02 03:02:00.644  4882  4883 I artd    : OatFileAssistant test for existing oat file /data/app/~~3_XYoBAzUzZ2VXBBpl_hfQ==/com.muse.host-AOR-G4fNOQyVc3JiheJZRQ==/base.dm: I/O error
+11-02 03:02:00.644  4882  4883 I artd    : GetBestInfo checking dm (/data/app/~~3_XYoBAzUzZ2VXBBpl_hfQ==/com.muse.host-AOR-G4fNOQyVc3JiheJZRQ==/base.dm)
+11-02 03:02:00.644  4882  4883 W ziparchive: Unable to open '/data/app/~~3_XYoBAzUzZ2VXBBpl_hfQ==/com.muse.host-AOR-G4fNOQyVc3JiheJZRQ==/base.dm': No such file or directory
+11-02 03:02:00.644  4882  4883 I artd    : OatFileAssistant test for existing oat file /data/app/~~3_XYoBAzUzZ2VXBBpl_hfQ==/com.muse.host-AOR-G4fNOQyVc3JiheJZRQ==/base.dm: I/O error
+11-02 03:02:00.644  4882  4883 I artd    : GetBestInfo no usable artifacts
+11-02 03:02:00.648  4882  4883 I artd    : Running dex2oat: /apex/com.android.art/bin/art_exec --drop-capabilities --set-task-profile=Dex2OatBootComplete --set-priority=background --keep-fds=6:7:8:9 -- /apex/com.android.art/bin/dex2oat32 --zip-fd=6 --zip-location=/data/app/~~3_XYoBAzUzZ2VXBBpl_hfQ==/com.muse.host-AOR-G4fNOQyVc3JiheJZRQ==/base.apk --oat-fd=7 --oat-location=/data/app/~~3_XYoBAzUzZ2VXBBpl_hfQ==/com.muse.host-AOR-G4fNOQyVc3JiheJZRQ==/oat/x86_64/base.odex --output-vdex-fd=8 --swap-fd=9 --class-loader-context=PCL[] --classpath-dir=/data/app/~~3_XYoBAzUzZ2VXBBpl_hfQ==/com.muse.host-AOR-G4fNOQyVc3JiheJZRQ== --instruction-set=x86_64 --instruction-set-features=default --instruction-set-variant=x86_64 --compiler-filter=verify --compilation-reason=install --compact-dex-level=none --max-image-block-size=524288 --resolve-startup-const-strings=true --generate-mini-debug-info --runtime-arg -Xdeny-art-apex-data-files --runtime-arg -Xtarget-sdk-version:34 --runtime-arg -Xhidden-api-policy:enabled --runtime-arg -Xms64m --runtime-arg -Xmx512m --comments=app-name:com.muse.host,app-version-name:null,app-version-code:0,art-version:352090000
+11-02 03:02:00.648  4882  4883 I artd    : Opened FDs: 6:/data/app/~~3_XYoBAzUzZ2VXBBpl_hfQ==/com.muse.host-AOR-G4fNOQyVc3JiheJZRQ==/base.apk 7:/data/app/~~3_XYoBAzUzZ2VXBBpl_hfQ==/com.muse.host-AOR-G4fNOQyVc3JiheJZRQ==/oat/x86_64/base.odex.oES6ya.tmp 8:/data/app/~~3_XYoBAzUzZ2VXBBpl_hfQ==/com.muse.host-AOR-G4fNOQyVc3JiheJZRQ==/oat/x86_64/base.vdex.eltR64.tmp 9:/data/app/~~3_XYoBAzUzZ2VXBBpl_hfQ==/com.muse.host-AOR-G4fNOQyVc3JiheJZRQ==/oat/x86_64/base.odex.swap.Yz6EPU.tmp 
+11-02 03:02:00.670  4885  4885 W dex2oat32: Obsolete flag --compact-dex-level ignored
+11-02 03:02:00.670  4885  4885 W dex2oat32: Unexpected CPU variant for x86: x86_64.
+11-02 03:02:00.670  4885  4885 W dex2oat32: Known variants: atom, sandybridge, silvermont, goldmont, goldmont-plus, goldmont-without-sha-xsaves, tremont, kabylake, default
+11-02 03:02:00.671  4885  4885 I dex2oat32: /apex/com.android.art/bin/dex2oat32 --output-vdex-fd=8 --class-loader-context=PCL[] --classpath-dir=/data/app/~~3_XYoBAzUzZ2VXBBpl_hfQ==/com.muse.host-AOR-G4fNOQyVc3JiheJZRQ== --compiler-filter=verify --compilation-reason=install --compact-dex-level=none --max-image-block-size=524288 --resolve-startup-const-strings=true --generate-mini-debug-info --comments=app-name:com.muse.host,app-version-name:null,app-version-code:0,art-version:352090000
+11-02 03:02:00.672  4885  4885 W dex2oat32: ART APEX data files are untrusted.
+11-02 03:02:00.672  4885  4885 I dex2oat32: Using CollectorTypeCMC GC.
+11-02 03:02:01.403   889   917 E RuntimePermissionsPersistenceImpl: Failed to verity-protect runtime-permissions
+11-02 03:02:01.403   889   917 E RuntimePermissionsPersistenceImpl: java.io.IOException: Failed to enable fs-verity on FD(537): Operation not supported on transport endpoint
+11-02 03:02:01.403   889   917 E RuntimePermissionsPersistenceImpl: 	at com.android.internal.security.VerityUtils.setUpFsverity(VerityUtils.java:94)
+11-02 03:02:01.403   889   917 E RuntimePermissionsPersistenceImpl: 	at com.android.server.security.FileIntegrity.setUpFsVerity(FileIntegrity.java:66)
+11-02 03:02:01.403   889   917 E RuntimePermissionsPersistenceImpl: 	at com.android.server.security.FileIntegrity.setUpFsVerity(FileIntegrity.java:50)
+11-02 03:02:01.403   889   917 E RuntimePermissionsPersistenceImpl: 	at com.android.permission.persistence.RuntimePermissionsPersistenceImpl.lambda$new$0(RuntimePermissionsPersistenceImpl.java:86)
+11-02 03:02:01.403   889   917 E RuntimePermissionsPersistenceImpl: 	at com.android.permission.persistence.RuntimePermissionsPersistenceImpl.$r8$lambda$UttRlzRQpCN5koaFaB3D8dqERv4(RuntimePermissionsPersistenceImpl.java:0)
+11-02 03:02:01.403   889   917 E RuntimePermissionsPersistenceImpl: 	at com.android.permission.persistence.RuntimePermissionsPersistenceImpl$$ExternalSyntheticLambda0.enableFsVerity(R8$$SyntheticClass:0)
+11-02 03:02:01.403   889   917 E RuntimePermissionsPersistenceImpl: 	at com.android.permission.persistence.RuntimePermissionsPersistenceImpl.writeForUser(RuntimePermissionsPersistenceImpl.java:251)
+11-02 03:02:01.403   889   917 E RuntimePermissionsPersistenceImpl: 	at com.android.server.pm.Settings$RuntimePermissionPersistence.writePendingStates(Settings.java:6239)
+11-02 03:02:01.403   889   917 E RuntimePermissionsPersistenceImpl: 	at com.android.server.pm.Settings$RuntimePermissionPersistence.-$$Nest$mwritePendingStates(Settings.java:0)
+11-02 03:02:01.403   889   917 E RuntimePermissionsPersistenceImpl: 	at com.android.server.pm.Settings$RuntimePermissionPersistence$PersistenceHandler.handleMessage(Settings.java:6494)
+11-02 03:02:01.403   889   917 E RuntimePermissionsPersistenceImpl: 	at android.os.Handler.dispatchMessage(Handler.java:107)
+11-02 03:02:01.403   889   917 E RuntimePermissionsPersistenceImpl: 	at android.os.Looper.loopOnce(Looper.java:232)
+11-02 03:02:01.403   889   917 E RuntimePermissionsPersistenceImpl: 	at android.os.Looper.loop(Looper.java:317)
+11-02 03:02:01.403   889   917 E RuntimePermissionsPersistenceImpl: 	at android.os.HandlerThread.run(HandlerThread.java:85)
+11-02 03:02:01.403  4885  4885 I dex2oat32: dex2oat took 733.203ms (33.716ms cpu) (threads: 8) arena alloc=0B (0B) java alloc=256KB (262496B) native alloc=1284KB (1315664B) free=1401KB (1435552B)
+11-02 03:02:01.405  4882  4883 I artd    : dex2oat returned code 0
+11-02 03:02:01.406   889   937 I ArtService: Dexopt result: [packageName = com.muse.host] DexContainerFileDexoptResult{dexContainerFile=/data/app/~~3_XYoBAzUzZ2VXBBpl_hfQ==/com.muse.host-AOR-G4fNOQyVc3JiheJZRQ==/base.apk, primaryAbi=true, abi=x86_64, actualCompilerFilter=verify, status=PERFORMED, dex2oatWallTimeMillis=757, dex2oatCpuTimeMillis=40, sizeBytes=96636, sizeBeforeBytes=0, extendedStatusFlags=[]}
+11-02 03:02:01.407   889   937 V BackupManagerService: [UserID:0] restoreAtInstall pkg=com.muse.host token=9 restoreSet=0
+11-02 03:02:01.423   889   937 D ActivityManager: sync unfroze 2314 com.android.localtransport for 6
+11-02 03:02:01.424   889   889 I TransportConnection: LocalTransportService#1: Notifying [BMS.restoreAtInstall] transport = BackupTransportClient
+11-02 03:02:01.426   889   937 V BackupManagerService: [UserID:0] Finishing install immediately
+11-02 03:02:01.428   889  1088 D ActivityManager: sync unfroze 1569 com.android.permissioncontroller for 6
+11-02 03:02:01.429   889   937 D PackageInstallerSession: Marking session 1215079246 as applied
+11-02 03:02:01.428   889   889 I binder:889_7: type=1400 audit(0.0:595): avc:  denied  { getopt } for  scontext=u:r:system_server:s0 tcontext=u:r:shell:s0 tclass=unix_stream_socket permissive=1
+11-02 03:02:01.432   889  1071 D ShortcutService: received package broadcast intent: Intent { act=android.intent.action.PACKAGE_ADDED dat=package: flg=0x4000010 (has extras) }
+11-02 03:02:01.432   889  1071 D ShortcutService: adding package: com.muse.host userId0
+11-02 03:02:01.432   889  1071 D ShortcutService: handlePackageAdded: com.muse.host user=0
+11-02 03:02:01.432   889  1071 D ShortcutService: rescanPackageIfNeeded 0@com.muse.host, forceRescan=true , isNewApp=true
+11-02 03:02:01.432   889  1077 I SdkSandboxManager: No SDKs used. Skipping SDK data reconcilation for CallingInfo{mUid=10118, mPackageName='com.muse.host, mAppProcessToken='null'}
+11-02 03:02:01.432   889  1071 D ShortcutService: Package com.muse.host has 0 manifest shortcut(s), and 0 share target(s)
+11-02 03:02:01.433  1329  1329 D CarrierSvcBindHelper: onPackageAdded: com.muse.host
+11-02 03:02:01.433   889  1039 E AppOps  : attributionTag VCN not declared in manifest of android
+11-02 03:02:01.433  1329  1329 D CarrierSvcBindHelper: No carrier app for: 0
+11-02 03:02:01.433   889   889 D TransparencyService: Not an update. Skipping...
+11-02 03:02:01.434  1569  1569 I SafetyLabelChangedBroadcastReceiver: received broadcast packageName: com.muse.host, current user: UserHandle{0}, packageChangeEvent: NEW_INSTALL, intent user: UserHandle{0}
+11-02 03:02:01.434   889   917 W PackageManager: Failed registering loading progress callback. Package is fully loaded.
+11-02 03:02:01.435   889   918 D ActivityManager: sync unfroze 2169 com.android.packageinstaller for 3
+11-02 03:02:01.435   889   975 I RoleService: Granting default roles...
+11-02 03:02:01.437  1569  4631 I PermissionControllerServiceImpl: Updating user sensitive for uid 10118
+11-02 03:02:01.437   889   917 W VoiceInteractionManager: no available voice recognition services found for user 0
+11-02 03:02:01.438  1569  4902 E BackupHelper: Could not parse delayed permissions
+11-02 03:02:01.438  1569  4902 E BackupHelper: java.io.FileNotFoundException: /data/user_de/0/com.android.permissioncontroller/files/delayed_restore_permissions.xml: open failed: ENOENT (No such file or directory)
+11-02 03:02:01.438  1569  4902 E BackupHelper: 	at libcore.io.IoBridge.open(IoBridge.java:574)
+11-02 03:02:01.438  1569  4902 E BackupHelper: 	at java.io.FileInputStream.<init>(FileInputStream.java:179)
+11-02 03:02:01.438  1569  4902 E BackupHelper: 	at android.app.ContextImpl.openFileInput(ContextImpl.java:774)
+11-02 03:02:01.438  1569  4902 E BackupHelper: 	at com.android.permissioncontroller.permission.service.BackupHelper.restoreDelayedState(BackupHelper.java:406)
+11-02 03:02:01.438  1569  4902 E BackupHelper: 	at com.android.permissioncontroller.permission.service.PermissionControllerServiceImpl.onRestoreDelayedRuntimePermissionsBackup(PermissionControllerServiceImpl.java:430)
+11-02 03:02:01.438  1569  4902 E BackupHelper: 	at com.android.permissioncontroller.permission.service.PermissionControllerServiceImpl.lambda$onApplyStagedRuntimePermissionBackup$4(PermissionControllerServiceImpl.java:424)
+11-02 03:02:01.438  1569  4902 E BackupHelper: 	at com.android.permissioncontroller.permission.service.PermissionControllerServiceImpl.$r8$lambda$TbAZrpVHU85LYBnlVdzyQvclH0Q(PermissionControllerServiceImpl.java:0)
+11-02 03:02:01.438  1569  4902 E BackupHelper: 	at com.android.permissioncontroller.permission.service.PermissionControllerServiceImpl$$ExternalSyntheticLambda4.run(R8$$SyntheticClass:0)
+11-02 03:02:01.438  1569  4902 E BackupHelper: 	at android.os.AsyncTask$SerialExecutor$1.run(AsyncTask.java:305)
+11-02 03:02:01.438  1569  4902 E BackupHelper: 	at java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1145)
+11-02 03:02:01.438  1569  4902 E BackupHelper: 	at java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:644)
+11-02 03:02:01.438  1569  4902 E BackupHelper: 	at java.lang.Thread.run(Thread.java:1012)
+11-02 03:02:01.438  1569  4902 E BackupHelper: Caused by: android.system.ErrnoException: open failed: ENOENT (No such file or directory)
+11-02 03:02:01.438  1569  4902 E BackupHelper: 	at libcore.io.Linux.open(Native Method)
+11-02 03:02:01.438  1569  4902 E BackupHelper: 	at libcore.io.ForwardingOs.open(ForwardingOs.java:563)
+11-02 03:02:01.438  1569  4902 E BackupHelper: 	at libcore.io.BlockGuardOs.open(BlockGuardOs.java:274)
+11-02 03:02:01.438  1569  4902 E BackupHelper: 	at libcore.io.ForwardingOs.open(ForwardingOs.java:563)
+11-02 03:02:01.438  1569  4902 E BackupHelper: 	at android.app.ActivityThread$AndroidOs.open(ActivityThread.java:8591)
+11-02 03:02:01.438  1569  4902 E BackupHelper: 	at libcore.io.IoBridge.open(IoBridge.java:560)
+11-02 03:02:01.438  1569  4902 E BackupHelper: 	... 11 more
+11-02 03:02:01.438   889  1480 W AppOpService: Ignored setUidMode call for runtime permission app op: uid = 1001, code = READ_SMS, mode = allow, callingUid = 1001, oldMode = allow
+11-02 03:02:01.438   889  2675 W AppOpService: Ignored setUidMode call for runtime permission app op: uid = 1001, code = RECEIVE_SMS, mode = allow, callingUid = 1001, oldMode = allow
+11-02 03:02:01.438   889  2675 W AppOpService: Ignored setUidMode call for runtime permission app op: uid = 1001, code = RECEIVE_WAP_PUSH, mode = allow, callingUid = 1001, oldMode = allow
+11-02 03:02:01.438   889   917 W MagnificationConnectionManager: requestConnection duplicated request: connect=false, mConnectionState=DISCONNECTED
+11-02 03:02:01.438   889  2675 W AppOpService: Ignored setUidMode call for runtime permission app op: uid = 1001, code = SEND_SMS, mode = allow, callingUid = 1001, oldMode = allow
+11-02 03:02:01.439   889  2675 W AppOpService: Ignored setUidMode call for runtime permission app op: uid = 1001, code = READ_CELL_BROADCASTS, mode = allow, callingUid = 1001, oldMode = allow
+11-02 03:02:01.444   889  4467 E RoleControllerServiceImpl: Default/fallback role holder package doesn't qualify for the role, package: com.android.devicelockcontroller, role: android.app.role.SYSTEM_FINANCED_DEVICE_CONTROLLER
+11-02 03:02:01.450   889   946 E AtomicFile: Failed to rename /data/system/install_sessions.xml.new to /data/system/install_sessions.xml
+11-02 03:02:01.450  1352  1389 D SessionCommitReceiver: Removing PromiseIcon for package: com.muse.host, install reason: 0, alreadyAddedPromiseIcon: false
+11-02 03:02:01.450  1352  1389 D PackageUpdatedTask: Package updated: mOp=ADD packages=[com.muse.host]
+11-02 03:02:01.452   889  1071 D ShortcutService: received package broadcast intent: Intent { act=android.intent.action.PACKAGE_CHANGED dat=package: flg=0x5000010 (has extras) }
+11-02 03:02:01.452   889  1071 D ShortcutService: changing package: com.muse.host userId0
+11-02 03:02:01.452   889  1071 D ShortcutService: handlePackageChanged: com.muse.host user=0
+11-02 03:02:01.452   889  1071 D ShortcutService: rescanPackageIfNeeded 0@com.muse.host, forceRescan=true , isNewApp=true
+11-02 03:02:01.452   889  1071 D ShortcutService: Package com.muse.host has 0 manifest shortcut(s), and 0 share target(s)
+11-02 03:02:01.452  1329  1329 D CarrierSvcBindHelper: onPackageModified: com.muse.host
+11-02 03:02:01.452  1569  4631 I PermissionControllerServiceImpl: Updating user sensitive for uid 10118
+11-02 03:02:01.452  1329  1329 D CarrierSvcBindHelper: No carrier app for: 0
+11-02 03:02:01.453   889   917 W VoiceInteractionManager: no available voice recognition services found for user 0
+11-02 03:02:01.455   889   917 W MagnificationConnectionManager: requestConnection duplicated request: connect=false, mConnectionState=DISCONNECTED
+11-02 03:02:01.455   889  1250 W AppOpService: Ignored setUidMode call for runtime permission app op: uid = 1001, code = READ_SMS, mode = allow, callingUid = 1001, oldMode = allow
+11-02 03:02:01.455   889  1250 W AppOpService: Ignored setUidMode call for runtime permission app op: uid = 1001, code = RECEIVE_SMS, mode = allow, callingUid = 1001, oldMode = allow
+11-02 03:02:01.455   889  1250 W AppOpService: Ignored setUidMode call for runtime permission app op: uid = 1001, code = RECEIVE_WAP_PUSH, mode = allow, callingUid = 1001, oldMode = allow
+11-02 03:02:01.455   889  1480 W AppOpService: Ignored setUidMode call for runtime permission app op: uid = 1001, code = SEND_SMS, mode = allow, callingUid = 1001, oldMode = allow
+11-02 03:02:01.456   889  1480 W AppOpService: Ignored setUidMode call for runtime permission app op: uid = 1001, code = READ_CELL_BROADCASTS, mode = allow, callingUid = 1001, oldMode = allow
+11-02 03:02:01.479   889  1156 D NetworkStatsObservers: Unregistering RequestInfo from pid/uid:889/1000(android) for DataUsageRequest [ requestId=28, networkTemplate=NetworkTemplate: matchRule=MOBILE, matchSubscriberIds=[310270...], matchWifiNetworkKeys=[], metered=YES, defaultNetwork=NO, thresholdInBytes=5647880 ] accessLevel:3
+11-02 03:02:01.479   889  1011 D NetworkStatsObservers: Registering observer for RequestInfo from pid/uid:889/1000(android) for DataUsageRequest [ requestId=29, networkTemplate=NetworkTemplate: matchRule=MOBILE, matchSubscriberIds=[310270...], matchWifiNetworkKeys=[], metered=YES, defaultNetwork=NO, thresholdInBytes=5647759 ] accessLevel:3
+11-02 03:02:01.486   889   901 I BpBinder: onLastStrongRef automatically unlinking death recipients: 
+11-02 03:02:01.486  1352  1352 D StatsLog: LAUNCHER_ALLAPPS_COUNT
+11-02 03:02:01.487  1352  1389 D BaseIconCache: Default icon returned for com.muse.host
+11-02 03:02:01.488   889   901 I BpBinder: onLastStrongRef automatically unlinking death recipients: 
+11-02 03:02:01.488   889   902 W System  : A resource failed to call close. 
+11-02 03:02:01.488   889   902 W System  : A resource failed to call close. 
+11-02 03:02:01.489   889   902 W system_server: ApkAssets: Deleting an ApkAssets object '<empty> and /system/priv-app/InputDevices/InputDevices.apk' with 1 weak references
+11-02 03:02:01.489   889   902 W system_server: ApkAssets: Deleting an ApkAssets object '<empty> and /system/product/app/LatinIME/LatinIME.apk' with 1 weak references
+11-02 03:02:01.489   889   902 W system_server: ApkAssets: Deleting an ApkAssets object '<empty> and /system/system_ext/app/AccessibilityMenu/AccessibilityMenu.apk' with 1 weak references
+11-02 03:02:01.504  1352  1814 D EGL_emulation: app_time_stats: avg=132706.83ms min=1.70ms max=4777272.50ms count=36
+11-02 03:02:01.599  1352  1389 D PackageUpdatedTask: Package updated: mOp=UPDATE packages=[com.muse.host]
+11-02 03:02:01.669  1352  1352 D StatsLog: LAUNCHER_ALLAPPS_COUNT
+11-02 03:02:01.673   889  1059 E RolesPersistenceImpl: Failed to verity-protect roles
+11-02 03:02:01.673   889  1059 E RolesPersistenceImpl: java.io.IOException: Failed to enable fs-verity on FD(485): Operation not supported on transport endpoint
+11-02 03:02:01.673   889  1059 E RolesPersistenceImpl: 	at com.android.internal.security.VerityUtils.setUpFsverity(VerityUtils.java:94)
+11-02 03:02:01.673   889  1059 E RolesPersistenceImpl: 	at com.android.server.security.FileIntegrity.setUpFsVerity(FileIntegrity.java:66)
+11-02 03:02:01.673   889  1059 E RolesPersistenceImpl: 	at com.android.server.security.FileIntegrity.setUpFsVerity(FileIntegrity.java:50)
+11-02 03:02:01.673   889  1059 E RolesPersistenceImpl: 	at com.android.role.persistence.RolesPersistenceImpl.lambda$new$0(RolesPersistenceImpl.java:83)
+11-02 03:02:01.673   889  1059 E RolesPersistenceImpl: 	at com.android.role.persistence.RolesPersistenceImpl.$r8$lambda$THULNVSBRg2pnry9LcQoYzCQjrM(RolesPersistenceImpl.java:0)
+11-02 03:02:01.673   889  1059 E RolesPersistenceImpl: 	at com.android.role.persistence.RolesPersistenceImpl$$ExternalSyntheticLambda0.enableFsVerity(R8$$SyntheticClass:0)
+11-02 03:02:01.673   889  1059 E RolesPersistenceImpl: 	at com.android.role.persistence.RolesPersistenceImpl.writeForUser(RolesPersistenceImpl.java:228)
+11-02 03:02:01.673   889  1059 E RolesPersistenceImpl: 	at com.android.role.RoleUserState.writeFile(RoleUserState.java:457)
+11-02 03:02:01.673   889  1059 E RolesPersistenceImpl: 	at com.android.role.RoleUserState.$r8$lambda$jPDoR6B7JGYQI6CsAtCH-k823J4(RoleUserState.java:0)
+11-02 03:02:01.673   889  1059 E RolesPersistenceImpl: 	at com.android.role.RoleUserState$$ExternalSyntheticLambda0.run(R8$$SyntheticClass:0)
+11-02 03:02:01.673   889  1059 E RolesPersistenceImpl: 	at android.os.Handler.handleCallback(Handler.java:959)
+11-02 03:02:01.673   889  1059 E RolesPersistenceImpl: 	at android.os.Handler.dispatchMessage(Handler.java:100)
+11-02 03:02:01.673   889  1059 E RolesPersistenceImpl: 	at android.os.Looper.loopOnce(Looper.java:232)
+11-02 03:02:01.673   889  1059 E RolesPersistenceImpl: 	at android.os.Looper.loop(Looper.java:317)
+11-02 03:02:01.673   889  1059 E RolesPersistenceImpl: 	at android.os.HandlerThread.run(HandlerThread.java:85)
+11-02 03:02:01.932  1157  1157 D ControlsListingControllerImpl: ServiceConfig reloaded, count: 0
+11-02 03:02:01.933  1157  1157 D ControlsListingControllerImpl: ServiceConfig reloaded, count: 0
+11-02 03:02:04.538  4904  4904 I sh      : type=1400 audit(0.0:596): avc:  denied  { getattr } for  path="/system/bin/am" dev="vda4" ino=276 scontext=u:r:shell:s0 tcontext=u:object_r:am_exec:s0 tclass=file permissive=1
+11-02 03:02:04.538  4904  4904 I sh      : type=1400 audit(0.0:597): avc:  denied  { execute } for  name="am" dev="vda4" ino=276 scontext=u:r:shell:s0 tcontext=u:object_r:am_exec:s0 tclass=file permissive=1
+11-02 03:02:04.538  4904  4904 I sh      : type=1400 audit(0.0:598): avc:  denied  { read open } for  path="/system/bin/am" dev="vda4" ino=276 scontext=u:r:shell:s0 tcontext=u:object_r:am_exec:s0 tclass=file permissive=1
+11-02 03:02:04.538  4904  4904 I sh      : type=1400 audit(0.0:599): avc:  denied  { execute_no_trans } for  path="/system/bin/am" dev="vda4" ino=276 scontext=u:r:shell:s0 tcontext=u:object_r:am_exec:s0 tclass=file permissive=1
+11-02 03:02:04.546   889  1250 W ActivityTaskManager: callingPackage for (uid=2000, pid=4906) has no WPC
+11-02 03:02:04.547   889  1250 W OptProp : Cannot read opt property android.window.PROPERTY_COMPAT_ALLOW_ORIENTATION_OVERRIDE
+11-02 03:02:04.547   889  1250 V GrammaticalInflectionUtils: AttributionSource: android.content.AttributionSource@cbbff974 does not have READ_SYSTEM_GRAMMATICAL_GENDER permission.
+11-02 03:02:04.547   889  1250 W OptProp : Cannot read opt property android.window.PROPERTY_COMPAT_ALLOW_RESIZEABLE_ACTIVITY_OVERRIDES
+11-02 03:02:04.547   889  1250 W OptProp : Cannot read opt property android.window.PROPERTY_COMPAT_ALLOW_MIN_ASPECT_RATIO_OVERRIDE
+11-02 03:02:04.550   889  1250 I ActivityTaskManager: START u0 {flg=0x10000000 cmp=com.muse.host/.MainActivity} with LAUNCH_MULTIPLE from uid 2000 (BAL_ALLOW_PERMISSION) result code=0
+11-02 03:02:04.550  1157  1201 V WindowManagerShell: Transition requested (#44): android.os.BinderProxy@640364b TransitionRequestInfo { type = OPEN, triggerTask = TaskInfo{userId=0 taskId=225 displayId=0 isRunning=true baseIntent=Intent { flg=0x10000000 cmp=com.muse.host/.MainActivity } baseActivity=ComponentInfo{com.muse.host/com.muse.host.MainActivity} topActivity=ComponentInfo{com.muse.host/com.muse.host.MainActivity} origActivity=null realActivity=ComponentInfo{com.muse.host/com.muse.host.MainActivity} numActivities=1 lastActiveTime=33537982 supportsMultiWindow=true resizeMode=1 isResizeable=true minWidth=-1 minHeight=-1 defaultMinSize=220 token=WCT{android.window.IWindowContainerToken$Stub$Proxy@2e42828} topActivityType=1 pictureInPictureParams=null shouldDockBigOverlays=false launchIntoPipHostTaskId=-1 lastParentTaskIdBeforePip=-1 displayCutoutSafeInsets=null topActivityInfo=ActivityInfo{6517941 com.muse.host.MainActivity} launchCookies=[] positionInParent=Point(0, 0) parentTaskId=-1 isFocused=false isVisible=false isVisibleRequested=false isSleeping=false locusId=null displayAreaFeatureId=1 isTopActivityTransparent=false appCompatTaskInfo=AppCompatTaskInfo { topActivityInSizeCompat=false topActivityEligibleForLetterboxEducation= falseisLetterboxEducationEnabled= false isLetterboxDoubleTapEnabled= false topActivityEligibleForUserAspectRatioButton= false topActivityBoundsLetterboxed= false isFromLetterboxDoubleTap= false topActivityLetterboxVerticalPosition= -1 topActivityLetterboxHorizontalPosition= -1 topActivityLetterboxWidth=1080 topActivityLetterboxHeight=2280 isUserFullscreenOverrideEnabled=false isSystemFullscreenOverrideEnabled=false cameraCompatTaskInfo=CameraCompatTaskInfo { cameraCompatControlState=hidden freeformCameraCompatMode=inactive}}}, pipTask = null, remoteTransition = null, displayChange = null, flags = 0, debugId = 44 }
+11-02 03:02:04.550  1352  1352 W SplitSelectStateCtor: Missing session instanceIds
+11-02 03:02:04.550  1352  1352 D StatsLog: LAUNCHER_SPLIT_SELECTION_EXIT_INTERRUPTED
+11-02 03:02:04.550   889   911 V GrammaticalInflectionUtils: AttributionSource: android.content.AttributionSource@cbbff974 does not have READ_SYSTEM_GRAMMATICAL_GENDER permission.
+11-02 03:02:04.551  1352  1352 I TopTaskTracker: onTaskMovedToFront: (moved taskInfo to front) taskId=225, baseIntent=Intent { flg=0x10000000 cmp=com.muse.host/.MainActivity }
+11-02 03:02:04.556   583   583 D Zygote  : Forked child process 4909
+11-02 03:02:04.556   889   919 I ActivityManager: Start proc 4909:com.muse.host/u0a118 for next-top-activity {com.muse.host/com.muse.host.MainActivity}
+11-02 03:02:04.559  4909  4909 I Zygote  : seccomp disabled by setenforce 0
+11-02 03:02:04.562  4909  4909 I com.muse.host: Using CollectorTypeCMC GC.
+11-02 03:02:04.562  4909  4909 W com.muse.host: Unexpected CPU variant for x86: x86_64.
+11-02 03:02:04.562  4909  4909 W com.muse.host: Known variants: atom, sandybridge, silvermont, goldmont, goldmont-plus, goldmont-without-sha-xsaves, tremont, kabylake, default
+11-02 03:02:04.562   625   625 I BpBinder: onLastStrongRef automatically unlinking death recipients: 
+11-02 03:02:04.563   889  1480 D CoreBackPreview: Window{9343605 u0 Splash Screen com.muse.host}: Setting back callback OnBackInvokedCallbackInfo{mCallback=android.window.IOnBackInvokedCallback$Stub$Proxy@d2d3603, mPriority=0, mIsAnimationCallback=false}
+11-02 03:02:04.563  4909  4909 E com.muse.host: Not starting debugger since process cannot load the jdwp agent.
+11-02 03:02:04.564   602   647 D gralloc_ranchu: gralloc_alloc: Creating ashmem region of size 9850880
+11-02 03:02:04.564  4909  4909 D nativeloader: Load libframework-connectivity-tiramisu-jni.so using APEX ns com_android_tethering for caller /apex/com.android.tethering/javalib/framework-connectivity-t.jar: ok
+11-02 03:02:04.565   602   647 E android.hardware.graphics.allocator@2.0-service: open_verbose_path:56: Could not open '/dev/goldfish_pipe_dprctd': No such file or directory
+11-02 03:02:04.565   602   647 E android.hardware.graphics.allocator@2.0-service: open_verbose:128: both vsock and goldfish_pipe paths failed
+11-02 03:02:04.566   602   647 D gralloc_ranchu: gralloc_alloc: Creating ashmem region of size 9850880
+11-02 03:02:04.567   602   647 E android.hardware.graphics.allocator@2.0-service: open_verbose_path:56: Could not open '/dev/goldfish_pipe_dprctd': No such file or directory
+11-02 03:02:04.567   602   647 E android.hardware.graphics.allocator@2.0-service: open_verbose:128: both vsock and goldfish_pipe paths failed
+11-02 03:02:04.568   602   647 D gralloc_ranchu: gralloc_alloc: Creating ashmem region of size 9850880
+11-02 03:02:04.568  4909  4909 D CompatChangeReporter: Compat change id reported: 242716250; UID 10118; state: ENABLED
+11-02 03:02:04.569   602   647 E android.hardware.graphics.allocator@2.0-service: open_verbose_path:56: Could not open '/dev/goldfish_pipe_dprctd': No such file or directory
+11-02 03:02:04.569   602   647 E android.hardware.graphics.allocator@2.0-service: open_verbose:128: both vsock and goldfish_pipe paths failed
+11-02 03:02:04.570  4909  4909 D nativeloader: Configuring clns-7 for other apk /data/app/~~3_XYoBAzUzZ2VXBBpl_hfQ==/com.muse.host-AOR-G4fNOQyVc3JiheJZRQ==/base.apk. target_sdk_version=34, uses_libraries=, library_path=/data/app/~~3_XYoBAzUzZ2VXBBpl_hfQ==/com.muse.host-AOR-G4fNOQyVc3JiheJZRQ==/lib/x86_64:/data/app/~~3_XYoBAzUzZ2VXBBpl_hfQ==/com.muse.host-AOR-G4fNOQyVc3JiheJZRQ==/base.apk!/lib/x86_64, permitted_path=/data:/mnt/expand:/data/user/0/com.muse.host
+11-02 03:02:04.574  1157  3755 V WindowManagerShell: onTransitionReady(transaction=3818225932252)
+11-02 03:02:04.574   889   908 V WindowManager: Sent Transition (#44) createdAt=11-02 03:02:04.548 via request=TransitionRequestInfo { type = OPEN, triggerTask = TaskInfo{userId=0 taskId=225 displayId=0 isRunning=true baseIntent=Intent { flg=0x10000000 cmp=com.muse.host/.MainActivity } baseActivity=ComponentInfo{com.muse.host/com.muse.host.MainActivity} topActivity=ComponentInfo{com.muse.host/com.muse.host.MainActivity} origActivity=null realActivity=ComponentInfo{com.muse.host/com.muse.host.MainActivity} numActivities=1 lastActiveTime=33537982 supportsMultiWindow=true resizeMode=1 isResizeable=true minWidth=-1 minHeight=-1 defaultMinSize=220 token=WCT{RemoteToken{197b32d Task{b0a2cd9 #225 type=standard A=10118:com.muse.host}}} topActivityType=1 pictureInPictureParams=null shouldDockBigOverlays=false launchIntoPipHostTaskId=-1 lastParentTaskIdBeforePip=-1 displayCutoutSafeInsets=null topActivityInfo=ActivityInfo{7fd3062 com.muse.host.MainActivity} launchCookies=[] positionInParent=Point(0, 0) parentTaskId=-1 isFocused=false isVisible=false isVisibleRequested=false isSleeping=false locusId=null displayAreaFeatureId=1 isTopActivityTransparent=false appCompatTaskInfo=AppCompatTaskInfo { topActivityInSizeCompat=false topActivityEligibleForLetterboxEducation= falseisLetterboxEducationEnabled= false isLetterboxDoubleTapEnabled= false topActivityEligibleForUserAspectRatioButton= false topActivityBoundsLetterboxed= false isFromLetterboxDoubleTap= false topActivityLetterboxVerticalPosition= -1 topActivityLetterboxHorizontalPosition= -1 topActivityLetterboxWidth=1080 topActivityLetterboxHeight=2280 isUserFullscreenOverrideEnabled=false isSystemFullscreenOverrideEnabled=false cameraCompatTaskInfo=CameraCompatTaskInfo { cameraCompatControlState=hidden freeformCameraCompatMode=inactive}}}, pipTask = null, remoteTransition = null, displayChange = null, flags = 0, debugId = 44 }
+11-02 03:02:04.574   889   908 V WindowManager:     startWCT=WindowContainerTransaction { changes = {} hops = [] errorCallbackToken=null taskFragmentOrganizer=null }
+11-02 03:02:04.574  1157  1201 V WindowManagerShell: onTransitionReady (#44) android.os.BinderProxy@640364b: {id=44 t=OPEN f=0x0 trk=0 r=[0@Point(0, 0)] c=[{WCT{android.window.IWindowContainerToken$Stub$Proxy@dfbed22} m=OPEN f=NONE leash=Surface(name=Task=225)/@0xb802d17 sb=Rect(0, 0 - 1080, 2280) eb=Rect(0, 0 - 1080, 2280) d=0 taskParent=-1},{WCT{android.window.IWindowContainerToken$Stub$Proxy@d083b3} m=TO_BACK f=SHOW_WALLPAPER leash=Surface(name=Task=1)/@0xa1a6504 sb=Rect(0, 0 - 1080, 2280) eb=Rect(0, 0 - 1080, 2280) d=0 taskParent=-1}]}
+11-02 03:02:04.574   889   908 V WindowManager:     info={id=44 t=OPEN f=0x0 trk=0 r=[0@Point(0, 0)] c=[
+11-02 03:02:04.574   889   908 V WindowManager:         {WCT{RemoteToken{197b32d Task{b0a2cd9 #225 type=standard A=10118:com.muse.host}}} m=OPEN f=NONE leash=Surface(name=Task=225)/@0x6041cd6 sb=Rect(0, 0 - 1080, 2280) eb=Rect(0, 0 - 1080, 2280) d=0 taskParent=-1},
+11-02 03:02:04.574   889   908 V WindowManager:         {WCT{RemoteToken{a6ecb58 Task{bc6b58 #1 type=home}}} m=TO_BACK f=SHOW_WALLPAPER leash=Surface(name=Task=1)/@0xed28a88 sb=Rect(0, 0 - 1080, 2280) eb=Rect(0, 0 - 1080, 2280) d=0 taskParent=-1}
+11-02 03:02:04.574   889   908 V WindowManager:     ]}
+11-02 03:02:04.574  1157  1201 V WindowManagerShell: Playing animation for (#44) android.os.BinderProxy@640364b@0
+11-02 03:02:04.575  1157  1201 V WindowManagerShell:  try handler com.android.wm.shell.transition.DefaultMixedHandler@30994d9
+11-02 03:02:04.575  1157  1201 V WindowManagerShell:  try handler com.android.wm.shell.keyguard.KeyguardTransitionHandler@f44ae9e
+11-02 03:02:04.575  1157  1201 V WindowManagerShell:  try handler com.android.wm.shell.pip.PipTransition@d065f6
+11-02 03:02:04.575  1157  1201 V WindowManagerShell:  try handler com.android.wm.shell.activityembedding.ActivityEmbeddingController@a108df7
+11-02 03:02:04.575  1157  1201 V WindowManagerShell:  try handler com.android.wm.shell.recents.RecentsTransitionHandler@e5ae6cd
+11-02 03:02:04.575  1157  1201 V ShellRecents: RecentsTransitionHandler.startAnimation: no controller found
+11-02 03:02:04.575  1157  1201 V WindowManagerShell:  try handler com.android.wm.shell.splitscreen.StageCoordinator@e94eb82
+11-02 03:02:04.575  1157  1201 V WindowManagerShell:  try handler com.android.wm.shell.transition.RemoteTransitionHandler@db61293
+11-02 03:02:04.575  1157  1201 V WindowManagerShell: Transition doesn't have explicit remote, search filters for match for {id=44 t=OPEN f=0x0 trk=0 r=[0@Point(0, 0)] c=[{WCT{android.window.IWindowContainerToken$Stub$Proxy@dfbed22} m=OPEN f=NONE leash=Surface(name=Task=225)/@0xb802d17 sb=Rect(0, 0 - 1080, 2280) eb=Rect(0, 0 - 1080, 2280) d=0 taskParent=-1},{WCT{android.window.IWindowContainerToken$Stub$Proxy@d083b3} m=TO_BACK f=SHOW_WALLPAPER leash=Surface(name=Task=1)/@0xa1a6504 sb=Rect(0, 0 - 1080, 2280) eb=Rect(0, 0 - 1080, 2280) d=0 taskParent=-1}]}
+11-02 03:02:04.575  1157  1201 V WindowManagerShell:  Checking filter Pair{{types=[] flags=0x0] notFlags=0x100 checks=[{atype=home independent=true modes=[OPEN,TO_FRONT] flags=NONE mustBeTask=false order=TOP topActivity=ComponentInfo{com.android.launcher3/com.android.launcher3.uioverrides.QuickstepLauncher} launchCookie=null},{atype=standard independent=true modes=[CLOSE,TO_BACK] flags=NONE mustBeTask=false order=ANY topActivity=null launchCookie=null}]} RemoteTransition { remoteTransition = android.window.IRemoteTransition$Stub$Proxy@8643507, appThread = android.app.IApplicationThread$Stub$Proxy@53ce634, debugName = QuickstepLaunchHome }}
+11-02 03:02:04.575  1157  1201 V WindowManagerShell:  Delegate animation for (#44) to null
+11-02 03:02:04.575  1157  1201 V WindowManagerShell:  try handler com.android.wm.shell.transition.DefaultTransitionHandler@2a3dce
+11-02 03:02:04.575  1157  1201 V WindowManagerShell: start default transition animation, info = {id=44 t=OPEN f=0x0 trk=0 r=[0@Point(0, 0)] c=[{WCT{android.window.IWindowContainerToken$Stub$Proxy@dfbed22} m=OPEN f=NONE leash=Surface(name=Task=225)/@0xb802d17 sb=Rect(0, 0 - 1080, 2280) eb=Rect(0, 0 - 1080, 2280) d=0 taskParent=-1},{WCT{android.window.IWindowContainerToken$Stub$Proxy@d083b3} m=TO_BACK f=SHOW_WALLPAPER leash=Surface(name=Task=1)/@0xa1a6504 sb=Rect(0, 0 - 1080, 2280) eb=Rect(0, 0 - 1080, 2280) d=0 taskParent=-1}]}
+11-02 03:02:04.575  1157  1201 V WindowManagerShell: loadAnimation: anim=android.view.animation.AnimationSet@5e1c8e9 animAttr=0x13 type=OPEN isEntrance=false
+11-02 03:02:04.575  1157  1201 V WindowManagerShell: loadAnimation: anim=android.view.animation.AnimationSet@281fe7a animAttr=0x12 type=OPEN isEntrance=true
+11-02 03:02:04.575   889   950 W UserManagerService: Requested status bar icon for non-badged user 0
+11-02 03:02:04.575  1157  1201 V WindowManagerShell:  animated by com.android.wm.shell.transition.DefaultTransitionHandler@2a3dce
+11-02 03:02:04.581  4909  4909 V GraphicsEnvironment: Currently set values for:
+11-02 03:02:04.581  1157  1237 D EGL_emulation: app_time_stats: avg=4558.83ms min=4558.83ms max=4558.83ms count=1
+11-02 03:02:04.581  4909  4909 V GraphicsEnvironment:   angle_gl_driver_selection_pkgs=[]
+11-02 03:02:04.581  4909  4909 V GraphicsEnvironment:   angle_gl_driver_selection_values=[]
+11-02 03:02:04.581  4909  4909 V GraphicsEnvironment: Global.Settings values are invalid: number of packages: 0, number of values: 0
+11-02 03:02:04.581  4909  4909 V GraphicsEnvironment: Neither updatable production driver nor prerelease driver is supported.
+11-02 03:02:04.583  1157  1237 D EGL_emulation: app_time_stats: avg=956206.00ms min=8.89ms max=4780881.00ms count=5
+11-02 03:02:04.584   889   960 D IntervalStats: Unable to parse usage stats packages: [122, 123, 124, 125, 126, 127, 128, 129, 130, 131]
+11-02 03:02:04.584   889   960 D IntervalStats: Unable to parse event packages: [131]
+11-02 03:02:04.585   889   960 D IntervalStats: Unable to parse usage stats packages: [131, 132, 133, 134, 135]
+11-02 03:02:04.585   889   960 D IntervalStats: Unable to parse event packages: [135]
+11-02 03:02:04.586   889   960 D IntervalStats: Unable to parse usage stats packages: [135, 136, 137, 138, 139]
+11-02 03:02:04.586   889   960 D IntervalStats: Unable to parse event packages: [139]
+11-02 03:02:04.584  4909  4909 I RenderThread: type=1400 audit(0.0:600): avc:  denied  { read } for  name="libandroidemu.so" dev="vda4" ino=4447 scontext=u:r:untrusted_app:s0:c118,c256,c512,c768 tcontext=u:object_r:vendor_file:s0 tclass=file permissive=1 app=com.muse.host
+11-02 03:02:04.623  4909  4909 D nativeloader: Load /data/app/~~3_XYoBAzUzZ2VXBBpl_hfQ==/com.muse.host-AOR-G4fNOQyVc3JiheJZRQ==/lib/x86_64/libRuntime.so using ns clns-7 from class loader (caller=/data/app/~~3_XYoBAzUzZ2VXBBpl_hfQ==/com.muse.host-AOR-G4fNOQyVc3JiheJZRQ==/base.apk): ok
+11-02 03:02:04.631   889  1480 D CompatChangeReporter: Compat change id reported: 161145287; UID 10118; state: ENABLED
+11-02 03:02:04.632  4909  4927 I muse-host: nativeLoadTree: bytes=51785 rows=121 -> handle acquired
+11-02 03:02:04.632  4909  4927 I muse-host: nativeProvenance: engine-sha=f54011e gallery_present-sha=7fa3ad732049847d8f6fedf573faeb01b0a0edb2
+11-02 03:02:04.632  4909  4927 I GalleryPage: gallery-rows=121
+11-02 03:02:04.634  4909  4909 W HWUI    : Unknown dataspace 0
+11-02 03:02:04.647   889   950 D CoreBackPreview: Window{60496a4 u0 com.muse.host/com.muse.host.MainActivity}: Setting back callback OnBackInvokedCallbackInfo{mCallback=android.window.IOnBackInvokedCallback$Stub$Proxy@a2487c2, mPriority=0, mIsAnimationCallback=false}
+11-02 03:02:04.649   625  1093 W ServiceManagerCppClient: Permission failure: android.permission.ACCESS_SURFACE_FLINGER from uid=10118 pid=0
+11-02 03:02:04.649   625  1093 D PermissionCache: checking android.permission.ACCESS_SURFACE_FLINGER for uid=10118 => denied (103 us)
+11-02 03:02:04.650   625  1093 W ServiceManagerCppClient: Permission failure: android.permission.ROTATE_SURFACE_FLINGER from uid=10118 pid=0
+11-02 03:02:04.650   625  1093 D PermissionCache: checking android.permission.ROTATE_SURFACE_FLINGER for uid=10118 => denied (50 us)
+11-02 03:02:04.650   625  1093 W ServiceManagerCppClient: Permission failure: android.permission.INTERNAL_SYSTEM_WINDOW from uid=10118 pid=0
+11-02 03:02:04.650   625  1093 D PermissionCache: checking android.permission.INTERNAL_SYSTEM_WINDOW for uid=10118 => denied (39 us)
+11-02 03:02:04.650   625   652 W ServiceManagerCppClient: Permission failure: android.permission.ACCESS_SURFACE_FLINGER from uid=10118 pid=4909
+11-02 03:02:04.650   625   652 D PermissionCache: checking android.permission.ACCESS_SURFACE_FLINGER for uid=10118 => denied (234 us)
+11-02 03:02:04.650  4909  4924 I EGL_emulation: Opening libGLESv1_CM_emulation.so
+11-02 03:02:04.650  4909  4924 I EGL_emulation: Opening libGLESv2_emulation.so
+11-02 03:02:04.650  4909  4924 E com.muse.host: open_verbose_path:56: Could not open '/dev/goldfish_pipe_dprctd': No such file or directory
+11-02 03:02:04.650  4909  4924 E com.muse.host: open_verbose:128: both vsock and goldfish_pipe paths failed
+11-02 03:02:04.650  4909  4924 W com.muse.host: Process pipe failed
+11-02 03:02:04.650  4909  4924 D HostConnection: New host connection established 0x71469ae97090, pid 4909, tid 4924
+11-02 03:02:04.651  4909  4909 I muse-host: SEAM-STEP:attach:ok:handle=1
+11-02 03:02:04.651  4909  4909 I muse-host: nativeAttachSurface: window 1080x2091
+11-02 03:02:04.651  4909  4909 I muse-host: SEAM-STEP:render:ok
+11-02 03:02:04.651   206   206 I hwservicemanager: getTransport: Cannot find entry android.hardware.graphics.mapper@4.0::IMapper/default in either framework or device VINTF manifest.
+11-02 03:02:04.651  4909  4930 I Gralloc4: mapper 4.x is not supported
+11-02 03:02:04.652   206   206 I hwservicemanager: getTransport: Cannot find entry android.hardware.graphics.mapper@3.0::IMapper/default in either framework or device VINTF manifest.
+11-02 03:02:04.652  4909  4930 W Gralloc3: mapper 3.x is not supported
+11-02 03:02:04.652   602   647 D gralloc_ranchu: gralloc_alloc: Creating ashmem region of size 9035776
+11-02 03:02:04.653   602   647 E android.hardware.graphics.allocator@2.0-service: open_verbose_path:56: Could not open '/dev/goldfish_pipe_dprctd': No such file or directory
+11-02 03:02:04.653   602   647 E android.hardware.graphics.allocator@2.0-service: open_verbose:128: both vsock and goldfish_pipe paths failed
+11-02 03:02:04.653  4909  4930 D HostConnection: New host connection established 0x71469ae98e90, pid 4909, tid 4930
+11-02 03:02:04.655   602   647 D gralloc_ranchu: gralloc_alloc: Creating ashmem region of size 2465792
+11-02 03:02:04.656   602   647 E android.hardware.graphics.allocator@2.0-service: open_verbose_path:56: Could not open '/dev/goldfish_pipe_dprctd': No such file or directory
+11-02 03:02:04.656   602   647 E android.hardware.graphics.allocator@2.0-service: open_verbose:128: both vsock and goldfish_pipe paths failed
+11-02 03:02:04.656   889  2785 D HostConnection: New host connection established 0x71469ae99c10, pid 889, tid 2785
+11-02 03:02:04.717   412  4932 D local_opengl: Sending id 80 to host
+11-02 03:02:04.720   412  4933 D local_opengl: Sending id 81 to host
+11-02 03:02:04.720   412  4934 D local_opengl: Sending id 82 to host
+11-02 03:02:04.734   206   206 I hwservicemanager: getTransport: Cannot find entry android.hardware.configstore@1.0::ISurfaceFlingerConfigs/default in either framework or device VINTF manifest.
+11-02 03:02:04.734  4909  4924 W HWUI    : Failed to choose config with EGL_SWAP_BEHAVIOR_PRESERVED, retrying without...
+11-02 03:02:04.734   889  2785 W HWUI    : Failed to choose config with EGL_SWAP_BEHAVIOR_PRESERVED, retrying without...
+11-02 03:02:04.735  4909  4924 W HWUI    : Failed to initialize 101010-2 format, error = EGL_SUCCESS
+11-02 03:02:04.735   889  2785 W HWUI    : Failed to initialize 101010-2 format, error = EGL_SUCCESS
+11-02 03:02:04.745  4909  4924 E com.muse.host: open_verbose_path:56: Could not open '/dev/goldfish_pipe_dprctd': No such file or directory
+11-02 03:02:04.745  4909  4924 E com.muse.host: open_verbose:128: both vsock and goldfish_pipe paths failed
+11-02 03:02:04.745   889  2785 E system_server: open_verbose_path:56: Could not open '/dev/goldfish_pipe_dprctd': No such file or directory
+11-02 03:02:04.745   889  2785 E system_server: open_verbose:128: both vsock and goldfish_pipe paths failed
+11-02 03:02:04.750   889   950 D HostConnection: New host connection established 0x71469aec6310, pid 889, tid 950
+11-02 03:02:04.752   412  4935 D local_opengl: Sending id 83 to host
+11-02 03:02:04.821  4909  4930 I GalleryPage: [layering] slice page=0 rows=[0,12] comps={TopAppBar|TopAppBar|TopAppBar|NavigationBar|NavigationRail|NavigationDrawer|BottomAppBar|SearchBar|SegmentedButton|ButtonGroup|SplitButton|Button|Button} labels={m3-gallery|m3-gallery|m3-gallery|NavigationBar selected=home|NavigationRail selected=home|NavigationDrawer selected=home|gallery|Search settings|SegmentedButton selected=day|ButtonGroup selected=bold|Create new|Primary action|Tonal action}
+11-02 03:02:04.844   602   647 D gralloc_ranchu: gralloc_alloc: Creating ashmem region of size 9850880
+11-02 03:02:04.845   602   647 E android.hardware.graphics.allocator@2.0-service: open_verbose_path:56: Could not open '/dev/goldfish_pipe_dprctd': No such file or directory
+11-02 03:02:04.845   602   647 E android.hardware.graphics.allocator@2.0-service: open_verbose:128: both vsock and goldfish_pipe paths failed
+11-02 03:02:04.863  1157  1201 V WindowManagerShell: Transition animation finished (aborted=false), notifying core (#44) android.os.BinderProxy@640364b@0
+11-02 03:02:04.863   889   908 V WindowManager: Finish Transition (#44): created at 11-02 03:02:04.548 collect-started=0.028ms request-sent=2.294ms started=2.659ms ready=25.595ms sent=26.274ms finished=315.522ms
+11-02 03:02:04.864  1352  1352 D VRI[QuickstepLauncher]: visibilityChanged oldVisibility=true newVisibility=false
+11-02 03:02:04.864  1157  1201 V WindowManagerShell: Track 0 became idle
+11-02 03:02:04.864  1157  1201 V WindowManagerShell: All active transition animations finished
+11-02 03:02:04.864   889  1249 W UserManagerService: Requested status bar icon for non-badged user 0
+11-02 03:02:04.864   889  1249 W UserManagerService: Requested status bar icon for non-badged user 0
+11-02 03:02:05.500  4909  4930 I GalleryPage: gallery-rows=121 gallery-pages=9
+11-02 03:02:05.500  4909  4930 I GalleryPage: gallery-page=1/9
+11-02 03:02:05.500  4909  4909 I muse-host: nativeAttachSurface: window 1080x2091
+11-02 03:02:05.500  4909  4909 I muse-host: SEAM-STEP:render:ok
+11-02 03:02:05.500   602   647 D gralloc_ranchu: gralloc_alloc: Creating ashmem region of size 9035776
+11-02 03:02:05.502   602   647 E android.hardware.graphics.allocator@2.0-service: open_verbose_path:56: Could not open '/dev/goldfish_pipe_dprctd': No such file or directory
+11-02 03:02:05.502   602   647 E android.hardware.graphics.allocator@2.0-service: open_verbose:128: both vsock and goldfish_pipe paths failed
+11-02 03:02:05.549  4909  4930 I GalleryPage: [layering] slice page=0 rows=[0,12] comps={TopAppBar|TopAppBar|TopAppBar|NavigationBar|NavigationRail|NavigationDrawer|BottomAppBar|SearchBar|SegmentedButton|ButtonGroup|SplitButton|Button|Button} labels={m3-gallery|m3-gallery|m3-gallery|NavigationBar selected=home|NavigationRail selected=home|NavigationDrawer selected=home|gallery|Search settings|SegmentedButton selected=day|ButtonGroup selected=bold|Create new|Primary action|Tonal action}
+11-02 03:02:05.569   602   647 D gralloc_ranchu: gralloc_alloc: Creating ashmem region of size 9850880
+11-02 03:02:05.570   602   647 E android.hardware.graphics.allocator@2.0-service: open_verbose_path:56: Could not open '/dev/goldfish_pipe_dprctd': No such file or directory
+11-02 03:02:05.570   602   647 E android.hardware.graphics.allocator@2.0-service: open_verbose:128: both vsock and goldfish_pipe paths failed
+11-02 03:02:05.571  4909  4909 I Choreographer: Skipped 54 frames!  The application may be doing too much work on its main thread.
+11-02 03:02:05.571   889   950 W ServiceManagerCppClient: Permission failure: android.permission.ACCESS_SURFACE_FLINGER from uid=10118 pid=0
+11-02 03:02:05.571   889   950 D PermissionCache: checking android.permission.ACCESS_SURFACE_FLINGER for uid=10118 => denied (75 us)
+11-02 03:02:05.571   889   950 W ServiceManagerCppClient: Permission failure: android.permission.ROTATE_SURFACE_FLINGER from uid=10118 pid=0
+11-02 03:02:05.571   889   950 D PermissionCache: checking android.permission.ROTATE_SURFACE_FLINGER for uid=10118 => denied (12 us)
+11-02 03:02:05.571   889   950 W ServiceManagerCppClient: Permission failure: android.permission.INTERNAL_SYSTEM_WINDOW from uid=10118 pid=0
+11-02 03:02:05.571   889   950 D PermissionCache: checking android.permission.INTERNAL_SYSTEM_WINDOW for uid=10118 => denied (13 us)
+11-02 03:02:05.572   889   908 I ActivityTaskManager: Displayed com.muse.host/.MainActivity for user 0: +1s25ms
+11-02 03:02:05.572   889   908 I ActivityTaskManager: Fully drawn com.muse.host/.MainActivity: +1s25ms
+11-02 03:02:05.573  1352  1352 D BaseDepthController: setSurface:
+11-02 03:02:05.573  1352  1352 D BaseDepthController: 	mWaitingOnSurfaceValidity: false
+11-02 03:02:05.573  1352  1352 D BaseDepthController: 	mSurface: null
+11-02 03:02:05.573  1352  1352 D StatsLog: LAUNCHER_ONSTOP
+11-02 03:02:05.573   602   647 D gralloc_ranchu: gralloc_alloc: Creating ashmem region of size 9850880
+11-02 03:02:05.575   602   647 E android.hardware.graphics.allocator@2.0-service: open_verbose_path:56: Could not open '/dev/goldfish_pipe_dprctd': No such file or directory
+11-02 03:02:05.575   602   647 E android.hardware.graphics.allocator@2.0-service: open_verbose:128: both vsock and goldfish_pipe paths failed
+11-02 03:02:05.581  4909  4918 I HWUI    : Davey! duration=924ms; Flags=1, FrameTimelineVsyncId=562297, IntendedVsync=33538077742926, Vsync=33538077742926, InputEventId=0, HandleInputStart=33538078059548, AnimationStart=33538078060095, PerformTraversalsStart=33538078060641, DrawStart=33538933429697, FrameDeadline=33538094409592, FrameInterval=33538078056619, FrameStartTime=16666666, SyncQueued=33538933650710, SyncStart=33538934497244, IssueDrawCommandsStart=33538934656667, SwapBuffers=33538999154175, FrameCompleted=33539002701132, DequeueBufferDuration=1373550, QueueBufferDuration=106448, GpuCompleted=33538999154175, SwapBuffersCompleted=33539002701132, DisplayPresentTime=0, CommandSubmissionCompleted=33538999154175, 
+11-02 03:02:05.600   889   990 I ImeTracker: com.muse.host:2b9c82: onRequestHide at ORIGIN_SERVER reason HIDE_UNSPECIFIED_WINDOW fromUser false
+11-02 03:02:05.600   889   990 I ImeTracker: com.muse.host:2b9c82: onCancelled at PHASE_SERVER_SHOULD_HIDE
+11-02 03:02:05.932  1157  1206 W WindowOnBackDispatcher: sendCancelIfRunning: isInProgress=false callback=android.view.ViewRootImpl$$ExternalSyntheticLambda11@7d04eca
+11-02 03:02:05.932   889  1250 D CoreBackPreview: Window{9343605 u0 Splash Screen com.muse.host EXITING}: Setting back callback null
+11-02 03:02:05.932   889   950 W InputManager-JNI: Input channel object '9343605 Splash Screen com.muse.host (client)' was disposed without first being removed with the input manager!
+11-02 03:02:06.222  4909  4930 I GalleryPage: gallery-rows=121 gallery-pages=9
+11-02 03:02:06.222  4909  4930 I GalleryPage: gallery-page=1/9
+11-02 03:02:07.610   889  1758 E TaskPersister: File error accessing recents directory (directory doesn't exist?).
+11-02 03:02:11.461   889   972 D ActivityManager: freezing 2314 com.android.localtransport
+11-02 03:02:11.461   889   972 D ActivityManager: freezing 2169 com.android.packageinstaller
+11-02 03:02:11.462   889  1033 D InetDiagMessage: Destroyed 0 sockets, proto=IPPROTO_TCP, family=AF_INET, states=14
+11-02 03:02:11.462   889  1033 D InetDiagMessage: Destroyed 0 sockets, proto=IPPROTO_TCP, family=AF_INET6, states=14
+11-02 03:02:11.462   889  1033 D InetDiagMessage: Destroyed live tcp sockets for uids={10027} in 0ms
+11-02 03:02:11.463  1569  1580 W ssioncontroller: Reducing the number of considered missed Gc histogram windows from 479 to 100
+11-02 03:02:11.932   227  4898 I keystore2: system/security/keystore2/watchdog/src/lib.rs:319 - Watchdog thread idle -> terminating. Have a great day.

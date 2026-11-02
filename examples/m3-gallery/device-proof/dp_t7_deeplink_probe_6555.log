@@ -1,0 +1,20 @@
+== deep-link + text-probe 2026-11-02T07:31:00Z ==
+--- explicit VIEW gallery://story/TopAppBar ---
+Starting: Intent { act=android.intent.action.VIEW dat=gallery://story/... cmp=com.muse.host/.MainActivity }
+Status: ok
+LaunchState: WARM
+Activity: com.muse.host/.MainActivity
+TotalTime: 29
+WaitTime: 32
+Complete
+fe0e09f99aca9a335f4f079c66a7ce0a  examples/m3-gallery/device-proof/dp_t7_deeplink_6555.png
+cde5caf8701f39ba2d0b8e9373c5735c  examples/m3-gallery/device-proof/dp_t7_scrolled_6555.png
+--- text-probe page via --es page ---
+Starting: Intent { cmp=com.muse.host/.MainActivity (has extras) }
+Status: ok
+LaunchState: COLD
+Activity: com.muse.host/.MainActivity
+TotalTime: 950
+WaitTime: 951
+Complete
+c51b3c469b9860fa95e9a10586248d49  examples/m3-gallery/device-proof/dp_t7_textprobe_6555.png

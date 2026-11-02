@@ -15,6 +15,7 @@ import android.os.Looper;
 import android.text.Editable;
 import android.text.TextWatcher;
 import android.util.Log;
+import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
@@ -234,8 +235,10 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                 }
                 // The native entry advances one page per call (forward-only);
                 // this entry is forward-only (+1): one JNI advance, one page
-                // marker through the navigateStory path.
+                // marker through the navigateStory path. Keep the Java page
+                // mirror in step (batch-4 deep-link routing depends on it).
                 int newIndex = nativeAdvancePage(engineHandle);
+                galleryPage = newIndex;
                 Log.i("GalleryPage", "PROOF_ADVANCE_PAGE page=" + newIndex);
             } catch (Throwable ignored) {
                 // Fail-closed: harness paging never crashes the host.
@@ -435,6 +438,17 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     private static native void nativeDestroy(long handle);
 
     /**
+     * Forward-only Java mirror of the native page (see nativeAdvancePage:
+     * only that entry mutates g->page, and every Java call site below keeps
+     * this counter in step, so galleryPage % pages is the presented page).
+     * Reset to 0 whenever a fresh tree is installed.
+     */
+    private int galleryPage = 0;
+
+    /** Deep link that arrived before tree/surface were ready; drained in handleTreeBytes. */
+    private android.net.Uri pendingDeepLink = null;
+
+    /**
      * BUG-SAMPLE-007 T6: shell-chrome Next-region predicate (forward-only
      * contract per user ruling 2026-11-01). Pure function of its inputs, no
      * JNI. Returns true iff the (x, y) sample hits the calibrated
@@ -466,6 +480,19 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         // GEOMETRY-ONLY (A6 calibration 2026-11-01): claimed is forensics-only,
         // never an eligibility gate — retained in the signature for logging.
         return x >= NEXT_X_MIN && y <= NEXT_Y_MAX;
+    }
+
+    /**
+     * Batch-4 viewport-relative overload: same shell-chrome rule scaled to
+     * the live surface size. Reference ratios pin the 720x1600 calibration
+     * above (600/720 = 0.833, 200/1600 = 0.125); non-positive viewports fall
+     * back to the reference constants. claimed stays forensics-only.
+     */
+    static boolean isShellChromeAdvance(float x, float y, int viewW, int viewH, int claimed) {
+        if (viewW > 0 && viewH > 0) {
+            return x >= viewW * 0.833f && y <= viewH * 0.125f;
+        }
+        return isShellChromeAdvance(x, y, claimed);
     }
 
     @Override
@@ -559,14 +586,18 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                             + " claimed=" + claimed);
             if (action == MotionEvent.ACTION_UP
                     && engineHandle != 0
-                    && isShellChromeAdvance(event.getX(index), event.getY(index), claimed)) {
-                // T6 Next-only direct driver (retired FR-NAV-013 T5): the +1
-                // forward step is gone — product navigation routes to an
-                // arbitrary route via RouterBridge.invoke("navigate",
-                // {route, params}). A Next-region ACTION_UP now only presents
-                // the current frame, never via broadcast. Region-miss samples
-                // (left-chrome, surface, outside, unclaimed) fall through to
-                // the existing dispatch/render path below with no page.
+                    && isShellChromeAdvance(event.getX(index), event.getY(index),
+                            v.getWidth(), v.getHeight(), claimed)) {
+                // Batch-4 (T7 gate 5): a Next-region ACTION_UP pages forward
+                // exactly one page via nativeAdvancePage (forward-only; the
+                // same entry the PROOF_ADVANCE_PAGE harness uses), then
+                // presents. Prev-region (left-chrome) and surface samples
+                // fall through below with no page. The retired FR-NAV-013 T5
+                // note is history: on-device product paging rides this
+                // native entry; RouterBridge.navigate is the JS/hermetic path.
+                int newIndex = nativeAdvancePage(engineHandle);
+                galleryPage = newIndex;
+                Log.i("GalleryPage", "shell-chrome Next page=" + (newIndex + 1));
                 nativeRenderFrame(engineHandle);
                 // FR-RUNTIME-011 T4 seam present (Stage 3 fix, MAJOR 1):
                 // present the seam frame alongside the legacy frame.
@@ -643,6 +674,9 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         }
         attachImeInsetListener(root);
         startAsyncTreeLoad();
+        // Batch-4: route a cold-start gallery://story/<id> VIEW (stashed
+        // until the tree is ready when the engine is not up yet).
+        handleGalleryIntent(getIntent());
     }
 
     /**
@@ -740,7 +774,15 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             }
             engineHandle = handle;
             treeReady = true;
+            galleryPage = 0;
             maybeRenderFirstFrame();
+            // Batch-4: a gallery://story/<id> VIEW that arrived before the
+            // tree was ready waits here; route it now that paging is live.
+            if (pendingDeepLink != null) {
+                android.net.Uri link = pendingDeepLink;
+                pendingDeepLink = null;
+                routeGalleryLink(link);
+            }
         } catch (Throwable t) {
             Log.e("MainActivity", "tree-load: handle install failed");
         }
@@ -772,6 +814,551 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             }
         }
         maybeReportFullyDrawn();
+    }
+
+    /**
+     * Batch-4: warm gallery://story/<id> VIEW delivery (singleTask). The
+     * intent carries the link in getData(); the "page" extra path above is
+     * untouched.
+     */
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        handleGalleryIntent(intent);
+    }
+
+    /**
+     * Batch-4: DPAD paging (forward-only). Intercepts at dispatch so the
+     * focusable 1x1 IME editors cannot swallow the keys (an EditText with
+     * focus consumes DPAD for cursor movement and Activity.onKeyDown never
+     * fires). DPAD_RIGHT advances exactly one page through the same native
+     * entry as shell-chrome taps; DPAD_LEFT is consumed as a no-op
+     * (forward-only — Prev stays disabled, FR-SAMPLE-014) so the key
+     * responds without ever paging backward. Anything else falls through to
+     * the framework. Swipe/drag stays non-paging by construction (native
+     * slop verdict claims nothing, AC-INPUT-020).
+     */
+    @Override
+    public boolean dispatchKeyEvent(KeyEvent event) {
+        if (engineHandle != 0 && event.getAction() == KeyEvent.ACTION_DOWN
+                && event.getRepeatCount() == 0) {
+            if (event.getKeyCode() == KeyEvent.KEYCODE_DPAD_RIGHT) {
+                int newIndex = nativeAdvancePage(engineHandle);
+                galleryPage = newIndex;
+                Log.i("GalleryPage", "key Next page=" + (newIndex + 1));
+                nativeRenderFrame(engineHandle);
+                if (seamSurfaceHandle != 0) {
+                    try {
+                        nativeSeamRenderFrame(seamSurfaceHandle);
+                    } catch (Throwable ignored) {
+                    }
+                }
+                return true;
+            }
+            if (event.getKeyCode() == KeyEvent.KEYCODE_DPAD_LEFT) {
+                Log.i("GalleryPage", "key Prev disabled (forward-only, no page turn)");
+                return true;
+            }
+        }
+        return super.dispatchKeyEvent(event);
+    }
+
+    /**
+     * Batch-4: entry for gallery://story/<id>[?seed=<n>] VIEW intents.
+     * Validates the scheme/host and id (same fail-closed shape as
+     * galleryNav.parseStoryLink: non-empty id, optional single integer
+     * seed); unknown ids never blank the screen. Defers while the engine
+     * is down (pendingDeepLink, drained in handleTreeBytes).
+     */
+    private void handleGalleryIntent(Intent intent) {
+        if (intent == null) {
+            return;
+        }
+        android.net.Uri data = intent.getData();
+        if (data == null || !"gallery".equals(data.getScheme())) {
+            return;
+        }
+        if (engineHandle == 0) {
+            pendingDeepLink = data;
+            Log.i("GalleryPage", "deep-link stashed (engine not ready): " + data);
+            return;
+        }
+        routeGalleryLink(data);
+    }
+
+    /**
+     * Batch-4: route an already-validated gallery Uri to its story page.
+     * Resolves the story id to the first matching component row in the baked
+     * tree and steps forward-only to its page (no new JNI: repeated
+     * nativeAdvancePage against the Java page mirror). Unknown ids and
+     * unreadable trees fail closed with no page change.
+     */
+    private void routeGalleryLink(android.net.Uri link) {
+        if (link == null || !"story".equals(link.getHost())) {
+            Log.w("GalleryPage", "deep-link rejected (host): " + link);
+            return;
+        }
+        java.util.List<String> segs = link.getPathSegments();
+        String rawId = segs.isEmpty() ? "" : segs.get(0);
+        String id;
+        try {
+            id = java.net.URLDecoder.decode(rawId, "UTF-8");
+        } catch (Throwable ignored) {
+            id = rawId;
+        }
+        if (id == null || id.isEmpty()) {
+            Log.w("GalleryPage", "deep-link rejected (unknown-story): " + link);
+            return;
+        }
+        // Optional single integer seed, mirroring galleryNav.parseStoryLink;
+        // any other query shape rejects fail-closed.
+        String query = link.getEncodedQuery();
+        if (query != null && !query.isEmpty()) {
+            if (!query.matches("seed=-?\\d+")) {
+                Log.w("GalleryPage", "deep-link rejected (unknown-story): " + link);
+                return;
+            }
+        }
+        int viewportH = 0;
+        try {
+            if (pendingHolder != null && pendingHolder.getSurfaceFrame() != null) {
+                viewportH = pendingHolder.getSurfaceFrame().height();
+            }
+        } catch (Throwable ignored) {
+            viewportH = 0;
+        }
+        int[] target = storyTargetPage(id, viewportH);
+        if (target == null) {
+            Log.w("GalleryPage", "deep-link rejected (unknown-story): " + id);
+            return;
+        }
+        int pages = target[1];
+        int cur = pages == 0 ? 0 : galleryPage % pages;
+        if (cur < 0) {
+            cur += pages;
+        }
+        int steps = (target[0] - cur + pages) % pages;
+        for (int i = 0; i < steps; i++) {
+            galleryPage = nativeAdvancePage(engineHandle);
+        }
+        nativeRenderFrame(engineHandle);
+        if (seamSurfaceHandle != 0) {
+            try {
+                nativeSeamRenderFrame(seamSurfaceHandle);
+            } catch (Throwable ignored) {
+            }
+        }
+        Log.i("GalleryPage", "deep-link story=" + id + " page=" + (target[0] + 1) + "/" + pages);
+    }
+
+    /**
+     * Batch-4: resolve a story id to {targetPage, pages} from the baked
+     * tree, replicating the native row extraction order
+     * (gallery_present.cpp ParseGalleryRows: component rows in child order,
+     * then literal label rows) and page packing (PageStarts over RowHeight).
+     * First component-type match wins (case-insensitive), mirroring
+     * storyIdOf (story.id || story.component). Returns null when the id,
+     * tree, or viewport cannot be resolved — never throws.
+     */
+    private int[] storyTargetPage(String id, int viewportH) {
+        if (id == null || id.isEmpty() || viewportH <= 140) {
+            return null;
+        }
+        byte[] bytes;
+        try {
+            bytes = readTreeAsset();
+        } catch (Throwable ignored) {
+            return null;
+        }
+        if (bytes == null || bytes.length < 12
+                || bytes[0] != 'M' || bytes[1] != 'U' || bytes[2] != 'I' || bytes[3] != '1'
+                || bytes[4] != 1) {
+            return null;
+        }
+        int jsonLen = (bytes[8] & 0xff) | ((bytes[9] & 0xff) << 8)
+                | ((bytes[10] & 0xff) << 16) | ((bytes[11] & 0xff) << 24);
+        if (jsonLen <= 0 || jsonLen + 12 > bytes.length) {
+            return null;
+        }
+        String json;
+        try {
+            json = new String(bytes, 12, jsonLen, "UTF-8");
+        } catch (Throwable ignored) {
+            return null;
+        }
+        try {
+            // Prefer the Showcase root; otherwise the first root.
+            String children = childArrayOfRoot(json, true);
+            if (children == null) {
+                children = childArrayOfRoot(json, false);
+            }
+            if (children == null) {
+                return null;
+            }
+            java.util.ArrayList<String> compTypes = new java.util.ArrayList<>();
+            java.util.ArrayList<String> compProps = new java.util.ArrayList<>();
+            java.util.ArrayList<String> textVals = new java.util.ArrayList<>();
+            java.util.ArrayList<Boolean> textHeader = new java.util.ArrayList<>();
+            for (String child : splitTopObjects(children)) {
+                String type = jsonStringProp(child, "type");
+                if (type == null) {
+                    continue;
+                }
+                if ("#text".equals(type)) {
+                    String value = jsonStringProp(child, "value");
+                    if (value != null && !value.isEmpty()
+                            && Character.isLetterOrDigit(value.codePointAt(0))) {
+                        textVals.add(value);
+                        textHeader.add(value.startsWith("M3 Gallery"));
+                    }
+                    continue;
+                }
+                if ("View".equals(type) || "Text".equals(type)) {
+                    continue;
+                }
+                compTypes.add(type);
+                String props = propsSpan(child);
+                compProps.add(props == null ? "" : props);
+                if (compTypes.size() >= 400) {
+                    break;
+                }
+            }
+            int matchRow = -1;
+            for (int i = 0; i < compTypes.size(); i++) {
+                if (compTypes.get(i).equalsIgnoreCase(id)) {
+                    matchRow = i;
+                    break;
+                }
+            }
+            if (matchRow < 0) {
+                return null;
+            }
+            // Heights replicate RowHeight (gallery_present.cpp): header 84,
+            // text 64, per-component extents, else 104.
+            java.util.ArrayList<Integer> heights = new java.util.ArrayList<>();
+            for (int i = 0; i < compTypes.size(); i++) {
+                heights.add(compRowHeight(compTypes.get(i), compProps.get(i)));
+            }
+            for (int i = 0; i < textVals.size() && heights.size() < 400; i++) {
+                heights.add(textHeader.get(i) ? 84 : 64);
+            }
+            // PageStarts replication: avail = h - 84 - 56 - 16, gap 8.
+            java.util.ArrayList<Integer> starts = new java.util.ArrayList<>();
+            starts.add(0);
+            int avail = viewportH - 84 - 56 - 16;
+            int used = 0;
+            for (int i = 0; i < heights.size(); i++) {
+                int h = heights.get(i);
+                int need = (used == 0) ? h : h + 8;
+                if (used != 0 && used + need > avail) {
+                    starts.add(i);
+                    used = h;
+                } else {
+                    used += need;
+                }
+            }
+            int pages = starts.size();
+            if (pages < 1) {
+                return null;
+            }
+            int target = 0;
+            for (int p = 0; p < pages; p++) {
+                int end = (p + 1 < pages) ? starts.get(p + 1) : heights.size();
+                if (matchRow >= starts.get(p) && matchRow < end) {
+                    target = p;
+                    break;
+                }
+                if (matchRow >= end) {
+                    target = p;
+                }
+            }
+            return new int[]{target, pages};
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
+    /** Row height for one component row (see RowHeight in gallery_present.cpp). */
+    private static int compRowHeight(String comp, String propsText) {
+        if ("TopAppBar".equals(comp)) {
+            if (propsText.contains("large")) {
+                return 236;
+            }
+            if (propsText.contains("medium")) {
+                return 196;
+            }
+            return 156;
+        }
+        if ("Card".equals(comp) || "Dialog".equals(comp)) {
+            return 190;
+        }
+        if ("BottomSheet".equals(comp) || "NavigationDrawer".equals(comp)) {
+            return 180;
+        }
+        if ("Menu".equals(comp) || "Carousel".equals(comp)) {
+            return 170;
+        }
+        if ("ListItem".equals(comp)) {
+            return 128;
+        }
+        if ("NavigationRail".equals(comp) || "BottomAppBar".equals(comp)) {
+            return 140;
+        }
+        if ("NavigationBar".equals(comp) || "SearchBar".equals(comp)
+                || "SnackbarHost".equals(comp) || "Slider".equals(comp)
+                || "LinearProgress".equals(comp) || "CircularProgress".equals(comp)) {
+            return 124;
+        }
+        return 104;
+    }
+
+    /** Raw props-object span of one child object ("" when absent), for desc matching. */
+    private static String propsSpan(String child) {
+        int k = child.indexOf("\"props\"");
+        if (k < 0) {
+            return "";
+        }
+        int c = child.indexOf(':', k + 7);
+        if (c < 0) {
+            return "";
+        }
+        int b = -1;
+        for (int i = c + 1; i < child.length(); i++) {
+            char ch = child.charAt(i);
+            if (ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r') {
+                continue;
+            }
+            if (ch == '{') {
+                b = i;
+            }
+            break;
+        }
+        if (b < 0) {
+            return "";
+        }
+        int end = matchBracket(child, b, '{', '}');
+        if (end < 0) {
+            return "";
+        }
+        return child.substring(b, end + 1);
+    }
+
+    /** Children-array content of the preferred (Showcase) or first root object. */
+    private static String childArrayOfRoot(String json, boolean preferShowcase) {
+        int k = json.indexOf("\"roots\"");
+        if (k < 0) {
+            return null;
+        }
+        int b = -1;
+        for (int i = k + 7; i < json.length(); i++) {
+            char ch = json.charAt(i);
+            if (ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r' || ch == ':') {
+                continue;
+            }
+            if (ch == '[') {
+                b = i;
+            }
+            break;
+        }
+        if (b < 0) {
+            return null;
+        }
+        int end = matchBracket(json, b, '[', ']');
+        if (end < 0) {
+            return null;
+        }
+        String arr = json.substring(b + 1, end);
+        java.util.ArrayList<String> roots = splitTopObjects(arr);
+        if (roots.isEmpty()) {
+            return null;
+        }
+        String first = null;
+        for (String root : roots) {
+            String children = arrayProp(root, "children");
+            if (children == null) {
+                continue;
+            }
+            if (first == null) {
+                first = children;
+            }
+            if (preferShowcase) {
+                String file = jsonStringProp(root, "file");
+                if ("src/Showcase.tsx".equals(file)) {
+                    return children;
+                }
+            } else {
+                return children;
+            }
+        }
+        return preferShowcase ? null : first;
+    }
+
+    /** Array-property content (without brackets) of one JSON object span. */
+    private static String arrayProp(String obj, String key) {
+        String q = "\"" + key + "\"";
+        int k = obj.indexOf(q);
+        if (k < 0) {
+            return null;
+        }
+        int b = -1;
+        for (int i = k + q.length(); i < obj.length(); i++) {
+            char ch = obj.charAt(i);
+            if (ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r' || ch == ':') {
+                continue;
+            }
+            if (ch == '[') {
+                b = i;
+            }
+            break;
+        }
+        if (b < 0) {
+            return null;
+        }
+        int end = matchBracket(obj, b, '[', ']');
+        if (end < 0) {
+            return null;
+        }
+        return obj.substring(b + 1, end);
+    }
+
+    /** First string-valued property of one JSON object span (null when absent/non-string). */
+    private static String jsonStringProp(String obj, String key) {
+        String q = "\"" + key + "\"";
+        int from = 0;
+        while (true) {
+            int k = obj.indexOf(q, from);
+            if (k < 0) {
+                return null;
+            }
+            int i = k + q.length();
+            while (i < obj.length() && (obj.charAt(i) == ' ' || obj.charAt(i) == '\t'
+                    || obj.charAt(i) == '\n' || obj.charAt(i) == '\r' || obj.charAt(i) == ':')) {
+                i++;
+            }
+            if (i < obj.length() && obj.charAt(i) == '"') {
+                StringBuilder sb = new StringBuilder();
+                int end = appendJsonString(obj, i, sb);
+                if (end > 0) {
+                    return sb.toString();
+                }
+                return null;
+            }
+            from = k + 1;
+        }
+    }
+
+    /** Split top-level {...} spans of an array-content string (string-aware). */
+    private static java.util.ArrayList<String> splitTopObjects(String arr) {
+        java.util.ArrayList<String> out = new java.util.ArrayList<>();
+        int i = 0;
+        while (i < arr.length()) {
+            while (i < arr.length() && arr.charAt(i) != '{') {
+                i++;
+            }
+            if (i >= arr.length()) {
+                break;
+            }
+            int end = matchBracket(arr, i, '{', '}');
+            if (end < 0) {
+                break;
+            }
+            out.add(arr.substring(i, end + 1));
+            i = end + 1;
+        }
+        return out;
+    }
+
+    /** String-aware bracket matcher; returns the closer index or -1. */
+    private static int matchBracket(String s, int open, char openCh, char closeCh) {
+        int depth = 0;
+        boolean inStr = false;
+        for (int i = open; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (inStr) {
+                if (c == '\\') {
+                    i++;
+                } else if (c == '"') {
+                    inStr = false;
+                }
+                continue;
+            }
+            if (c == '"') {
+                inStr = true;
+            } else if (c == openCh) {
+                depth++;
+            } else if (c == closeCh) {
+                depth--;
+                if (depth == 0) {
+                    return i;
+                }
+            }
+        }
+        return -1;
+    }
+
+    /** Append one JSON string literal (at the opening quote) decoded; returns end index or -1. */
+    private static int appendJsonString(String s, int quote, StringBuilder sb) {
+        StringBuilder raw = new StringBuilder();
+        int i = quote + 1;
+        while (i < s.length()) {
+            char c = s.charAt(i);
+            if (c == '"') {
+                sb.append(raw);
+                return i + 1;
+            }
+            if (c != '\\') {
+                raw.append(c);
+                i++;
+                continue;
+            }
+            i++;
+            if (i >= s.length()) {
+                return -1;
+            }
+            char e = s.charAt(i);
+            if (e == '"' || e == '\\' || e == '/') {
+                raw.append(e);
+            } else if (e == 'n') {
+                raw.append('\n');
+            } else if (e == 't') {
+                raw.append('\t');
+            } else if (e == 'r') {
+                raw.append('\r');
+            } else if (e == 'u') {
+                if (i + 4 >= s.length()) {
+                    return -1;
+                }
+                int code;
+                try {
+                    code = Integer.parseInt(s.substring(i + 1, i + 5), 16);
+                } catch (NumberFormatException ex) {
+                    return -1;
+                }
+                i += 4;
+                if (code >= 0xD800 && code <= 0xDBFF && i + 6 < s.length()
+                        && s.charAt(i + 1) == '\\' && s.charAt(i + 2) == 'u') {
+                    int low;
+                    try {
+                        low = Integer.parseInt(s.substring(i + 3, i + 7), 16);
+                    } catch (NumberFormatException ex) {
+                        return -1;
+                    }
+                    if (low < 0xDC00 || low > 0xDFFF) {
+                        return -1;
+                    }
+                    raw.append((char) code);
+                    raw.append((char) low);
+                    i += 6;
+                } else {
+                    raw.append((char) code);
+                }
+            } else {
+                return -1;
+            }
+            i++;
+        }
+        return -1;
     }
 
     @Override
