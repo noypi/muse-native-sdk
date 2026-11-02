@@ -1,6 +1,5 @@
 #pragma once
 
-#include <functional>
 #include <memory>
 #include <string>
 
@@ -16,8 +15,8 @@ struct JsValue {
 
 // Embedded-JS interface (FR-RUNTIME-007 / AC-RUNTIME-019).
 // Pure-virtual ABC using only std types so consumers compile without any
-// engine headers. Backends (Hermes, fakes) implement this interface;
-// every access to the engine goes through it.
+// engine headers. Production backends implement this interface; every
+// access to the engine goes through it.
 class JsRuntime {
  public:
   virtual JsValue eval(const std::string& source,
@@ -27,19 +26,17 @@ class JsRuntime {
   virtual ~JsRuntime() = default;
 };
 
-// Test seam: in-process function-table-equivalent hooks behind which unit
-// tests run a fake engine. No engine headers, libs, or types involved.
-struct FakeEngineHooks {
-  std::function<JsValue(const std::string& source, const std::string& origin)>
-      eval;
-  std::function<void()> drain;
-  std::function<void()> collect;
-};
+// Parameters for the production runtime factory. Empty on lanes with no
+// embedded engine linked: createReal then fail-closes instead of answering
+// success without work.
+struct RealEngineParams {};
 
-// Factory for test doubles bound to the injected hooks above.
+// Factory for the production runtime behind the seam above. The default
+// prod path runs the real engine when one is linked, otherwise fail-closed;
+// it never returns a test double.
 class JsRuntimeFactory {
  public:
-  static std::unique_ptr<JsRuntime> createFake(FakeEngineHooks hooks);
+  static std::unique_ptr<JsRuntime> createReal(RealEngineParams params);
 };
 
 }  // namespace runtime
