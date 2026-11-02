@@ -279,6 +279,13 @@ struct FlappySceneNode {
 // unknown-kind probe tree. Presented content registers further members, so
 // the family stays open — resolution is always a store lookup, never a
 // canned answer for a closed constant list.
+// Bounded scene-store cap (security LOW fix): at most this many evaluated
+// trees are retained process-wide, including the 3 seeded handles. A new
+// distinct content hash beyond the cap fails closed (returns 0, no insert,
+// no eviction) so bundled-pipeline bytes keep working while an unbounded
+// distinct-payload feed cannot grow memory. Re-registering a known handle
+// refreshes in place and never counts against the cap.
+constexpr std::size_t kMaxFlappySceneTrees = 32;
 std::map<TreeHandle, std::vector<FlappySceneNode>>& EvaluatedFlappyTrees() {
   static std::map<TreeHandle, std::vector<FlappySceneNode>>* store =
       new std::map<TreeHandle, std::vector<FlappySceneNode>>();
@@ -358,7 +365,12 @@ TreeHandle RegisterFlappyContentTree(const void* data, std::size_t len) {
     if (nodes.empty()) {
       return 0;
     }
-    EvaluatedFlappyTrees()[handle] = nodes;
+    auto& store = EvaluatedFlappyTrees();
+    if (store.find(handle) == store.end() &&
+        store.size() >= kMaxFlappySceneTrees) {
+      return 0;  // cap exceeded: fail closed, never evict silently.
+    }
+    store[handle] = nodes;
     return handle;
   } catch (...) {
     return 0;

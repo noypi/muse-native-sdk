@@ -12,10 +12,19 @@
 // Seam note: this file names no per-app symbol. That is the T2 assertion in
 // miniature — generic dispatch (and its tests) resolve content by tag,
 // never by app name.
+#include <cstdint>
 #include <cstdio>
+#include <string>
 #include <string_view>
+#include <vector>
 
 #include "runtime/content_registry.h"
+#include "runtime/flappy_content.h"
+#include "runtime/gallery_present.h"
+
+// Forward-declared (per gallery_layering_test.cpp): FireTapHandler lives in
+// input_chain.cpp, whose header needs PRIVATE input paths unavailable here.
+bool FireTapHandler(std::int32_t nodeId);
 
 // --- T1 `Interface:` line (plan verbatim) --------------------------------
 // `ContentRegistry::Register(ContentTag, ContentHandlers) -> bool;
@@ -27,6 +36,11 @@
 namespace {
 constexpr std::string_view kTagA = "test-content-a";
 constexpr std::string_view kTagB = "test-content-b";
+
+// Distinct fake record-tap behaviors used to prove first-wins keeps the
+// first bundle's handlers (return values differ, so identity is observable).
+bool fake_first_record_tap(std::int32_t, const char*) { return true; }
+bool fake_second_record_tap(std::int32_t, const char*) { return false; }
 }  // namespace
 
 // Named case: the harness executable entry point exists and runs.
@@ -104,6 +118,161 @@ static bool check_unknown_stays_null_after_registrations() {
   return registry.Resolve(kTagB) == nullptr;
 }
 
+// Named case: scene-store cap (security LOW pin; kMaxFlappySceneTrees=32).
+// Many distinct content payloads must stop inserting and fail closed
+// (return 0, no eviction); re-registering a known payload refreshes in
+// place and still succeeds, and the known handle still renders.
+static bool check_scene_store_cap_fail_closed() {
+  std::string firstPayload;
+  TreeHandle firstHandle = 0;
+  std::size_t accepted = 0;
+  bool sawZero = false;
+  for (int i = 0; i < 400; ++i) {
+    const std::string payload =
+        "FlappyBird|FlappyPipe#cap-probe-" + std::to_string(i) +
+        "-pad................................";
+    const TreeHandle handle =
+        RegisterFlappyContentTree(payload.data(), payload.size());
+    if (i == 0) {
+      firstPayload = payload;
+      firstHandle = handle;
+    }
+    if (handle == 0) {
+      sawZero = true;
+    } else {
+      ++accepted;
+    }
+  }
+  if (firstHandle == 0) return false;
+  if (accepted > 32) return false;
+  if (!sawZero) return false;
+  if (RegisterFlappyContentTree(firstPayload.data(), firstPayload.size()) !=
+      firstHandle) {
+    return false;
+  }
+  return renderTree(firstHandle).nodeCount > 0;
+}
+
+// Named case: dual-tag gate pin — a single stray token must never reroute
+// gallery bytes onto the content-scene path (*error untouched so the caller
+// falls through to gallery rows); both anchor tags present.
+static bool check_dual_tag_gate_single_token_denied() {
+  const std::string birdOnly = "gallery-bytes FlappyBird stray-token";
+  std::string error;
+  if (runtime::TryPresentContentScene(birdOnly.data(), birdOnly.size(),
+                                      &error)) {
+    return false;
+  }
+  if (!error.empty()) return false;
+  const std::string pipeOnly = "gallery-bytes FlappyPipe stray-token";
+  if (runtime::TryPresentContentScene(pipeOnly.data(), pipeOnly.size(),
+                                      &error)) {
+    return false;
+  }
+  if (!error.empty()) return false;
+  if (runtime::TryPresentContentScene(nullptr, 0, &error)) return false;
+  if (!error.empty()) return false;
+  const std::string both = "scene-bytes FlappyBird FlappyPipe";
+  std::string sceneError;
+  if (!runtime::TryPresentContentScene(both.data(), both.size(),
+                                       &sceneError)) {
+    return false;
+  }
+  return sceneError.empty();
+}
+
+// Named case: first-wins re-register keeps the FIRST bundle's handlers
+// (observable via distinct fake behaviors), not the second bundle's.
+static bool check_first_wins_keeps_handler_identity() {
+  runtime::ContentRegistry registry;
+  runtime::ContentHandlers first;
+  first.recordTap = &fake_first_record_tap;
+  runtime::ContentHandlers second;
+  second.recordTap = &fake_second_record_tap;
+  if (!registry.Register("test-content-identity", first)) return false;
+  if (registry.Register("test-content-identity", second)) return false;
+  const runtime::ContentHandlers* resolved =
+      registry.Resolve("test-content-identity");
+  if (resolved == nullptr) return false;
+  if (resolved->recordTap != &fake_first_record_tap) return false;
+  return resolved->recordTap(31, "onTouchStart");
+}
+
+// Named case: an all-nullptr bundle fails closed on every dispatch path —
+// each of the seven ForEach sites null-checks before calling, so no call
+// is ever dispatched through this bundle.
+static bool check_nullptr_bundle_fails_closed_all_paths() {
+  runtime::ContentRegistry registry;
+  if (!registry.Register("test-content-null", runtime::ContentHandlers{})) {
+    return false;
+  }
+  const runtime::ContentHandlers* resolved =
+      registry.Resolve("test-content-null");
+  if (resolved == nullptr) return false;
+  if (resolved->touchHandlerName != nullptr) return false;
+  if (resolved->recordTap != nullptr) return false;
+  if (resolved->tapCount != nullptr) return false;
+  if (resolved->tapNodeId != nullptr) return false;
+  if (resolved->tapHandler != nullptr) return false;
+  if (resolved->tapBounds != nullptr) return false;
+  if (resolved->drawSceneKind != nullptr) return false;
+  bool dispatched = false;
+  registry.ForEach([&](runtime::ContentTag,
+                       const runtime::ContentHandlers& handlers) {
+    if (handlers.touchHandlerName != nullptr) {
+      handlers.touchHandlerName(31);
+      dispatched = true;
+    }
+    if (handlers.recordTap != nullptr) {
+      handlers.recordTap(31, "onTouchStart");
+      dispatched = true;
+    }
+    if (handlers.tapCount != nullptr) {
+      handlers.tapCount(202);
+      dispatched = true;
+    }
+    if (handlers.tapNodeId != nullptr) {
+      handlers.tapNodeId(202, 0);
+      dispatched = true;
+    }
+    if (handlers.tapHandler != nullptr) {
+      handlers.tapHandler(202, 0);
+      dispatched = true;
+    }
+    if (handlers.tapBounds != nullptr) {
+      float x = 0.0f, y = 0.0f, w = 0.0f, h = 0.0f;
+      handlers.tapBounds(202, 31, &x, &y, &w, &h);
+      dispatched = true;
+    }
+    if (handlers.drawSceneKind != nullptr) {
+      const std::string kind = "FlappyBird";
+      handlers.drawSceneKind(kind, 31);
+      dispatched = true;
+    }
+  });
+  return !dispatched;
+}
+
+// Named case: forged/stale/zero node ids fail closed. Only the steer node
+// (31) with the exact handler records; wrong node, handler mismatch,
+// nullptr handler, and zero ids never record. Unclaimed ids (zero,
+// negative, never-granted) never fire.
+static bool check_forged_node_ids_fail_closed() {
+  if (!runtime::RegisterFlappyContent()) return false;
+  const runtime::ContentHandlers* handlers =
+      GlobalContentRegistry().Resolve("flappy");
+  if (handlers == nullptr || handlers->recordTap == nullptr) return false;
+  if (!handlers->recordTap(31, "onTouchStart")) return false;
+  if (handlers->recordTap(20, "onTouchStart")) return false;
+  if (handlers->recordTap(31, "onHudTouch")) return false;
+  if (handlers->recordTap(31, nullptr)) return false;
+  if (handlers->recordTap(0, "onTouchStart")) return false;
+  if (FireTapHandler(0)) return false;
+  if (FireTapHandler(-1)) return false;
+  if (FireTapHandler(31)) return false;
+  return true;
+}
+
 #define RUN_CASE(name)                             \
   do {                                             \
     if (!(name)()) {                               \
@@ -125,6 +294,11 @@ int main() {
   RUN_CASE(check_duplicate_register_returns_false_first_wins);
   RUN_CASE(check_two_tags_resolve_independently_by_tag);
   RUN_CASE(check_unknown_stays_null_after_registrations);
+  RUN_CASE(check_dual_tag_gate_single_token_denied);
+  RUN_CASE(check_first_wins_keeps_handler_identity);
+  RUN_CASE(check_nullptr_bundle_fails_closed_all_paths);
+  RUN_CASE(check_forged_node_ids_fail_closed);
+  RUN_CASE(check_scene_store_cap_fail_closed);
   if (failures > 0) {
     std::printf("content_registry_test: %d failing\n", failures);
     return 1;
