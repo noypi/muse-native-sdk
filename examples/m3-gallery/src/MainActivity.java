@@ -879,6 +879,10 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         if (data == null || !"gallery".equals(data.getScheme())) {
             return;
         }
+        if (!"story".equals(data.getHost())) {
+            Log.w("GalleryPage", "deep-link rejected (host): " + data);
+            return;
+        }
         if (engineHandle == 0) {
             pendingDeepLink = data;
             Log.i("GalleryPage", "deep-link stashed (engine not ready): " + data);
