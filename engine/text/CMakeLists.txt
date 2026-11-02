@@ -203,6 +203,7 @@ add_library(muse_text STATIC
   src/scale_config.cpp
   src/glyph_atlas.cpp
   src/glyph_raster_orientation.cpp
+  src/raster_blend_orientation.cpp
   ink/ink_stroke_pipeline.cpp
   ink/palm_rejector.cpp
   ink/handwriting_committer.cpp
