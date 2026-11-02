@@ -10,6 +10,7 @@
 // is the expected RED for T2, not a malformed test.
 #include <cstdint>
 #include <cstdio>
+#include <fstream>
 #include <string>
 #include <vector>
 
@@ -172,6 +173,113 @@ static bool check_discover_fonts_absent_family_ends_at_bundled() {
   return (*result).back() == enumerator.LastResortFace(kLatn);
 }
 
+// --- Batch 1 (BUG-TEXT-008) T1: host hermetic fail-path pins.
+// FontPathForFace miss paths fail closed with kNoFaceAvailable on every
+// lane (host: unconditionally; device: null/unknown/no-candidate/unreadable).
+// These hold GREEN on host and guard the fail-closed contract the device
+// leg reproduces. ---
+
+static bool check_font_path_null_handle_fails_closed() {
+  auto result = muse::text::FontPathForFace(muse::text::FontHandle{0});
+  if (result.ok()) return false;
+  return result.status() == muse::text::Status::kNoFaceAvailable;
+}
+
+static bool check_font_path_unknown_handle_fails_closed() {
+  auto result = muse::text::FontPathForFace(muse::text::FontHandle{0xFFFFFFFFu});
+  if (result.ok()) return false;
+  return result.status() == muse::text::Status::kNoFaceAvailable;
+}
+
+static bool check_font_path_last_resort_has_no_file() {
+  // The bundled last-resort face has no system file on any lane.
+  muse::text::SystemFontEnumerator enumerator;
+  auto result =
+      muse::text::FontPathForFace(enumerator.LastResortFace(kLatn));
+  if (result.ok()) return false;
+  return result.status() == muse::text::Status::kNoFaceAvailable;
+}
+
+// --- Batch 1 (BUG-TEXT-008) T1: device-leg failing pins (DEVICE_GATED).
+// TRUE legs run on the x86_64 emulator (127.0.0.1:6555) at verify time.
+// On host (no __ANDROID__) they SKIP-pass so the hermetic suites stay
+// green; device results are never faked. Pre-fix on device each FAILS
+// (FontPathForFace -> kNoFaceAvailable -> kMissingGlyph, drawn=0); post-fix
+// each PASSES. ---
+
+#if defined(__ANDROID__)
+static bool check_device_font_path_roboto_latn_resolves_readable_ttf() {
+  // RobotoLatn id mirrors CandidatesForFace (font_discovery_android.cpp).
+  const auto result =
+      muse::text::FontPathForFace(muse::text::FontHandle{0x000B0001u});
+  if (!result.ok() || (*result).empty()) return false;
+  const std::string& path = *result;
+  if (path.size() < 5) return false;
+  const std::string ext = path.substr(path.size() - 4);
+  if (ext != ".ttf" && ext != ".ttc" && ext != ".otf") return false;
+  std::ifstream probe(path.c_str());
+  return probe.good();
+}
+#else
+static bool check_device_font_path_roboto_latn_resolves_readable_ttf() {
+  std::printf("SKIP device-gated (needs __ANDROID__ 6555 leg)\n");
+  return true;
+}
+#endif
+
+// --- Batch 1 (BUG-TEXT-008) T2: reason-coded fail-closed contract.
+// Closest observable host behavior for the device-only logcat/warn
+// acceptance (TC-TEXT-047 grep precedent): the production sources must
+// carry the reason vocabulary from the plan Interface line
+// (`[reason=path|ft-open|hb|missing-glyph]`) plus FT return-code logging.
+// RED now (no reason token, no device logging in engine/text), GREEN after
+// the coder instruments. ASSUMPTION: the coder keeps the exact `[reason=`
+// prefix and the four reason names from the plan/task contract; a different
+// spelling reconciles at verify (GR-08 T1.9), it does not fail the batch. ---
+
+namespace {
+
+std::string test_source_dir() {
+  std::string file = __FILE__;
+  const std::string::size_type slash = file.find_last_of("/\\");
+  if (slash == std::string::npos) return ".";
+  return file.substr(0, slash);
+}
+
+bool source_file_contains(const std::string& rel, const char* token) {
+  const std::string path = test_source_dir() + "/" + rel;
+  std::ifstream in(path.c_str(), std::ios::binary);
+  if (!in.good()) return false;
+  const std::string content((std::istreambuf_iterator<char>(in)),
+                            std::istreambuf_iterator<char>());
+  return content.find(token) != std::string::npos;
+}
+
+}  // namespace
+
+static bool check_gallery_fail_closed_warn_carries_reason_code() {
+  // Every fail-closed gallery frame must name its cause for logcat triage.
+  return source_file_contains("../../runtime/src/gallery_present.cpp",
+                              "[reason=");
+}
+
+static bool check_gallery_warn_names_all_four_reasons() {
+  const char* kFile = "../../runtime/src/gallery_present.cpp";
+  return source_file_contains(kFile, "reason=path") &&
+         source_file_contains(kFile, "reason=ft-open") &&
+         source_file_contains(kFile, "reason=hb") &&
+         source_file_contains(kFile, "reason=missing-glyph");
+}
+
+static bool check_device_font_path_logs_ft_return_codes() {
+  // T2 instrumentation: the Android TU logs FontPathForFace outcomes plus
+  // FT_Init_FreeType/FT_New_Face return codes to the muse_text logcat tag.
+  const char* kFile = "../src/font_discovery_android.cpp";
+  return source_file_contains(kFile, "__android_log_print") &&
+         (source_file_contains(kFile, "FT_Error") ||
+          source_file_contains(kFile, "ft_err"));
+}
+
 #define RUN_CASE(name)                           \
   do {                                           \
     if (!(name)()) {                             \
@@ -199,6 +307,13 @@ int main() {
   RUN_CASE(check_supports_script_latin_and_arabic);
   RUN_CASE(check_supports_script_rejects_unknown);
   RUN_CASE(check_discover_fonts_absent_family_ends_at_bundled);
+  RUN_CASE(check_font_path_null_handle_fails_closed);
+  RUN_CASE(check_font_path_unknown_handle_fails_closed);
+  RUN_CASE(check_font_path_last_resort_has_no_file);
+  RUN_CASE(check_device_font_path_roboto_latn_resolves_readable_ttf);
+  RUN_CASE(check_gallery_fail_closed_warn_carries_reason_code);
+  RUN_CASE(check_gallery_warn_names_all_four_reasons);
+  RUN_CASE(check_device_font_path_logs_ft_return_codes);
   if (failures > 0) {
     std::printf("system_fonts_test: %d failing\n", failures);
     return 1;

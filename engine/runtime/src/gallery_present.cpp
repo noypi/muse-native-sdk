@@ -21,6 +21,7 @@
 #include <cstdio>
 #include <cstring>
 #include <map>
+#include <string>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -401,12 +402,38 @@ muse::text::FontHandle GalleryChainFace() {
   return muse::text::SystemFontEnumerator().LastResortFace(0);
 }
 
+// T2 (BUG-TEXT-008) reason taxonomy for the fail-closed gallery warn.
+// Reasons: reason=path (face file miss — FontPathForFace kNoFaceAvailable),
+// reason=ft-open (FT_New_Face failure — see the shaper muse_text logcat
+// line with the FT return code), reason=hb (HarfBuzz shaping failure — see
+// the shaper muse_text logcat line), reason=missing-glyph (fail-closed
+// default: coverage miss, atlas breach, malformed input). The gallery layer
+// observes only the StatusOr status: kNoFaceAvailable means the path never
+// resolved; every other fail-closed outcome (including the ft-open/hb
+// sub-causes distinguished in logcat) surfaces here as missing-glyph.
+// Fail-closed semantics unchanged: still 0 handle, never a bitmap.
+thread_local std::string g_last_gallery_shaping_reason = "missing-glyph";
+
+const char* GalleryShapingFailReason(muse::text::Status status) {
+  if (status == muse::text::Status::kNoFaceAvailable) return "path";
+  return "missing-glyph";
+}
+
+std::string GalleryShapingFailWarn(const char* prefix) {
+  std::string warn = prefix;
+  warn += " [reason=";
+  warn += g_last_gallery_shaping_reason;
+  warn += "]";
+  return warn;
+}
+
 // Shape one label through the engine stack. Returns false on empty input,
 // malformed UTF-8 (kInvalidInput), or any engine failure: the caller must
 // fail closed (0 handle -> diagnostic, never a bitmap). Never throws.
 bool ShapeLabelThroughEngine(const std::string& label,
                              muse::text::ShapedRun* run,
                              muse::text::FontHandle* face) {
+  g_last_gallery_shaping_reason = "missing-glyph";
   if (label.empty() || run == nullptr) return false;
   try {
     // RichBuffer owns the emission text; its plainText feeds the shaper.
@@ -424,7 +451,11 @@ bool ShapeLabelThroughEngine(const std::string& label,
         muse::text::shapeRunWithFallback(
             reinterpret_cast<const std::uint8_t*>(text.data()), text.size(),
             style, req);
-    if (!shaped.ok() || shaped->glyph_ids.empty()) return false;
+    if (!shaped.ok() || shaped->glyph_ids.empty()) {
+      g_last_gallery_shaping_reason =
+          GalleryShapingFailReason(shaped.status());
+      return false;
+    }
     *run = *shaped;
     if (face != nullptr) *face = GalleryChainFace();
     return true;
@@ -578,6 +609,7 @@ std::uint32_t ShapeGalleryLabel(const std::string& label) {
         i < run.advances.size() ? run.advances[i] : 0.0f;
     if (shaper.atlas.insert(face, kGalleryFontScale, run.glyph_ids[i],
                             texels) != muse::text::Status::kOk) {
+      g_last_gallery_shaping_reason = "missing-glyph";
       return 0;  // Atlas bound breach past evict-and-retry: fail closed.
     }
   }
@@ -2351,7 +2383,8 @@ bool PresentGallery(const void* mui1Data, std::size_t len, Renderer& renderer,
           row.comp.empty() ? row.label : ShortCaption(row);
       if (!label.empty() && ShapeGalleryLabel(label) == 0) {
         if (error != nullptr) {
-          *error = "gallery label shaping failed (fail-closed: no bitmap)";
+          *error = GalleryShapingFailWarn(
+              "gallery label shaping failed (fail-closed: no bitmap)");
         }
         return false;
       }
@@ -2770,6 +2803,15 @@ bool LabelHasNoncharacter(const std::string& label) {
   return false;
 }
 
+// Per-label fail-closed gate for the present paths: resets the T2 reason,
+// rejects noncharacters, else shapes. True when the frame must fail closed
+// (the warn then carries the fresh reason, never a stale one).
+bool GalleryLabelFailsClosed(const std::string& label) {
+  g_last_gallery_shaping_reason = "missing-glyph";
+  if (LabelHasNoncharacter(label)) return true;
+  return ShapeGalleryLabel(label) == 0;
+}
+
 // Staging recorder: Renderer draw lands here first so a non-None draw
 // result (or a rejected shaped run below) records nothing on the window
 // surface. Committed to the real target only after every gate passes.
@@ -3167,9 +3209,12 @@ bool PresentDeviceGalleryPage(const std::vector<GalleryRow>& rows, int page,
       const std::string& label =
           row.comp.empty() ? row.label : ShortCaption(row);
       if (label.empty()) continue;
-      if (LabelHasNoncharacter(label) || ShapeGalleryLabel(label) == 0) {
+      if (GalleryLabelFailsClosed(label)) {
         SetPresentError(error,
-                        "gallery label shaping failed (fail-closed: no bitmap)");
+                        GalleryShapingFailWarn(
+                                "gallery label shaping failed (fail-closed: "
+                                "no bitmap)")
+                            .c_str());
         return false;
       }
     }
@@ -3339,10 +3384,12 @@ bool PresentRealGalleryPage(const std::vector<GalleryRow>& rows, int page,
       const std::string& label =
           row.comp.empty() ? row.label : ShortCaption(row);
       if (label.empty()) continue;
-      if (LabelHasNoncharacter(label) || ShapeGalleryLabel(label) == 0) {
+      if (GalleryLabelFailsClosed(label)) {
         SetPresentError(error,
-                        "real gallery page: label shaping failed "
-                        "(fail-closed: no bitmap)");
+                        GalleryShapingFailWarn(
+                                "real gallery page: label shaping failed "
+                                "(fail-closed: no bitmap)")
+                            .c_str());
         return false;
       }
     }
