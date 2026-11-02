@@ -172,6 +172,45 @@ if(MUSE_TEXT_D3_LIBS AND NOT ANDROID)
     "-Wl,--pop-state")
 endif()
 
+# BUG-TEXT-007 NDK link fix (static lane): test executables link
+# libruntime.a whose shaper.o (T9) strongly references FT_Init_FreeType /
+# hb_ft_font_create / hb_buffer_* etc., but nothing linked the vendored
+# static archives — `ld.lld: error: undefined symbol` x7. The shared
+# `Runtime` target below already resolves exact-path `.a` archives under
+# ${MUSE_TEXT_D3_ROOT}/lib; the static `runtime` never did (the shared-lib
+# block above is host-only by `AND NOT ANDROID`). Mirror the exact-path
+# resolution here: ${MUSE_TEXT_D3_ROOT}/lib when set, else the conventional
+# per-ABI mirror staged from the vendored tree
+# (`<build>/d3-mirror-<ABI>/lib`, sibling of this OUTDIR). Guarded:
+# --start-group/--end-group so inter-archive order (hb->ft, i18n->uc->data)
+# cannot fail the single-pass static link; a lane with no archives links
+# exactly as before and configure never fails.
+if(ANDROID)
+  set(_muse_static_d3_root "")
+  if(DEFINED MUSE_TEXT_D3_ROOT AND NOT "${MUSE_TEXT_D3_ROOT}" STREQUAL "")
+    set(_muse_static_d3_root "${MUSE_TEXT_D3_ROOT}")
+  elseif(DEFINED ANDROID_ABI AND NOT "${ANDROID_ABI}" STREQUAL "")
+    set(_muse_static_d3_root "${CMAKE_BINARY_DIR}/../d3-mirror-${ANDROID_ABI}")
+  endif()
+  set(_muse_static_d3_names
+    harfbuzz freetype icuuc icudata icui18n)
+  set(MUSE_RUNTIME_STATIC_D3_LIBS "")
+  if(NOT "${_muse_static_d3_root}" STREQUAL "")
+    foreach(_muse_static_d3 IN LISTS _muse_static_d3_names)
+      set(_muse_static_d3_archive "${_muse_static_d3_root}/lib/lib${_muse_static_d3}.a")
+      if(EXISTS "${_muse_static_d3_archive}")
+        list(APPEND MUSE_RUNTIME_STATIC_D3_LIBS "${_muse_static_d3_archive}")
+      endif()
+    endforeach()
+  endif()
+  if(MUSE_RUNTIME_STATIC_D3_LIBS)
+    target_link_libraries(runtime PRIVATE
+      "-Wl,--start-group"
+      ${MUSE_RUNTIME_STATIC_D3_LIBS}
+      "-Wl,--end-group")
+  endif()
+endif()
+
 # T4 pacing link fix (Android-configured static lane): under the Android
 # toolchain __ANDROID__ is defined, so presenter.cpp's device lane calls
 # pacing::selectIntendedFrameRate/tryQueueFrame and every hermetic test
