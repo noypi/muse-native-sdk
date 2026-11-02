@@ -1,0 +1,8 @@
+Starting: Intent { cmp=com.muse.host/.MainActivity }
+Status: ok
+LaunchState: COLD
+Activity: com.muse.host/.MainActivity
+TotalTime: 142
+WaitTime: 143
+Complete
+wall_ms=160
