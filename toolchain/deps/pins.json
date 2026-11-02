@@ -17,6 +17,24 @@
       "version": "500.1.0",
       "sha256": "d0cbb75a3e558166a1e21747d75b788b2650ddf8bec321b727b0878f01addcf8",
       "url": "https://maven.google.com/org/chromium/net/cronet/500.1.0/cronet-500.1.0.aar"
+    },
+    {
+      "artifact": "harfbuzz-15.0.0",
+      "version": "15.0.0",
+      "sha256": "968536e9abd782f07f7954044c0c4020199fcdd39b41d221ec42d2a3be4a44df",
+      "url": "https://github.com/harfbuzz/harfbuzz/releases/download/15.0.0/harfbuzz-15.0.0.tar.xz"
+    },
+    {
+      "artifact": "icu4c-79.1",
+      "version": "79.1",
+      "sha256": "06fa63ecb521048f8082f12ad988f6b678d90cbd88aafce24cbc94902b191d99",
+      "url": "https://github.com/unicode-org/icu/releases/download/release-79-1/icu4c-79.1-sources.tgz"
+    },
+    {
+      "artifact": "freetype-2.15.0",
+      "version": "2.15.0",
+      "sha256": "9186627467a616d9a9e3e574748ac0c45fa77398e6364edef3041a8ba8d92f64",
+      "url": "https://download.savannah.gnu.org/releases/freetype/freetype-2.15.0.tar.gz"
     }
   ],
   "armeabi-v7a": [
@@ -37,6 +55,24 @@
       "version": "500.1.0",
       "sha256": "d0cbb75a3e558166a1e21747d75b788b2650ddf8bec321b727b0878f01addcf8",
       "url": "https://maven.google.com/org/chromium/net/cronet/500.1.0/cronet-500.1.0.aar"
+    },
+    {
+      "artifact": "harfbuzz-15.0.0",
+      "version": "15.0.0",
+      "sha256": "968536e9abd782f07f7954044c0c4020199fcdd39b41d221ec42d2a3be4a44df",
+      "url": "https://github.com/harfbuzz/harfbuzz/releases/download/15.0.0/harfbuzz-15.0.0.tar.xz"
+    },
+    {
+      "artifact": "icu4c-79.1",
+      "version": "79.1",
+      "sha256": "06fa63ecb521048f8082f12ad988f6b678d90cbd88aafce24cbc94902b191d99",
+      "url": "https://github.com/unicode-org/icu/releases/download/release-79-1/icu4c-79.1-sources.tgz"
+    },
+    {
+      "artifact": "freetype-2.15.0",
+      "version": "2.15.0",
+      "sha256": "9186627467a616d9a9e3e574748ac0c45fa77398e6364edef3041a8ba8d92f64",
+      "url": "https://download.savannah.gnu.org/releases/freetype/freetype-2.15.0.tar.gz"
     }
   ],
   "x86": [
@@ -57,6 +93,24 @@
       "version": "500.1.0",
       "sha256": "d0cbb75a3e558166a1e21747d75b788b2650ddf8bec321b727b0878f01addcf8",
       "url": "https://maven.google.com/org/chromium/net/cronet/500.1.0/cronet-500.1.0.aar"
+    },
+    {
+      "artifact": "harfbuzz-15.0.0",
+      "version": "15.0.0",
+      "sha256": "968536e9abd782f07f7954044c0c4020199fcdd39b41d221ec42d2a3be4a44df",
+      "url": "https://github.com/harfbuzz/harfbuzz/releases/download/15.0.0/harfbuzz-15.0.0.tar.xz"
+    },
+    {
+      "artifact": "icu4c-79.1",
+      "version": "79.1",
+      "sha256": "06fa63ecb521048f8082f12ad988f6b678d90cbd88aafce24cbc94902b191d99",
+      "url": "https://github.com/unicode-org/icu/releases/download/release-79-1/icu4c-79.1-sources.tgz"
+    },
+    {
+      "artifact": "freetype-2.15.0",
+      "version": "2.15.0",
+      "sha256": "9186627467a616d9a9e3e574748ac0c45fa77398e6364edef3041a8ba8d92f64",
+      "url": "https://download.savannah.gnu.org/releases/freetype/freetype-2.15.0.tar.gz"
     }
   ],
   "x86_64": [
@@ -77,6 +131,24 @@
       "version": "500.1.0",
       "sha256": "d0cbb75a3e558166a1e21747d75b788b2650ddf8bec321b727b0878f01addcf8",
       "url": "https://maven.google.com/org/chromium/net/cronet/500.1.0/cronet-500.1.0.aar"
+    },
+    {
+      "artifact": "harfbuzz-15.0.0",
+      "version": "15.0.0",
+      "sha256": "968536e9abd782f07f7954044c0c4020199fcdd39b41d221ec42d2a3be4a44df",
+      "url": "https://github.com/harfbuzz/harfbuzz/releases/download/15.0.0/harfbuzz-15.0.0.tar.xz"
+    },
+    {
+      "artifact": "icu4c-79.1",
+      "version": "79.1",
+      "sha256": "06fa63ecb521048f8082f12ad988f6b678d90cbd88aafce24cbc94902b191d99",
+      "url": "https://github.com/unicode-org/icu/releases/download/release-79-1/icu4c-79.1-sources.tgz"
+    },
+    {
+      "artifact": "freetype-2.15.0",
+      "version": "2.15.0",
+      "sha256": "9186627467a616d9a9e3e574748ac0c45fa77398e6364edef3041a8ba8d92f64",
+      "url": "https://download.savannah.gnu.org/releases/freetype/freetype-2.15.0.tar.gz"
     }
   ]
 }
