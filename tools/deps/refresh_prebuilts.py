@@ -216,8 +216,9 @@ def _prior_rows(table_path):
     try:
         with open(table_path, encoding="utf-8") as handle:
             table = json.load(handle)
-    except (OSError, ValueError):
-        return {}
+    except (OSError, ValueError) as exc:
+        raise SystemExit(
+            "error: prior table %r unparseable: %s" % (table_path, exc))
     rows = table.get("rows", table) if isinstance(table, dict) else table
     if isinstance(rows, dict):
         rows = list(rows.values())
@@ -288,9 +289,11 @@ def main(argv=None):
         raise SystemExit("error: NDK path not found: %r" % ndk_home)
     snapshot_sha256 = _snapshot_sha256()
     prior = _prior_rows(options.table)
-    rows = [_refresh_abi(options.cache_dir, ndk_home, snapshot_sha256, abi,
-                         prior)
-            for abi in options.abis]
+    merged = dict(prior)
+    for abi in options.abis:
+        merged[abi] = _refresh_abi(options.cache_dir, ndk_home,
+                                   snapshot_sha256, abi, prior)
+    rows = [merged[abi] for abi in ABIS if abi in merged]
     table = {"rows": rows}
     os.makedirs(os.path.dirname(options.table), exist_ok=True)
     tmp = options.table + ".tmp"
