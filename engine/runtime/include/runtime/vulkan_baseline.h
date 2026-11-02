@@ -6,7 +6,7 @@
 
 namespace runtime {
 
-// Fake device capabilities (no Vulkan headers; hermetic probe input).
+// Device capabilities (no Vulkan headers; hermetic probe input).
 struct DeviceCaps {
   std::uint32_t apiMajor = 0;
   std::uint32_t apiMinor = 0;
