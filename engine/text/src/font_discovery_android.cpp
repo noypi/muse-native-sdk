@@ -199,3 +199,120 @@ FontHandle SystemFontEnumerator::LastResortFace(
 }  // namespace muse::text
 
 #endif  // MUSE_TEXT_ANDROID_NDK
+
+#if defined(__ANDROID__)
+// BUG-TEXT-007 T8: device half of FontPathForFace. The NDK
+// SystemFontEnumerator seam above already selects the per-script Roboto
+// handle for (family, script); this resolves that handle to its
+// /system/fonts file for FT_New_Face. Only paths that are present and
+// readable are returned (first hit in deterministic per-script order), so
+// the caller can open the result directly; the bundled last-resort face,
+// the null handle, and unknown handles have no file and fail closed with
+// kNoFaceAvailable. C API only, no JNI. Never throws.
+// NOTE: candidate names are the AOSP-conventional ones; the T10 device leg
+// verifies the Latn resolution on the x86_64 emulator.
+
+#include <fstream>
+
+namespace muse::text {
+namespace {
+
+// Ordered candidates per known face id (mirrors the compiled-in ids in
+// this TU; Roboto per script + stub-equivalent generics resolve to the
+// same per-script coverage files).
+void CandidatesForFace(std::uint64_t id, const char*** out,
+                         std::size_t* count) {
+  static const char* kLatn[] = {"Roboto-Regular.ttf"};
+  static const char* kArab[] = {"NotoNaskhArabic-Regular.ttf",
+                                "NotoSansArabic-Regular.ttf"};
+  static const char* kDeva[] = {"NotoSansDevanagari-Regular.ttf"};
+  static const char* kHebr[] = {"NotoSansHebrew-Regular.ttf"};
+  static const char* kThai[] = {"NotoSansThai-Regular.ttf"};
+  static const char* kKhmr[] = {"NotoSansKhmer-Regular.ttf"};
+  static const char* kMymr[] = {"NotoSansMyanmar-Regular.ttf"};
+  static const char* kHani[] = {"NotoSansCJK-Regular.ttc",
+                                "NotoSansSC-Regular.otf"};
+  switch (id) {
+    case 0x000B0001u:  // RobotoLatn
+    case 0x000B0003u:  // RobotoCyrl (covered by Roboto)
+    case 0x00010001u:  // sans Latn
+    case 0x00010002u:  // serif Latn
+    case 0x00010003u:  // mono Latn
+      *out = kLatn;
+      *count = sizeof(kLatn) / sizeof(kLatn[0]);
+      return;
+    case 0x000B0002u:  // RobotoArab
+    case 0x00020001u:
+    case 0x00020002u:
+      *out = kArab;
+      *count = sizeof(kArab) / sizeof(kArab[0]);
+      return;
+    case 0x000B0004u:  // RobotoDeva
+    case 0x00040001u:
+      *out = kDeva;
+      *count = sizeof(kDeva) / sizeof(kDeva[0]);
+      return;
+    case 0x000B0005u:  // RobotoHebr
+    case 0x00050001u:
+      *out = kHebr;
+      *count = sizeof(kHebr) / sizeof(kHebr[0]);
+      return;
+    case 0x000B0006u:  // RobotoThai
+    case 0x00060001u:
+      *out = kThai;
+      *count = sizeof(kThai) / sizeof(kThai[0]);
+      return;
+    case 0x000B0007u:  // RobotoKhmr
+    case 0x00070001u:
+      *out = kKhmr;
+      *count = sizeof(kKhmr) / sizeof(kKhmr[0]);
+      return;
+    case 0x000B0008u:  // RobotoMymr
+    case 0x00080001u:
+      *out = kMymr;
+      *count = sizeof(kMymr) / sizeof(kMymr[0]);
+      return;
+    case 0x000B0009u:  // RobotoHaniHans
+    case 0x00090001u:
+    case 0x00090002u:
+      *out = kHani;
+      *count = sizeof(kHani) / sizeof(kHani[0]);
+      return;
+    default:
+      break;
+  }
+  *out = nullptr;
+  *count = 0;
+}
+
+}  // namespace
+
+StatusOr<std::string> FontPathForFace(FontHandle face) {
+  try {
+    if (face.id == 0) return Status::kNoFaceAvailable;
+    const char** names = nullptr;
+    std::size_t count = 0;
+    CandidatesForFace(face.id, &names, &count);
+    for (std::size_t i = 0; i < count; ++i) {
+      const std::string path = std::string("/system/fonts/") + names[i];
+      std::ifstream probe(path.c_str());
+      if (probe.good()) return path;
+    }
+    return Status::kNoFaceAvailable;
+  } catch (...) {
+    return Status::kNoFaceAvailable;
+  }
+}
+
+// No test-only memory face on Android production: the real path above owns
+// GREEN there, and no binary is bundled.
+StatusOr<MemoryFontBytes> TestOnlyMemoryFont() {
+  return Status::kNoFaceAvailable;
+}
+
+void RegisterTestOnlyMemoryFont(const std::uint8_t* /*data*/,
+                                std::size_t /*size*/) {}
+
+}  // namespace muse::text
+
+#endif  // defined(__ANDROID__)

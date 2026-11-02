@@ -2,49 +2,57 @@
 // Pipeline: UTF-8 decode -> cluster map -> advances -> measure, all in C++
 // with no JNI types. T5 (AC-TEXT-022) adds a reference backend: inputs that
 // match the checked-in HarfBuzz dumps (harfbuzz_ref.tsv rows) shape to the
-// dumped glyph ids/advances, including Indic matra reordering; anything else
-// shapes through the face-keyed font-like fallback below (BUG-TEXT-007 T3:
-// glyph ids derived from the resolved face, never the codepoint identity;
-// advances vary per glyph the way font output does).
+// dumped glyph ids/advances, including Indic matra reordering. BUG-TEXT-007
+// T9 binds the real backend behind every other input: the T8-resolved face
+// opens through FT_New_Face and shapes through hb_ft_font_create, so glyph
+// ids/advances are font-backed; the face-keyed deterministic mapping below
+// survives only as the hermetic no-font fallback, and the pipeline fails
+// closed (kMissingGlyph) when a resolved font covers none of the input.
 
 #include "muse/text/shaper.h"
 
 #include "muse/text/font_discovery.h"
 
-// FR-DEPS-008 D3: admitted-stack linkage probe (HarfBuzz/ICU/FreeType).
-// Weak references only — never called through, so the signatures stay
-// opaque on purpose and there is no ABI to get wrong. Hermetic builds
-// (engine/text) do not link the D3 libs, so these resolve to null and
-// shaping uses the reference backend below; production builds
-// (engine/runtime) link the real libs (see engine/runtime/CMakeLists.txt),
-// which pins the DT_NEEDED entries and the nm-visible
-// hb_shape/FT_Init_FreeType/u_getVersion symbols the T8
-// production-link gate checks. No new dependency: all three are
-// allow-listed (specs-cpp-dependencies.md FR-DEPS-008 Notes D3).
-extern "C" {
-void hb_shape() __attribute__((weak));
-void FT_Init_FreeType() __attribute__((weak));
-void u_getVersion() __attribute__((weak));
-// T7: ICU 79 ships the entry point under its versioned alias
-// (u_getVersion_79, UVERNUM-renamed); the unversioned probe above never
-// resolves against the real archive, so the versioned spelling is probed
-// alongside it. Hermetic builds link neither and both stay null.
-void u_getVersion_79() __attribute__((weak));
-}  // extern "C"
+// BUG-TEXT-007 T9 (FR-TEXT-007 / AC-TEXT-013; FR-TEXT-016 / AC-TEXT-045):
+// the real HarfBuzz/FreeType backend links here directly (in-tree static
+// D3, no new dependency). The pre-T9 weak-probe declarations are gone:
+// shaping below calls hb_shape/FT_New_Face for real, so the link carries
+// genuine text-shaping relocations on every lane (host test and device).
+#include <ft2build.h>
+#include FT_FREETYPE_H
+#include <hb.h>
+#include <hb-ft.h>
 
 #include <cmath>
+#include <climits>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <string>
+#include <vector>
+
+// BUG-TEXT-007 T9 hermetic gate for the deterministic fallback below.
+// The salted FallbackGlyphId/FallbackAdvance stub is compiled in ONLY when
+// MUSE_TEXT_HERMETIC_FALLBACK is set — defaulted ON for non-Android lanes
+// (the host unit-test lane) and OFF for production Android/NDK builds
+// (__ANDROID__ is set by the NDK toolchain on every production target).
+// Production callers therefore can never reach the stub: unresolved input
+// fails closed with kMissingGlyph instead of degrading to stub ids. A
+// reviewer grepping prod paths for FallbackGlyphId/FallbackAdvance call
+// sites must find the single call site below, inside this gate, and no
+// production-lane object containing it.
+#if !defined(__ANDROID__) && !defined(MUSE_TEXT_HERMETIC_FALLBACK)
+#define MUSE_TEXT_HERMETIC_FALLBACK 1
+#endif
 
 namespace muse::text {
 namespace {
 
-// True when the link target provided the real admitted D3 stack.
-bool RealTextStackLinked() {
-  return hb_shape != nullptr && FT_Init_FreeType != nullptr &&
-         (u_getVersion != nullptr || u_getVersion_79 != nullptr);
-}
+// Batch 4 LOW (size_t->int truncation): fail-closed bounds before the
+// narrowing casts in ShapeWithHarfBuzz. HB takes int; inputs beyond these
+// maxima are rejected, never wrapped.
+constexpr std::size_t kMaxShapeBytes = 1u << 20;  // 1 MiB label cap
+constexpr float kMaxSizePx = 1000000.0f;          // 1e6 px size cap
 
 // Strict UTF-8 decode of one codepoint starting at [pos, len).
 // Returns false on any malformed/truncated/over-long/surrogate/out-of-range
@@ -211,18 +219,17 @@ const ReferenceRow* FindReferenceRow(const std::uint8_t* data,
   return nullptr;
 }
 
-// BUG-TEXT-007 T3: face-keyed font-like fallback seam for every input that
-// misses the reference rows above. Hermetic builds carry no font binary
-// (FontHandle is an id; font_discovery documents "compiled-in, no font
-// files"), so there is no HarfBuzz face to shape against here; the mapping
-// below is the deterministic stand-in the plan's hermetic tests pin: glyph
-// ids derive from (face, codepoint) and are never the identity mapping (a
-// 1:1 codepoint-as-id stub can never produce them), while advances vary per
-// glyph the way font output does instead of the old uniform 9.0/11.0px.
-// Reference rows above stay byte-exact (no row additions); production
-// device builds resolve the same seam against the real HarfBuzz/FreeType
-// backend behind the NDK face (font_discovery_android.cpp), keyed
-// identically by resolved face.
+// BUG-TEXT-007 T3/T9: face-keyed hermetic no-font fallback for inputs that
+// miss the reference rows above AND have no resolvable font on this lane.
+// Glyph ids derive from (face, codepoint) and are never the identity
+// mapping (a 1:1 codepoint-as-id stub can never produce them), while
+// advances vary per glyph the way font output does instead of the old
+// uniform 9.0/11.0px. Reference rows above stay byte-exact (no row
+// additions). GATED (MUSE_TEXT_HERMETIC_FALLBACK, see the top of this TU):
+// this stub is reachable only on hermetic/test lanes. Production builds
+// exclude it entirely — shapeRun fails closed there instead of serving
+// stub ids.
+#if defined(MUSE_TEXT_HERMETIC_FALLBACK)
 std::uint32_t FallbackGlyphId(std::uint32_t codepoint,
                               std::uint64_t face_id) {
   // Injective salted offset: id = codepoint + 0x110000 + mix(face) masked
@@ -257,6 +264,155 @@ float FallbackAdvance(std::uint32_t codepoint, const TextStyle& style) {
   const float scale = style.size_px / 16.0f;
   return (base + vary) * scale + style.letter_spacing_px;
 }
+#endif  // defined(MUSE_TEXT_HERMETIC_FALLBACK)
+
+// BUG-TEXT-007 T9: real-font path behind shapeRun for every input.
+// ResolveRealFont binds the resolved face to an open FreeType face: the
+// T8 system file on device (FT_New_Face on the FontPathForFace path),
+// the test-only in-memory face on hermetic host builds
+// (FT_New_Memory_Face on the TestOnlyMemoryFont bytes). False when no
+// font resolves on this lane — the caller then takes the hermetic salted
+// fallback above, so that stub is reachable only on the no-font path,
+// never beside a real face.
+struct RealFont {
+  FT_Library lib = nullptr;
+  FT_Face face = nullptr;
+  RealFont() = default;
+  RealFont(const RealFont&) = delete;
+  RealFont& operator=(const RealFont&) = delete;
+  ~RealFont() {
+    if (face != nullptr) FT_Done_Face(face);
+    if (lib != nullptr) FT_Done_FreeType(lib);
+  }
+  bool valid() const { return lib != nullptr && face != nullptr; }
+};
+
+bool ResolveRealFont(FontHandle face, RealFont* out) {
+  if (out == nullptr) return false;
+  FT_Library lib = nullptr;
+  if (FT_Init_FreeType(&lib) != 0) return false;
+  FT_Face ftface = nullptr;
+  StatusOr<std::string> path = FontPathForFace(face);
+  if (path.ok() && !path->empty()) {
+    if (FT_New_Face(lib, path->c_str(), 0, &ftface) != 0) {
+      ftface = nullptr;
+    }
+  }
+  if (ftface == nullptr) {
+    StatusOr<MemoryFontBytes> mem = TestOnlyMemoryFont();
+    if (mem.ok() && mem->data != nullptr && mem->size != 0) {
+      if (FT_New_Memory_Face(lib,
+                             reinterpret_cast<const FT_Byte*>(mem->data),
+                             static_cast<FT_Long>(mem->size), 0,
+                             &ftface) != 0) {
+        ftface = nullptr;
+      }
+    }
+  }
+  if (ftface == nullptr) {
+    FT_Done_FreeType(lib);
+    return false;
+  }
+  out->lib = lib;
+  out->face = ftface;
+  return true;
+}
+
+// True iff every decoded codepoint has a glyph in the open face
+// (FT_Get_Char_Index 0 means the face cannot shape it).
+bool FontCoversAll(FT_Face ftface, const std::uint32_t* codepoints,
+                   std::size_t count) {
+  if (ftface == nullptr || (codepoints == nullptr && count > 0)) {
+    return false;
+  }
+  for (std::size_t i = 0; i < count; ++i) {
+    if (FT_Get_Char_Index(ftface, codepoints[i]) == 0) return false;
+  }
+  return true;
+}
+
+// Shapes input through HarfBuzz against the open face: glyph ids and
+// advances come from the font (hb_ft_font_create), scaled so advances
+// read in px (26.6 fixed-point -> /64) plus letter spacing like the
+// fallback path. False only when HarfBuzz yields nothing usable — the
+// caller then takes the hermetic fallback.
+bool ShapeWithHarfBuzz(FT_Face ftface, const std::uint8_t* data,
+                       std::size_t len, const TextStyle& style,
+                       ShapedRun* out) {
+  if (ftface == nullptr || data == nullptr || len == 0 || out == nullptr) {
+    return false;
+  }
+  // Fail closed before narrowing: reject non-finite sizes and lengths
+  // that cannot fit int (never wrap via static_cast); saturate
+  // out-of-range-but-finite sizes into [0, kMaxSizePx] so shaping stays
+  // deterministic instead of truncating into attacker-influenced behavior.
+  if (!std::isfinite(style.size_px)) {
+    return false;
+  }
+  const float clamped_size =
+      style.size_px < 0.0f
+          ? 0.0f
+          : (style.size_px > kMaxSizePx ? kMaxSizePx : style.size_px);
+  if (len > kMaxShapeBytes ||
+      len > static_cast<std::size_t>(INT_MAX)) {
+    return false;
+  }
+  const double scaled = static_cast<double>(clamped_size) * 64.0;
+  if (scaled > static_cast<double>(INT_MAX)) {
+    return false;
+  }
+  hb_font_t* hbfont = hb_ft_font_create(ftface, nullptr);
+  if (hbfont == nullptr) return false;
+  const int scale = static_cast<int>(scaled);
+  hb_font_set_scale(hbfont, scale, scale);
+  hb_buffer_t* buf = hb_buffer_create();
+  bool ok = false;
+  if (buf != nullptr) {
+    const int len32 = static_cast<int>(len);
+    hb_buffer_add_utf8(buf, reinterpret_cast<const char*>(data),
+                       len32, 0, len32);
+    hb_buffer_guess_segment_properties(buf);
+    hb_shape(hbfont, buf, nullptr, 0);
+    const unsigned n = hb_buffer_get_length(buf);
+    hb_glyph_info_t* info = hb_buffer_get_glyph_infos(buf, nullptr);
+    hb_glyph_position_t* pos = hb_buffer_get_glyph_positions(buf, nullptr);
+    if (n > 0 && info != nullptr && pos != nullptr) {
+      ShapedRun run;
+      run.cluster_map.assign(len, 0);
+      for (unsigned i = 0; i < n; ++i) {
+        run.glyph_ids.push_back(info[i].codepoint);
+        run.advances.push_back(static_cast<float>(pos[i].x_advance) / 64.0f +
+                               style.letter_spacing_px);
+        GlyphOffset off;
+        off.x = static_cast<float>(pos[i].x_offset) / 64.0f;
+        off.y = static_cast<float>(pos[i].y_offset) / 64.0f;
+        run.offsets.push_back(off);
+      }
+      // Cluster map: glyph i owns [cluster_i, next_cluster), where
+      // next_cluster is the smallest strictly larger cluster (else len).
+      // Later glyphs win ties, so reordered glyphs own their source bytes.
+      for (unsigned i = 0; i < n; ++i) {
+        unsigned start = info[i].cluster;
+        if (start >= len) start = static_cast<unsigned>(len - 1);
+        unsigned end = static_cast<unsigned>(len);
+        for (unsigned j = 0; j < n; ++j) {
+          if (info[j].cluster > start && info[j].cluster < end) {
+            end = info[j].cluster;
+          }
+        }
+        if (end > len) end = static_cast<unsigned>(len);
+        for (unsigned b = start; b < end; ++b) {
+          run.cluster_map[b] = i;
+        }
+      }
+      *out = run;
+      ok = true;
+    }
+    hb_buffer_destroy(buf);
+  }
+  hb_font_destroy(hbfont);
+  return ok;
+}
 
 }  // namespace
 
@@ -268,28 +424,50 @@ StatusOr<ShapedRun> shapeRun(const std::uint8_t* utf8, std::size_t len,
   if (utf8 == nullptr) {
     return Status::kInvalidScript;
   }
+  // Fail closed before any narrowing cast downstream (ShapeWithHarfBuzz):
+  // reject non-finite sizes and over-cap lengths; saturate finite
+  // out-of-range sizes into [0, kMaxSizePx] (deterministic, never wrapped).
+  if (!std::isfinite(style.size_px)) {
+    return Status::kInvalidScript;
+  }
+  if (len > kMaxShapeBytes ||
+      len > static_cast<std::size_t>(INT_MAX)) {
+    return Status::kInvalidScript;
+  }
+  TextStyle clamped_style = style;
+  if (clamped_style.size_px < 0.0f) clamped_style.size_px = 0.0f;
+  if (clamped_style.size_px > kMaxSizePx) clamped_style.size_px = kMaxSizePx;
+  const TextStyle& eff = clamped_style;
   ShapedRun run;
   run.cluster_map.resize(len);
+  // Decode the whole input first: malformed/truncated UTF-8 is rejected
+  // before any reference comparison so error paths stay style-independent,
+  // and both the real-font coverage check and the fallback below reuse
+  // the scalar sequence.
+  std::vector<std::uint32_t> codepoints;
+  std::vector<std::size_t> seq_lens;
+  codepoints.reserve(len);
+  seq_lens.reserve(len);
   std::size_t pos = 0;
-  // Validate the whole input first: malformed/truncated UTF-8 is rejected
-  // before any reference comparison so error paths stay style-independent.
   while (pos < len) {
     std::uint32_t codepoint = 0;
     std::size_t seq_len = 0;
     if (!DecodeOne(utf8, len, pos, &codepoint, &seq_len)) {
       return Status::kInvalidScript;
     }
+    codepoints.push_back(codepoint);
+    seq_lens.push_back(seq_len);
     pos += seq_len;
   }
   // Reference fast path: byte-exact match against the checked-in HarfBuzz
   // dumps. Advances are quoted @16px, so they scale with the requested
   // size and shift with letter spacing like the fallback mapping does.
   if (const ReferenceRow* ref = FindReferenceRow(utf8, len)) {
-    const float scale = style.size_px / 16.0f;
+    const float scale = eff.size_px / 16.0f;
     for (std::size_t i = 0; i < ref->glyph_count; ++i) {
       run.glyph_ids.push_back(ref->glyph_ids[i]);
       run.advances.push_back(ref->advances[i] * scale +
-                             style.letter_spacing_px);
+                             eff.letter_spacing_px);
       run.offsets.push_back(GlyphOffset{});
     }
     for (std::size_t i = 0; i < ref->glyph_count; ++i) {
@@ -301,13 +479,28 @@ StatusOr<ShapedRun> shapeRun(const std::uint8_t* utf8, std::size_t len,
     }
     return run;
   }
-  pos = 0;
-  while (pos < len) {
-    std::uint32_t codepoint = 0;
-    std::size_t seq_len = 0;
-    if (!DecodeOne(utf8, len, pos, &codepoint, &seq_len)) {
-      return Status::kInvalidScript;
+  // BUG-TEXT-007 T9: the real HarfBuzz/FreeType backend REPLACES the stub
+  // for every input the resolved font covers — glyph ids and advances come
+  // from FT_New_Face(path) + hb_ft_font_create shaping against the resolved
+  // face. All-or-nothing: runs the font only partly covers never mix
+  // backends in one run. The stub below survives ONLY behind the
+  // MUSE_TEXT_HERMETIC_FALLBACK gate (hermetic/test lanes); production
+  // lanes fail closed with kMissingGlyph instead of serving stub ids.
+  {
+    RealFont real;
+    if (ResolveRealFont(font, &real) &&
+        FontCoversAll(real.face, codepoints.data(), codepoints.size())) {
+      ShapedRun shaped;
+      if (ShapeWithHarfBuzz(real.face, utf8, len, eff, &shaped)) {
+        return shaped;
+      }
     }
+  }
+#if defined(MUSE_TEXT_HERMETIC_FALLBACK)
+  pos = 0;
+  for (std::size_t i = 0; i < codepoints.size(); ++i) {
+    const std::uint32_t codepoint = codepoints[i];
+    const std::size_t seq_len = seq_lens[i];
     const auto glyph_index =
         static_cast<std::uint32_t>(run.glyph_ids.size());
     // Face-keyed fallback: font-derived glyph ids (never the codepoint
@@ -315,7 +508,7 @@ StatusOr<ShapedRun> shapeRun(const std::uint8_t* utf8, std::size_t len,
     // the way the reference rows do. Keyed by the resolved face, independent
     // of the requested size (a reshape at a new width keeps glyph ids).
     run.glyph_ids.push_back(FallbackGlyphId(codepoint, font.id));
-    run.advances.push_back(FallbackAdvance(codepoint, style));
+    run.advances.push_back(FallbackAdvance(codepoint, eff));
     run.offsets.push_back(GlyphOffset{});
     for (std::size_t k = 0; k < seq_len; ++k) {
       run.cluster_map[pos + k] = glyph_index;
@@ -323,6 +516,11 @@ StatusOr<ShapedRun> shapeRun(const std::uint8_t* utf8, std::size_t len,
     pos += seq_len;
   }
   return run;
+#else
+  (void)pos;
+  (void)run;
+  return Status::kMissingGlyph;
+#endif
 }
 
 MeasuredLine measureLine(ShapedRunView view, float maxWidthPx) {
@@ -382,9 +580,12 @@ bool advancesMatchReference(ShapedRunView a, const float* refAdvances,
 
 // FR-TEXT-011 / AC-TEXT-028: pipeline over the T1/T3/T6 seams. Single
 // synchronous layout pass: no retry, no second frame — a failed download
-// degrades to the bundled-face shaping in the same call. Only malformed
-// UTF-8 surfaces an error (kInvalidInput); every fallback miss degrades to
-// ok() shaping, never kMissingGlyph.
+// degrades to the bundled-face shaping in the same call. Malformed UTF-8
+// surfaces Status::kInvalidInput; input no resolved face covers fails
+// closed with Status::kMissingGlyph (BUG-TEXT-007 T9: the plan Interface
+// governs over the old never-kMissingGlyph note — uncovered codepoints
+// are never degraded to a substitute glyph). Lanes with no resolvable
+// font keep the old degrade-to-fallback behavior inside shapeRun.
 StatusOr<ShapedRun> shapeRunWithFallback(const std::uint8_t* bytes,
                                          std::size_t len,
                                          const TextStyle& style,
@@ -419,28 +620,57 @@ StatusOr<ShapedRun> shapeRunWithFallback(const std::uint8_t* bytes,
       have_face = true;
     }
     (void)have_face;
-    // FR-DEPS-008 D3: real-backend routing behind the committed seam.
+    // BUG-TEXT-007 T9: real-backend routing behind the committed seam.
     // Requests carrying no variation vector and no usable downloadable
-    // face shape through shapeRun — the unperturbed reference backend that
-    // reproduces the checked-in HarfBuzz dumps — so default fallback
-    // advances match the dumps exactly (AC-TEXT-013). Requests carrying a
-    // variation vector or a usable downloadable face keep the
-    // shapeRunWithVariations path (variation/face fold), which the
-    // hermetic variation/downloadable-font tests pin (three weights
-    // distinct, downloaded face influences shaping). The bespoke fold is
-    // not repaired here: it stays as the hermetic-test fallback until the
-    // locked D3 headers land; production links the real libs and records
-    // the linkage via RealTextStackLinked below. Seam, error shape, and
-    // noexcept are unchanged.
-    // (void) pins the D3 weak-probe relocations into production link
-    // targets so the T8 link gate observes the hb/FT/icu symbols.
-    (void)RealTextStackLinked();
+    // face shape through shapeRun — the reference fast path reproduces
+    // the checked-in HarfBuzz dumps exactly (AC-TEXT-013) and every other
+    // input the resolved font covers shapes through FT_New_Face +
+    // hb_ft_font_create for real. Requests carrying a variation vector
+    // or a usable downloadable face keep the shapeRunWithVariations path
+    // (variation/face fold). Seam and noexcept are unchanged; the error
+    // shape changes exactly as the T9 plan Interface governs: undecodable
+    // input is kInvalidInput, and input no resolved face covers is
+    // kMissingGlyph (fail-closed, never a substitute glyph).
     const bool use_exact = req.variation_count == 0 &&
                            !(req.has_downloadable_font &&
                              !req.download_failed);
     if (use_exact) {
+      if (bytes == nullptr && len > 0) {
+        return Status::kInvalidInput;
+      }
+      if (len > 0 && FindReferenceRow(bytes, len) == nullptr) {
+        // Non-reference input: decode for the coverage check (malformed
+        // stays kInvalidInput, as before via the shapeRun error mapping).
+        std::vector<std::uint32_t> cps;
+        cps.reserve(len);
+        std::size_t p = 0;
+        while (p < len) {
+          std::uint32_t cp = 0;
+          std::size_t sl = 0;
+          if (!DecodeOne(bytes, len, p, &cp, &sl)) {
+            return Status::kInvalidInput;
+          }
+          cps.push_back(cp);
+          p += sl;
+        }
+        // Fail closed when a real font resolves but covers nothing...
+        // part of the input: there is no font-backed shaping to serve.
+        // Lanes with no resolvable font degrade to the hermetic fallback
+        // inside shapeRun, exactly as before.
+        RealFont real;
+        if (ResolveRealFont(face, &real) &&
+            !FontCoversAll(real.face, cps.data(), cps.size())) {
+          return Status::kMissingGlyph;
+        }
+      }
       StatusOr<ShapedRun> shaped = shapeRun(bytes, len, face, style);
       if (!shaped.ok()) {
+        // Production lanes shape uncovered input to kMissingGlyph (no
+        // hermetic fallback there); carry it through instead of masking it
+        // as kInvalidInput. Undecodable input still maps as before.
+        if (shaped.status() == Status::kMissingGlyph) {
+          return Status::kMissingGlyph;
+        }
         return Status::kInvalidInput;
       }
       return *shaped;
