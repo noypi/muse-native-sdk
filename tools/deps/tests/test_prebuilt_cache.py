@@ -27,7 +27,7 @@ _REPO_ROOT = os.path.dirname(
 if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
-from tools.deps.prebuilt_cache import cachePublish, cacheRead
+from tools.deps.prebuilt_cache import CacheError, cachePublish, cacheRead
 
 KEY_FIELDS = ("name", "version", "abi", "gn_args_hash", "ndk_rev",
               "snapshot_sha256")
@@ -101,6 +101,42 @@ class TestCacheReadPublish(unittest.TestCase):
             altered = _good_key(gn_args_hash=hashlib.sha256(b"other").hexdigest())
             status, _ = cacheRead(cache, altered)
             self.assertEqual(status, "MISS")
+
+    def test_republish_same_key_raises_and_preserves_entry(self):
+        import glob as _glob
+        with tempfile.TemporaryDirectory() as cache:
+            key = _good_key()
+            _seed_entry(cache, key, payload=b"original")
+            status, objects = cacheRead(cache, key)
+            self.assertEqual(status, "HIT")
+            with open(os.path.join(objects, "out", "libskia.a"), "rb") as f:
+                before = f.read()
+            with tempfile.TemporaryDirectory() as tmp:
+                os.makedirs(os.path.join(tmp, "out"))
+                with open(os.path.join(tmp, "out", "libskia.a"), "wb") as f:
+                    f.write(b"replacement")
+                with self.assertRaises(CacheError):
+                    cachePublish(cache, key, tmp)
+            # Entry bytes unchanged and still a HIT.
+            status, objects = cacheRead(cache, key)
+            self.assertEqual(status, "HIT")
+            with open(os.path.join(objects, "out", "libskia.a"), "rb") as f:
+                self.assertEqual(f.read(), b"original")
+            self.assertEqual(len(_glob.glob(os.path.join(cache, "*"))), 1)
+
+    def test_tampered_manifest_misses_and_preserves_entry(self):
+        with tempfile.TemporaryDirectory() as cache:
+            key = _good_key()
+            entry = _seed_entry(cache, key, payload=b"original")
+            manifest_path = os.path.join(entry, "cache_entry.json")
+            with open(manifest_path, encoding="utf-8") as f:
+                manifest = json.load(f)
+            manifest["files"] = {"out/libskia.a": "0" * 64}
+            with open(manifest_path, "w", encoding="utf-8") as f:
+                json.dump(manifest, f, sort_keys=True, indent=2)
+            status, _ = cacheRead(cache, key)
+            self.assertEqual(status, "MISS")
+            self.assertTrue(os.path.isdir(entry))
 
     def test_failed_build_never_visible_in_cache(self):
         with tempfile.TemporaryDirectory() as cache:

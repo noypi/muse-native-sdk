@@ -114,10 +114,11 @@ def cachePublish(cache_dir, key, tmp_dir):
         with open(os.path.join(staging, _ENTRY_MANIFEST), "w",
                   encoding="utf-8") as handle:
             json.dump(manifest, handle, sort_keys=True, indent=2)
-        # Atomic move on success only: rename into place. Any failure
-        # above leaves the live entry untouched; staging is cleaned up.
-        if os.path.isdir(entry):
-            shutil.rmtree(entry)
+        # Immutability (AC-DEPS-031): never mutate a published entry.
+        # Republish of an existing key fails closed; replacement/deletion
+        # is a separate privileged op, out of scope here.
+        if os.path.lexists(entry):
+            raise CacheError("entry already published for key; refusing to clobber")
         os.replace(staging, entry)
     except BaseException:
         shutil.rmtree(staging_parent, ignore_errors=True)
@@ -153,8 +154,8 @@ def cacheRead(cache_dir, key):
         if actual != expected:
             raise CacheError("object hash mismatch")
     except (OSError, ValueError, CacheError):
-        # Mismatch rebuilds instead of linking: drop the poisoned entry
-        # so the next publish starts clean, then report MISS.
-        shutil.rmtree(entry, ignore_errors=True)
+        # Mismatch rebuilds instead of linking: report MISS without
+        # deleting. The poisoned entry is left for audit; deletion is a
+        # separate privileged op, out of scope for the read path.
         return ("MISS", None)
     return ("HIT", objects)
