@@ -49,6 +49,14 @@ constexpr int32_t kPSweepBase = 21;
 constexpr int32_t kPFireOnce = 29;
 constexpr int32_t kPScrim = 30;
 constexpr int32_t kPSeededOutside = 31;
+// T5 (security-review batch): unique ids for the five hardening cases.
+constexpr int32_t kPExtreme = 41;
+constexpr int32_t kPFallbackProbe = 42;
+constexpr int32_t kPShrinkProbe = 43;
+constexpr int32_t kPExhaustNew = 44;
+constexpr int32_t kPExhaustOld = 45;
+constexpr int32_t kPScrimPin = 46;
+constexpr int32_t kPInfOrigin = 47;
 
 // Layout-engine bounds (the consume-only Interfaces row): a 400x800 root
 // with a real laid-out Button-filled at (50,100)-(250,180).
@@ -452,6 +460,244 @@ bool check_seeded_outside_stays_silent() {
   return true;
 }
 
+// ---- T5 security-review hardening (FR-INPUT-011/AC-INPUT-020) ----
+// Binds ONLY to the T2 `Interface:` line (viewport seeder + ResolveTapTarget
+// fail-closed contract); hermetic, in-process, no device/downloads/secrets.
+
+// Shrink reseed denies stale-rect fire: seed 1080x1920, reseed 400x800, then
+// a tap at (540,1000) — inside the OLD rect but outside the NEW bounds —
+// must resolve -1, claim nothing, and fire nothing.
+bool check_shrink_reseed_denies_stale_rect_fire() {
+  HitTestTree tree;
+  PopulateTapTreeFromLayout(tree);
+  PopulateTapTreeFromLayout(tree, 400.0f, 800.0f);
+  const int32_t target = ResolveTapTarget(tree, 540.0f, 1000.0f);
+  if (target != -1) {
+    std::printf("  detail: post-shrink (540,1000) expected -1, got %d\n",
+                static_cast<int>(target));
+    return false;
+  }
+  RecordTapDown(kPShrinkProbe, 540.0f, 1000.0f);
+  GestureArena arena;
+  arena.AddPointer(down_at(kPShrinkProbe, 540.0f, 1000.0f), tree);
+  const ArenaAction got = ClaimTap(arena, kPShrinkProbe, target);
+  if (got.claimed) {
+    std::printf("  detail: post-shrink claim must stay unclaimed\n");
+    return false;
+  }
+  if (FireTapHandler(target)) {
+    std::printf("  detail: post-shrink FireTapHandler must be false\n");
+    return false;
+  }
+  return true;
+}
+
+// kMaxNodes exhaustion stays bounded and fail-closed: 30 distinct growing
+// viewports (each appends 3 nodes; cap is 64, so later appends partially or
+// fully drop, silently). A tap in newest-only coverage must resolve -1 and
+// stay silent (no stale fire, no phantom id), while the oldest geometry keeps
+// serving its button claim+fire exactly once (drops fail closed, never
+// corrupt the live tree).
+bool check_kmax_exhaustion_new_coverage_stays_silent() {
+  HitTestTree tree;
+  for (int i = 0; i < 30; ++i) {
+    PopulateTapTreeFromLayout(tree, 120.0f + 40.0f * i, 240.0f + 80.0f * i);
+  }
+  // Inside V30 (1280x2560) but outside V22 (960x1920, the last fully
+  // applied root): genuinely new coverage the exhausted tree never stored.
+  const int32_t target = ResolveTapTarget(tree, 1000.0f, 2000.0f);
+  if (target != -1) {
+    std::printf("  detail: exhausted-tree new-area tap expected -1, got %d\n",
+                static_cast<int>(target));
+    return false;
+  }
+  RecordTapDown(kPExhaustNew, 1000.0f, 2000.0f);
+  GestureArena arena;
+  arena.AddPointer(down_at(kPExhaustNew, 1000.0f, 2000.0f), tree);
+  const ArenaAction got = ClaimTap(arena, kPExhaustNew, target);
+  if (got.claimed) {
+    std::printf("  detail: exhausted-tree new-area claim must stay unclaimed\n");
+    return false;
+  }
+  if (FireTapHandler(target)) {
+    std::printf("  detail: exhausted-tree new-area fire must be false\n");
+    return false;
+  }
+  // Oldest geometry still serves: button (50,100,200,80) claims+fires once.
+  RecordTapDown(kPExhaustOld, 150.0f, 140.0f);
+  GestureArena arena2;
+  arena2.AddPointer(down_at(kPExhaustOld, 150.0f, 140.0f), tree);
+  const int32_t oldTarget = ResolveTapTarget(tree, 150.0f, 140.0f);
+  if (oldTarget != kButtonId) {
+    std::printf("  detail: post-exhaustion button expected %d, got %d\n",
+                static_cast<int>(kButtonId), static_cast<int>(oldTarget));
+    return false;
+  }
+  const ArenaAction oldGot = ClaimTap(arena2, kPExhaustOld, oldTarget);
+  if (!oldGot.claimed || oldGot.winnerId != kButtonId) return false;
+  if (!FireTapHandler(oldTarget)) return false;
+  if (FireTapHandler(oldTarget)) {
+    std::printf("  detail: post-exhaustion button must fire exactly once\n");
+    return false;
+  }
+  return true;
+}
+
+// Untrusted coordinate extremes fail closed: +Inf / -Inf / huge-finite /
+// negative taps resolve -1 with no claim, no fire, and no ledger write
+// (a dropped RecordTapDown leaves no origin, so the same pointer stays
+// unclaimed; a later valid down on that pointer still claims+fires once,
+// proving the ledger was not poisoned).
+bool check_extreme_coords_rejected_no_claim_no_fire() {
+  HitTestTree tree;
+  PopulateTapTreeFromLayout(tree);
+  const float inf = std::numeric_limits<float>::infinity();
+  const float cases[][2] = {
+      {inf, 140.0f}, {150.0f, -inf}, {-inf, -inf}, {1.0e30f, 1.0e30f},
+      {-1.0f, 140.0f}, {150.0f, -1.0f},
+  };
+  for (const auto& c : cases) {
+    const int32_t got = ResolveTapTarget(tree, c[0], c[1]);
+    if (got != -1) {
+      std::printf("  detail: extreme (%g,%g) expected -1, got %d\n",
+                  static_cast<double>(c[0]), static_cast<double>(c[1]),
+                  static_cast<int>(got));
+      return false;
+    }
+  }
+  // Dropped down-origin leaves no ledger write: a NaN origin is dropped, so
+  // the claim stays unclaimed and nothing fires.
+  RecordTapDown(kPExtreme, std::numeric_limits<float>::quiet_NaN(), 140.0f);
+  GestureArena arena;
+  arena.AddPointer(down_at(kPExtreme, inf, 140.0f), tree);
+  if (ClaimTap(arena, kPExtreme, kButtonId).claimed) {
+    std::printf("  detail: extreme-origin claim must stay unclaimed\n");
+    return false;
+  }
+  if (FireTapHandler(kButtonId)) {
+    std::printf("  detail: extreme-origin fire must be false\n");
+    return false;
+  }
+  // Same pointer recovers: a later valid down claims+fires exactly once.
+  RecordTapDown(kPExtreme, 150.0f, 140.0f);
+  GestureArena arena2;
+  arena2.AddPointer(down_at(kPExtreme, 150.0f, 140.0f), tree);
+  const ArenaAction got = ClaimTap(arena2, kPExtreme, kButtonId);
+  if (!got.claimed || got.winnerId != kButtonId) {
+    std::printf("  detail: recovered pointer must claim button\n");
+    return false;
+  }
+  if (!FireTapHandler(kButtonId)) {
+    std::printf("  detail: recovered pointer must fire once\n");
+    return false;
+  }
+  return true;
+}
+
+// +Inf down-origin must fail closed: RecordTapDown currently admits +Inf
+// (`!(x>=0)` is true for +Inf), and a matching +Inf move makes the slop
+// displacement NaN (inf-inf), which defeats the `>= kTouchSlopPx` check and
+// claims. This case pins the requested control (unclaimed, no fire); it is
+// RED against the committed seeder — routes to coder (reject non-finite in
+// RecordTapDown, mirroring ViewportUsable).
+bool check_inf_origin_claim_stays_unclaimed() {
+  HitTestTree tree;
+  PopulateTapTreeFromLayout(tree);
+  const float inf = std::numeric_limits<float>::infinity();
+  RecordTapDown(kPInfOrigin, inf, 140.0f);
+  GestureArena arena;
+  arena.AddPointer(down_at(kPInfOrigin, inf, 140.0f), tree);
+  const ArenaAction got = ClaimTap(arena, kPInfOrigin, kButtonId);
+  if (got.claimed) {
+    std::printf("  detail: +Inf-origin claim must stay unclaimed\n");
+    return false;
+  }
+  if (FireTapHandler(kButtonId)) {
+    std::printf("  detail: +Inf-origin fire must be false\n");
+    return false;
+  }
+  return true;
+}
+
+// Fallback seed serves taps before the first frame, stays silent outside:
+// pre-frame tree (zero-arg 1080x1920 seed) claims+fires (540,1690) exactly
+// once, while far-outside (10000,10000) resolves -1 with no claim/no fire.
+bool check_fallback_seed_serves_inside_silent_outside() {
+  HitTestTree tree;
+  PopulateTapTreeFromLayout(tree);
+  const int32_t inside = ResolveTapTarget(tree, 540.0f, 1690.0f);
+  if (inside < 0) {
+    std::printf("  detail: fallback (540,1690) expected >= 0, got -1\n");
+    return false;
+  }
+  RecordTapDown(kPFallbackProbe, 540.0f, 1690.0f);
+  GestureArena arena;
+  arena.AddPointer(down_at(kPFallbackProbe, 540.0f, 1690.0f), tree);
+  const ArenaAction got = ClaimTap(arena, kPFallbackProbe, inside);
+  if (!got.claimed || got.winnerId != inside) {
+    std::printf("  detail: fallback inside tap must claim winner %d\n",
+                static_cast<int>(inside));
+    return false;
+  }
+  if (!FireTapHandler(inside) || FireTapHandler(inside)) {
+    std::printf("  detail: fallback inside tap must fire exactly once\n");
+    return false;
+  }
+  const int32_t outside = ResolveTapTarget(tree, 10000.0f, 10000.0f);
+  if (outside != -1) {
+    std::printf("  detail: fallback outside expected -1, got %d\n",
+                static_cast<int>(outside));
+    return false;
+  }
+  if (FireTapHandler(outside)) {
+    std::printf("  detail: fallback outside fire must be false\n");
+    return false;
+  }
+  return true;
+}
+
+// target == 20 scrim routing stays pinned: a button tap resolves 21 (never
+// the scrim dismiss node), a scrim-only tap resolves 20 and claims+fires its
+// own node exactly once (not content), and an unclaimed 21 never fires
+// (no ClaimTap bypass). Layering-page vs non-layering dispatch (`target ==
+// 20` + IsLayeringPageSlice/onScrimTap in jni_bridge) is JNI/device scope —
+// EXTERNAL, verified by the T4 scrim suites on device.
+bool check_scrim_routing_pinned_button_never_dismiss() {
+  HitTestTree tree;
+  PopulateTapTreeFromLayout(tree);
+  const int32_t button = ResolveTapTarget(tree, 150.0f, 140.0f);
+  if (button != kButtonId) {
+    std::printf("  detail: button (150,140) expected 21, got %d\n",
+                static_cast<int>(button));
+    return false;
+  }
+  const int32_t scrim = ResolveTapTarget(tree, 300.0f, 400.0f);
+  if (scrim != 20) {
+    std::printf("  detail: scrim (300,400) expected 20, got %d\n",
+                static_cast<int>(scrim));
+    return false;
+  }
+  RecordTapDown(kPScrimPin, 300.0f, 400.0f);
+  GestureArena arena;
+  arena.AddPointer(down_at(kPScrimPin, 300.0f, 400.0f), tree);
+  const ArenaAction got = ClaimTap(arena, kPScrimPin, scrim);
+  if (!got.claimed || got.winnerId != 20) {
+    std::printf("  detail: scrim claim expected winner 20, got %d\n",
+                static_cast<int>(got.winnerId));
+    return false;
+  }
+  if (!FireTapHandler(20) || FireTapHandler(20)) {
+    std::printf("  detail: scrim must fire exactly once\n");
+    return false;
+  }
+  // Unclaimed content never fires: no ClaimTap bypass arms node 21.
+  if (FireTapHandler(kButtonId)) {
+    std::printf("  detail: unclaimed button fire must be false\n");
+    return false;
+  }
+  return true;
+}
+
 }  // namespace
 
 #define RUN_CASE(name)                           \
@@ -484,6 +730,12 @@ int main() {
   RUN_CASE(check_seeded_out_of_400x800_fires_exactly_once);
   RUN_CASE(check_seeded_scrim_routing_preserved);
   RUN_CASE(check_seeded_outside_stays_silent);
+  RUN_CASE(check_shrink_reseed_denies_stale_rect_fire);
+  RUN_CASE(check_kmax_exhaustion_new_coverage_stays_silent);
+  RUN_CASE(check_extreme_coords_rejected_no_claim_no_fire);
+  RUN_CASE(check_inf_origin_claim_stays_unclaimed);
+  RUN_CASE(check_fallback_seed_serves_inside_silent_outside);
+  RUN_CASE(check_scrim_routing_pinned_button_never_dismiss);
   if (failures > 0) {
     std::printf("input_chain_test: %d failing\n", failures);
     return 1;
