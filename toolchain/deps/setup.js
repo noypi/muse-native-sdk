@@ -8,7 +8,7 @@ const path = require('node:path');
 const SUPPORTED_ABIS = ['arm64-v8a', 'armeabi-v7a', 'x86', 'x86_64'];
 
 const SHA256_RE = /^[0-9a-fA-F]{64}$/;
-const EXACT_VERSION_RE = /^[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?$/;
+const EXACT_VERSION_RE = /^[0-9]+\.[0-9]+(\.[0-9]+)?([-+][0-9A-Za-z.-]+)?$/;
 const HTTPS_RE = /^https:\/\//;
 
 class SetupError extends Error {
