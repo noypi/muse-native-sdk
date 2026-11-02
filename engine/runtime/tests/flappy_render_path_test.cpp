@@ -5,6 +5,7 @@
 // filesystem, no live services. All production symbols are declared here
 // against the plan; definitions land with the T9 coder pass, so linking
 // this file before then MUST fail (expected red, not a malformed test).
+#include <cstddef>
 #include <cstdint>
 #include <cstdio>
 #include <string>
@@ -21,6 +22,12 @@ struct FrameStats {
   std::string unknownKindName;  // named kind when unknownKindCount > 0.
 };
 FrameStats renderTree(TreeHandle treeHandle);
+
+// Null-preamble registration (gallery_present.cpp, global namespace):
+// null/empty input registers nothing (returns 0, no dereference). Security-
+// review pin: safe today only by call-site ordering; the guard belongs at
+// the function boundary, and this case locks the boundary contract.
+TreeHandle RegisterFlappyContentTree(const void* data, std::size_t len);
 
 // Test-owned flappy tree fixtures (handles only; production owns content).
 namespace {
@@ -148,6 +155,28 @@ static bool check_scene_render_isolated_from_unknown_renders() {
   return true;
 }
 
+// Named case (security — null-preamble registration, Batch 5 review):
+// null/empty input registers nothing (handle 0, no dereference, never
+// throws). Pins the function-boundary contract the coder's preamble
+// follow-up will enforce.
+static bool check_register_null_empty_preamble_returns_zero() {
+  static const char kBytes[] = "FlappyBird FlappyPipe FlappyTopAppBar";
+  try {
+    if (RegisterFlappyContentTree(nullptr, 0) != 0) {
+      std::printf("  detail: (nullptr, 0) registered a tree\n");
+      return false;
+    }
+    if (RegisterFlappyContentTree(kBytes, 0) != 0) {
+      std::printf("  detail: (bytes, 0) registered a tree\n");
+      return false;
+    }
+  } catch (...) {
+    std::printf("  detail: RegisterFlappyContentTree must never throw\n");
+    return false;
+  }
+  return true;
+}
+
 #define RUN_CASE(name)                                  \
   do {                                                  \
     if (!(name)()) {                                    \
@@ -167,6 +196,7 @@ int main() {
   RUN_CASE(check_unrecognized_nonzero_handle_renders_nothing);
   RUN_CASE(check_second_flappy_tree_resolves_via_tree_not_magic_handle);
   RUN_CASE(check_scene_render_isolated_from_unknown_renders);
+  RUN_CASE(check_register_null_empty_preamble_returns_zero);
   if (failures > 0) {
     std::printf("flappy_render_path_test: %d failing\n", failures);
     return 1;

@@ -226,6 +226,49 @@ static bool check_nonfinite_coordinates_rejected() {
   return true;
 }
 
+// Named case (security — log-literal format, Batch 5 review): every
+// handler name riding a DispatchResult is an internal literal — never
+// attacker-influenced, never carrying '%' (format-string) or '\n'
+// (log-injection) content. The logcat sink formats with a literal format
+// string + %s over these internal constants; this case pins the test-side
+// half of that contract across all fail-closed and fired paths.
+static bool check_tap_record_evidence_is_log_literal_safe() {
+  try {
+    (void)dispatchTouch(kFlappySteerNode, TouchAction::Down, 150.0f, 400.0f);
+    const DispatchResult fired =
+        dispatchTouch(kFlappySteerNode, TouchAction::Up, 150.0f, 400.0f);
+    const DispatchResult outsiders[] = {
+        dispatchTouch(kOutsideNode, TouchAction::Up, 10000.0f, 10000.0f),
+        dispatchTouch(kGalleryScrimNode, TouchAction::Up, 150.0f, 140.0f),
+        dispatchTouch(-999, TouchAction::Up, 150.0f, 400.0f),
+    };
+    if (!fired.fired || !fired.tapRecorded) {
+      std::printf("  detail: setup fire did not record\n");
+      return false;
+    }
+    const std::string names[] = {fired.handlerName, outsiders[0].handlerName,
+                                 outsiders[1].handlerName,
+                                 outsiders[2].handlerName};
+    for (const auto& name : names) {
+      if (name.find('%') != std::string::npos ||
+          name.find('\n') != std::string::npos) {
+        std::printf("  detail: handler name carries log-injection content\n");
+        return false;
+      }
+      if (name != "onTouchStart" && name != "GalleryScrim.onTouchStart" &&
+          !name.empty()) {
+        std::printf("  detail: handler name is not an internal literal: %s\n",
+                     name.c_str());
+        return false;
+      }
+    }
+  } catch (...) {
+    std::printf("  detail: dispatchTouch must never throw\n");
+    return false;
+  }
+  return true;
+}
+
 #define RUN_CASE(name)                                  \
   do {                                                  \
     if (!(name)()) {                                    \
@@ -247,6 +290,7 @@ int main() {
   RUN_CASE(check_down_up_identity_mismatch_fails_closed);
   RUN_CASE(check_up_without_prior_down_records_nothing);
   RUN_CASE(check_nonfinite_coordinates_rejected);
+  RUN_CASE(check_tap_record_evidence_is_log_literal_safe);
   if (failures > 0) {
     std::printf("flappy_tap_js_dispatch_test: %d failing\n", failures);
     return 1;
