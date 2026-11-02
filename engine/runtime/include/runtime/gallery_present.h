@@ -143,9 +143,14 @@ bool PresentDeviceGalleryPage(const std::vector<GalleryRow>& rows, int page,
 // gallery shaping cache. Returns true with both outputs populated on a
 // known handle; false on 0/unknown handles or null outputs (fail-closed,
 // never synthesized). Never throws.
+// BUG-TEXT-007 T4: the optional codepoints output resolves the per-glyph
+// source scalars stored at assignment; the rasterizer classifies outlines
+// by those, never by reinterpreting the font glyph id. Null (default)
+// keeps the historical two-output call shape.
 bool ResolveGalleryShapedRun(std::uint32_t handle,
                              std::vector<std::uint32_t>* glyphs,
-                             std::vector<float>* advances);
+                             std::vector<float>* advances,
+                             std::vector<std::uint32_t>* codepoints = nullptr);
 
 // ---- Layering page (L2: BUG-M3-FIDELITY-008 / FR-M3-010 / AC-M3-022) ----
 //
