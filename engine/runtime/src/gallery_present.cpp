@@ -580,8 +580,9 @@ std::uint32_t ShapeGalleryLabel(const std::string& label) {
   shaper.runData.emplace(id, run);
   // BUG-TEXT-007 T4: codepoints ride the handle so the rasterizer never
   // reinterprets the font glyph id as a codepoint (the skew mechanism).
-  // Stored even on cache-hit labels: the same id always maps to the same
-  // codepoints because the same key implies the same shaped run.
+  // Stored here on the miss path only: the early return above serves cache
+  // hits, whose id already maps to the same codepoints stored at first miss
+  // (same key implies the same shaped run).
   shaper.runCodepoints[id] = CodepointsForRun(label, run);
   return id;
 }

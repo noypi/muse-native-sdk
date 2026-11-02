@@ -225,13 +225,16 @@ const ReferenceRow* FindReferenceRow(const std::uint8_t* data,
 // identically by resolved face.
 std::uint32_t FallbackGlyphId(std::uint32_t codepoint,
                               std::uint64_t face_id) {
-  // Injective salted offset: id = codepoint + 0x110000 + low8(face) * 0x1000
-  // can never equal the codepoint (no wraparound: the largest scalar
-  // 0x10FFFF plus the largest salt 0x110000 + 0xFF000 fits in 32 bits), is
-  // width-independent, and keeps distinct codepoints distinct on every face.
+  // Injective salted offset: id = codepoint + 0x110000 + mix(face) masked
+  // to 20 bits can never equal the codepoint (no wraparound: the largest
+  // scalar 0x10FFFF plus the largest salt 0x110000 + 0xFFFFF fits in
+  // 32 bits), is width-independent, and keeps distinct codepoints distinct
+  // on every face. The salt folds all 8 face-id bytes (xor-fold + Knuth
+  // mix) so faces sharing a low byte still salt differently.
+  const std::uint64_t folded = face_id ^ (face_id >> 32) ^ (face_id >> 16);
   const std::uint32_t face_salt =
       0x110000u +
-      (static_cast<std::uint32_t>(face_id & 0xFFu) * 0x1000u);
+      ((static_cast<std::uint32_t>(folded * 0x9E3779B1u) >> 12) & 0xFFFFFu);
   return codepoint + face_salt;
 }
 

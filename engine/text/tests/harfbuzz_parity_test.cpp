@@ -129,16 +129,40 @@ static bool shapeAsciiOrUtf8(const char* s, const muse::text::TextStyle& style,
 
 static std::uint32_t decodeLeader(const char* s, std::size_t len,
                                   std::size_t b) {
+  // Strict scalar decode mirroring production DecodeScalarAt
+  // (overlong/surrogate/truncated/malformed -> U+FFFD). Not ASCII-only:
+  // callers pass multi-byte labels (e.g. U+2026), so this must agree with
+  // production on hostile sequences too.
+  constexpr std::uint32_t kReplacement = 0xFFFDu;
   const std::uint8_t lead = static_cast<std::uint8_t>(s[b]);
   if (lead < 0x80) return lead;
-  if ((lead & 0xE0) == 0xC0 && b + 1 < len)
-    return ((lead & 0x1F) << 6) | (s[b + 1] & 0x3F);
-  if ((lead & 0xF0) == 0xE0 && b + 2 < len)
-    return ((lead & 0x0F) << 12) | ((s[b + 1] & 0x3F) << 6) | (s[b + 2] & 0x3F);
-  if ((lead & 0xF8) == 0xF0 && b + 3 < len)
-    return ((lead & 0x07) << 18) | ((s[b + 1] & 0x3F) << 12) |
-           ((s[b + 2] & 0x3F) << 6) | (s[b + 3] & 0x3F);
-  return lead;
+  std::uint32_t cp = 0;
+  std::size_t want = 0;
+  std::uint32_t min = 0;
+  if ((lead & 0xE0) == 0xC0) {
+    cp = lead & 0x1F;
+    want = 2;
+    min = 0x80u;
+  } else if ((lead & 0xF0) == 0xE0) {
+    cp = lead & 0x0Fu;
+    want = 3;
+    min = 0x800u;
+  } else if ((lead & 0xF8) == 0xF0) {
+    cp = lead & 0x07u;
+    want = 4;
+    min = 0x10000u;
+  } else {
+    return kReplacement;
+  }
+  if (b + want > len) return kReplacement;
+  for (std::size_t k = 1; k < want; ++k) {
+    const std::uint8_t cont = static_cast<std::uint8_t>(s[b + k]);
+    if ((cont & 0xC0) != 0x80) return kReplacement;
+    cp = (cp << 6) | (cont & 0x3Fu);
+  }
+  if (cp < min || cp > 0x10FFFFu || (cp >= 0xD800u && cp <= 0xDFFFu))
+    return kReplacement;
+  return cp;
 }
 
 static bool check_gallery_label_ids_are_not_codepoints() {
