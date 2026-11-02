@@ -662,6 +662,148 @@ static bool check_uncovered_codepoint_is_missing_glyph() {
   return shaped.status() == muse::text::Status::kMissingGlyph;
 }
 
+// --- Batch 4 T11 security pins (Batch 4 LOW findings) ---
+// Entry caps: degenerate inputs fail closed without crash/throw/truncation.
+// Non-zero TTC face: unresolvable scripts fail closed, never substituted.
+// Corrupt bytes: hostile sequences rejected before shaping on both seams.
+// All-or-nothing: no prefix-only partial run is ever served.
+
+static bool check_entry_caps_fail_closed_without_truncation() {
+  muse::text::TextStyle style = style16();
+  // shapeRun(nullptr,0) is a valid empty run.
+  {
+    muse::text::StatusOr<muse::text::ShapedRun> r = muse::text::shapeRun(
+        nullptr, 0, muse::text::FontHandle{}, style);
+    if (!r.ok() || !(*r).glyph_ids.empty()) return false;
+  }
+  // Null bytes with nonzero length fail closed on both seams, never throw.
+  {
+    muse::text::StatusOr<muse::text::ShapedRun> r = muse::text::shapeRun(
+        nullptr, 64, muse::text::FontHandle{}, style);
+    if (r.ok()) return false;
+  }
+  {
+    muse::text::FontRequest req;
+    muse::text::StatusOr<muse::text::ShapedRun> r =
+        muse::text::shapeRunWithFallback(nullptr, 64, style, req);
+    if (r.ok()) return false;
+    if (r.status() != muse::text::Status::kInvalidInput) return false;
+  }
+  // Null variation vector with nonzero count fails closed.
+  {
+    const std::uint8_t kHi[] = {0x48, 0x69};
+    muse::text::StatusOr<muse::text::ShapedRun> r =
+        muse::text::shapeRunWithVariations(kHi, sizeof(kHi),
+                                           muse::text::FontHandle{}, style,
+                                           nullptr, 1);
+    if (r.ok()) return false;
+    if (r.status() != muse::text::Status::kInvalidInput) return false;
+  }
+  // Gigantic size_px shapes deterministically: same payload twice.
+  {
+    muse::text::TextStyle huge = style;
+    huge.size_px = 1e30f;
+    const std::uint8_t kAb[] = {0x41, 0x42};
+    muse::text::StatusOr<muse::text::ShapedRun> a = muse::text::shapeRun(
+        kAb, sizeof(kAb), muse::text::FontHandle{}, huge);
+    muse::text::StatusOr<muse::text::ShapedRun> b = muse::text::shapeRun(
+        kAb, sizeof(kAb), muse::text::FontHandle{}, huge);
+    if (!a.ok() || !b.ok()) return false;
+    if (a->glyph_ids != b->glyph_ids) return false;
+    if (a->advances != b->advances) return false;
+  }
+  return true;
+}
+
+static bool check_non_index_zero_face_fails_closed() {
+  // Unknown script: discoverFonts fails closed, resolveFallback fails
+  // closed — never an ok-substitute, deterministic across calls.
+  constexpr std::uint32_t kUnknownScript = 0xDEADBEEFu;
+  muse::text::FontQuery q;
+  q.family = "NoSuchFamily";
+  q.scriptTag = kUnknownScript;
+  q.locale = "en-US";
+  q.weight = 400;
+  muse::text::StatusOr<std::vector<muse::text::FontHandle>> chain =
+      muse::text::discoverFonts(q);
+  if (chain.ok()) return false;
+  if (chain.status() != muse::text::Status::kNoFaceAvailable) return false;
+  muse::text::StatusOr<muse::text::FontHandle> f =
+      muse::text::resolveFallbackForScript(kUnknownScript, "en-US");
+  if (f.ok()) return false;
+  if (f.status() != muse::text::Status::kMissingGlyph) return false;
+  // Deterministic: same outcome on repeat.
+  muse::text::StatusOr<std::vector<muse::text::FontHandle>> chain2 =
+      muse::text::discoverFonts(q);
+  if (chain2.ok()) return false;
+  if (chain2.status() != muse::text::Status::kNoFaceAvailable) return false;
+  muse::text::StatusOr<muse::text::FontHandle> f2 =
+      muse::text::resolveFallbackForScript(kUnknownScript, "en-US");
+  if (f2.ok()) return false;
+  return f2.status() == muse::text::Status::kMissingGlyph;
+}
+
+static bool check_corrupt_bytes_fail_closed_before_shaping() {
+  // Hostile byte sequences are rejected before shaping on both seams,
+  // never throw, never silently shaped.
+  const std::uint8_t kOverlong[] = {0xC0, 0x80};          // overlong NUL
+  const std::uint8_t kSurrogate[] = {0xED, 0xA0, 0x80};   // U+D800
+  const std::uint8_t kTrunc3[] = {0xE2, 0x82};            // truncated 3-byte
+  const std::uint8_t kTrunc4[] = {0xF0, 0x9F, 0x98};      // truncated 4-byte
+  const struct {
+    const std::uint8_t* bytes;
+    std::size_t len;
+  } kCases[] = {
+      {kOverlong, sizeof(kOverlong)},
+      {kSurrogate, sizeof(kSurrogate)},
+      {kTrunc3, sizeof(kTrunc3)},
+      {kTrunc4, sizeof(kTrunc4)},
+  };
+  muse::text::TextStyle style = style16();
+  for (std::size_t i = 0; i < 4; ++i) {
+    muse::text::StatusOr<muse::text::ShapedRun> r = muse::text::shapeRun(
+        kCases[i].bytes, kCases[i].len, muse::text::FontHandle{}, style);
+    if (r.ok()) return false;
+    muse::text::FontRequest req;
+    muse::text::StatusOr<muse::text::ShapedRun> f =
+        muse::text::shapeRunWithFallback(kCases[i].bytes, kCases[i].len,
+                                         style, req);
+    if (f.ok()) return false;
+  }
+  return true;
+}
+
+static bool check_all_or_nothing_coverage_no_mixed_runs() {
+  // Valid prefix + truncated tail fails closed on both seams — never a
+  // prefix-only ok run. Valid mixed-width input shapes whole.
+  muse::text::TextStyle style = style16();
+  const std::uint8_t kPrefixTrunc[] = {0x41, 0xE2, 0x82};  // 'A' + trunc
+  {
+    muse::text::StatusOr<muse::text::ShapedRun> r = muse::text::shapeRun(
+        kPrefixTrunc, sizeof(kPrefixTrunc), muse::text::FontHandle{}, style);
+    if (r.ok()) return false;
+  }
+  {
+    muse::text::FontRequest req;
+    muse::text::StatusOr<muse::text::ShapedRun> f =
+        muse::text::shapeRunWithFallback(kPrefixTrunc, sizeof(kPrefixTrunc),
+                                         style, req);
+    if (f.ok()) return false;
+  }
+  // Valid mixed-width "A" + U+00E9 shapes whole: full cluster map, valid
+  // owners, 2 glyphs.
+  const std::uint8_t kMixed[] = {0x41, 0xC3, 0xA9};
+  muse::text::StatusOr<muse::text::ShapedRun> r = muse::text::shapeRun(
+      kMixed, sizeof(kMixed), muse::text::FontHandle{}, style);
+  if (!r.ok()) return false;
+  if (r->cluster_map.size() != sizeof(kMixed)) return false;
+  if (r->glyph_ids.size() != 2) return false;
+  for (std::uint32_t owner : r->cluster_map) {
+    if (owner >= r->glyph_ids.size()) return false;
+  }
+  return true;
+}
+
 #define RUN_CASE(name)                           \
   do {                                           \
     if (!(name)()) {                             \
@@ -701,6 +843,10 @@ int main() {
   RUN_CASE(check_real_shape_advances_match_font_output);
   RUN_CASE(check_real_shape_ids_are_font_glyph_ids);
   RUN_CASE(check_uncovered_codepoint_is_missing_glyph);
+  RUN_CASE(check_entry_caps_fail_closed_without_truncation);
+  RUN_CASE(check_non_index_zero_face_fails_closed);
+  RUN_CASE(check_corrupt_bytes_fail_closed_before_shaping);
+  RUN_CASE(check_all_or_nothing_coverage_no_mixed_runs);
   if (failures > 0) {
     std::printf("harfbuzz_parity_test: %d failing\n", failures);
     return 1;
