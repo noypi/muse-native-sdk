@@ -218,6 +218,7 @@ if(DEFINED ANDROID_ABI AND NOT TARGET Runtime)
     src/renderer.cpp
     src/jni_bridge.cpp
     src/input_chain.cpp
+    src/text_field.cpp
     src/gallery_present.cpp
     src/presenter.cpp
     src/text_field.cpp
