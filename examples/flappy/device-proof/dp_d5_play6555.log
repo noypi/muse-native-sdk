@@ -1,0 +1,8 @@
+11-02 07:31:22.608  2994  2994 I muse-host: nativeLoadTree: bytes=12944 rows=41 -> handle acquired
+11-02 07:31:22.608  2994  2994 I muse-host: nativeProvenance: engine-sha=1b5e89e gallery_present-sha=17f062b02bdbd8cda3a4ae49706ad002d936a798
+11-02 07:31:22.633  2994  2994 I muse-host: nativeAttachSurface: window 1080x1944
+11-02 07:31:33.666  2994  2994 I muse-host: nativeDispatchTouch: action=0 x=540.0 y=930.0 pointer=0
+11-02 07:31:38.301  2994  2994 I muse-host: nativeDispatchTouch: action=0 x=540.0 y=930.0 pointer=0
+11-02 07:31:42.890  2994  2994 I muse-host: nativeDispatchTouch: action=0 x=540.0 y=930.0 pointer=0
+0
+0

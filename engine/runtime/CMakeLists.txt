@@ -654,6 +654,30 @@ target_link_libraries(present_real_components_test PRIVATE runtime)
 target_compile_options(present_real_components_test PRIVATE -Wall -Wextra -Wpedantic)
 add_test(NAME present_real_components_test COMMAND present_real_components_test)
 
+# Batch 5 / T9: per-app content rendering (flappy game scene, never
+# gallery-mapped rows). Test owned by code-unit-tester; binds only to the T9
+# `Interface:` line. Definitions land in src/gallery_present.cpp.
+add_executable(flappy_render_path_test tests/flappy_render_path_test.cpp)
+target_link_libraries(flappy_render_path_test PRIVATE runtime)
+target_compile_options(flappy_render_path_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME flappy_render_path_test COMMAND flappy_render_path_test)
+
+# Batch 5 / T10: tap-tree-from-layout (real flappy bounds). Test owned by
+# code-unit-tester; binds only to the T10 `Interface:` line. Definitions land
+# in src/input_chain.cpp.
+add_executable(flappy_tap_tree_test tests/flappy_tap_tree_test.cpp)
+target_link_libraries(flappy_tap_tree_test PRIVATE runtime)
+target_compile_options(flappy_tap_tree_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME flappy_tap_tree_test COMMAND flappy_tap_tree_test)
+
+# Batch 5 / T11: real tap→JS dispatch with node identity. Test owned by
+# code-unit-tester; binds only to the T11 `Interface:` line. Definitions land
+# in src/presenter.cpp.
+add_executable(flappy_tap_js_dispatch_test tests/flappy_tap_js_dispatch_test.cpp)
+target_link_libraries(flappy_tap_js_dispatch_test PRIVATE runtime)
+target_compile_options(flappy_tap_js_dispatch_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME flappy_tap_js_dispatch_test COMMAND flappy_tap_js_dispatch_test)
+
 # FR-GRAPHICS-015 batch 2 (T3): RULE-GRAPHICS-003 oracle-painter
 # reachability gate. Hermetic shell case (grep/nm over the page-target
 # objects, mirroring the jni_contract_test.sh pattern); no device, no

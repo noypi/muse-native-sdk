@@ -1,0 +1,32 @@
+(node:17) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///media/saif/EXTRA/workspaces/meta-hackathon/muse-native-sdk/.worktrees/demo-flappy/_run/examples/flappy/src/loop.test.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to /media/saif/EXTRA/workspaces/meta-hackathon/muse-native-sdk/.worktrees/demo-flappy/_run/examples/flappy/package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+▶ resetGame
+  ✔ returns an initial state with score 0 and a non-terminal status (0.65109ms)
+  ✔ restores the initial state with no retained score after a run (1.034117ms)
+  ✔ completes in under 1s (0.186066ms)
+✔ resetGame (2.822276ms)
+▶ stepGame input
+  ✔ first tap starts the game (0.15247ms)
+  ✔ tap applies an upward impulse compared with no input (0.154077ms)
+  ✔ gravity pulls the bird down when there is no input (0.141086ms)
+✔ stepGame input (0.652138ms)
+▶ stepGame purity and determinism
+  ✔ does not mutate its input state (0.253675ms)
+  ✔ is deterministic for the same input sequence (0.26059ms)
+  ✔ rejects a non-positive dt instead of producing NaN state (0.27379ms)
+✔ stepGame purity and determinism (1.084266ms)
+▶ stepGame scoring and game-over
+  ✔ increments the score when the bird passes a pipe (0.534589ms)
+  ✔ yields game-over with a preserved score on collision (0.211209ms)
+  ✔ keeps game-over absorbing: further steps change neither status nor score (0.209603ms)
+✔ stepGame scoring and game-over (1.104171ms)
+ℹ tests 12
+ℹ suites 4
+ℹ pass 12
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 112.094204

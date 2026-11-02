@@ -1,0 +1,11 @@
+11-02 02:30:23.796  2638  2638 I muse-host: nativeLoadTree: bytes=12944 rows=41 -> handle acquired
+11-02 02:30:23.796  2638  2638 I muse-host: nativeProvenance: engine-sha=1b5e89e gallery_present-sha=17f062b02bdbd8cda3a4ae49706ad002d936a798
+11-02 02:30:23.796  2638  2638 I GalleryPage: gallery-rows=41
+11-02 02:30:23.830  2638  2638 I muse-host: nativeAttachSurface: window 570x1054
+11-02 02:30:23.861  2638  2667 I GalleryPage: [layering] slice page=0 rows=[0,8] comps={AnimatableProp|GameState|ThemePalette|DemoState|TopAppBar||||} labels={AnimatableProp|GameState|ThemePalette|DemoState|flappy|type AnimatableProp = 'opacity' | 'transform';|type MotionToken = 'motion-token-fade' | 'motion-token-emphasized';|opacity: 'motion-token-fade',|transform: 'motion-token-emphasized',}
+11-02 02:30:24.993  2638  2667 I GalleryPage: gallery-rows=41 gallery-pages=4
+11-02 02:30:24.993  2638  2667 I GalleryPage: gallery-page=1/4
+11-02 02:30:25.009  2638  2667 I GalleryPage: [layering] slice page=0 rows=[0,8] comps={AnimatableProp|GameState|ThemePalette|DemoState|TopAppBar||||} labels={AnimatableProp|GameState|ThemePalette|DemoState|flappy|type AnimatableProp = 'opacity' | 'transform';|type MotionToken = 'motion-token-fade' | 'motion-token-emphasized';|opacity: 'motion-token-fade',|transform: 'motion-token-emphasized',}
+0
+11-02 02:30:50.280  2638  2638 I muse-host: nativeDispatchTouch: action=0 x=285.0 y=505.0 pointer=0
+11-02 02:30:52.684  2638  2638 I muse-host: nativeDispatchTouch: tap fired node=20 repaint=1
