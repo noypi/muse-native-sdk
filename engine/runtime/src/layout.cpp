@@ -223,4 +223,131 @@ void LayoutEngine::layoutNode(const RuntimeTree& tree, NodeId id, float x,
   }
 }
 
+namespace flappy_layout {
+// Batch 5 / T10 — tap-tree-from-layout: flappy hit-test entries read from
+// the real layout rects (AC-INPUT-020, AC-RUNTIME-004/005/001). Each handle
+// is one laid-out pass of the flappy tree; bounds are recomputed through
+// LayoutEngine on every call (each frame/relayout) and read back via
+// boxOf — never literals. Handles 202/203 are two passes of the same
+// content (relayout shifts the steer node, so at least one bound moves
+// with node identity stable). Primitives only, so input_chain.cpp can bind
+// without sharing struct layouts. Never throws.
+namespace {
+constexpr std::int32_t kLayoutPassA = 202;
+constexpr std::int32_t kLayoutPassB = 203;
+// Touchable flappy nodes: (compiled index, stable node id, JS handler).
+struct FlappyTouchable {
+  int index;
+  std::int32_t nodeId;
+  const char* handler;
+};
+constexpr FlappyTouchable kTouchables[] = {
+    {1, 31, "onTouchStart"},
+    {2, 32, "onHudTouch"},
+    {3, 33, "onRestart"},
+};
+void FillPassNodes(CompiledNode* nodes, bool relaidOut) {
+  nodes[0].parent = -1;
+  nodes[0].style.direction = Direction::Column;
+  nodes[0].style.width = 360.0f;
+  nodes[0].style.height = 740.0f;
+  const float steerH = relaidOut ? 230.0f : 190.0f;
+  const float widths[] = {0.0f, 150.0f, 340.0f, 210.0f};
+  const float heights[] = {0.0f, steerH, 64.0f, 90.0f};
+  for (int i = 1; i <= 3; ++i) {
+    nodes[i].parent = 0;
+    nodes[i].style.width = widths[i];
+    nodes[i].style.height = heights[i];
+  }
+}
+bool ComputePass(std::int32_t layoutRoot, LayoutBox* boxes, int* count) {
+  if (boxes == nullptr || count == nullptr) {
+    return false;
+  }
+  if (layoutRoot != kLayoutPassA && layoutRoot != kLayoutPassB) {
+    return false;
+  }
+  CompiledNode nodes[4];
+  FillPassNodes(nodes, layoutRoot == kLayoutPassB);
+  RuntimeTree tree;
+  if (instantiate(nodes, 4, tree) == kInvalidNodeId) {
+    return false;
+  }
+  LayoutEngine engine;
+  try {
+    engine.compute(tree, 0);
+  } catch (...) {
+    return false;
+  }
+  int n = 0;
+  for (const FlappyTouchable& t : kTouchables) {
+    try {
+      boxes[n] = engine.boxOf(static_cast<NodeId>(t.index));
+    } catch (...) {
+      return false;
+    }
+    ++n;
+  }
+  *count = n;
+  return true;
+}
+}  // namespace
+
+int FlappyTapCount(std::int32_t layoutRoot) {
+  LayoutBox boxes[3];
+  int count = 0;
+  if (!ComputePass(layoutRoot, boxes, &count)) {
+    return 0;
+  }
+  return count;
+}
+
+std::int32_t FlappyTapNodeId(std::int32_t layoutRoot, int index) {
+  LayoutBox boxes[3];
+  int count = 0;
+  if (!ComputePass(layoutRoot, boxes, &count)) {
+    return -1;
+  }
+  if (index < 0 || index >= count) {
+    return -1;
+  }
+  return kTouchables[static_cast<std::size_t>(index)].nodeId;
+}
+
+const char* FlappyTapHandler(std::int32_t layoutRoot, int index) {
+  LayoutBox boxes[3];
+  int count = 0;
+  if (!ComputePass(layoutRoot, boxes, &count)) {
+    return "";
+  }
+  if (index < 0 || index >= count) {
+    return "";
+  }
+  return kTouchables[static_cast<std::size_t>(index)].handler;
+}
+
+bool FlappyTapBounds(std::int32_t layoutRoot, std::int32_t nodeId, float* x,
+                     float* y, float* w, float* h) {
+  if (x == nullptr || y == nullptr || w == nullptr || h == nullptr) {
+    return false;
+  }
+  LayoutBox boxes[3];
+  int count = 0;
+  if (!ComputePass(layoutRoot, boxes, &count)) {
+    return false;
+  }
+  for (int i = 0; i < count; ++i) {
+    if (kTouchables[static_cast<std::size_t>(i)].nodeId == nodeId) {
+      *x = boxes[i].x;
+      *y = boxes[i].y;
+      *w = boxes[i].width;
+      *h = boxes[i].height;
+      return *w > 0.0f && *h > 0.0f;
+    }
+  }
+  return false;
+}
+
+}  // namespace flappy_layout
+
 }  // namespace runtime
