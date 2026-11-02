@@ -137,6 +137,8 @@ static bool check_both_out_params_null_tolerated() {
 
 // Named case: unknown requested value fails closed to cpu with a non-empty
 // trigger — a frame path is always resolved, never blank.
+// Security pin (security-review.md): never echoes the unknown input as the
+// path, and the trigger never embeds raw requested bytes.
 // ASSUMPTION A-C1: the Interface line is silent on unknown input; fail-closed
 // to the proven CPU push (rather than echoing the unknown value) is the most
 // defensible behavior under AC-GRAPHICS-034's never-blank rule.
@@ -145,7 +147,10 @@ static bool check_unknown_requested_fails_closed_to_cpu() {
   std::string trigger;
   bool ok = ResolveRendererFallback("vulkan", true, true, effective,
                                     sizeof(effective), &trigger);
-  return ok && std::strcmp(effective, "cpu") == 0 && !trigger.empty();
+  return ok && std::strcmp(effective, "cpu") == 0 && !trigger.empty() &&
+         std::strcmp(effective, "vulkan") != 0 &&
+         trigger.find("vulkan") == std::string::npos &&
+         trigger == "renderer-downgrade:unknown-requested";
 }
 
 // Named case: zero-length effective buffer never overflows — returns true,
@@ -159,6 +164,38 @@ static bool check_zero_length_buffer_no_crash() {
   bool ok = ResolveRendererFallback("egl", false, false, effective, 0,
                                     &trigger);
   return ok && !trigger.empty();
+}
+
+// Named case: downgrade-log fixed-vocabulary tripwire — every trigger the
+// gate can emit belongs to the closed set {"", "renderer-downgrade:
+// egl-unavailable", "renderer-downgrade:skia-unavailable",
+// "renderer-downgrade:unknown-requested"}. Fails if a future change
+// interpolates a dynamic string (e.g. raw requested bytes) into the trigger
+// / downgrade log line (security-review.md log-integrity).
+static bool check_trigger_vocabulary_is_closed() {
+  const char* kVocab[] = {"",
+                          "renderer-downgrade:egl-unavailable",
+                          "renderer-downgrade:skia-unavailable",
+                          "renderer-downgrade:unknown-requested"};
+  auto inVocab = [&](const std::string& t) {
+    for (const char* v : kVocab) {
+      if (t == v) return true;
+    }
+    return false;
+  };
+  const char* requesteds[] = {nullptr, "cpu", "egl", "skia",
+                              "vulkan", "", "CPU", "egl "};
+  for (const char* req : requesteds) {
+    for (int combo = 0; combo < 4; ++combo) {
+      char effective[16] = {};
+      std::string trigger = "untouched";
+      bool ok = ResolveRendererFallback(req, (combo & 1) != 0,
+                                        (combo & 2) != 0, effective,
+                                        sizeof(effective), &trigger);
+      if (!ok || !inVocab(trigger)) return false;
+    }
+  }
+  return true;
 }
 
 #define RUN_CASE(name)                                       \
@@ -188,6 +225,7 @@ int main() {
   RUN_CASE(check_both_out_params_null_tolerated);
   RUN_CASE(check_unknown_requested_fails_closed_to_cpu);
   RUN_CASE(check_zero_length_buffer_no_crash);
+  RUN_CASE(check_trigger_vocabulary_is_closed);
   if (failures > 0) {
     std::printf("renderer_preference_fallback_test: %d failing\n", failures);
     return 1;
