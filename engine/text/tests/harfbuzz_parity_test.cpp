@@ -323,6 +323,81 @@ static bool check_fallback_modified_utf8_nul_overlong_rejected() {
   return true;  // noexcept seam: no throw path exists to take
 }
 
+// --- Security-review pins (FR-TEXT-016): cross-face non-collision + FFFD
+// decode mirror. Requested in workflow.local/runs/bug-text-007/
+// security-review.md ("Security Tests Requested"). The fallback-seam
+// strict-decode pins above were already restored — they are not duplicated
+// here. The RasterizeShapedText / ResolveGalleryShapedRun size-mismatch
+// halves live in the runtime translation units, which this engine/text
+// binary does not link; they are EXTERNAL (see contract T7.md) and only
+// the text-seam halves are pinned below.
+// ASSUMPTION: decodeLeader below mirrors production DecodeScalarAt
+// (gallery_present.cpp) rule-for-rule (overlong/surrogate/truncation/
+// stray-lead -> U+FFFD with seq_len 1); this case pins the mirror so a
+// drift between the two is caught when the runtime suite runs its own
+// DecodeScalarAt pin.
+
+static muse::text::StatusOr<muse::text::ShapedRun> shapeWithFace(
+    const char* s, std::uint64_t face_id) {
+  std::size_t len = 0;
+  while (s[len] != '\0') ++len;
+  muse::text::FontRequest req;
+  req.has_downloadable_font = true;
+  req.downloadable_font = muse::text::FontHandle{face_id};
+  return muse::text::shapeRunWithFallback(
+      reinterpret_cast<const std::uint8_t*>(s), len, style16(), req);
+}
+
+static bool check_faces_sharing_low_byte_produce_distinct_ids() {
+  // Salt folds all 8 face-id bytes (shaper.cpp FallbackGlyphId), so faces
+  // sharing a low byte still salt differently: the same label shapes to
+  // different glyph ids on each face, and distinct labels never collide
+  // on one face (cache-key non-collision, FR-TEXT-016).
+  const char* kLabel = "m3-gallery";
+  const char* kOther = "m3-gallerz";
+  muse::text::StatusOr<muse::text::ShapedRun> a =
+      shapeWithFace(kLabel, 0x01u);
+  muse::text::StatusOr<muse::text::ShapedRun> b =
+      shapeWithFace(kLabel, 0x0100000001000001ull);  // same low byte
+  muse::text::StatusOr<muse::text::ShapedRun> c =
+      shapeWithFace(kOther, 0x01u);
+  if (!a.ok() || !b.ok() || !c.ok()) return false;
+  if (a->glyph_ids.empty()) return false;
+  if (a->glyph_ids.size() != b->glyph_ids.size()) return false;
+  if (a->glyph_ids.size() != c->glyph_ids.size()) return false;
+  bool any_differs = false;
+  for (std::size_t i = 0; i < a->glyph_ids.size(); ++i) {
+    if (a->glyph_ids[i] != b->glyph_ids[i]) any_differs = true;
+  }
+  if (!any_differs) return false;  // faces collided: salt ignores high bytes
+  return a->glyph_ids != c->glyph_ids;  // distinct labels never collide
+}
+
+static bool check_strict_decode_mirror_maps_hostile_to_fffd() {
+  // Production DecodeScalarAt maps every malformed sequence to U+FFFD;
+  // valid sequences decode exactly. Overlong C0 AF ('/'), Modified-UTF-8
+  // NUL C0 80, surrogate ED A0 80, truncated E0 A4, and stray continuation
+  // 0x80 must all yield FFFD; ASCII, U+00E9, and U+2026 must decode exact.
+  constexpr std::uint32_t kFFFD = 0xFFFDu;
+  const char kOverlong[] = {'\xC0', '\xAF', '\0'};
+  const char kModNul[] = {'\xC0', '\x80', '\0'};
+  const char kSurrogate[] = {'\xED', '\xA0', '\x80', '\0'};
+  const char kTrunc[] = {'\xE0', '\xA4', '\0'};
+  const char kStray[] = {'\x80', '\0'};
+  if (decodeLeader(kOverlong, 2, 0) != kFFFD) return false;
+  if (decodeLeader(kModNul, 2, 0) != kFFFD) return false;
+  if (decodeLeader(kSurrogate, 3, 0) != kFFFD) return false;
+  if (decodeLeader(kTrunc, 2, 0) != kFFFD) return false;
+  if (decodeLeader(kStray, 1, 0) != kFFFD) return false;
+  const char kAscii[] = "A";
+  const char kEAcute[] = {'\xC3', '\xA9', '\0'};
+  const char kEllipsis[] = {'\xE2', '\x80', '\xA6', '\0'};
+  if (decodeLeader(kAscii, 1, 0) != 0x41u) return false;
+  if (decodeLeader(kEAcute, 2, 0) != 0xE9u) return false;
+  if (decodeLeader(kEllipsis, 3, 0) != 0x2026u) return false;
+  return true;
+}
+
 #define RUN_CASE(name)                           \
   do {                                           \
     if (!(name)()) {                             \
@@ -351,6 +426,8 @@ int main() {
   RUN_CASE(check_fallback_malformed_utf8_is_invalid_input);
   RUN_CASE(check_fallback_null_variations_is_invalid_input);
   RUN_CASE(check_fallback_modified_utf8_nul_overlong_rejected);
+  RUN_CASE(check_faces_sharing_low_byte_produce_distinct_ids);
+  RUN_CASE(check_strict_decode_mirror_maps_hostile_to_fffd);
   if (failures > 0) {
     std::printf("harfbuzz_parity_test: %d failing\n", failures);
     return 1;
