@@ -280,7 +280,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
      * blank).
      */
     private void routeDemoLink(android.net.Uri link) {
-        if (link == null || !"tab".equals(link.getHost())) {
+        if (link == null || !"muse-demo".equals(link.getScheme()) || !"tab".equals(link.getHost())) {
             Log.w("DemoPage", "deep-link rejected (unknown-route host): " + link + " destinationReached=false engineHosted=true");
             return;
         }
