@@ -890,7 +890,7 @@ void RenderLocked(GalleryHandle* g) {
       g->layeringOverlayCount);
   // FR-GRAPHICS-014 T2: requested-vs-effective present-path selection with
   // probe downgrade to the proven CPU push (AC-GRAPHICS-040/041). The
-  // requested renderer defaults to `cpu`; the resolve gate maps it against
+  // requested renderer defaults to `skia`; the resolve gate maps it against
   // EGL/Skia availability into the effective frame path (never blank) and
   // names every downgrade `renderer-downgrade:<lane>-unavailable`. `egl`
   // dispatches to the FR-012 blit leg, `skia` to the FR-003/AC-039 Skia leg,
@@ -913,7 +913,7 @@ void RenderLocked(GalleryHandle* g) {
   // yet) EGL lane can never blank the device frame. Every EGL failure is
   // logged inside as `GFX-BLIT-FALLBACK: <trigger>`; lock/unlockAndPost below
   // are reused unchanged.
-  const char* requestedRenderer = "cpu";
+  const char* requestedRenderer = "skia";
   const bool eglAvailable = false;
   const bool skiaAvailable = false;
   char effectiveRenderer[16] = {};
