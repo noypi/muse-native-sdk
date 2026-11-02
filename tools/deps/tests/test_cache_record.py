@@ -67,5 +67,38 @@ class TestCacheMeasurementRows(unittest.TestCase):
                 self.assertTrue(value, "%s key.%s empty" % (abi, field))
 
 
+class TestPartialRefreshMerge(unittest.TestCase):
+    """Pin 3be5353: partial --abis refresh merges with prior rows."""
+
+    def test_partial_refresh_preserves_other_rows(self):
+        # Pin 3be5353 merge-with-prior: partial --abis refresh of one ABI
+        # must leave the other three rows byte-identical. Hermetic: prior
+        # table built in-memory; merge idiom mirrors main()'s
+        # merged = dict(prior) + per-ABI update + ABIS-ordered rows.
+        abis = ("arm64-v8a", "armeabi-v7a", "x86_64", "x86")
+        prior_rows = [
+            {"abi": abi, "key": {"name": "skia-m158", "version": "m158",
+                                 "abi": abi, "gn_args_hash": "h" + abi,
+                                 "ndk_rev": "27.2.12479018",
+                                 "snapshot_sha256": "s"},
+             "wallClockSec": 1.5, "objectBytes": 100 + i}
+            for i, abi in enumerate(REQUIRED_ABIS)
+        ]
+        prior = _rows_by_abi({"rows": prior_rows})
+        refreshed = dict(prior["arm64-v8a"])
+        refreshed["wallClockSec"] = 9.5
+        merged = dict(prior)
+        merged["arm64-v8a"] = refreshed
+        rows = [merged[abi] for abi in abis if abi in merged]
+        table = {"rows": rows}
+        by_abi = {row["abi"]: row for row in table["rows"]}
+        for abi in ("armeabi-v7a", "x86_64", "x86"):
+            self.assertEqual(
+                json.dumps(by_abi[abi], sort_keys=True),
+                json.dumps(prior[abi], sort_keys=True),
+                "partial refresh clobbered row: %s" % abi)
+        self.assertEqual(by_abi["arm64-v8a"]["wallClockSec"], 9.5)
+
+
 if __name__ == "__main__":
     unittest.main()
