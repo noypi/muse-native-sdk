@@ -68,6 +68,11 @@ _ALLOWLIST = [
     ("magic_enum", "Enum names for diagnostics; header-only", "core"),
     ("simdjson", "Tooling/debug JSON only; never in the frame path", "build"),
     ("Cronet", "Default shippable transport (FR-NET-014)", "net"),
+    (
+        "Skia Graphite",
+        "GPU vector rasterizer (FR-GRAPHICS-016/017); GraphiteRender interface; BSD-3-Clause licence",
+        "graphics",
+    ),
 ]
 
 # Deny-list mirroring the spec table (library, reason).
