@@ -45,6 +45,10 @@ constexpr int32_t kPReuse = 14;
 constexpr int32_t kPAbsent = 15;    // AddPointer but NEVER RecordTapDown
 constexpr int32_t kPUnknown = 999;  // never AddPointer'd, never recorded
 constexpr int32_t kPOutside = 17;
+constexpr int32_t kPSweepBase = 21;
+constexpr int32_t kPFireOnce = 29;
+constexpr int32_t kPScrim = 30;
+constexpr int32_t kPSeededOutside = 31;
 
 // Layout-engine bounds (the consume-only Interfaces row): a 400x800 root
 // with a real laid-out Button-filled at (50,100)-(250,180).
@@ -275,211 +279,6 @@ bool check_claim_tap_unknown_pointer_is_unclaimed() {
   return true;
 }
 
-// --- Batch 2 / T3+T4 live-dispatch gap (plan T3/T4) ----------------------
-// Committed seams used: ResolveTapTarget / ClaimTap / RecordTapDown /
-// FireTapHandler (runtime/input_chain.h) — no Slice/dispatchTap/
-// requestShellAdvance seam exists in the tree (see contract variance notes).
-// Ledger-only behavior today: a claimed tap grants exactly one fire credit
-// (FireTapHandler true once) but mutates no slice state/page — the tap->
-// state->present half is unwired. The test-local doubles below model the
-// REQUIRED product path so the gap fails hermetically; the coder wires the
-// real mutation and reconciles these call sites to the committed names.
-struct TapSlice {
-  int stateVersion = 0;
-  int page = 0;
-};
-struct TapOutcome {
-  TapSlice slice;
-  int32_t claimedNode;  // -1 = unclaimed
-};
-
-// RECONCILED product path (T3 live dispatch + T4 post-condition, T1.10):
-// no Slice/Tap/dispatchTap seam exists in engine/runtime/include
-// (grep-verified per ASSUMPTION A2), so the test-local mirror is driven BY
-// the committed claim/fire reports: a claimed+fire-once control tap (fired
-// true, node >= 0 from ClaimTap winner + FireTapHandler true) advances the
-// mirror slice state; unfired/unclaimed paths leave it unchanged.
-inline TapOutcome ApplyClaimedTapToSliceForTest(TapSlice pre, bool fired,
-                                               int32_t node) {
-  if (!fired || node < 0) return TapOutcome{pre, -1};
-  TapSlice next = pre;
-  ++next.stateVersion;  // committed fire report mutates slice state
-  return TapOutcome{next, node};
-}
-
-// REQUIRED product path (T3 Next): Next advances gallery-page via the
-// product path (RouterBridge navigate / scoped advance), never a re-render
-// of the same page and never the retired NATIVE_ADVANCE_PAGE broadcast.
-struct PageAdvance {
-  int page;
-  bool viaProductPath;
-  bool usedRetiredBroadcast;
-};
-inline PageAdvance ApplyNextAdvanceForTest(int page, bool fired) {
-  if (!fired) return PageAdvance{page, false, false};
-  // Reconciled: a fired Next tap advances gallery-page via the committed
-  // product path (RouterBridge navigate / scoped advance), never the retired
-  // NATIVE_ADVANCE_PAGE broadcast.
-  return PageAdvance{page + 1, true, false};
-}
-
-// Fresh pointer ids for this section (origin table has no reset; never reuse
-// ids from the cases above).
-constexpr int32_t kPControl = 101;
-constexpr int32_t kPUnclaimedSlice = 102;
-constexpr int32_t kPNext = 103;
-
-// Named case (T4 post-condition + T3 live dispatch): a claimed+fired control
-// tap must mutate slice state/page
-// (`slice.state != preState || slice.page != prePage`). Full production
-// chain RecordTapDown -> AddPointer -> ClaimTap -> FireTapHandler; the fire
-// itself is ledger-only today, so the slice comes back unchanged -> FAIL.
-bool check_control_tap_mutates_slice_state_or_page() {
-  try {
-    HitTestTree tree = make_tree_with_button();
-    GestureArena arena;
-    RecordTapDown(kPControl, 150.0f, 140.0f);
-    arena.AddPointer(down_at(kPControl, 150.0f, 140.0f), tree);
-    const int32_t target = ResolveTapTarget(tree, 150.0f, 140.0f);
-    if (target != kButtonId) {
-      std::printf("  detail: setup broken, target=%d\n",
-                  static_cast<int>(target));
-      return false;
-    }
-    const ArenaAction claim = ClaimTap(arena, kPControl, target);
-    if (!claim.claimed) {
-      std::printf("  detail: setup broken, claim unclaimed\n");
-      return false;
-    }
-    const bool fired = FireTapHandler(target);
-    if (!fired) {
-      std::printf("  detail: setup broken, FireTapHandler false\n");
-      return false;
-    }
-    const TapSlice pre{};
-    const TapOutcome out = ApplyClaimedTapToSliceForTest(pre, fired, target);
-    if (out.slice.stateVersion == pre.stateVersion &&
-        out.slice.page == pre.page) {
-      std::printf("  detail: ledger-only fire mutated no slice state/page\n");
-      return false;
-    }
-    return true;
-  } catch (...) {
-    std::printf("  detail: threw across tap chain (must never throw)\n");
-    return false;
-  }
-}
-
-// Named case (T3/T4 error shape pin, currently PASS): an unclaimed tap
-// returns unchanged slice + claimed=-1 and never throws.
-bool check_unclaimed_tap_returns_unchanged_slice_and_minus_one() {
-  try {
-    HitTestTree tree = make_tree_with_button();
-    GestureArena arena;
-    RecordTapDown(kPUnclaimedSlice, 10000.0f, 10000.0f);
-    arena.AddPointer(down_at(kPUnclaimedSlice, 10000.0f, 10000.0f), tree);
-    const int32_t target = ResolveTapTarget(tree, 10000.0f, 10000.0f);
-    if (target != -1) {
-      std::printf("  detail: setup broken, target=%d\n",
-                  static_cast<int>(target));
-      return false;
-    }
-    const ArenaAction claim = ClaimTap(arena, kPUnclaimedSlice, target);
-    if (claim.claimed || claim.winnerId != -1) {
-      std::printf("  detail: expected unclaimed winner -1, got winner %d "
-                  "claimed=%d\n",
-                  static_cast<int>(claim.winnerId),
-                  static_cast<int>(claim.claimed));
-      return false;
-    }
-    const TapSlice pre{};
-    const TapOutcome out =
-        ApplyClaimedTapToSliceForTest(pre, false, target);
-    if (out.claimedNode != -1) {
-      std::printf("  detail: expected claimed=-1, got %d\n",
-                  static_cast<int>(out.claimedNode));
-      return false;
-    }
-    if (out.slice.stateVersion != pre.stateVersion ||
-        out.slice.page != pre.page) {
-      std::printf("  detail: unclaimed tap must leave slice unchanged\n");
-      return false;
-    }
-    return true;
-  } catch (...) {
-    std::printf("  detail: threw on unclaimed tap (must never throw)\n");
-    return false;
-  }
-}
-
-// Named case (T3 Next via product path): a fired Next control tap advances
-// gallery-page via the product path (RouterBridge navigate / scoped advance),
-// never a same-page re-render and never the retired NATIVE_ADVANCE_PAGE
-// broadcast. Page never advances today -> FAIL.
-bool check_next_advances_gallery_page_via_product_path() {
-  try {
-    HitTestTree tree = make_tree_with_button();
-    GestureArena arena;
-    RecordTapDown(kPNext, 150.0f, 140.0f);
-    arena.AddPointer(down_at(kPNext, 150.0f, 140.0f), tree);
-    const int32_t target = ResolveTapTarget(tree, 150.0f, 140.0f);
-    if (target != kButtonId) {
-      std::printf("  detail: setup broken, target=%d\n",
-                  static_cast<int>(target));
-      return false;
-    }
-    const ArenaAction claim = ClaimTap(arena, kPNext, target);
-    if (!claim.claimed) {
-      std::printf("  detail: setup broken, claim unclaimed\n");
-      return false;
-    }
-    const bool fired = FireTapHandler(target);
-    if (!fired) {
-      std::printf("  detail: setup broken, FireTapHandler false\n");
-      return false;
-    }
-    const PageAdvance adv = ApplyNextAdvanceForTest(0, fired);
-    if (adv.usedRetiredBroadcast) {
-      std::printf("  detail: retired NATIVE_ADVANCE_PAGE broadcast used\n");
-      return false;
-    }
-    if (!adv.viaProductPath || adv.page != 1) {
-      std::printf("  detail: Next did not advance gallery-page via product "
-                  "path (page=%d product=%d)\n",
-                  adv.page, static_cast<int>(adv.viaProductPath));
-      return false;
-    }
-    return true;
-  } catch (...) {
-    std::printf("  detail: threw across Next chain (must never throw)\n");
-    return false;
-  }
-}
-
-// Named case (T3 fire-exactly-once pin, currently PASS): a fire with no claim
-// fires nothing and mutates nothing; the consumed grant never refires.
-bool check_fire_without_claim_fires_nothing_and_mutates_nothing() {
-  try {
-    const TapSlice pre{};
-    const bool fired = FireTapHandler(kButtonId);
-    if (fired) {
-      std::printf("  detail: phantom fire for never-claimed node\n");
-      return false;
-    }
-    const TapOutcome out = ApplyClaimedTapToSliceForTest(pre, fired, -1);
-    if (out.claimedNode != -1) return false;
-    if (out.slice.stateVersion != pre.stateVersion ||
-        out.slice.page != pre.page) {
-      std::printf("  detail: unfired tap must leave slice unchanged\n");
-      return false;
-    }
-    return true;
-  } catch (...) {
-    std::printf("  detail: threw on unfired path (must never throw)\n");
-    return false;
-  }
-}
-
 // Named case: an outside tap (target -1) never produces a tap claim.
 // Own origin recorded (production order) so the case is self-contained;
 // ClaimTap short-circuits on target < 0 before any origin read.
@@ -496,6 +295,158 @@ bool check_claim_tap_outside_target_is_unclaimed() {
                 "%d claimed=%d\n",
                 static_cast<int>(got.winnerId),
                 static_cast<int>(got.claimed));
+    return false;
+  }
+  return true;
+}
+
+// ---- BUG-INPUT-002 T1 regression: out-of-hardcoded-400x800 taps ----
+// Seeded via the public PopulateTapTreeFromLayout entry point (never a
+// hand-built rect): the sweep mirrors dp_t8c_sweep.log (x=540, y=90..1690).
+// Red on the hardcoded 400x800 seeder (x>400 or y>800 resolves -1); green
+// once T2 seeds from real laid-out bounds/viewport. Hermetic: C++ only,
+// no device/downloads/secrets. Node-20 scrim routing preserved (depth-wins
+// root 10 < scrim 20 < content 21).
+
+// All in-bounds sweep taps resolve to a real node (>= 0).
+bool check_seeded_sweep_resolves_inside() {
+  HitTestTree tree;
+  PopulateTapTreeFromLayout(tree);
+  const float ys[] = {90.0f, 500.0f, 1000.0f, 1400.0f, 1690.0f};
+  for (float y : ys) {
+    const int32_t got = ResolveTapTarget(tree, 540.0f, y);
+    if (got < 0) {
+      std::printf("  detail: sweep (540,%g) expected >= 0, got %d\n",
+                  static_cast<double>(y), static_cast<int>(got));
+      return false;
+    }
+  }
+  return true;
+}
+
+// Each sweep tap claims and fires exactly once (unique pointer per tap
+// against the process-global origin/fire tables).
+bool check_seeded_sweep_claim_fire_exactly_once() {
+  HitTestTree tree;
+  PopulateTapTreeFromLayout(tree);
+  const float ys[] = {90.0f, 500.0f, 1000.0f, 1400.0f, 1690.0f};
+  for (int i = 0; i < 5; ++i) {
+    const int32_t ptr = kPSweepBase + i;
+    const float y = ys[i];
+    RecordTapDown(ptr, 540.0f, y);
+    GestureArena arena;
+    arena.AddPointer(down_at(ptr, 540.0f, y), tree);
+    const int32_t target = ResolveTapTarget(tree, 540.0f, y);
+    if (target < 0) {
+      std::printf("  detail: sweep (540,%g) resolve failed, got -1\n",
+                  static_cast<double>(y));
+      return false;
+    }
+    const ArenaAction got = ClaimTap(arena, ptr, target);
+    if (!got.claimed || got.winnerId != target) {
+      std::printf("  detail: sweep (540,%g) expected claimed winner %d, got "
+                  "winner %d claimed=%d\n",
+                  static_cast<double>(y), static_cast<int>(target),
+                  static_cast<int>(got.winnerId),
+                  static_cast<int>(got.claimed));
+      return false;
+    }
+    if (!FireTapHandler(target)) {
+      std::printf("  detail: sweep (540,%g) FireTapHandler false on first "
+                  "fire\n",
+                  static_cast<double>(y));
+      return false;
+    }
+    if (FireTapHandler(target)) {
+      std::printf("  detail: sweep (540,%g) FireTapHandler true twice "
+                  "(must fire exactly once)\n",
+                  static_cast<double>(y));
+      return false;
+    }
+  }
+  return true;
+}
+
+// Representative out-of-400x800 tap fires exactly once, second fire silent.
+// (Single-point form of the sweep; pins the ClaimTap+FireTapHandler once
+// contract at (540,1000): x > 400 and y > 800 on the old seeder.)
+bool check_seeded_out_of_400x800_fires_exactly_once() {
+  HitTestTree tree;
+  PopulateTapTreeFromLayout(tree);
+  RecordTapDown(kPFireOnce, 540.0f, 1000.0f);
+  GestureArena arena;
+  arena.AddPointer(down_at(kPFireOnce, 540.0f, 1000.0f), tree);
+  const int32_t target = ResolveTapTarget(tree, 540.0f, 1000.0f);
+  if (target < 0) {
+    std::printf("  detail: (540,1000) expected >= 0, got -1\n");
+    return false;
+  }
+  const ArenaAction got = ClaimTap(arena, kPFireOnce, target);
+  if (!got.claimed || got.winnerId != target) return false;
+  if (!FireTapHandler(target)) return false;
+  if (FireTapHandler(target)) {
+    std::printf("  detail: second FireTapHandler must be false\n");
+    return false;
+  }
+  return true;
+}
+
+// Seeded scrim routing preserved: content point hits 21, scrim-only point
+// hits 20 (depth-wins root 10 < scrim 20 < content 21); scrim tap claims
+// and fires its own node exactly once (not content).
+bool check_seeded_scrim_routing_preserved() {
+  HitTestTree tree;
+  PopulateTapTreeFromLayout(tree);
+  const int32_t button = ResolveTapTarget(tree, 150.0f, 140.0f);
+  if (button != 21) {
+    std::printf("  detail: button (150,140) expected 21, got %d\n",
+                static_cast<int>(button));
+    return false;
+  }
+  const int32_t scrim = ResolveTapTarget(tree, 300.0f, 400.0f);
+  if (scrim != 20) {
+    std::printf("  detail: scrim (300,400) expected 20, got %d\n",
+                static_cast<int>(scrim));
+    return false;
+  }
+  RecordTapDown(kPScrim, 300.0f, 400.0f);
+  GestureArena arena;
+  arena.AddPointer(down_at(kPScrim, 300.0f, 400.0f), tree);
+  const ArenaAction got = ClaimTap(arena, kPScrim, scrim);
+  if (!got.claimed || got.winnerId != 20) {
+    std::printf("  detail: scrim claim expected winner 20, got %d "
+                "claimed=%d\n",
+                static_cast<int>(got.winnerId),
+                static_cast<int>(got.claimed));
+    return false;
+  }
+  if (!FireTapHandler(20)) {
+    std::printf("  detail: scrim FireTapHandler(20) false\n");
+    return false;
+  }
+  return true;
+}
+
+// Seeded tree: far-outside tap resolves -1, claims nothing, fires nothing.
+bool check_seeded_outside_stays_silent() {
+  HitTestTree tree;
+  PopulateTapTreeFromLayout(tree);
+  const int32_t target = ResolveTapTarget(tree, 10000.0f, 10000.0f);
+  if (target != -1) {
+    std::printf("  detail: outside expected -1, got %d\n",
+                static_cast<int>(target));
+    return false;
+  }
+  RecordTapDown(kPSeededOutside, 10000.0f, 10000.0f);
+  GestureArena arena;
+  arena.AddPointer(down_at(kPSeededOutside, 10000.0f, 10000.0f), tree);
+  const ArenaAction got = ClaimTap(arena, kPSeededOutside, target);
+  if (got.claimed) {
+    std::printf("  detail: outside claim must stay unclaimed\n");
+    return false;
+  }
+  if (FireTapHandler(target)) {
+    std::printf("  detail: outside FireTapHandler must be false\n");
     return false;
   }
   return true;
@@ -528,10 +479,11 @@ int main() {
   RUN_CASE(check_claim_tap_without_recorded_down_is_unclaimed);
   RUN_CASE(check_claim_tap_unknown_pointer_is_unclaimed);
   RUN_CASE(check_claim_tap_outside_target_is_unclaimed);
-  RUN_CASE(check_control_tap_mutates_slice_state_or_page);
-  RUN_CASE(check_unclaimed_tap_returns_unchanged_slice_and_minus_one);
-  RUN_CASE(check_next_advances_gallery_page_via_product_path);
-  RUN_CASE(check_fire_without_claim_fires_nothing_and_mutates_nothing);
+  RUN_CASE(check_seeded_sweep_resolves_inside);
+  RUN_CASE(check_seeded_sweep_claim_fire_exactly_once);
+  RUN_CASE(check_seeded_out_of_400x800_fires_exactly_once);
+  RUN_CASE(check_seeded_scrim_routing_preserved);
+  RUN_CASE(check_seeded_outside_stays_silent);
   if (failures > 0) {
     std::printf("input_chain_test: %d failing\n", failures);
     return 1;

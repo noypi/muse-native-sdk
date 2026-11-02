@@ -121,31 +121,76 @@ void GrantFireLocked(int32_t pointerId, int32_t winnerId) {
 
 }  // namespace
 
-// Gallery first-page tap geometry (review BLOCKER population path): root
-// plus the representative Button-filled node. Mirrors the T4-seeded shape
-// the hermetic contracts pin (400x800 root, button (50,100)-(250,180));
-// BUG-INPUT-001 T2 adds the layering scrim hit-target derived from the same
-// laid-out geometry (never a separate hardcoded rect).
-void PopulateTapTreeFromLayout(HitTestTree& tree) {
-  // Idempotent: a tree that already resolves inside the root viewport keeps
-  // its nodes (safe to call at load and re-attach; never duplicates).
-  if (tree.HitTest(1.0f, 1.0f) != -1) {
-    return;
-  }
-  // Laid-out root viewport geometry (T4-seeded 400x800); the scrim below
-  // reuses this same viewport rect full-bleed so the two cannot diverge.
-  constexpr float kRootX = 0.0f;
-  constexpr float kRootY = 0.0f;
-  constexpr float kRootW = 400.0f;
-  constexpr float kRootH = 800.0f;
-  tree.AddNode(10, 0, HitRect{kRootX, kRootY, kRootW, kRootH});
+// Tap-tree geometry (BUG-INPUT-002 T2; FR-INPUT-011 / AC-INPUT-020). The
+// tree is seeded from the real laid-out viewport: root 10 plus the
+// full-bleed layering scrim 20 derived from the same viewport rect (never a
+// separate hardcoded rect), with the representative Button-filled node 21
+// above the scrim so button hit-testing is preserved. BUG-INPUT-001 T2 owns
+// the scrim-target shape; this seeder only sizes it from the viewport.
+// Bounds decision (plan): laid-out bounds are the source of truth, the
+// window viewport is the clamp/fallback. Touches under system bars/IME are
+// rejected by the insets bus at the dispatch layer, not here.
+namespace {
+
+// Fallback viewport for the zero-arg entry (load-time seed before the first
+// frame presents the real window size): a real-device-scale portrait rect
+// covering the dp_t8c_sweep.log sweep (x=540, y up to 1690). Never 400x800:
+// that gallery-only rect is the BUG-INPUT-002 defect (flappy taps outside it
+// silently dropped). Far-outside probes (10000,10000) stay outside.
+constexpr float kFallbackViewportW = 1080.0f;
+constexpr float kFallbackViewportH = 1920.0f;
+
+// Representative Button-filled bounds, carried over from the T4-seeded
+// gallery first-page geometry so node-21 hit-testing is unchanged.
+constexpr float kButtonX = 50.0f;
+constexpr float kButtonY = 100.0f;
+constexpr float kButtonW = 200.0f;
+constexpr float kButtonH = 80.0f;
+
+bool ViewportUsable(float w, float h) {
+  return std::isfinite(w) && std::isfinite(h) && w > 0.0f && h > 0.0f;
+}
+
+void AppendSeededNodes(HitTestTree& tree, float w, float h) {
+  tree.AddNode(10, 0, HitRect{0.0f, 0.0f, w, h});
   // Layering scrim hit-target (AC-M3-022 scrim clause): full-bleed over the
   // laid-out root viewport — the same geometry paintLayeringPage emits as
-  // its full-bleed OverlayScrim (gallery_present.cpp), clamped here to the
-  // tap-tree viewport. Child of root so depth-wins prefers it over root;
-  // content node 21 sits above it so button hit-testing is preserved.
-  tree.AddNode(20, 10, HitRect{kRootX, kRootY, kRootW, kRootH});
-  tree.AddNode(21, 20, HitRect{50.0f, 100.0f, 200.0f, 80.0f});
+  // its full-bleed OverlayScrim (gallery_present.cpp). Child of root so
+  // depth-wins prefers it over root; content node 21 sits above it so
+  // button taps never read as scrim.
+  tree.AddNode(20, 10, HitRect{0.0f, 0.0f, w, h});
+  tree.AddNode(21, 20, HitRect{kButtonX, kButtonY, kButtonW, kButtonH});
+}
+
+}  // namespace
+
+// Viewport-driven seeder (T2 interface): builds root 10 + full-bleed scrim
+// 20 from the same viewport rect and content 21 from the laid-out button
+// bounds. Reseeds on layout/viewport change: a tree that already resolves
+// inside both the origin probe and the far-corner probe keeps its nodes
+// (safe to call at load, re-attach, and every frame); otherwise the new
+// geometry is appended. Append-only is safe here because reseeds reuse the
+// same node ids at the same depths — HitTestTree::HitTest is depth-wins
+// with first-wins ties, so duplicate ids resolve identically and only
+// genuinely new coverage changes verdicts (bounded by kMaxNodes=64; growth
+// reseeds are viewport-change-rare).
+// Invalid/empty geometry keeps the prior tree (fail-closed, no phantom
+// nodes); an unpopulated tree keeps resolving -1. Never bypasses
+// `target >= 0`.
+void PopulateTapTreeFromLayout(HitTestTree& tree, float viewportW,
+                               float viewportH) {
+  if (!ViewportUsable(viewportW, viewportH)) {
+    return;
+  }
+  if (tree.HitTest(1.0f, 1.0f) != -1 &&
+      tree.HitTest(viewportW - 1.0f, viewportH - 1.0f) != -1) {
+    return;
+  }
+  AppendSeededNodes(tree, viewportW, viewportH);
+}
+
+void PopulateTapTreeFromLayout(HitTestTree& tree) {
+  PopulateTapTreeFromLayout(tree, kFallbackViewportW, kFallbackViewportH);
 }
 
 int32_t ResolveTapTarget(const HitTestTree& tree, float x, float y) {
