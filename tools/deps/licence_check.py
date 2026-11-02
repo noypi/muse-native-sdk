@@ -319,7 +319,9 @@ def main(argv=None):
         "licence_check: ok: all %s manifest entries carry allow-listed licences"
         % len(load_manifest(args.manifest))
     )
-    if args.skip_notices or args.manifest != DEFAULT_MANIFEST:
+    if args.skip_notices or os.path.abspath(args.manifest) != os.path.abspath(
+        DEFAULT_MANIFEST
+    ):
         return 0
     try:
         gaps = check_notices(args.manifest, args.notices)

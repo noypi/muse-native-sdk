@@ -303,6 +303,12 @@ if(DEFINED ANDROID_ABI AND NOT TARGET Runtime)
       "-Wl,--push-state,--whole-archive"
       ${MUSE_RUNTIME_D3_STATIC_LIBS}
       "-Wl,--no-whole-archive,--pop-state")
+  else()
+    # vendor-d3 review follow-up (MINOR): message-only note so a lane with
+    # no D3 archives (misconfigured MUSE_TEXT_D3_ROOT mirror) is
+    # distinguishable from the no-D3 lane at configure time. No behavior
+    # change: the reference backend in shaper.cpp still applies.
+    message(STATUS "MUSE D3: no vendored static archives under '${MUSE_TEXT_D3_ROOT}' (MUSE_RUNTIME_D3_STATIC_LIBS empty); linking reference backend")
   endif()
 endif()
 

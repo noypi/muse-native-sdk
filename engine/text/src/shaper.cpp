@@ -42,7 +42,7 @@ namespace {
 // True when the link target provided the real admitted D3 stack.
 bool RealTextStackLinked() {
   return hb_shape != nullptr && FT_Init_FreeType != nullptr &&
-         u_getVersion != nullptr && u_getVersion_79 != nullptr;
+         (u_getVersion != nullptr || u_getVersion_79 != nullptr);
 }
 
 // Strict UTF-8 decode of one codepoint starting at [pos, len).
