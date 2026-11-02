@@ -6,7 +6,7 @@
 # never by shell exit codes alone.
 #
 # Usage (run from the _run checkout root):
-#   SERIAL=KDSBB22429250346 bash t10-acceptance/drive_t10.sh
+#   SERIAL=KDSBB22429250346 bash acceptance/t10/drive_t10.sh
 set -u
 SERIAL="${SERIAL:-KDSBB22429250346}"
 OUT="${OUT:-$HOME/t10-evidence}"

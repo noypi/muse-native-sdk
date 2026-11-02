@@ -10,7 +10,7 @@
 # `gallery-rows=N gallery-pages=M` + `gallery-page=i/M` from the row model.
 #
 # Usage (run from the _run checkout root):
-#   SERIAL=KDSBB22429250346 bash t6-acceptance/drive_startup006.sh
+#   SERIAL=KDSBB22429250346 bash acceptance/t6/drive_startup006.sh
 # Exit 0 only when every automatable device check holds; prints a per-check
 # PASS/FAIL table either way for the test report. On-screen no-white/no-tear
 # judgment stays human: screenshots land in $OUT for the reviewer to eyeball.
