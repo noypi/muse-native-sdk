@@ -48,6 +48,20 @@ else()
   if(DEFINED ANDROID_ABI)
     # Real Android build lane: pins and ABI validation were applied at
     # preload (T1). This branch stays a no-op so NDK builds are unaffected.
+    #
+    # T3 (vendor-d3) D3 lane: the Android static D3 objects (harfbuzz +
+    # freetype + icu, built from $MUSE_NATIVE_THIRD_PARTY_DIR) come from the
+    # engine/text in-tree sub-builds, configured with this same NDK toolchain
+    # for the same ANDROID_ABI:
+    #   cmake -S engine/text -B engine/text/build-android-<abi> \
+    #     -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake \
+    #     -DANDROID_ABI=<abi> -DANDROID_PLATFORM=android-29
+    #   cmake --build engine/text/build-android-<abi>
+    # The host-tools-first ICU split (--with-cross-build=<ABS host build>,
+    # --enable-static --disable-shared, --with-data-packaging=archive) runs
+    # inside that configure; the Android `Runtime` SHARED target gains the
+    # resulting D3 static objects in T4. No third-party sources live in the
+    # repo — only pins (tools/deps/third_party_pins.json) plus this wiring.
   else()
     # ---- T3 hermetic dual-ABI gate (host toolchain, no NDK) ----
     # Artifact root: the gate test resolves argv[1] > $ANDROID_BUILD_ROOT >
