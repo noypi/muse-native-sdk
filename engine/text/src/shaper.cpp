@@ -33,6 +33,8 @@
 
 #if defined(__ANDROID__)
 #include <android/log.h>
+#else
+#include <cstdio>
 #endif
 
 // BUG-TEXT-007 T9 hermetic gate for the deterministic fallback below.
@@ -302,6 +304,10 @@ bool ResolveRealFont(FontHandle face, RealFont* out) {
   __android_log_print(ANDROID_LOG_INFO, "muse_text",
                       "ResolveRealFont FT_Init_FreeType ft_err=%d",
                       static_cast<int>(ft_init_err));
+#else
+  std::fprintf(stderr,
+               "[muse_text] ResolveRealFont FT_Init_FreeType ft_err=%d\n",
+               static_cast<int>(ft_init_err));
 #endif
   if (ft_init_err != 0) return false;
   FT_Face ftface = nullptr;
@@ -314,6 +320,12 @@ bool ResolveRealFont(FontHandle face, RealFont* out) {
                         "ResolveRealFont FT_New_Face path=%s ft_err=%d %s",
                         path->c_str(), static_cast<int>(ft_err),
                         ft_err == 0 ? "opened" : "[reason=ft-open]");
+#else
+    std::fprintf(stderr,
+                 "[muse_text] ResolveRealFont FT_New_Face path=%s ft_err=%d "
+                 "%s\n",
+                 path->c_str(), static_cast<int>(ft_err),
+                 ft_err == 0 ? "opened" : "[reason=ft-open]");
 #endif
     if (ft_err != 0) {
       ftface = nullptr;
@@ -323,6 +335,11 @@ bool ResolveRealFont(FontHandle face, RealFont* out) {
   else {
     __android_log_print(ANDROID_LOG_WARN, "muse_text",
                         "ResolveRealFont no font path [reason=path]");
+  }
+#else
+  else {
+    std::fprintf(stderr,
+                 "[muse_text] ResolveRealFont no font path [reason=path]\n");
   }
 #endif
   if (ftface == nullptr) {
@@ -529,6 +546,10 @@ StatusOr<ShapedRun> shapeRun(const std::uint8_t* utf8, std::size_t len,
 #if defined(__ANDROID__)
       __android_log_print(ANDROID_LOG_WARN, "muse_text",
                           "shapeRun HarfBuzz shaping failed [reason=hb]");
+#else
+      std::fprintf(stderr,
+                   "[muse_text] shapeRun HarfBuzz shaping failed "
+                   "[reason=hb]\n");
 #endif
     }
 #if defined(__ANDROID__)
@@ -539,6 +560,13 @@ StatusOr<ShapedRun> shapeRun(const std::uint8_t* utf8, std::size_t len,
       __android_log_print(ANDROID_LOG_WARN, "muse_text",
                           "shapeRun face covers no glyphs "
                           "[reason=missing-glyph]");
+    }
+#else
+    // Host fallback: same reason payload to stderr (no liblog on host).
+    if (!covers && resolved) {
+      std::fprintf(stderr,
+                   "[muse_text] shapeRun face covers no glyphs "
+                   "[reason=missing-glyph]\n");
     }
 #endif
   }
