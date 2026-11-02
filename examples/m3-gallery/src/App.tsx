@@ -202,7 +202,14 @@ export default function App() {
     if (prevDisabled) {
       return false;
     }
-    requestShellAdvance(-1, 'shell-chrome');
+    // T3 explicit route: arbitrary-route bridge requires the target story
+    // route (committed 4-arg seam; routeless calls deny). Prev targets the
+    // adjacent story id through the same gallery://story/<id> shape the
+    // deep-link path resolves.
+    const prevId = storyIdOf(stories[clampedIndex - 1]);
+    if (typeof prevId === 'string' && prevId.length > 0) {
+      requestShellAdvance(-1, 'shell-chrome', `gallery://story/${encodeURIComponent(prevId)}`, {});
+    }
     setSelectedIndex((i) => Math.max(0, i - 1));
     return true;
   };
@@ -213,7 +220,12 @@ export default function App() {
     if (nextDisabled) {
       return false;
     }
-    requestShellAdvance(1, 'shell-chrome');
+    // T3 explicit route: Next advances via the product path (RouterBridge
+    // navigate), never the retired NATIVE_ADVANCE_PAGE broadcast.
+    const nextId = storyIdOf(stories[clampedIndex + 1]);
+    if (typeof nextId === 'string' && nextId.length > 0) {
+      requestShellAdvance(1, 'shell-chrome', `gallery://story/${encodeURIComponent(nextId)}`, {});
+    }
     setSelectedIndex((i) => Math.min(Math.max(stories.length - 1, 0), i + 1));
     return true;
   };
@@ -230,13 +242,20 @@ export default function App() {
         if (nextDisabled) {
           return;
         }
-        requestShellAdvance(1, 'key');
+        // T3 explicit route (key origin): same adjacent-story route shape.
+        const keyNextId = storyIdOf(stories[clampedIndex + 1]);
+        if (typeof keyNextId === 'string' && keyNextId.length > 0) {
+          requestShellAdvance(1, 'key', `gallery://story/${encodeURIComponent(keyNextId)}`, {});
+        }
         setSelectedIndex((i) => Math.min(Math.max(stories.length - 1, 0), i + 1));
       } else if (event.key === 'ArrowLeft') {
         if (prevDisabled) {
           return;
         }
-        requestShellAdvance(-1, 'key');
+        const keyPrevId = storyIdOf(stories[clampedIndex - 1]);
+        if (typeof keyPrevId === 'string' && keyPrevId.length > 0) {
+          requestShellAdvance(-1, 'key', `gallery://story/${encodeURIComponent(keyPrevId)}`, {});
+        }
         setSelectedIndex((i) => Math.max(0, i - 1));
       }
     };
@@ -263,7 +282,9 @@ export default function App() {
       return { code: 'unknown-story', storyId: id };
     }
     if (found !== clampedIndex) {
-      requestShellAdvance(found > clampedIndex ? 1 : -1, 'deep-link');
+      // T3 explicit route (deep-link origin): the resolved link itself is
+      // the explicit route target for the product-path navigate.
+      requestShellAdvance(found > clampedIndex ? 1 : -1, 'deep-link', link, {});
     }
     setSelectedIndex(found);
     return { index: found, storyId: storyIdOf(stories[found]) as string };

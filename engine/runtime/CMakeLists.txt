@@ -102,6 +102,58 @@ target_include_directories(runtime PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../..)
 # runtime (engine/input itself is untouched — consumed, never modified).
 target_sources(runtime PRIVATE ${MUSE_INPUT_SOURCES})
 
+# FR-DEPS-008 D3: real HarfBuzz/ICU/FreeType stack behind the text seams.
+# Admitted allow-list libs (specs-cpp-dependencies.md Notes D3); no new
+# pins, no unadmitted libs. Resolution order per FR-DEPS-009 locked setup:
+# MUSE_TEXT_D3_ROOT (content-keyed per-ABI mirror, unversioned dev names)
+# first, then the lane's system runtime copies (versioned names — no dev
+# symlinks assumed). Guarded: a lane with no D3 artifacts builds exactly as
+# before (reference backend in shaper.cpp); configure never fails here.
+# Host lanes may use the multiarch system paths below; the ANDROID lane
+# uses the locked mirror only and never host paths.
+if(ANDROID)
+  set(_muse_d3_hints ${MUSE_TEXT_D3_ROOT} ${MUSE_TEXT_D3_ROOT}/lib)
+  set(_muse_d3_paths "")
+else()
+  set(_muse_d3_hints ${MUSE_TEXT_D3_ROOT} ${MUSE_TEXT_D3_ROOT}/lib)
+  set(_muse_d3_paths
+    /lib/x86_64-linux-gnu /usr/lib/x86_64-linux-gnu
+    /lib/aarch64-linux-gnu /usr/lib/aarch64-linux-gnu
+    /lib/arm-linux-gnueabihf /usr/lib/arm-linux-gnueabihf
+    /lib/i386-linux-gnu /usr/lib/i386-linux-gnu)
+endif()
+set(_muse_d3_devnames harfbuzz icuuc freetype)
+set(_muse_d3_runtimenames libharfbuzz.so.0 libicuuc.so.76 libfreetype.so.6)
+set(MUSE_TEXT_D3_LIBS "")
+foreach(_muse_d3_dev IN LISTS _muse_d3_devnames)
+  unset(_muse_d3_found CACHE)
+  find_library(_muse_d3_found NAMES ${_muse_d3_dev}
+    HINTS ${_muse_d3_hints})
+  if(NOT _muse_d3_found)
+    list(FIND _muse_d3_devnames ${_muse_d3_dev} _muse_d3_idx)
+    list(GET _muse_d3_runtimenames ${_muse_d3_idx} _muse_d3_rt)
+    find_file(_muse_d3_found NAMES ${_muse_d3_rt}
+      HINTS ${_muse_d3_hints}
+      PATHS ${_muse_d3_paths})
+    unset(_muse_d3_idx)
+    unset(_muse_d3_rt)
+  endif()
+  if(_muse_d3_found)
+    list(APPEND MUSE_TEXT_D3_LIBS "${_muse_d3_found}")
+  endif()
+endforeach()
+unset(_muse_d3_found CACHE)
+if(MUSE_TEXT_D3_LIBS AND NOT ANDROID)
+  # -Wl,--push-state/--no-as-needed keeps the DT_NEEDED entries (and the
+  # weak-probe relocations in engine/text/src/shaper.cpp) even though the
+  # text TUs reference the D3 entry points weakly until the locked headers
+  # land; --pop-state restores the lane default for later libs.
+  target_link_libraries(runtime PRIVATE
+    "-Wl,--push-state,--no-as-needed"
+    ${MUSE_TEXT_D3_LIBS}
+    "-Wl,--pop-state")
+endif()
+
 # T4 pacing link fix (Android-configured static lane): under the Android
 # toolchain __ANDROID__ is defined, so presenter.cpp's device lane calls
 # pacing::selectIntendedFrameRate/tryQueueFrame and every hermetic test
@@ -166,6 +218,7 @@ if(DEFINED ANDROID_ABI AND NOT TARGET Runtime)
     src/renderer.cpp
     src/jni_bridge.cpp
     src/input_chain.cpp
+    src/text_field.cpp
     src/gallery_present.cpp
     src/presenter.cpp
     ../graphics/vector/slug_msdf.cc
@@ -215,6 +268,47 @@ if(DEFINED ANDROID_ABI AND NOT TARGET Runtime)
     if(MUSE_LOG_LIB)
       target_link_libraries(Runtime PRIVATE ${MUSE_LOG_LIB})
     endif()
+  endif()
+  # FR-DEPS-008/009 T4 (vendor-d3): the Android `Runtime` SHARED target
+  # links the vendored D3 static objects from the T3 sub-builds
+  # (engine/text in-tree static harfbuzz + freetype + icu archives under
+  # MUSE_TEXT_D3_ROOT), never the shared find_library mirror above.
+  # Static-only posture: exact-path `.a` archive resolution (EXISTS, no
+  # find_library search), so no system shared lib can slip onto this lane
+  # regardless of the NDK toolchain's find-root modes. A lane with no D3
+  # archives links nothing (reference backend in shaper.cpp); configure
+  # never fails here. Host `runtime` lane untouched (its own block above
+  # is unchanged).
+  set(_muse_runtime_d3_static_names
+    harfbuzz freetype icuuc icudata icui18n)
+  set(MUSE_RUNTIME_D3_STATIC_LIBS "")
+  foreach(_muse_d3_static IN LISTS _muse_runtime_d3_static_names)
+    set(_muse_d3_static_archive "${MUSE_TEXT_D3_ROOT}/lib/lib${_muse_d3_static}.a")
+    if(NOT EXISTS "${_muse_d3_static_archive}")
+      set(_muse_d3_static_archive "${MUSE_TEXT_D3_ROOT}/lib${_muse_d3_static}.a")
+    endif()
+    if(EXISTS "${_muse_d3_static_archive}")
+      list(APPEND MUSE_RUNTIME_D3_STATIC_LIBS "${_muse_d3_static_archive}")
+    endif()
+  endforeach()
+  if(MUSE_RUNTIME_D3_STATIC_LIBS)
+    # T7: whole-archive so the vendored D3 objects (HarfBuzz/FreeType/ICU)
+    # define their entry points in the shared link. Archive-member extraction
+    # alone pulls nothing: shaper.cpp references D3 only through weak probes
+    # (hb_shape/FT_Init_FreeType/u_getVersion, null on hermetic builds), and
+    # weak-undefined refs do not extract archive members — leaving the probes
+    # weak-undefined (`w` in nm -D) instead of defined (`T`). Whole-archive
+    # pins the DT entries and the nm-visible symbols the proof checks.
+    target_link_libraries(Runtime PRIVATE
+      "-Wl,--push-state,--whole-archive"
+      ${MUSE_RUNTIME_D3_STATIC_LIBS}
+      "-Wl,--no-whole-archive,--pop-state")
+  else()
+    # vendor-d3 review follow-up (MINOR): message-only note so a lane with
+    # no D3 archives (misconfigured MUSE_TEXT_D3_ROOT mirror) is
+    # distinguishable from the no-D3 lane at configure time. No behavior
+    # change: the reference backend in shaper.cpp still applies.
+    message(STATUS "MUSE D3: no vendored static archives under '${MUSE_TEXT_D3_ROOT}' (MUSE_RUNTIME_D3_STATIC_LIBS empty); linking reference backend")
   endif()
 endif()
 
@@ -568,3 +662,25 @@ add_test(NAME present_real_components_test COMMAND present_real_components_test)
 add_test(NAME gallery_page_no_oracle_check
   COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/gallery_page_no_oracle_check.sh"
     "${CMAKE_CURRENT_SOURCE_DIR}/../..")
+
+# T8 production-link gate (FR-DEPS-008, AC-DEPS-019/021): no hermetic
+# test double may ship in production. Plan Interface names
+# `--target libRuntime.so`; the shipped gate exposes `--manifest` +
+# `--self-test` only (T1.10 variance), so the wiring maps target->manifest:
+# the production link set for the `Runtime` shared target is expressed as
+# `build/dependency-manifest.json`, which is what the gate checks. Invoke
+# the script with that manifest; exit nonzero fails the build. Gate
+# semantics untouched (script read-only, never weakened); DI seams
+# (AC-DEPS-021) stay denied on this tree so the gate keeps passing here.
+find_package(Python3 COMPONENTS Interpreter QUIET)
+if(Python3_Interpreter_FOUND)
+  set(_MUSE_PROD_LINK_PYTHON ${Python3_EXECUTABLE})
+else()
+  set(_MUSE_PROD_LINK_PYTHON python3)
+endif()
+add_custom_target(production_link_gate ALL
+  COMMAND ${_MUSE_PROD_LINK_PYTHON}
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../tools/deps/production_link_check.py"
+    --manifest "${CMAKE_CURRENT_SOURCE_DIR}/../../build/dependency-manifest.json"
+  COMMENT "T8 production-link gate: allow-list + no test-double reachable (fails build on violation)"
+  VERBATIM)

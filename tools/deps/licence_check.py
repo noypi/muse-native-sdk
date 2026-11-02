@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Licence allow-list enforcement check (FR-DEPS-006, AC-DEPS-013/016).
+"""Licence allow-list enforcement check (FR-DEPS-006, AC-DEPS-013/016/015).
 
 Compares ``load_manifest()`` entry ``licence`` fields against the closed
 allow-list (MIT, Apache-2.0, BSD-2/3, ISC, zlib, Unicode, FTL, OFL, CC0)
@@ -8,6 +8,11 @@ proprietary without terms). Missing or unidentifiable licences are denied,
 never assumed permissive. LGPL entries are allowed here; their dynamic-link
 plus artifact conditions are enforced by ``lgpl_check.py`` (AC-DEPS-014).
 Missing/unparseable manifests fail closed (exit 1). Stdlib only.
+
+Notices gate (AC-DEPS-015): when checking the committed manifest, every
+entry must also be named in ``third-party-notices.txt`` (see
+``find_notices_gaps``/``check_notices``); a dep absent from the notices
+fails the build.
 """
 
 import argparse
@@ -22,6 +27,9 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 from tools.deps._deps_data import DepsDataError, load_manifest
 
 DEFAULT_MANIFEST = os.path.join("build", "dependency-manifest.json")
+DEFAULT_NOTICES = os.path.join(
+    "app", "src", "main", "assets", "third-party-notices.txt"
+)
 
 # Exact (normalised) identifiers marking an allow-listed licence.
 # Matched against the whole licence string, never by substring, so
@@ -108,6 +116,33 @@ def check_manifest(path):
     return find_denied(load_manifest(path))
 
 
+def find_notices_gaps(entries, notices_body):
+    """Return manifest entry names absent from the notices text.
+
+    Build-gate scan for AC-DEPS-015: every dependency recorded in the
+    manifest must be named in ``third-party-notices.txt`` with licence
+    text; a dep absent from the notices fails the build.
+    """
+    return [
+        entry.get("name") for entry in entries
+        if isinstance(entry, dict) and entry.get("name")
+        and entry.get("name") not in notices_body
+    ]
+
+
+def check_notices(manifest_path, notices_path):
+    """Check notices coverage; return gap names (raises on read failure)."""
+    entries = load_manifest(manifest_path)
+    try:
+        with open(notices_path, "r", encoding="utf-8") as handle:
+            body = handle.read()
+    except OSError as exc:
+        raise DepsDataError(
+            "notices file unreadable: %s (%s)" % (notices_path, exc)
+        ) from exc
+    return find_notices_gaps(entries, body)
+
+
 def run_self_test():
     """Run hermetic self-checks; return 0 on success, 1 on failure."""
     failures = []
@@ -190,6 +225,18 @@ def run_self_test():
     finally:
         os.unlink(tmp.name)
 
+    # Case 5: notices gap scan flags a dep absent from the notices text
+    # (AC-DEPS-015 build-gate direction) and passes a covered manifest.
+    covered = [entry("st-notices-a"), entry("st-notices-b")]
+    if find_notices_gaps(covered, "st-notices-a and st-notices-b"):
+        failures.append("covered notices wrongly flagged: %r" % (covered,))
+    else:
+        print("self-test: notices coverage pass ok")
+    if find_notices_gaps(covered, "st-notices-a only") != ["st-notices-b"]:
+        failures.append("absent dep not flagged by notices scan")
+    else:
+        print("self-test: absent dep fails notices scan ok")
+
     for failure in failures:
         print("self-test failure: %s" % failure)
     return 1 if failures else 0
@@ -241,6 +288,12 @@ def run_self_test_unidentified():
 def main(argv=None):
     parser = argparse.ArgumentParser(description="Enforce the licence allow-list.")
     parser.add_argument("--manifest", default=DEFAULT_MANIFEST)
+    parser.add_argument("--notices", default=DEFAULT_NOTICES)
+    parser.add_argument(
+        "--skip-notices",
+        action="store_true",
+        help="skip the notices-coverage gate (AC-DEPS-015)",
+    )
     parser.add_argument("--self-test", action="store_true")
     parser.add_argument("--self-test-unidentified", action="store_true")
     args = parser.parse_args(argv)
@@ -265,6 +318,25 @@ def main(argv=None):
     print(
         "licence_check: ok: all %s manifest entries carry allow-listed licences"
         % len(load_manifest(args.manifest))
+    )
+    if args.skip_notices or os.path.abspath(args.manifest) != os.path.abspath(
+        DEFAULT_MANIFEST
+    ):
+        return 0
+    try:
+        gaps = check_notices(args.manifest, args.notices)
+    except DepsDataError as exc:
+        print("licence_check: deny: %s; no licence covers this input" % exc)
+        return 1
+    if gaps:
+        for name in gaps:
+            print(
+                "licence_check: deny: dependency %r absent from %s "
+                "(AC-DEPS-015 notices coverage)" % (name, args.notices)
+            )
+        return 1
+    print(
+        "licence_check: ok: all manifest entries named in %s" % args.notices
     )
     return 0
 

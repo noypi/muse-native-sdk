@@ -640,6 +640,31 @@ constexpr std::uint32_t kFooterBg = RGBA(0x1D, 0x1B, 0x20, 0xFF);
 constexpr std::uint32_t kFooterFg = RGBA(0xFF, 0xFF, 0xFF, 0xFF);
 constexpr std::uint32_t kErrorBg = RGBA(0xBA, 0x1A, 0x1A, 0xFF);
 
+// T6 (engine-repair) M3 theme token → surface-param resolution
+// (FR-M3-005/007/008, AC-M3-009/015/018). Token names
+// (md.sys.color.primary, elevation level-1, shape corner.medium) resolve
+// to surface params; flat gray is never produced — it is an error, never
+// a pass. Values are the committed M3 baselines above (light #6750A4,
+// dark #D0BCFF; elevation 1dp; shape 12dp), so adopting the resolver at
+// the theme-matched paint sites below is pixel-identical.
+struct SurfaceThemeParams {
+  std::uint32_t primary = 0;  // md.sys.color.primary, theme-matched
+  float elevation_dp = 0.0f;  // md.sys.state.elevation.level-1 → 1dp
+  float shape_dp = 0.0f;      // md.sys.shape.corner.medium → 12dp M3
+};
+constexpr float kSurfaceElevationDp = 1.0f;
+constexpr float kSurfaceShapeDp = 12.0f;
+static_assert(kSurfaceElevationDp > 0.0f, "M3 elevation must resolve nonzero");
+static_assert(kSurfaceShapeDp > 0.0f, "M3 shape must resolve nonzero");
+
+inline SurfaceThemeParams ResolveSurfaceTheme(bool dark) {
+  SurfaceThemeParams params;
+  params.primary = dark ? kDarkPrimary : kLightPrimary;
+  params.elevation_dp = kSurfaceElevationDp;
+  params.shape_dp = kSurfaceShapeDp;
+  return params;
+}
+
 // ---- Raster helpers ----
 //
 // The 5x7 bitmap text below survives solely as the fail-closed
@@ -1731,7 +1756,7 @@ void PaintComponent(std::uint32_t* px, int stride, int w, int h, int bx,
       // D1 baseline: disabled rows keep the base card with no wash.
       if (washOpacity > 0.0f && washState != "disabled") {
         const std::uint32_t primary =
-            row.dark ? kDarkPrimary : kLightPrimary;
+            ResolveSurfaceTheme(row.dark).primary;
         const unsigned pr = primary & 255u;
         const unsigned pg = (primary >> 8) & 255u;
         const unsigned pb = (primary >> 16) & 255u;
@@ -1781,7 +1806,7 @@ void PaintTextRow(std::uint32_t* px, int stride, int w, int h, int bx, int by,
                   int bw, int bh, const GalleryRow& row) {
   std::uint32_t bg = row.dark ? kDarkSurface : kLightSurface;
   if (row.header) {
-    bg = row.dark ? kDarkPrimary : kLightPrimary;
+    bg = ResolveSurfaceTheme(row.dark).primary;
   }
   FillRoundedRect(px, stride, w, h, bx, by, bw, bh, 18, bg);
 }
@@ -2117,7 +2142,7 @@ void EmitComponentRowCmds(const GalleryRow& row, int bx, int by, int bw,
         base.nodeId = node;
         base.opacity = 1.0f;
         const std::uint32_t primary =
-            row.dark ? kDarkPrimary : kLightPrimary;
+            ResolveSurfaceTheme(row.dark).primary;
         const std::string kind = ripple ? "Ripple" : "Surface";
         if (ripple) {
           base.kind = PrimitiveKind::Ripple;
@@ -2498,7 +2523,7 @@ void EmitGalleryWindowCmds(const std::vector<GalleryRow>& rows,
           washBase.nodeId = node;
           washBase.opacity = 1.0f;
           washBase.payload.stateColor =
-              row.dark ? kDarkPrimary : kLightPrimary;
+              ResolveSurfaceTheme(row.dark).primary;
           washBase.payload.stateOpacity = 1.0f;
           out.push_back(PaintStateWash(washBase, "Surface", "pressed"));
         }
