@@ -186,7 +186,8 @@ static bool check_default_mount_throws_without_success_side_effects() {
     // No instance id minted: the first id (1) records no body run, and
     // the isolate stays alive for reuse.
     return engine->bodyRunCount(1) == 0 &&
-           engine->liveIsolates() == isolates_before;
+           engine->liveIsolates() == isolates_before &&
+           engine->liveHandles() == 0;
   } catch (...) {
     return false;
   }
