@@ -10,8 +10,8 @@
         "snapshot_sha256": "9335578c0c5c29c1438618019a67238b6241e7bcc1124606c5f3d39ec1f390e9",
         "version": "m158"
       },
-      "objectBytes": 58083664,
-      "wallClockSec": 229.59433065099438
+      "objectBytes": 58361264,
+      "wallClockSec": 175.84275074900506
     },
     {
       "abi": "armeabi-v7a",
@@ -23,8 +23,8 @@
         "snapshot_sha256": "9335578c0c5c29c1438618019a67238b6241e7bcc1124606c5f3d39ec1f390e9",
         "version": "m158"
       },
-      "objectBytes": 52637432,
-      "wallClockSec": 189.1210107299994
+      "objectBytes": 52905984,
+      "wallClockSec": 165.1618599489957
     },
     {
       "abi": "x86_64",
@@ -36,8 +36,8 @@
         "snapshot_sha256": "9335578c0c5c29c1438618019a67238b6241e7bcc1124606c5f3d39ec1f390e9",
         "version": "m158"
       },
-      "objectBytes": 55690928,
-      "wallClockSec": 186.20180077500117
+      "objectBytes": 55964152,
+      "wallClockSec": 181.59879725799692
     },
     {
       "abi": "x86",
@@ -49,8 +49,8 @@
         "snapshot_sha256": "9335578c0c5c29c1438618019a67238b6241e7bcc1124606c5f3d39ec1f390e9",
         "version": "m158"
       },
-      "objectBytes": 55013080,
-      "wallClockSec": 198.59741287700308
+      "objectBytes": 55282004,
+      "wallClockSec": 175.5349803880017
     }
   ]
 }
