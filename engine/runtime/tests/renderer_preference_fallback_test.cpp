@@ -74,6 +74,21 @@ static bool check_skia_available_keeps_skia() {
   return ok && std::strcmp(effective, "skia") == 0 && trigger.empty();
 }
 
+// Named case: T1 stub state — requested skia with nothing available
+// (eglAvailable=false, skiaAvailable=false, as stubbed at
+// jni_bridge.cpp:897-899) downgrades to cpu with the named
+// `renderer-downgrade:skia-unavailable` trigger; returns true so the caller
+// takes the proven CPU push (never blank, never crash).
+// FR-GRAPHICS-014 AC-041.
+static bool check_skia_stub_state_downgrades_with_named_trigger() {
+  char effective[16] = {};
+  std::string trigger;
+  bool ok = ResolveRendererFallback("skia", false, false, effective,
+                                    sizeof(effective), &trigger);
+  return ok && std::strcmp(effective, "cpu") == 0 &&
+         trigger == "renderer-downgrade:skia-unavailable";
+}
+
 // Named case: unavailable egl downgrades to cpu with the named
 // `renderer-downgrade:egl-unavailable` trigger; returns true so the caller
 // takes the proven CPU push (never blank, never crash).
@@ -165,6 +180,7 @@ int main() {
   RUN_CASE(check_cpu_request_always_cpu_no_trigger);
   RUN_CASE(check_egl_available_keeps_egl);
   RUN_CASE(check_skia_available_keeps_skia);
+  RUN_CASE(check_skia_stub_state_downgrades_with_named_trigger);
   RUN_CASE(check_egl_unavailable_downgrades_with_named_trigger);
   RUN_CASE(check_skia_unavailable_downgrades_with_named_trigger);
   RUN_CASE(check_null_effective_out_tolerated);
