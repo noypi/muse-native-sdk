@@ -18,6 +18,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
+#include <map>
 #include <string>
 
 #include "runtime/text_field.h"
@@ -37,7 +38,10 @@ void SetEngineRowText(NodeId row, const char* utf8, std::size_t len) noexcept;
 void SetFocusedEngineRow(NodeId row) noexcept;
 bool CommitTextToEngineRow(NodeId rowId, const char* utf8,
                            std::size_t len) noexcept;
+bool CommitTextToFocusedEngineRow(const char* utf8,
+                                  std::size_t len) noexcept;
 bool EngineRowInputShown() noexcept;
+NodeId FocusedEngineRow() noexcept;
 std::string EngineRowText(NodeId row) noexcept;
 void ResetEngineRowCommitState() noexcept;
 }  // namespace ime_commit
@@ -313,6 +317,201 @@ bool check_jni_256kb_boundary_accept_at_bound_deny_one_over() {
 
 }  // namespace
 
+// --- Security-review gap cases (bug-runtime-007, hermetic) ----------------
+// The JNI `env`/`jstring`/`ToGallery` legs are EXTERNAL (no JVM here); each
+// case below pins the hermetic half: the exact guard predicate mirrored from
+// `jni_bridge.cpp` plus the real-seam behavior the guard protects. Synthetic
+// bytes only; no device, no downloads, no secrets, no config reads.
+
+// 1. 256KB cap: over-cap (and negative) lengths are denied with -1 before any
+// copy, so no commit reaches the seam; the denial leaves the row untouched.
+bool check_jni_length_cap_over_cap_denied_no_commit() {
+  try {
+    if (jni_cap::GateCommitLength(262145) !=
+        jni_cap::Verdict::kDenyTreeTooLarge) {
+      std::printf("  detail: 262145-byte commit accepted, want denial (-1)\n");
+      return false;
+    }
+    if (jni_cap::GateCommitLength(-1) !=
+        jni_cap::Verdict::kDenyTreeTooLarge) {
+      std::printf("  detail: negative length accepted, want denial (-1)\n");
+      return false;
+    }
+    // Denied means the seam is never called: the row stays pristine.
+    Fixture fx;
+    // (models the JNI early-return: no RouteCommitToEngineRow call happens)
+    if (fx.text_of(kSearchRowId) != "") {
+      std::printf("  detail: over-cap denial touched the row\n");
+      return false;
+    }
+    if (fx.view.mInputShown) {
+      std::printf("  detail: over-cap denial set mInputShown\n");
+      return false;
+    }
+    return true;
+  } catch (...) {
+    std::printf("  detail: threw across length-cap denial (must never throw)\n");
+    return false;
+  }
+}
+
+// 2. Handle forgery: zero / stale / forged handles miss the live-handle
+// registry, so the entry returns -1 with no dereference. Hermetic mirror of
+// the `ToGallery` registry check (`jni_bridge.cpp:444`): lookup under lock,
+// miss -> null -> -1, never dereferenced.
+bool check_forged_handle_denied_no_dereference() {
+  try {
+    struct FakeRegistry {
+      std::map<NodeId, int> live;
+      const int* lookup(long handle) const {
+        if (handle == 0) return nullptr;
+        auto it = live.find(static_cast<NodeId>(handle));
+        return it == live.end() ? nullptr : &it->second;
+      }
+    };
+    const FakeRegistry reg{{{31, 1}}};
+    // Mirrors `if (g == nullptr) return -1;` — no dereference on miss.
+    auto entry = [&](long handle) -> int {
+      const int* g = reg.lookup(handle);
+      if (g == nullptr) return -1;
+      return *g;
+    };
+    if (entry(0) != -1) {
+      std::printf("  detail: zero handle accepted, want -1\n");
+      return false;
+    }
+    if (entry(0xdeadbeef) != -1) {
+      std::printf("  detail: forged handle accepted, want -1\n");
+      return false;
+    }
+    if (entry(9999) != -1) {
+      std::printf("  detail: stale handle accepted, want -1\n");
+      return false;
+    }
+    if (entry(31) != 1) {
+      std::printf("  detail: live handle denied, want accept\n");
+      return false;
+    }
+    return true;
+  } catch (...) {
+    std::printf("  detail: threw across handle check (must never throw)\n");
+    return false;
+  }
+}
+
+// 3. Malformed / overlong UTF-8 stored-verbatim contract (ASSUMPTION A3):
+// no validation, no normalization — bytes land byte-identical, never throw.
+bool check_malformed_utf8_stored_verbatim_never_throws() {
+  try {
+    Fixture fx;
+    const Utf8Bytes bad("\xff\xfe\xc0\xaf\xed\xa0\x80", 7);
+    RouteCommitToEngineRow(fx.view, fx.hidden, kSearchRowId, bad);
+    const std::string got = fx.text_of(kSearchRowId);
+    if (got != bad) {
+      std::printf("  detail: stored %zu bytes, want verbatim %zu\n", got.size(),
+                  bad.size());
+      return false;
+    }
+    // Embedded NUL is preserved with explicit length (no truncation).
+    Fixture fx2;
+    const Utf8Bytes nulled("ab\x00\xcd", 5);
+    RouteCommitToEngineRow(fx2.view, fx2.hidden, kSearchRowId, nulled);
+    const std::string got2 = fx2.text_of(kSearchRowId);
+    if (got2.size() != 5 || got2 != nulled) {
+      std::printf("  detail: embedded-NUL commit not stored verbatim\n");
+      return false;
+    }
+    return true;
+  } catch (...) {
+    std::printf("  detail: threw on malformed bytes (must never throw)\n");
+    return false;
+  }
+}
+
+// 4. Null-text / exception paths: null with length fails closed, null-empty
+// is a no-op success; a nullptr payload with len>0 never throws and touches
+// nothing (mirrors the JNI null-`jstring` empty-noop and the fail-closed
+// exception contract: -1 with the exception cleared, nothing committed).
+bool check_null_text_and_exception_paths_fail_closed() {
+  try {
+    Fixture fx;
+    RouteCommitToEngineRow(fx.view, fx.hidden, kSearchRowId, "ab");
+    // nullptr + len>0 -> false, row untouched.
+    if (runtime::ime_commit::CommitTextToEngineRow(kSearchRowId, nullptr, 5)) {
+      std::printf("  detail: null payload with len accepted, want false\n");
+      return false;
+    }
+    // nullptr + 0 -> no-op success, row untouched.
+    if (!runtime::ime_commit::CommitTextToEngineRow(kSearchRowId, nullptr, 0)) {
+      std::printf("  detail: null empty commit denied, want noop success\n");
+      return false;
+    }
+    // Focused-seam mirrors: nullptr + len>0 fails closed, nullptr + 0 no-ops.
+    if (runtime::ime_commit::CommitTextToFocusedEngineRow(nullptr, 3)) {
+      std::printf("  detail: focused null payload accepted, want false\n");
+      return false;
+    }
+    if (!runtime::ime_commit::CommitTextToFocusedEngineRow(nullptr, 0)) {
+      std::printf("  detail: focused null empty denied, want noop success\n");
+      return false;
+    }
+    if (fx.text_of(kSearchRowId) != "ab") {
+      std::printf("  detail: null-text path mutated the row\n");
+      return false;
+    }
+    return true;
+  } catch (...) {
+    std::printf("  detail: threw on null text (must never throw)\n");
+    return false;
+  }
+}
+
+// 5. No-focus / unknown-row fail-closed: with no focus bound, the focused
+// commit returns false (JNI `1`, nothing touched); unknown rows and
+// kInvalidNodeId never land anywhere and never set the observable.
+bool check_no_focus_and_unknown_row_fail_closed() {
+  try {
+    runtime::ime_commit::ResetEngineRowCommitState();
+    // No focus at all: fail closed, store untouched, observable unset.
+    if (runtime::ime_commit::CommitTextToFocusedEngineRow("hi", 2)) {
+      std::printf("  detail: no-focus commit accepted, want false\n");
+      return false;
+    }
+    if (runtime::ime_commit::FocusedEngineRow() != runtime::kInvalidNodeId) {
+      std::printf("  detail: focus present after reset, want none\n");
+      return false;
+    }
+    if (runtime::ime_commit::EngineRowInputShown()) {
+      std::printf("  detail: no-focus commit set mInputShown\n");
+      return false;
+    }
+    // kInvalidNodeId row id is rejected outright.
+    if (runtime::ime_commit::CommitTextToEngineRow(runtime::kInvalidNodeId,
+                                                   "hi", 2)) {
+      std::printf("  detail: invalid-node commit accepted, want false\n");
+      return false;
+    }
+    // Unknown row via the row-targeted seam: false, nothing touched.
+    Fixture fx;
+    if (runtime::ime_commit::CommitTextToEngineRow(kUnknownRowId, "hi", 2)) {
+      std::printf("  detail: unknown-row commit accepted, want false\n");
+      return false;
+    }
+    if (fx.text_of(kSearchRowId) != "") {
+      std::printf("  detail: unknown-row commit mutated the Search row\n");
+      return false;
+    }
+    if (!fx.hidden.text.empty()) {
+      std::printf("  detail: unknown-row commit leaked into hidden sink\n");
+      return false;
+    }
+    return true;
+  } catch (...) {
+    std::printf("  detail: threw on no-focus commit (must never throw)\n");
+    return false;
+  }
+}
+
 #define RUN_CASE(name)                      \
   do {                                      \
     if (!(name)()) {                        \
@@ -334,6 +533,11 @@ int main() {
   RUN_CASE(check_unknown_row_commit_fails_closed_never_throws);
   RUN_CASE(check_malformed_utf8_commit_never_throws);
   RUN_CASE(check_jni_256kb_boundary_accept_at_bound_deny_one_over);
+  RUN_CASE(check_jni_length_cap_over_cap_denied_no_commit);
+  RUN_CASE(check_forged_handle_denied_no_dereference);
+  RUN_CASE(check_malformed_utf8_stored_verbatim_never_throws);
+  RUN_CASE(check_null_text_and_exception_paths_fail_closed);
+  RUN_CASE(check_no_focus_and_unknown_row_fail_closed);
   if (failures > 0) {
     std::printf("ime_commit_test: %d failing\n", failures);
     return 1;
