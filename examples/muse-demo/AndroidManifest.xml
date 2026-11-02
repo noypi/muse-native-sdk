@@ -13,10 +13,20 @@
         <activity
             android:name=".MainActivity"
             android:exported="true"
+            android:launchMode="singleTask"
             android:configChanges="orientation|screenSize|keyboardHidden">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <!-- T4 leg-1: muse-demo://tab/<lens|field|list> deep links route to
+                MainActivity (VIEW + BROWSABLE); singleTask + onNewIntent keep
+                one instance so the link never resets the demo shell. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="muse-demo" android:host="tab" />
             </intent-filter>
         </activity>
     </application>

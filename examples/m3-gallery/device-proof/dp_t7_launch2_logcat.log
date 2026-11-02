@@ -1,0 +1,25 @@
+11-02 02:57:14.338  1126  5420 I ActivityTaskManager: START u0 {flg=0x10000000 hwFlg=0x10 cmp=com.muse.host/.MainActivity} from uid 2000
+11-02 02:57:14.354  1126  5420 I ActivityTaskManager: ActivityRecord info: ActivityInfo{2b36e4a com.muse.host.MainActivity}
+11-02 02:57:14.361  1126  5420 D ActivityTaskManager: TaskLaunchParamsModifier:task=null activity=ActivityRecord{ea0d6d8 u0 com.muse.host/.MainActivity t-1} display-id=0 display-windowing-mode=1
+11-02 02:57:14.362  1126  5420 D ActivityTaskManager: TaskLaunchParamsModifier:task=null activity=ActivityRecord{ea0d6d8 u0 com.muse.host/.MainActivity t-1} display-id=0 display-windowing-mode=1 inherit-fullscreen non-freeform-display
+11-02 02:57:14.367  1126  5420 D ActivityTaskManager: TaskLaunchParamsModifier:task=TaskRecord{f017a31 #4407 A=10443:com.muse.host U=0 StackId=2137 sz=0} activity=ActivityRecord{ea0d6d8 u0 com.muse.host/.MainActivity t-1} display-from-task=0 display-id=0 display-windowing-mode=1 inherit-fullscreen non-freeform-display
+11-02 02:57:14.412  1126  5420 I WindowManager: addWindowToken: displayid:0 binder:Token{9c22516 ActivityRecord{ea0d6d8 u0 com.muse.host/.MainActivity t4407}} token:AppWindowToken{3faae97 token=Token{9c22516 ActivityRecord{ea0d6d8 u0 com.muse.host/.MainActivity t4407}}}
+11-02 02:57:14.414  1126  5420 V ActivityTaskManager: addAppToken: AppWindowToken{3faae97 token=Token{9c22516 ActivityRecord{ea0d6d8 u0 com.muse.host/.MainActivity t4407}}} task={taskId=4407 appTokens=[] mdr=false} at 2147483647
+11-02 02:57:14.420  1126  5420 I ActivityTaskManager: setAppStartingWindow: token=Token{9c22516 ActivityRecord{ea0d6d8 u0 com.muse.host/.MainActivity t4407}} pkg=com.muse.host transferFrom=null newTask=true taskSwitch=true processRunning=false allowTaskSnapshot=true activityCreated=false LowRamTaskSnapshots=false
+11-02 02:57:14.424  1126  1582 I HwAudioServiceEx: ComponentInfo : className = com.muse.host.MainActivity, flag = showStartingWindow, isHomeActivity = , isTop = false
+11-02 02:57:14.509  1126  1524 I WindowManager: addWindow: Window{9ce6b87 u0 Splash Screen com.muse.host} client:android.view.ViewRootImpl$W@e2bffc6 currentDisplayId:0 requestDisplayId:0 token:Token{9c22516 ActivityRecord{ea0d6d8 u0 com.muse.host/.MainActivity t4407}}
+11-02 02:57:14.579  1126  1605 I ActivityManager: Start proc 8025:com.muse.host/u0a443 for activity {com.muse.host/com.muse.host.MainActivity}
+11-02 02:57:14.619  1126  2759 I HwRestoreStateManager: reportAppRestoreScene, app: com.muse.host/.MainActivity ,scene:ColdStart
+11-02 02:57:14.632  2351  2445 I Hicom_Monitor: mAppSwitchNotifierEx. uid: 10443, foreground app: com.muse.host, foreground activity: com.muse.host.MainActivity
+11-02 02:57:14.640  1126  1524 I WindowManager: Check opening app=AppWindowToken{3faae97 token=Token{9c22516 ActivityRecord{ea0d6d8 u0 com.muse.host/.MainActivity t4407}}}: allDrawn=false startingDisplayed=true startingMoved=false isRelaunching()=false startingWindow=Window{9ce6b87 u0 Splash Screen com.muse.host}
+11-02 02:57:14.665  1126  1524 V WindowManager: commitVisibility: AppWindowToken{3faae97 token=Token{9c22516 ActivityRecord{ea0d6d8 u0 com.muse.host/.MainActivity t4407}}}: hidden=false hiddenRequested=false
+11-02 02:57:14.824  8025  8025 D ActivityThread: add activity client record, r= ActivityRecord{be8f468 token=android.os.BinderProxy@6e654f0 {com.muse.host/com.muse.host.MainActivity}} token= android.os.BinderProxy@6e654f0
+11-02 02:57:14.830  8025  8081 I muse-host: nativeLoadTree: bytes=51785 rows=121 -> handle acquired
+11-02 02:57:14.830  8025  8081 I muse-host: nativeProvenance: engine-sha=1b5e89e gallery_present-sha=17f062b02bdbd8cda3a4ae49706ad002d936a798
+11-02 02:57:14.830  8025  8081 I GalleryPage: gallery-rows=121
+11-02 02:57:14.864  1126  1212 I WindowManager: addWindow: Window{6650761 u0 com.muse.host/com.muse.host.MainActivity} client:android.os.BinderProxy@3329ac8 currentDisplayId:0 requestDisplayId:0 token:Token{9c22516 ActivityRecord{ea0d6d8 u0 com.muse.host/.MainActivity t4407}}
+11-02 02:57:14.873  2351  2445 I Hicom_Monitor: mActivityNotifierEx, className = com.muse.host.MainActivity, uid = 10443
+11-02 02:57:14.874  1126  1582 I HwAudioServiceEx: ComponentInfo : className = com.muse.host.MainActivity, flag = onResume, isHomeActivity = , isTop = true
+11-02 02:57:14.874  2351  2810 D DollieActivityManagerAdapter: [Resumed] bg:true pid:8025 uid:10443 ComponentInfo{com.muse.host/com.muse.host.MainActivity}
+11-02 02:57:14.874  2351  2810 E DollieAdapterService: notifyActivityState pkg:com.muse.host/com.muse.host.MainActivity state:2 fg:true mUid:10443
+11-02 02:57:14.894  1126  5414 I WindowManager: Changing focus from null to Window{6650761 u0 com.muse.host/com.muse.host.MainActivity} displayId=0 Callers=com.android.server.wm.RootWindowContainer.updateFocusedWindowLocked:212 com.android.server.wm.WindowManagerService.updateFocusedWindowLocked:6516 com.android.server.wm.WindowManagerService.relayoutWindow:2810 com.android.server.wm.Session.relayout:197 

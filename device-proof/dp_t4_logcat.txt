@@ -1,0 +1,35 @@
+--------- beginning of main
+I/muse-host( 2605): nativeLoadTree: bytes=94085 rows=93 -> handle acquired
+I/muse-host( 2605): nativeProvenance: engine-sha=bef7b60 gallery_present-sha=55b2c9eed17693176733e5e3914ef2c2eb4ebadf
+I/muse-host( 2605): nativeAttachSurface: window 1080x1944
+I/muse-host( 2605): nativeAttachSurface: window 1080x1944
+I/muse-host( 2605): first-frame-present: engine frame rendered
+I/muse-host( 2605): nativeLoadTree: bytes=94085 rows=93 -> handle acquired
+I/muse-host( 2605): nativeProvenance: engine-sha=bef7b60 gallery_present-sha=55b2c9eed17693176733e5e3914ef2c2eb4ebadf
+I/muse-host( 2605): nativeAttachSurface: window 1080x1944
+I/muse-host( 2605): nativeAttachSurface: window 1080x1944
+I/muse-host( 2605): first-frame-present: engine frame rendered
+I/muse-host( 2605): nativeDetachSurface: window released
+I/muse-host( 2605): nativeLoadTree: bytes=94085 rows=93 -> handle acquired
+I/muse-host( 2605): nativeProvenance: engine-sha=bef7b60 gallery_present-sha=55b2c9eed17693176733e5e3914ef2c2eb4ebadf
+I/muse-host( 2605): nativeAttachSurface: window 1080x1944
+I/muse-host( 2605): nativeAttachSurface: window 1080x1944
+I/muse-host( 2605): first-frame-present: engine frame rendered
+I/muse-host( 2605): nativeDetachSurface: window released
+I/muse-host( 2698): nativeLoadTree: bytes=94085 rows=93 -> handle acquired
+I/muse-host( 2698): nativeProvenance: engine-sha=bef7b60 gallery_present-sha=55b2c9eed17693176733e5e3914ef2c2eb4ebadf
+I/muse-host( 2698): nativeAttachSurface: window 1080x1944
+I/muse-host( 2698): nativeAttachSurface: window 1080x1944
+I/muse-host( 2698): first-frame-present: engine frame rendered
+I/muse-host( 2698): nativeDispatchTouch: action=0 x=540.0 y=1390.0 pointer=0
+I/muse-host( 2698): nativeDispatchTouch: tap fired node=20 repaint=1
+I/muse-host( 2698): nativeDispatchTouch: action=0 x=540.0 y=180.0 pointer=0
+I/muse-host( 2698): nativeDispatchTouch: tap fired node=20 repaint=1
+I/muse-host( 2698): nativeDispatchTouch: action=0 x=540.0 y=1290.0 pointer=0
+I/muse-host( 2698): nativeDispatchTouch: tap fired node=20 repaint=1
+I/muse-host( 2698): nativeLoadTree: bytes=94085 rows=93 -> handle acquired
+I/muse-host( 2698): nativeProvenance: engine-sha=bef7b60 gallery_present-sha=55b2c9eed17693176733e5e3914ef2c2eb4ebadf
+I/muse-host( 2698): nativeAttachSurface: window 1080x1944
+I/muse-host( 2698): nativeAttachSurface: window 1080x1944
+I/muse-host( 2698): first-frame-present: engine frame rendered
+I/muse-host( 2698): nativeDetachSurface: window released

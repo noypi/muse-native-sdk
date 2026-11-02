@@ -49,6 +49,7 @@ CHECK_FNO_EXCEPTIONS = "fno-exceptions"
 CHECK_PINNED_VERSION = "pinned-version"
 CHECK_LICENCE = "licence"
 CHECK_OWNER = "owner"
+CHECK_DUPLICATE_ROW = "duplicate-row"
 
 
 def _label(entry):
@@ -69,10 +70,12 @@ def _safe(text):
 def _fail_size_delta(entry):
     # NOTE: bool is excluded explicitly because isinstance(True, int)
     # is True in Python; a boolean record is wrong-typed evidence.
+    # Only a true int admits: floats (including 120.0, NaN, Inf),
+    # strings, None, and missing values all deny fail-closed.
     value = entry.get("size_delta_bytes") if isinstance(entry, dict) else None
     if isinstance(value, bool):
         return True
-    if not isinstance(value, (int, float)):
+    if not isinstance(value, int):
         return True
     return False
 
@@ -112,8 +115,20 @@ def _fail_owner(entry):
 
 
 def find_failures(entries):
-    """Return [(dep_name, failed_check)] for entries failing any check."""
+    """Return [(dep_name, failed_check)] for entries failing any check.
+
+    Duplicate rows deny fail-closed: any ``name`` carried by more than
+    one dict entry flags every occurrence with ``duplicate-row``, so
+    first-match helpers (e.g. ``find_skia``) cannot silently resolve an
+    order-dependent row.
+    """
     failures = []
+    seen = {}
+    for entry in entries:
+        if isinstance(entry, dict):
+            name = entry.get("name")
+            if isinstance(name, str) and name.strip():
+                seen[name.strip()] = seen.get(name.strip(), 0) + 1
     for entry in entries:
         label = _label(entry)
         if _fail_size_delta(entry):
@@ -128,6 +143,13 @@ def find_failures(entries):
             failures.append((label, CHECK_LICENCE))
         if _fail_owner(entry):
             failures.append((label, CHECK_OWNER))
+        if (
+            isinstance(entry, dict)
+            and isinstance(entry.get("name"), str)
+            and entry.get("name").strip()
+            and seen.get(entry.get("name").strip(), 0) > 1
+        ):
+            failures.append((label, CHECK_DUPLICATE_ROW))
     return failures
 
 

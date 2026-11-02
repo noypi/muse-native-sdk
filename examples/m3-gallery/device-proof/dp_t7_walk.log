@@ -1,0 +1,31 @@
+11-02 03:01:22.954  8891  8949 I GalleryPage: [layering] slice page=2 rows=[19,28] comps={Card|Card|Card|Chip|Chip|Chip|Chip|Checkbox|Checkbox|Radio} labels={Card variant=elevated|Card variant=filled|Card variant=outlined|Assist chip|Filter chip|Input chip|Suggestion chip|Checkbox|Checkbox|Radio}
+11-02 03:01:24.486  8891  8949 I GalleryPage: gallery-rows=121 gallery-pages=12
+11-02 03:01:24.486  8891  8949 I GalleryPage: gallery-page=3/12
+11-02 03:01:24.503  8891  8949 I GalleryPage: [layering] slice page=3 rows=[29,39] comps={Radio|Switch|Switch|Slider|LinearProgress|CircularProgress|Badge|ListItem|Avatar|Icon|Image} labels={Radio|Switch|Switch|Slider|LinearProgress|CircularProgress|3|Inbox headline|AB|favorite|Image contentFit=cover source=gallery-hero}
+11-02 03:01:26.529  8891  8949 I GalleryPage: gallery-rows=121 gallery-pages=12
+11-02 03:01:26.529  8891  8949 I GalleryPage: gallery-page=4/12
+11-02 03:01:26.546  8891  8949 I GalleryPage: [layering] slice page=4 rows=[40,48] comps={Divider|TextFieldEditCore|TextInput|Dialog|BottomSheet|Menu|SnackbarHost|Tooltip|Carousel} labels={Divider orientation=horizontal|Search settings|Search settings|Confirm delete dialog|BottomSheet|Menu|Saved to library snackbar|Favorite tooltip|Carousel}
+11-02 03:01:28.055  8891  8949 I GalleryPage: gallery-rows=121 gallery-pages=12
+11-02 03:01:28.055  8891  8949 I GalleryPage: gallery-page=5/12
+11-02 03:01:28.072  8891  8949 I GalleryPage: [layering] slice page=5 rows=[49,57] comps={Surface|Scroll|Stack|Ripple|OverlayHost|TopAppBar|TopAppBar|TopAppBar|NavigationBar} labels={Surface tone=tonal|Scroll orientation=vertical|Stack direction=column|Ripple|OverlayHost|m3-gallery|m3-gallery|m3-gallery|NavigationBar selected=home}
+11-02 03:01:32.756  8891  8949 I GalleryPage: gallery-rows=121 gallery-pages=12
+11-02 03:01:32.756  8891  8949 I GalleryPage: gallery-page=6/12
+11-02 03:01:32.772  8891  8949 I GalleryPage: [layering] slice page=6 rows=[58,68] comps={NavigationRail|NavigationDrawer|BottomAppBar|SearchBar|SegmentedButton|ButtonGroup|SplitButton|Button|Button|Button|Button} labels={NavigationRail selected=home|NavigationDrawer selected=home|gallery|Search settings|SegmentedButton selected=day|ButtonGroup selected=bold|Create new|Primary action|Tonal action|Outlined action|Text action}
+11-02 03:01:34.884  8891  8949 I GalleryPage: gallery-rows=121 gallery-pages=12
+11-02 03:01:34.884  8891  8949 I GalleryPage: gallery-page=7/12
+11-02 03:01:34.901  8891  8949 I GalleryPage: [layering] slice page=7 rows=[69,78] comps={Button|IconButton|Fab|ExtendedFab|Card|Card|Card|Chip|Chip|Chip} labels={Elevated action|IconButton variant=filled icon=favorite|Fab size=medium icon=add|Compose|Card variant=elevated|Card variant=filled|Card variant=outlined|Assist chip|Filter chip|Input chip}
+11-02 03:01:36.463  8891  8949 I GalleryPage: gallery-rows=121 gallery-pages=12
+11-02 03:01:36.463  8891  8949 I GalleryPage: gallery-page=8/12
+11-02 03:01:36.480  8891  8949 I GalleryPage: [layering] slice page=8 rows=[79,89] comps={Chip|Checkbox|Checkbox|Radio|Radio|Switch|Switch|Slider|LinearProgress|CircularProgress|Badge} labels={Suggestion chip|Checkbox|Checkbox|Radio|Radio|Switch|Switch|Slider|LinearProgress|CircularProgress|3}
+11-02 03:01:37.761  8891  8949 I GalleryPage: gallery-rows=121 gallery-pages=12
+11-02 03:01:37.761  8891  8949 I GalleryPage: gallery-page=9/12
+11-02 03:01:37.778  8891  8949 I GalleryPage: [layering] slice page=9 rows=[90,99] comps={ListItem|Avatar|Icon|Image|Divider|TextFieldEditCore|TextInput|Dialog|BottomSheet|Menu} labels={Inbox headline|AB|favorite|Image contentFit=cover source=gallery-hero|Divider orientation=horizontal|Search settings|Search settings|Confirm delete dialog|BottomSheet|Menu}
+11-02 03:01:40.050  8891  8949 I GalleryPage: gallery-rows=121 gallery-pages=12
+11-02 03:01:40.050  8891  8949 I GalleryPage: gallery-page=10/12
+11-02 03:01:40.067  8891  8949 I GalleryPage: [layering] slice page=10 rows=[100,110] comps={SnackbarHost|Tooltip|Carousel|Surface|Scroll|Stack|Ripple|OverlayHost|TextInput|TextInput|OverlayHost} labels={Saved to library snackbar|Favorite tooltip|Carousel|Surface tone=tonal|Scroll orientation=vertical|Stack direction=column|Ripple|OverlayHost|Probe live field|Layering IME probe|OverlayHost}
+11-02 03:01:40.120  8891  8949 I GalleryPage: gallery-rows=121 gallery-pages=12
+11-02 03:01:40.120  8891  8949 I GalleryPage: gallery-page=11/12
+11-02 03:01:41.399  8891  8949 I GalleryPage: [layering] slice page=11 rows=[111,120] comps={Surface|Dialog|BottomSheet|Menu|SnackbarHost|Tooltip||||} labels={Surface tone=scrim|Layering dialog|BottomSheet|Menu|Layering snackbar|Layering tooltip|Text probe page|Layering page|Layering content dimmed light|Layering content dimmed dark}
+11-02 03:01:41.465  8891  8949 I GalleryPage: gallery-rows=121 gallery-pages=12
+11-02 03:01:41.465  8891  8949 I GalleryPage: gallery-page=12/12
+11-02 03:01:42.698  8891  8949 I GalleryPage: [layering] slice page=0 rows=[0,7] comps={TopAppBar|TopAppBar|TopAppBar|NavigationBar|NavigationRail|NavigationDrawer|BottomAppBar|SearchBar} labels={m3-gallery|m3-gallery|m3-gallery|NavigationBar selected=home|NavigationRail selected=home|NavigationDrawer selected=home|gallery|Search settings}

@@ -7,8 +7,8 @@
 // shapeRun/measureLine in the production targets
 // (engine/runtime/CMakeLists.txt); this core owns the pipeline structure
 // (UTF-8 decode -> cluster map -> advances -> measure) with the reference
-// backend (checked-in HarfBuzz dumps) plus the deterministic stub mapping
-// as the hermetic-test fallback.
+// backend (checked-in HarfBuzz dumps) plus the deterministic face-keyed
+// fallback mapping as the hermetic-test fallback.
 
 #include <cstddef>
 #include <cstdint>

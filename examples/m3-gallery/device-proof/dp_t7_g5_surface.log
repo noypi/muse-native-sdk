@@ -1,0 +1,11 @@
+11-02 03:02:31.960 10226 10280 I GalleryPage: gallery-rows=121 gallery-pages=12
+11-02 03:02:31.961 10226 10280 I GalleryPage: gallery-page=1/12
+11-02 03:02:31.977 10226 10280 I GalleryPage: [layering] slice page=0 rows=[0,7] comps={TopAppBar|TopAppBar|TopAppBar|NavigationBar|NavigationRail|NavigationDrawer|BottomAppBar|SearchBar} labels={m3-gallery|m3-gallery|m3-gallery|NavigationBar selected=home|NavigationRail selected=home|NavigationDrawer selected=home|gallery|Search settings}
+11-02 03:02:34.825 10226 10280 I GalleryPage: gallery-rows=121 gallery-pages=12
+11-02 03:02:34.825 10226 10280 I GalleryPage: gallery-page=1/12
+11-02 03:02:34.826 10226 10226 D MainActivity: touch x=360.0 y=755.0 claimed=-1
+11-02 03:02:34.843 10226 10280 I GalleryPage: [layering] slice page=0 rows=[0,7] comps={TopAppBar|TopAppBar|TopAppBar|NavigationBar|NavigationRail|NavigationDrawer|BottomAppBar|SearchBar} labels={m3-gallery|m3-gallery|m3-gallery|NavigationBar selected=home|NavigationRail selected=home|NavigationDrawer selected=home|gallery|Search settings}
+11-02 03:02:37.692 10226 10280 I GalleryPage: gallery-rows=121 gallery-pages=12
+11-02 03:02:37.692 10226 10280 I GalleryPage: gallery-page=1/12
+11-02 03:02:37.694 10226 10226 D MainActivity: touch x=360.0 y=755.0 claimed=20
+11-02 03:02:37.711 10226 10280 I GalleryPage: [layering] slice page=0 rows=[0,7] comps={TopAppBar|TopAppBar|TopAppBar|NavigationBar|NavigationRail|NavigationDrawer|BottomAppBar|SearchBar} labels={m3-gallery|m3-gallery|m3-gallery|NavigationBar selected=home|NavigationRail selected=home|NavigationDrawer selected=home|gallery|Search settings}

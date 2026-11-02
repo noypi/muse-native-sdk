@@ -370,6 +370,15 @@ struct GalleryHandle {
   // layeringOverlayCount to the full stack (5) so away/back re-entry restarts
   // full. Guarded by mu like the rest of the handle.
   int lastPresentedPage = -1;
+  // T6 (demo-muse-demo-routing / FR-NAV-011 AC-NAV-033/038, FR-NAV-012
+  // AC-NAV-035): demo shell-state carriage slot. Stores only validated
+  // strings written by nativeSetDemoShellState (tab in lens|field|list plus
+  // the optional denied-link string the TSX denial branch reads). No routing
+  // decision lives here and no renderer/layout code reads or writes these —
+  // visibility comes from the proven nativeRenderFrame repaint. Guarded by
+  // mu like the rest of the handle.
+  std::string demoTab = "lens";
+  std::string demoDeniedLink;
 #ifdef __ANDROID__
   ANativeWindow* window = nullptr;
   // FR-STARTUP-003 T1 (RULE-STARTUP-002): single-owner render-thread frame
@@ -837,6 +846,13 @@ void RenderLocked(GalleryHandle* g) {
   // BUG-INPUT-001 T3: remember the presented viewport height (mu is held by
   // the caller) so the ACTION_UP slice can window the layering predicate.
   g->lastViewportH = h;
+  // BUG-INPUT-002 T2: reseed the tap tree from the presented viewport (mu
+  // is held here and on the dispatch path, so no entry observes a partial
+  // tree). Invalid/empty geometry keeps the prior tree; an already-covering
+  // tree is left untouched — the load-time fallback seed above only runs
+  // until the first real frame lands.
+  PopulateTapTreeFromLayout(g->tapTree, static_cast<float>(w),
+                            static_cast<float>(h));
   int pages = ::runtime::GalleryPageCount(g->rows, h);
   if (pages > 0) {
     g->page %= pages;
@@ -883,7 +899,7 @@ void RenderLocked(GalleryHandle* g) {
       g->layeringOverlayCount);
   // FR-GRAPHICS-014 T2: requested-vs-effective present-path selection with
   // probe downgrade to the proven CPU push (AC-GRAPHICS-040/041). The
-  // requested renderer defaults to `cpu`; the resolve gate maps it against
+  // requested renderer defaults to `skia`; the resolve gate maps it against
   // EGL/Skia availability into the effective frame path (never blank) and
   // names every downgrade `renderer-downgrade:<lane>-unavailable`. `egl`
   // dispatches to the FR-012 blit leg, `skia` to the FR-003/AC-039 Skia leg,
@@ -906,7 +922,7 @@ void RenderLocked(GalleryHandle* g) {
   // yet) EGL lane can never blank the device frame. Every EGL failure is
   // logged inside as `GFX-BLIT-FALLBACK: <trigger>`; lock/unlockAndPost below
   // are reused unchanged.
-  const char* requestedRenderer = "cpu";
+  const char* requestedRenderer = "skia";
   const bool eglAvailable = false;
   const bool skiaAvailable = false;
   char effectiveRenderer[16] = {};
@@ -1349,6 +1365,98 @@ extern "C" MUSE_JNI_EXPORT jint Java_com_muse_host_MainActivity_nativeSetTheme(
       env->ExceptionClear();
     }
     return -1;
+  }
+}
+
+// T6 (demo-muse-demo-routing / FR-NAV-011 AC-NAV-033/038, FR-NAV-012
+// AC-NAV-035): engine state-carriage setter — no game logic, no routing
+// decision, no renderer/layout change. Java:
+// com.muse.host.MainActivity.nativeSetDemoShellState(long, String, String).
+// Stores the validated tab (lens|field|list) plus the optional denied-link
+// string into the live handle's shell-state slot the baked tree's existing
+// tab/denial branches read; visibility comes from the next nativeRenderFrame
+// repaint. Fail-closed: null env, pending exception, unregistered (zero,
+// forged, stale) handle, or a null/empty/unknown tab yields 0 with state
+// unchanged and no exception crossing into the VM. A null denied-link
+// normalizes to "" (still applied); a present denied-link is stored verbatim.
+// Returns 1 applied, 0 denied (jint, fail-closed ints).
+extern "C" MUSE_JNI_EXPORT jint Java_com_muse_host_MainActivity_nativeSetDemoShellState(
+    JNIEnv* env, jobject thiz, jlong handle, jstring tab, jstring deniedLink) {
+  // Returns jint: 1 applied, 0 denied/failed-closed.
+  (void)thiz;
+  if (env == nullptr || env->ExceptionCheck() == JNI_TRUE) {
+    return static_cast<jint>(0);
+  }
+  std::shared_ptr<GalleryHandle> g = ToGallery(handle);
+  if (g == nullptr) return static_cast<jint>(0);
+  try {
+    std::string tabCopy;
+    if (tab != nullptr) {
+      const jsize ulen = env->GetStringUTFLength(tab);
+      if (env->ExceptionCheck() == JNI_TRUE) {
+        env->ExceptionClear();
+        return 0;
+      }
+      if (ulen <= 0 || ulen > 64) {
+        return 0;
+      }
+      const char* chars = env->GetStringUTFChars(tab, nullptr);
+      if (env->ExceptionCheck() == JNI_TRUE) {
+        env->ExceptionClear();
+        return 0;
+      }
+      if (chars != nullptr) {
+        tabCopy.assign(chars, static_cast<std::size_t>(ulen));
+        env->ReleaseStringUTFChars(tab, chars);
+      }
+    }
+    if (env->ExceptionCheck() == JNI_TRUE) {
+      env->ExceptionClear();
+      return 0;
+    }
+    if (tabCopy != "lens" && tabCopy != "field" && tabCopy != "list") {
+      return static_cast<jint>(0);
+    }
+    std::string deniedCopy;
+    if (deniedLink != nullptr) {
+      const jsize dlen = env->GetStringUTFLength(deniedLink);
+      if (env->ExceptionCheck() == JNI_TRUE) {
+        env->ExceptionClear();
+        return 0;
+      }
+      if (dlen < 0 || dlen > 2048) {
+        return 0;
+      }
+      if (dlen > 0) {
+        const char* dchars = env->GetStringUTFChars(deniedLink, nullptr);
+        if (env->ExceptionCheck() == JNI_TRUE) {
+          env->ExceptionClear();
+          return 0;
+        }
+        if (dchars != nullptr) {
+          deniedCopy.assign(dchars, static_cast<std::size_t>(dlen));
+          env->ReleaseStringUTFChars(deniedLink, dchars);
+        }
+      }
+    }
+    if (env->ExceptionCheck() == JNI_TRUE) {
+      env->ExceptionClear();
+      return 0;
+    }
+    {
+      std::lock_guard<std::mutex> lock(g->mu);
+      g->demoTab = tabCopy;
+      g->demoDeniedLink = deniedCopy;
+    }
+#ifdef __ANDROID__
+    MuseLogInfo("nativeSetDemoShellState: tab=" + tabCopy + " applied=1");
+#endif
+    return static_cast<jint>(1);
+  } catch (...) {
+    if (env->ExceptionCheck() == JNI_TRUE) {
+      env->ExceptionClear();
+    }
+    return static_cast<jint>(0);
   }
 }
 

@@ -306,12 +306,26 @@ describe('T3 gallery-proof module contract', () => {
     const { mod } = tryLoadProof();
     assert.ok(mod, 'behavior missing: packages/cli/lib/gallery-proof.js not implemented');
     const expected = mod.deriveExpectedCounts(loadManifestForExpectation());
+    // DRIFT FIX (T7 battery + FR-NAV-013 arbitrary-route lane): the production
+    // wrap loop now navigates explicit { route } targets and asserts each
+    // landing (AC-SAMPLE-039/040 real rendered content, AC-SAMPLE-041
+    // fail-closed, FR-SAMPLE-014 forward-only shell advance). The old
+    // index-increment fake landed off-target (gallery-page:1 vs want
+    // gallery-page:0) so it tripped counts-mismatch before the blank gate.
+    // Route-tracking fake lands exactly, restoring the intended blank-viewport
+    // assertion without weakening it.
     let idx = 0;
     const { opts, restore } = proofDriver(mod, {
       readCounts: async () => ({ rows: expected.rows, pages: expected.pages }),
       capture: async () => blankFrame(),
-      advance: async () => { idx = (idx + 1) % expected.pages; return { nativeAdvancePage: true }; },
+      advance: async ({ route } = {}) => {
+        const m = /gallery-page:(\d+)/.exec(String(route || ''));
+        idx = m ? Number(m[1]) : idx;
+        return { nativeAdvancePage: true };
+      },
       readIndex: async () => idx,
+      sleep: async () => {},
+      settleMs: 0,
     });
     try {
       await rejectsWithCode(mod.runGalleryProof(opts), 'blank-viewport');
@@ -324,12 +338,20 @@ describe('T3 gallery-proof module contract', () => {
     const { mod } = tryLoadProof();
     assert.ok(mod, 'behavior missing: packages/cli/lib/gallery-proof.js not implemented');
     const expected = mod.deriveExpectedCounts(loadManifestForExpectation());
+    // DRIFT FIX (same as above): route-tracking fake so the missing-frame
+    // blank-viewport gate is reached; AC-SAMPLE-039/040/041, FR-SAMPLE-014.
     let idx = 0;
     const { opts, restore } = proofDriver(mod, {
       readCounts: async () => ({ rows: expected.rows, pages: expected.pages }),
       capture: async () => null,
-      advance: async () => { idx = (idx + 1) % expected.pages; return { nativeAdvancePage: true }; },
+      advance: async ({ route } = {}) => {
+        const m = /gallery-page:(\d+)/.exec(String(route || ''));
+        idx = m ? Number(m[1]) : idx;
+        return { nativeAdvancePage: true };
+      },
       readIndex: async () => idx,
+      sleep: async () => {},
+      settleMs: 0,
     });
     try {
       await rejectsWithCode(mod.runGalleryProof(opts), 'blank-viewport');

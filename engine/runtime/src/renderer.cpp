@@ -96,12 +96,19 @@ void HatchRing(TileSegs& segs, double cx, double cy, double rx, double ry,
 }
 
 // Procedural glyph outline in mask-texel coordinates: cell (x0, y0) of size
-// (adv, h). Classified by codepoint (the stub shaper maps codepoint ->
-// glyph id): round letters get rings with counters, A/V/W/N/Z/K/X/Y get
-// diagonals, H/E/F/T/L/bars letters get crossbars, CJK gets a boxed
-// outline with a center stroke, emoji a face ring with eyes and a smile.
-// Unknown codepoints fall back to a single stem.
-void BuildGlyphOutline(TileSegs& segs, std::uint32_t glyph, double x0,
+// (adv, h). BUG-TEXT-007 T4: classified by an explicit source codepoint.
+// The outline stage must never reinterpret a font glyph id as a codepoint:
+// T3 ids are font-backed (id != codepoint in general), so classifying the
+// id would render the wrong letterform for every skewed glyph (the m8-lallery
+// mechanism). Codepoints arrive threaded with the run from the shaping
+// cache (see RasterizeShapedText); the table below is the hermetic/test
+// outline source — production font-outline sourcing binds at the same seam
+// (face, glyph id, codepoint) when the NDK face binding lands, proven on
+// device in T6. Unknown codepoints fall back to a single stem.
+// Round cap-height rings with enclosed counters: O/0/Q/D get rings, A/V/W/N
+// diagonals, H/E/F/T/L/bars crossbars, CJK boxed outline + center stroke,
+// emoji face ring with eyes and a smile.
+void BuildGlyphOutline(TileSegs& segs, std::uint32_t codepoint, double x0,
                        double y0, double adv, double h) {
   if (!(adv > 0.0) || !(h > 0.0)) return;
   const double top = y0 + 0.14 * h;
@@ -123,7 +130,7 @@ void BuildGlyphOutline(TileSegs& segs, std::uint32_t glyph, double x0,
     HatchRect(segs, xa, ya, xb, yb);
   };
   auto hbar = [&](double ya, double yb) { HatchRect(segs, x0 + pad, ya, x0 + adv - pad, yb); };
-  const std::uint32_t cp = glyph;
+  const std::uint32_t cp = codepoint;
   // Round cap-height rings with enclosed counters.
   if (cp == 'O' || cp == '0' || cp == 'Q' || cp == 'D') {
     HatchRing(segs, cx, capCy, rx, capRy, sw);
@@ -504,15 +511,21 @@ muse::text::StatusOr<CoverageMask> RasterizeShapedText(
   // No synthesis (T11 fix 1): the run must be a T5-produced handle backed
   // by the gallery shaping cache. Unknown/dangling ids fail closed with
   // nothing painted (the caller maps this onto UnknownPrimitive).
+  // BUG-TEXT-007 T4: the source codepoints resolve alongside the run; the
+  // outline stage classifies by those, never by reinterpreting the
+  // font-backed glyph ids. A codepoint/run size mismatch fails closed.
   std::vector<std::uint32_t> glyphs;
   std::vector<float> advances;
-  if (!ResolveGalleryShapedRun(run, &glyphs, &advances) || glyphs.empty()) {
+  std::vector<std::uint32_t> codepoints;
+  if (!ResolveGalleryShapedRun(run, &glyphs, &advances, &codepoints) ||
+      glyphs.empty() || codepoints.size() != glyphs.size()) {
     return muse::text::Status::kMissingGlyph;
   }
   // NFR-TEXT-001: pure C++ rasterization; no JVM/JNI types on this path.
   float subpixel = bounds.x - std::floor(bounds.x);
   if (!std::isfinite(subpixel)) subpixel = 0.0f;
-  const slug_msdf::ShapedRun shaped{std::move(glyphs), std::move(advances)};
+  const slug_msdf::ShapedRun shaped{std::move(glyphs), std::move(advances),
+                                      std::move(codepoints)};
   const slug_msdf::MsdfResult placed =
       slug_msdf::shapeAndPlace(shaped, subpixel);
   if (placed.status != slug_msdf::Status::kOk || placed.glyphs.empty()) {
@@ -527,21 +540,22 @@ muse::text::StatusOr<CoverageMask> RasterizeShapedText(
   // placements from slug_msdf::shapeAndPlace above (pen offsets + advance
   // widths from the T5 emission, backed by the T3-cached run) expand per
   // glyph into outline segments — stems, bowls/counters, diagonals, and
-  // crossbars classified by codepoint in BuildGlyphOutline — and
+  // crossbars classified by source codepoint in BuildGlyphOutline — and
   // tile_raster::rasterizeTiles resolves true outline coverage into
   // CoverageMask texels at 4x supersampling. A texel's alpha is its covered
   // sub-tile fraction, so glyph edges keep the T12 per-pixel gradients
   // while the segment topology drives which texels cover. Ring counters
   // stay segment-free, so enclosed holes rasterize background.
   //
-  // The outlines are procedural: the in-tree stub shaper maps codepoint ->
-  // glyph id with no font backend to parse curves from, so each letterform
-  // is composed from hatched bars, hatched strokes, and hatched ellipse
-  // rings. Every wall/curve/diagonal/crossbar crosses sub-tiles and
-  // contributes coverage. CJK glyphs compose as boxed outlines with a
-  // center stroke; emoji as a face ring with eyes and a smile; unknown
-  // codepoints fall back to a single stem. Unknown RUNS still fail closed
-  // above — this fallback never synthesizes coverage for a missing run.
+  // The outlines are procedural from the threaded source codepoints: the
+  // hermetic tree carries no font binary to parse curves from (see
+  // BuildGlyphOutline), so each letterform is composed from hatched bars,
+  // hatched strokes, and hatched ellipse rings. Every wall/curve/diagonal/
+  // crossbar crosses sub-tiles and contributes coverage. CJK glyphs compose
+  // as boxed outlines with a center stroke; emoji as a face ring with eyes
+  // and a smile; unknown codepoints fall back to a single stem. Unknown
+  // RUNS still fail closed above — this fallback never synthesizes coverage
+  // for a missing run.
   const int maskW = static_cast<int>(std::ceil(bounds.w));
   const int maskH = static_cast<int>(std::ceil(bounds.h));
   CoverageMask mask;
@@ -549,7 +563,6 @@ muse::text::StatusOr<CoverageMask> RasterizeShapedText(
   mask.height = maskH < 1 ? 1 : (maskH > kMaxMaskSide ? kMaxMaskSide : maskH);
   mask.alpha.assign(static_cast<std::size_t>(mask.width) * mask.height, 0.0f);
   for (std::size_t i = 0; i < placed.glyphs.size(); ++i) {
-    const std::uint32_t glyphId = placed.glyphs[i].glyph;
     double adv = 8.0;
     if (i < shaped.advances.size() && std::isfinite(shaped.advances[i]) &&
         shaped.advances[i] > 0.0f) {
@@ -558,7 +571,9 @@ muse::text::StatusOr<CoverageMask> RasterizeShapedText(
     const double ox = static_cast<double>(placed.glyphs[i].x);
     if (!std::isfinite(ox)) continue;
     TileSegs segs;
-    BuildGlyphOutline(segs, glyphId, ox, 0.0, adv,
+    // BUG-TEXT-007 T4: outline classified by the threaded source codepoint,
+    // never by the font glyph id (the skew mechanism).
+    BuildGlyphOutline(segs, placed.glyphs[i].codepoint, ox, 0.0, adv,
                       static_cast<double>(mask.height));
     if (segs.empty()) continue;
     RasterizeOutlineBlock(segs, mask);

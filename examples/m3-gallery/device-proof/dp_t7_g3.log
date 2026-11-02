@@ -1,0 +1,6 @@
+=== GATE 3 verdict ===
+LIVE lens path: ABSENT from demo path
+manifest has 43 name entries, zero MuseLens MuseField
+stub fixtures EXCLUDED: muse-lens stories use stub kitchen plus stubbed upstream failure; muse-field stories use stubbed auth upstream timeout schema failures
+missing piece fail-closed BY NAME: no live lens component route in manifest slices; no lens backend endpoint key service bound in demo yaml models only
+verdict: gate3 FAIL live answer not exercised

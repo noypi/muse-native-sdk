@@ -1,0 +1,30 @@
+11-02 03:05:32.298  1126  1975 I TrafficMonitor: gettimer:interval=2000
+11-02 03:05:32.583 12005 12005 D skia    : HME hme_jpeg_dec version=JPEG_DEC_16.12.1, releasetime=12:06:23 May 10 2021
+11-02 03:05:32.585 12005 12005 D AndroidRuntime: >>>>>> START com.android.internal.os.RuntimeInit uid 2000 <<<<<<
+11-02 03:05:32.591 12005 12005 W app_process: type=1400 audit(0.0:2012383): avc: denied { read } for pid=12005 name="u:object_r:device_config_runtime_native_boot_prop:s0" dev="tmpfs" ino=16333 scontext=u:r:shell:s0 tcontext=u:object_r:device_config_runtime_native_boot_prop:s0 tclass=file permissive=0
+11-02 03:05:32.591 12005 12005 W app_process: type=1400 audit(0.0:2012384): avc: denied { read } for pid=12005 name="u:object_r:device_config_runtime_native_boot_prop:s0" dev="tmpfs" ino=16333 scontext=u:r:shell:s0 tcontext=u:object_r:device_config_runtime_native_boot_prop:s0 tclass=file permissive=0
+11-02 03:05:32.591 12005 12005 W app_process: type=1400 audit(0.0:2012385): avc: denied { read } for pid=12005 name="u:object_r:device_config_runtime_native_boot_prop:s0" dev="tmpfs" ino=16333 scontext=u:r:shell:s0 tcontext=u:object_r:device_config_runtime_native_boot_prop:s0 tclass=file permissive=0
+11-02 03:05:32.596 12005 12005 E libc    : Access denied finding property "persist.device_config.runtime_native_boot.enable_apex_image"
+11-02 03:05:32.597 12005 12005 I AndroidRuntime: Using default boot image
+11-02 03:05:32.597 12005 12005 E libc    : Access denied finding property "persist.device_config.runtime_native_boot.disable_lock_profiling"
+11-02 03:05:32.597 12005 12005 I AndroidRuntime: Leaving lock profiling enabled
+11-02 03:05:32.598 12005 12005 E libc    : Access denied finding property "persist.device_config.runtime_native_boot.enable_generational_cc"
+11-02 03:05:32.942 12005 12005 D ICU     : Time zone APEX file found: /apex/com.android.tzdata/etc/icu/icu_tzdata.dat
+11-02 03:05:33.063 12005 12005 D AndroidRuntime: Calling main entry com.android.commands.input.Input
+11-02 03:05:33.082 11554 11554 D MainActivity: touch x=360.0 y=305.0 claimed=-1
+11-02 03:05:34.301  1126  1975 I TrafficMonitor: gettimer:interval=2000
+11-02 03:05:34.631  2331  3090 D DeviceMonitorPowerKit: interval is 499979, ElapsedRealtime is 2721634020, isNeedRepeat: false
+11-02 03:05:34.642 11554 11554 D MainActivity: touch x=360.0 y=305.0 claimed=20
+11-02 03:05:34.644 11554 11554 W HwRemoteInputMethodManager: isCasting false because IHwDistributedWindowManager is invalid.
+11-02 03:05:34.647 11554 11554 W HwRemoteInputMethodManager: isCasting false because IHwDistributedWindowManager is invalid.
+11-02 03:05:34.648 11554 11554 I InputMethodManager: showSoftInput
+11-02 03:05:34.648 11554 11554 W InputMethodManager: The current service view is not the focus view
+11-02 03:05:34.650 12005 12005 D AndroidRuntime: Shutting down VM
+11-02 03:05:34.664  1210  1402 I ScreemCommon: <LOGMGR> <CompletePm> [case:TOUNCH_RESPONSE_TIME id:134 type:1 Level:1 filter:0]
+11-02 03:05:34.998  1126  1126 I JobScheduler.Time: realNextDelayExpiredElapsedMillis: 2722160916 mNextDelayExpiredElapsedMillis:2722160916
+11-02 03:05:35.007  1126  1126 I JobScheduler: About to run job on context 0, job: JobStatus{7253ad9 #u0a161/1381283593 com.gbox.android/com.vlite.sdk.server.virtualservice.job.ProxyJobService u=0 s=10161 TIME=-23ms:none PERSISTED failures=1 READY}
+11-02 03:05:35.035  1126  1126 I JobServiceContext: APP response begin time, startJob due to preemption. jobid:1381283593
+11-02 03:05:35.071 12030 12030 W .photos:vlapp0: type=1400 audit(0.0:2012387): avc: denied { read } for pid=12030 name="u:object_r:device_config_runtime_native_prop:s0" dev="tmpfs" ino=16334 scontext=u:r:untrusted_app_27:s0:c161,c256,c512,c768 tcontext=u:object_r:device_config_runtime_native_prop:s0 tclass=file permissive=0
+11-02 03:05:35.080 12030 12030 E libc    : Access denied finding property "persist.device_config.runtime_native.use_app_image_startup_cache"
+11-02 03:05:36.304  1126  1975 I TrafficMonitor: gettimer:interval=2000
+11-02 03:05:37.425 31670 32042 I iked    : [INFO]: ikev2.c:10039: imei_requset_support=0

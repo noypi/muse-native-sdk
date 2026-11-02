@@ -34,6 +34,12 @@ MsdfResult shapeAndPlace(const ShapedRun& run, float subpixelX) {
   for (size_t i = 0; i < run.glyphIds.size(); ++i) {
     GlyphPlacement g;
     g.glyph = run.glyphIds[i];
+    // BUG-TEXT-007 T4: thread the source scalar alongside the font glyph id
+    // so the outline stage classifies by codepoint. Absent/short input
+    // leaves the placement unclassified (0), never synthesized.
+    if (i < run.codepoints.size()) {
+      g.codepoint = run.codepoints[i];
+    }
     g.x = pen + q;
     g.texelU = static_cast<float>(g.glyph) / kCellsPerRow;
     g.texelV = kTexelV;

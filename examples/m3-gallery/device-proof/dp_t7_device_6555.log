@@ -1,0 +1,10 @@
+== T7 device battery 6555 2026-11-02T07:26:22Z ==
+--- foreground activity ---
+  * Task{26a7877 #240 type=standard A=10118:com.muse.host U=0 visible=true visibleRequested=true mode=fullscreen translucent=false sz=1}
+    topResumedActivity=ActivityRecord{d0d6a76 u0 com.muse.host/.MainActivity t240}
+    * Hist  #0: ActivityRecord{d0d6a76 u0 com.muse.host/.MainActivity t240}
+--- screencap page0 ---
+-rw-rw-r-- 1 saif saif 60498 Nov  2 15:26 examples/m3-gallery/device-proof/dp_t7_page0_6555.png
+--- uiautomator dump ---
+UI hierchary dumped to: /sdcard/dp_t7_ui.xml
+/system/bin/sh: no closing quote

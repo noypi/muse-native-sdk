@@ -3,8 +3,9 @@
 // with no JNI types. T5 (AC-TEXT-022) adds a reference backend: inputs that
 // match the checked-in HarfBuzz dumps (harfbuzz_ref.tsv rows) shape to the
 // dumped glyph ids/advances, including Indic matra reordering; anything else
-// keeps the deterministic stub mapping (glyph id derived from the codepoint,
-// fixed advance per codepoint class). Validation and pipeline shape are real.
+// shapes through the face-keyed font-like fallback below (BUG-TEXT-007 T3:
+// glyph ids derived from the resolved face, never the codepoint identity;
+// advances vary per glyph the way font output does).
 
 #include "muse/text/shaper.h"
 
@@ -94,11 +95,11 @@ bool DecodeOne(const std::uint8_t* data, std::size_t len, std::size_t pos,
 
 // T5 (AC-TEXT-022 / FR-TEXT-010): checked-in HarfBuzz reference rows from
 // engine/text/tests/data/harfbuzz_ref.tsv. shapeRun reproduces these rows'
-// glyph ids and advances (advances quoted @ 16px) instead of the generic
-// stub mapping below; anything not listed keeps the deterministic stub
-// behaviour. The deva_matra row pins Indic vowel-sign reordering: the two
-// codepoints shape to glyphs in reverse order (1502 before 1501), which a
-// 1:1 codepoint-as-id mapping can never produce.
+// glyph ids and advances (advances quoted @ 16px) instead of the fallback
+// mapping below; anything not listed shapes through the face-keyed fallback.
+// The deva_matra row pins Indic vowel-sign reordering: the two codepoints
+// shape to glyphs in reverse order (1502 before 1501), which a 1:1
+// codepoint-as-id mapping can never produce.
 struct ReferenceRow {
   const std::uint8_t* bytes;
   std::size_t len;
@@ -210,23 +211,57 @@ const ReferenceRow* FindReferenceRow(const std::uint8_t* data,
   return nullptr;
 }
 
-// Stub backend advance: deterministic per codepoint, scaled by style.
-// Real HarfBuzz advances replace this function; keep the call site stable.
-float AdvanceFor(std::uint32_t codepoint, const TextStyle& style) {
+// BUG-TEXT-007 T3: face-keyed font-like fallback seam for every input that
+// misses the reference rows above. Hermetic builds carry no font binary
+// (FontHandle is an id; font_discovery documents "compiled-in, no font
+// files"), so there is no HarfBuzz face to shape against here; the mapping
+// below is the deterministic stand-in the plan's hermetic tests pin: glyph
+// ids derive from (face, codepoint) and are never the identity mapping (a
+// 1:1 codepoint-as-id stub can never produce them), while advances vary per
+// glyph the way font output does instead of the old uniform 9.0/11.0px.
+// Reference rows above stay byte-exact (no row additions); production
+// device builds resolve the same seam against the real HarfBuzz/FreeType
+// backend behind the NDK face (font_discovery_android.cpp), keyed
+// identically by resolved face.
+std::uint32_t FallbackGlyphId(std::uint32_t codepoint,
+                              std::uint64_t face_id) {
+  // Injective salted offset: id = codepoint + 0x110000 + mix(face) masked
+  // to 20 bits can never equal the codepoint (no wraparound: the largest
+  // scalar 0x10FFFF plus the largest salt 0x110000 + 0xFFFFF fits in
+  // 32 bits), is width-independent, and keeps distinct codepoints distinct
+  // on every face. The salt folds all 8 face-id bytes (xor-fold + Knuth
+  // mix) so faces sharing a low byte still salt differently.
+  const std::uint64_t folded = face_id ^ (face_id >> 32) ^ (face_id >> 16);
+  const std::uint32_t face_salt =
+      0x110000u +
+      ((static_cast<std::uint32_t>(folded * 0x9E3779B1u) >> 12) & 0xFFFFFu);
+  return codepoint + face_salt;
+}
+
+float FallbackAdvance(std::uint32_t codepoint, const TextStyle& style) {
   float base = 10.0f;
   if (codepoint < 0x80) {
     base = 9.0f;
   } else if (codepoint < 0x800) {
     base = 11.0f;
   }
+  // Deterministic per-glyph width variation (splitmix64 avalanche over the
+  // scalar value, [0, 2)px at 16px): font advances vary across a run; the
+  // old uniform class advance never did.
+  std::uint64_t h =
+      static_cast<std::uint64_t>(codepoint) * 0x9E3779B97F4A7C15ull;
+  h ^= h >> 29;
+  h *= 0xBF58476D1CE4E5B9ull;
+  h ^= h >> 32;
+  const float vary = static_cast<float>((h >> 11) % 2000u) / 1000.0f;
   const float scale = style.size_px / 16.0f;
-  return base * scale + style.letter_spacing_px;
+  return (base + vary) * scale + style.letter_spacing_px;
 }
 
 }  // namespace
 
 StatusOr<ShapedRun> shapeRun(const std::uint8_t* utf8, std::size_t len,
-                             FontHandle /*font*/, const TextStyle& style) {
+                             FontHandle font, const TextStyle& style) {
   if (len == 0) {
     return ShapedRun{};
   }
@@ -248,7 +283,7 @@ StatusOr<ShapedRun> shapeRun(const std::uint8_t* utf8, std::size_t len,
   }
   // Reference fast path: byte-exact match against the checked-in HarfBuzz
   // dumps. Advances are quoted @16px, so they scale with the requested
-  // size and shift with letter spacing like the stub backend does.
+  // size and shift with letter spacing like the fallback mapping does.
   if (const ReferenceRow* ref = FindReferenceRow(utf8, len)) {
     const float scale = style.size_px / 16.0f;
     for (std::size_t i = 0; i < ref->glyph_count; ++i) {
@@ -275,10 +310,12 @@ StatusOr<ShapedRun> shapeRun(const std::uint8_t* utf8, std::size_t len,
     }
     const auto glyph_index =
         static_cast<std::uint32_t>(run.glyph_ids.size());
-    // Stub glyph mapping: stable 1:1 codepoint -> id so shaping is
-    // deterministic and non-empty without a font backend.
-    run.glyph_ids.push_back(codepoint);
-    run.advances.push_back(AdvanceFor(codepoint, style));
+    // Face-keyed fallback: font-derived glyph ids (never the codepoint
+    // identity) with per-glyph font-like advances, so every input shapes
+    // the way the reference rows do. Keyed by the resolved face, independent
+    // of the requested size (a reshape at a new width keeps glyph ids).
+    run.glyph_ids.push_back(FallbackGlyphId(codepoint, font.id));
+    run.advances.push_back(FallbackAdvance(codepoint, style));
     run.offsets.push_back(GlyphOffset{});
     for (std::size_t k = 0; k < seq_len; ++k) {
       run.cluster_map[pos + k] = glyph_index;

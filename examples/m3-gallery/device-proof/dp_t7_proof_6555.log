@@ -1,0 +1,15 @@
+
+test at examples/m3-gallery/test/gallery-proof.test.ts:323:3
+✖ rejects blank-viewport for a missing frame via runGalleryProof (injected null) (701.836775ms)
+  AssertionError [ERR_ASSERTION]: rejection must carry blank-viewport (got counts-mismatch counts-mismatch: arbitrary-route mismatch (at=gallery-page:1 want=gallery-page:0))
+      at rejectsWithCode (/media/saif/EXTRA/workspaces/meta-hackathon/muse-native-sdk/.worktrees/demo-m3-gallery/_run/examples/m3-gallery/test/gallery-proof.test.ts:150:10)
+      at async TestContext.<anonymous> (/media/saif/EXTRA/workspaces/meta-hackathon/muse-native-sdk/.worktrees/demo-m3-gallery/_run/examples/m3-gallery/test/gallery-proof.test.ts:335:7)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: '==',
+    diff: 'simple'
+  }

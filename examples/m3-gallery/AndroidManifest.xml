@@ -14,10 +14,20 @@
             android:name=".MainActivity"
             android:exported="true"
             android:theme="@style/Theme.Muse.Starting"
-            android:configChanges="orientation|screenSize|keyboardHidden">
+            android:configChanges="orientation|screenSize|keyboardHidden"
+            android:launchMode="singleTask">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <!-- Batch-4: external gallery://story/<id> deep links route to
+                MainActivity (VIEW + BROWSABLE); singleTask + onNewIntent keep
+                one instance so the link never resets the gallery. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="gallery" android:host="story" />
             </intent-filter>
         </activity>
     </application>

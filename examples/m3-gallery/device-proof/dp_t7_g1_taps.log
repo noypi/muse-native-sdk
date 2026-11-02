@@ -1,0 +1,50 @@
+11-02 03:03:15.315 10992 10992 W app_process: [MemLeak.JavaTrack]: failed to dlopen libmemleak_tracker.so
+11-02 03:03:15.328 10992 10992 E         : open file error
+11-02 03:03:15.604   674  9902 I APM_AudioPolicyManager: getOutputsForDevices, openOutputs size is 2, outputs size is 2
+11-02 03:03:16.607   674  9902 I APM_AudioPolicyManager: getOutputsForDevices, openOutputs size is 2, outputs size is 2
+11-02 03:03:17.260 10753 10804 I GalleryPage: gallery-rows=121 gallery-pages=12
+11-02 03:03:17.260 10753 10804 I GalleryPage: gallery-page=6/12
+11-02 03:03:17.261 10753 10753 D MainActivity: touch x=360.0 y=255.0 claimed=-1
+11-02 03:03:17.280 10753 10804 I GalleryPage: [layering] slice page=5 rows=[49,57] comps={Surface|Scroll|Stack|Ripple|OverlayHost|TopAppBar|TopAppBar|TopAppBar|NavigationBar} labels={Surface tone=tonal|Scroll orientation=vertical|Stack direction=column|Ripple|OverlayHost|m3-gallery|m3-gallery|m3-gallery|NavigationBar selected=home}
+11-02 03:03:17.611   674  9902 I APM_AudioPolicyManager: getOutputsForDevices, openOutputs size is 2, outputs size is 2
+11-02 03:03:18.616   674  9902 I APM_AudioPolicyManager: getOutputsForDevices, openOutputs size is 2, outputs size is 2
+11-02 03:03:19.619   674  9902 I APM_AudioPolicyManager: getOutputsForDevices, openOutputs size is 2, outputs size is 2
+11-02 03:03:20.622   674  9902 I APM_AudioPolicyManager: getOutputsForDevices, openOutputs size is 2, outputs size is 2
+11-02 03:03:21.626   674  9902 I APM_AudioPolicyManager: getOutputsForDevices, openOutputs size is 2, outputs size is 2
+11-02 03:03:21.964 10753 10804 I GalleryPage: gallery-rows=121 gallery-pages=12
+11-02 03:03:21.964 10753 10804 I GalleryPage: gallery-page=6/12
+11-02 03:03:21.965 10753 10753 D MainActivity: touch x=360.0 y=255.0 claimed=20
+11-02 03:03:21.981 10753 10804 I GalleryPage: [layering] slice page=5 rows=[49,57] comps={Surface|Scroll|Stack|Ripple|OverlayHost|TopAppBar|TopAppBar|TopAppBar|NavigationBar} labels={Surface tone=tonal|Scroll orientation=vertical|Stack direction=column|Ripple|OverlayHost|m3-gallery|m3-gallery|m3-gallery|NavigationBar selected=home}
+11-02 03:03:22.630   674  9902 I APM_AudioPolicyManager: getOutputsForDevices, openOutputs size is 2, outputs size is 2
+11-02 03:03:23.208 11007 11007 W app_process: [MemLeak.JavaTrack]: failed to dlopen libmemleak_tracker.so
+11-02 03:03:23.216 11007 11007 E         : open file error
+11-02 03:03:23.634   674  9902 I APM_AudioPolicyManager: getOutputsForDevices, openOutputs size is 2, outputs size is 2
+11-02 03:03:24.638   674  9902 I APM_AudioPolicyManager: getOutputsForDevices, openOutputs size is 2, outputs size is 2
+11-02 03:03:25.642   674  9902 I APM_AudioPolicyManager: getOutputsForDevices, openOutputs size is 2, outputs size is 2
+11-02 03:03:26.647   674  9902 I APM_AudioPolicyManager: getOutputsForDevices, openOutputs size is 2, outputs size is 2
+11-02 03:03:26.662 10753 10804 I GalleryPage: gallery-rows=121 gallery-pages=12
+11-02 03:03:26.662 10753 10804 I GalleryPage: gallery-page=6/12
+11-02 03:03:26.679 10753 10804 I GalleryPage: [layering] slice page=5 rows=[49,57] comps={Surface|Scroll|Stack|Ripple|OverlayHost|TopAppBar|TopAppBar|TopAppBar|NavigationBar} labels={Surface tone=tonal|Scroll orientation=vertical|Stack direction=column|Ripple|OverlayHost|m3-gallery|m3-gallery|m3-gallery|NavigationBar selected=home}
+11-02 03:03:26.931  1126  1876 I HwBatteryService: switch not open, return, mWirelessTxFlag : 0
+11-02 03:03:27.651   674  9902 I APM_AudioPolicyManager: getOutputsForDevices, openOutputs size is 2, outputs size is 2
+11-02 03:03:28.656   674  9902 I APM_AudioPolicyManager: getOutputsForDevices, openOutputs size is 2, outputs size is 2
+11-02 03:03:29.660   674  9902 I APM_AudioPolicyManager: getOutputsForDevices, openOutputs size is 2, outputs size is 2
+11-02 03:03:30.664   674  9902 I APM_AudioPolicyManager: getOutputsForDevices, openOutputs size is 2, outputs size is 2
+11-02 03:03:31.361 10753 10804 I GalleryPage: gallery-rows=121 gallery-pages=12
+11-02 03:03:31.361 10753 10804 I GalleryPage: gallery-page=6/12
+11-02 03:03:31.363 10753 10753 D MainActivity: touch x=360.0 y=405.0 claimed=-1
+11-02 03:03:31.379 10753 10804 I GalleryPage: [layering] slice page=5 rows=[49,57] comps={Surface|Scroll|Stack|Ripple|OverlayHost|TopAppBar|TopAppBar|TopAppBar|NavigationBar} labels={Surface tone=tonal|Scroll orientation=vertical|Stack direction=column|Ripple|OverlayHost|m3-gallery|m3-gallery|m3-gallery|NavigationBar selected=home}
+11-02 03:03:31.668   674  9902 I APM_AudioPolicyManager: getOutputsForDevices, openOutputs size is 2, outputs size is 2
+11-02 03:03:32.672   674  9902 I APM_AudioPolicyManager: getOutputsForDevices, openOutputs size is 2, outputs size is 2
+11-02 03:03:33.677   674  9902 I APM_AudioPolicyManager: getOutputsForDevices, openOutputs size is 2, outputs size is 2
+11-02 03:03:34.681   674  9902 I APM_AudioPolicyManager: getOutputsForDevices, openOutputs size is 2, outputs size is 2
+11-02 03:03:35.685   674  9902 I APM_AudioPolicyManager: getOutputsForDevices, openOutputs size is 2, outputs size is 2
+11-02 03:03:36.063 10753 10804 I GalleryPage: gallery-rows=121 gallery-pages=12
+11-02 03:03:36.063 10753 10804 I GalleryPage: gallery-page=6/12
+11-02 03:03:36.064 10753 10753 D MainActivity: touch x=360.0 y=405.0 claimed=20
+11-02 03:03:36.080 10753 10804 I GalleryPage: [layering] slice page=5 rows=[49,57] comps={Surface|Scroll|Stack|Ripple|OverlayHost|TopAppBar|TopAppBar|TopAppBar|NavigationBar} labels={Surface tone=tonal|Scroll orientation=vertical|Stack direction=column|Ripple|OverlayHost|m3-gallery|m3-gallery|m3-gallery|NavigationBar selected=home}
+11-02 03:03:36.689   674  9902 I APM_AudioPolicyManager: getOutputsForDevices, openOutputs size is 2, outputs size is 2
+11-02 03:03:37.310 11044 11044 W app_process: [MemLeak.JavaTrack]: failed to dlopen libmemleak_tracker.so
+11-02 03:03:37.319 11044 11044 E         : open file error
+11-02 03:03:37.692   674  9902 I APM_AudioPolicyManager: getOutputsForDevices, openOutputs size is 2, outputs size is 2
+11-02 03:03:38.696   674  9902 I APM_AudioPolicyManager: getOutputsForDevices, openOutputs size is 2, outputs size is 2

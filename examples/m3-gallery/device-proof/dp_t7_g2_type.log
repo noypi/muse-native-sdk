@@ -1,0 +1,15 @@
+11-02 03:05:48.835  8501  8501 I GoogleInputMethodService: GoogleInputMethodService.startInputIfInputViewStarted():3738 startInputIfInputViewStarted(): default prime
+11-02 03:05:48.838  8501  8501 I NormalModeController: NormalModeController.getKeyboardBodyViewHolderPaddingBottom():89 currentPrimeKeyboardType:SOFT systemPaddingBottom:-1
+11-02 03:05:48.840  8501  8501 I NormalModeController: NormalModeController.getKeyboardBodyViewHolderPaddingBottom():89 currentPrimeKeyboardType:SOFT systemPaddingBottom:-1
+11-02 03:05:48.850  8501  8501 I KeyboardModeManager: KeyboardModeManager.setKeyboardViewHolderProvider():559 setInputView() : entry=qqb{languageTag=en-PH, variant=english_philippines, hasLocalizedResources=true, conditionCacheKey=_device=phone_device_size=default_enable_more_candidates_view_for_multilingual=false_enable_nav_redesign_for_expression=false_enable_navbar_motion=false_enable_number_row=false_enable_preemptive_decode=true_enable_secondary_symbols=true_expressions=normal_four_or_more_letter_rows=false_keyboard_mode=normal_language=en-PH_orientation=portrait_physical_keyboard=nokeys_rtl_layout=false_show_secondary_digits=true_show_suggestions=true_split_with_duplicate_keys=true_variant=english_philippines, imeDef.stringId=ime_english_philippines, imeDef.className=com.google.android.apps.inputmethod.libs.latin5.LatinIme, imeDef.languageTag=en-PH}
+11-02 03:05:48.876  8501  8501 I VoiceImeExtension: VoiceImeExtension.shouldStartVoiceInputAutomatically():397 No private IME option set to start voice input.
+11-02 03:05:48.962 11554 11554 I muse-host: SEAM-STEP:ime:ok
+11-02 03:05:48.980 11554 11606 I GalleryPage: [layering] slice page=4 rows=[40,48] comps={Divider|TextFieldEditCore|TextInput|Dialog|BottomSheet|Menu|SnackbarHost|Tooltip|Carousel} labels={Divider orientation=horizontal|Search settings|Search settings|Confirm delete dialog|BottomSheet|Menu|Saved to library snackbar|Favorite tooltip|Carousel}
+11-02 03:05:49.005  8501  8501 I HwViewRootImpl: removeInvalidNode all the node in jank list is out of time
+11-02 03:05:49.027  8501  8501 I GoogleInputMethodService: GoogleInputMethodService$1.onKeyboardViewShown():476 onKeyboardViewShown: keyboardType=prime, keyboardViewType=HEADER
+11-02 03:05:49.029  8501  8501 I GoogleInputMethodService: GoogleInputMethodService$1.onKeyboardViewShown():476 onKeyboardViewShown: keyboardType=prime, keyboardViewType=BODY
+11-02 03:05:49.029  8501  8501 I NormalModeController: NormalModeController.getKeyboardBodyViewHolderPaddingBottom():89 currentPrimeKeyboardType:SOFT systemPaddingBottom:-1
+11-02 03:05:49.033 11554 11554 I HwViewRootImpl: removeInvalidNode all the node in jank list is out of time
+11-02 03:05:49.239 12132 12132 D AndroidRuntime: Shutting down VM
+11-02 03:05:49.278  1116  1481 D PhenotypeService: commitToConfiguration( com.google.android.libraries.performance.primes#com.google.android.apps.photos 48423509 4 -2140000843 com.google.android.libraries.performance.primes#com.google.android.apps.photos  0)
+11-02 03:05:50.346  1126  1975 I TrafficMonitor: gettimer:interval=2000

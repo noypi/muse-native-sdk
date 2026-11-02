@@ -1,0 +1,21 @@
+== T6 launch proof 6555 2026-11-02T07:25:52Z ==
+--- adb devices ---
+List of devices attached
+127.0.0.1:6555	device
+127.0.0.1:6562	device
+
+--- force-stop ---
+--- logcat -c ---
+--- cold start ---
+Starting: Intent { cmp=com.muse.host/.MainActivity }
+Status: ok
+LaunchState: COLD
+Activity: com.muse.host/.MainActivity
+TotalTime: 171
+WaitTime: 173
+Complete
+--- sleep 3 ---
+--- crash grep ---
+(grep done)
+--- screencap ---
+-rw-rw-r-- 1 saif saif 60428 Nov  2 15:25 examples/m3-gallery/device-proof/dp_t6_main_6555.png

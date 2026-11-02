@@ -14,6 +14,8 @@
 #include <limits>
 #include <string>
 
+#include "runtime/presenter.h"
+
 // --- T11 `Interface:` line (retyped honest tap-record per Batch 5 halt) ---
 // `dispatchTouch(nodeId: int, action: TouchAction, x: float, y: float) ->
 // DispatchResult — records the fired tap (with stable nodeId) through the
@@ -269,6 +271,48 @@ static bool check_tap_record_evidence_is_log_literal_safe() {
   return true;
 }
 
+// Named case (security — RecordFlappyTap forged-node/handler denial, Batch 5
+// security-review): the record seam double-gate (nodeId == 31 +
+// handler == "onTouchStart") denies forged nodes/handlers fail-closed —
+// returns false, records nothing, never throws. Control: node 31 +
+// "onTouchStart" records (true).
+static bool check_record_seam_denies_forged_node_and_handler() {
+  try {
+    if (runtime::FlappyTouchHandlerName(kGalleryScrimNode) != nullptr) {
+      std::printf("  detail: scrim node 20 named a flappy handler\n");
+      return false;
+    }
+    if (runtime::FlappyTouchHandlerName(-999) != nullptr) {
+      std::printf("  detail: forged node named a flappy handler\n");
+      return false;
+    }
+    if (runtime::FireFlappyTapToJs(kGalleryScrimNode, "onTouchStart")) {
+      std::printf("  detail: scrim node 20 recorded a tap\n");
+      return false;
+    }
+    if (runtime::FireFlappyTapToJs(-999, "onTouchStart")) {
+      std::printf("  detail: forged node recorded a tap\n");
+      return false;
+    }
+    if (runtime::FireFlappyTapToJs(kFlappySteerNode, "onTouchEnd")) {
+      std::printf("  detail: wrong handler recorded a tap\n");
+      return false;
+    }
+    if (runtime::FireFlappyTapToJs(kFlappySteerNode, nullptr)) {
+      std::printf("  detail: null handler recorded a tap\n");
+      return false;
+    }
+    if (!runtime::FireFlappyTapToJs(kFlappySteerNode, "onTouchStart")) {
+      std::printf("  detail: control node 31 + onTouchStart did not record\n");
+      return false;
+    }
+  } catch (...) {
+    std::printf("  detail: record seam must never throw\n");
+    return false;
+  }
+  return true;
+}
+
 #define RUN_CASE(name)                                  \
   do {                                                  \
     if (!(name)()) {                                    \
@@ -290,6 +334,7 @@ int main() {
   RUN_CASE(check_down_up_identity_mismatch_fails_closed);
   RUN_CASE(check_up_without_prior_down_records_nothing);
   RUN_CASE(check_nonfinite_coordinates_rejected);
+  RUN_CASE(check_record_seam_denies_forged_node_and_handler);
   RUN_CASE(check_tap_record_evidence_is_log_literal_safe);
   if (failures > 0) {
     std::printf("flappy_tap_js_dispatch_test: %d failing\n", failures);

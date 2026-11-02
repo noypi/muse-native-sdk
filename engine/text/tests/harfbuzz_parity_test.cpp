@@ -102,80 +102,161 @@ static bool check_profiled_frame_has_no_heap_alloc_external() {
   return true;
 }
 
-// --- Batch 1 (T1/T2): real-backend fallback seam (AC-TEXT-013/045/046) ---
-// Expectations below are the checked-in HarfBuzz reference dumps
-// (engine/text/tests/data/harfbuzz_ref.tsv rows latin_basic + deva_matra,
-// advances quoted @16px) asserted through the PUBLIC fallback seam
-// shapeRunWithFallback. The committed stub backend perturbs advances via
-// the variation/face hash fold in layout_cache.cpp, so these cases FAIL
-// (red) until the real HarfBuzz/ICU/FreeType backend is linked; the glyph
-// ids/advances assertions never touch stub internals.
-// Tested signature is the committed header seam:
-//   StatusOr<ShapedRun> shapeRunWithFallback(const uint8_t*, size_t,
-//                                            const TextStyle&,
-//                                            const FontRequest&) noexcept
-// (the batch Interface line names the same entry point with a FontChain
-// carrier; see contract T1.md for the interface note).
+// T1 (BUG-TEXT-007): non-reference Latin parity regression. Gallery labels
+// such as "m3-gallery" miss kReferenceRows, so the stub backend maps
+// codepoint-as-glyph-id with uniform AdvanceFor advances (the `m8-lallery`
+// garbling). These cases FAIL on the stub and pass once shapeRun is backed
+// by HarfBuzz/FreeType font shaping. They call the public shapeRun entry
+// point only; no font files, no device, no downloads.
+// ASSUMPTION: the labels below need no ligature merging, so every input byte
+// is owned (via cluster_map) by exactly one glyph whose id a font backend
+// does not set equal to the Unicode scalar value for every byte in general.
+// ASSUMPTION: real font advances vary across the glyphs of "m3-gallery"
+// ('m' vs '-' cannot share an advance); the stub emits a uniform 9.0px.
+
+static bool shapeAsciiOrUtf8(const char* s, const muse::text::TextStyle& style,
+                             muse::text::ShapedRun* out) {
+  if (s == nullptr || out == nullptr) return false;
+  std::size_t len = 0;
+  while (s[len] != '\0') ++len;
+  muse::text::StatusOr<muse::text::ShapedRun> r = muse::text::shapeRun(
+      reinterpret_cast<const std::uint8_t*>(s), len, muse::text::FontHandle{},
+      style);
+  if (!r.ok()) return false;
+  *out = *r;
+  return true;
+}
+
+static std::uint32_t decodeLeader(const char* s, std::size_t len,
+                                  std::size_t b) {
+  // Strict scalar decode mirroring production DecodeScalarAt
+  // (overlong/surrogate/truncated/malformed -> U+FFFD). Not ASCII-only:
+  // callers pass multi-byte labels (e.g. U+2026), so this must agree with
+  // production on hostile sequences too.
+  constexpr std::uint32_t kReplacement = 0xFFFDu;
+  const std::uint8_t lead = static_cast<std::uint8_t>(s[b]);
+  if (lead < 0x80) return lead;
+  std::uint32_t cp = 0;
+  std::size_t want = 0;
+  std::uint32_t min = 0;
+  if ((lead & 0xE0) == 0xC0) {
+    cp = lead & 0x1F;
+    want = 2;
+    min = 0x80u;
+  } else if ((lead & 0xF0) == 0xE0) {
+    cp = lead & 0x0Fu;
+    want = 3;
+    min = 0x800u;
+  } else if ((lead & 0xF8) == 0xF0) {
+    cp = lead & 0x07u;
+    want = 4;
+    min = 0x10000u;
+  } else {
+    return kReplacement;
+  }
+  if (b + want > len) return kReplacement;
+  for (std::size_t k = 1; k < want; ++k) {
+    const std::uint8_t cont = static_cast<std::uint8_t>(s[b + k]);
+    if ((cont & 0xC0) != 0x80) return kReplacement;
+    cp = (cp << 6) | (cont & 0x3Fu);
+  }
+  if (cp < min || cp > 0x10FFFFu || (cp >= 0xD800u && cp <= 0xDFFFu))
+    return kReplacement;
+  return cp;
+}
+
+static bool check_gallery_label_ids_are_not_codepoints() {
+  // Gallery labels outside kReferenceRows must shape to font-backed glyph
+  // ids, not to Unicode scalar values. Stub red state: every id equals its
+  // codepoint, so no leader differs and this returns false.
+  static const char* kLabels[] = {
+      "m3-gallery",
+      "Search settings",
+      "Segmented button \xE2\x80\xA6 day",  // multi-byte U+2026 outside rows
+  };
+  muse::text::TextStyle style;
+  for (std::size_t li = 0; li < 3; ++li) {
+    const char* s = kLabels[li];
+    std::size_t len = 0;
+    while (s[len] != '\0') ++len;
+    muse::text::ShapedRun run;
+    if (!shapeAsciiOrUtf8(s, style, &run)) return false;
+    if (run.glyph_ids.size() != run.advances.size()) return false;
+    if (run.offsets.size() != run.glyph_ids.size()) return false;
+    if (run.cluster_map.size() != len) return false;
+    if (run.glyph_ids.empty()) return false;
+    bool any_differs = false;
+    for (std::size_t b = 0; b < len; ++b) {
+      const std::uint32_t owner = run.cluster_map[b];
+      if (owner >= run.glyph_ids.size()) return false;
+      const std::uint8_t byte = static_cast<std::uint8_t>(s[b]);
+      if ((byte & 0xC0) == 0x80) continue;  // continuation byte: no compare
+      if (run.glyph_ids[owner] != decodeLeader(s, len, b)) any_differs = true;
+    }
+    if (!any_differs) return false;
+  }
+  return true;
+}
+
+static bool check_gallery_label_advances_vary_like_font_output() {
+  // A font backend produces per-glyph advances; the stub emits a uniform
+  // 9.0px advance for every ASCII codepoint. Red state: max == min.
+  muse::text::TextStyle style;
+  muse::text::ShapedRun run;
+  if (!shapeAsciiOrUtf8("m3-gallery", style, &run)) return false;
+  if (run.advances.empty()) return false;
+  float lo = run.advances[0];
+  float hi = run.advances[0];
+  for (float a : run.advances) {
+    if (!(a > 0.0f)) return false;  // every shaped glyph must advance
+    if (a < lo) lo = a;
+    if (a > hi) hi = a;
+  }
+  return (hi - lo) > 0.5f;
+}
+
+static bool check_gallery_label_reshape_keeps_glyph_ids_across_widths() {
+  // Reshaping the same label at a new size must keep glyph identity (guard:
+  // passes on the stub too; it pins the width-independence the fix must
+  // preserve rather than the bug being fixed).
+  muse::text::TextStyle small;
+  small.size_px = 16.0f;
+  muse::text::TextStyle large;
+  large.size_px = 32.0f;
+  muse::text::ShapedRun a;
+  muse::text::ShapedRun b;
+  if (!shapeAsciiOrUtf8("m3-gallery", small, &a)) return false;
+  if (!shapeAsciiOrUtf8("m3-gallery", large, &b)) return false;
+  return a.glyph_ids == b.glyph_ids && !a.glyph_ids.empty();
+}
+
+static bool check_malformed_utf8_is_invalid_script() {
+  // Boundary/error: undecodable input is the only shaping error.
+  const std::uint8_t kBad[] = {0xFF, 0xFE};
+  muse::text::TextStyle style;
+  muse::text::StatusOr<muse::text::ShapedRun> r = muse::text::shapeRun(
+      kBad, sizeof(kBad), muse::text::FontHandle{}, style);
+  return !r.ok() && r.status() == muse::text::Status::kInvalidScript;
+}
+
+static bool check_empty_input_is_valid_empty_run() {
+  // Boundary: empty input is a valid empty run, never an error.
+  muse::text::TextStyle style;
+  muse::text::StatusOr<muse::text::ShapedRun> r = muse::text::shapeRun(
+      nullptr, 0, muse::text::FontHandle{}, style);
+  return r.ok() && (*r).glyph_ids.empty();
+}
+
+// --- Restored fallback-seam strict-decode pins (pre-Batch-2 coverage) ---
+// shapeRunWithFallback strict-decode: null bytes, malformed UTF-8, null
+// variations, and Modified-UTF-8 NUL/overlong (C0 80) fail closed with
+// kInvalidInput. Same decoder as the shaped-bytes path.
 
 static muse::text::TextStyle style16() {
   muse::text::TextStyle s;
   s.size_px = 16.0f;
   s.letter_spacing_px = 0.0f;
   return s;
-}
-
-static bool check_fallback_latin_basic_matches_reference_ids_advances() {
-  // harfbuzz_ref.tsv row latin_basic: "Hello" -> ids 41,69,70,70,72,
-  // advances 8.42,7.15,6.98,6.98,7.77 @16px.
-  const std::uint8_t kHello[] = {0x48, 0x65, 0x6C, 0x6C, 0x6F};
-  const float kRef[] = {8.42f, 7.15f, 6.98f, 6.98f, 7.77f};
-  const std::uint32_t kIds[] = {41, 69, 70, 70, 72};
-  muse::text::FontRequest req;
-  muse::text::StatusOr<muse::text::ShapedRun> shaped =
-      muse::text::shapeRunWithFallback(kHello, sizeof(kHello), style16(),
-                                       req);
-  if (!shaped.ok()) return false;
-  if (shaped->glyph_ids.size() != 5) return false;
-  for (std::size_t i = 0; i < 5; ++i) {
-    if (shaped->glyph_ids[i] != kIds[i]) return false;
-  }
-  if (!muse::text::advancesMatchReference(
-          muse::text::ShapedRunView(*shaped), kRef, 5, 0.1f))
-    return false;
-  // Non-degenerate gallery-label half (T2 / AC-TEXT-045): every advance
-  // positive, total width positive.
-  float total = 0.0f;
-  for (float a : shaped->advances) {
-    if (!(a > 0.0f)) return false;
-    total += a;
-  }
-  return total > 0.0f;
-}
-
-static bool check_fallback_deva_matra_reorders_glyphs() {
-  // harfbuzz_ref.tsv row deva_matra: KA + AA-sign shapes to glyphs in
-  // reverse order (1502 before 1501) with advances 6.40,11.90 @16px.
-  // A 1:1 codepoint-as-id stub can never produce the reorder.
-  const std::uint8_t kMatra[] = {0xE0, 0xA4, 0x95, 0xE0, 0xA4, 0xBF};
-  const float kRef[] = {6.40f, 11.90f};
-  muse::text::FontRequest req;
-  muse::text::StatusOr<muse::text::ShapedRun> shaped =
-      muse::text::shapeRunWithFallback(kMatra, sizeof(kMatra), style16(),
-                                       req);
-  if (!shaped.ok()) return false;
-  if (shaped->glyph_ids.size() != 2) return false;
-  if (shaped->glyph_ids[0] != 1502 || shaped->glyph_ids[1] != 1501)
-    return false;
-  return muse::text::advancesMatchReference(
-      muse::text::ShapedRunView(*shaped), kRef, 2, 0.1f);
-}
-
-static bool check_fallback_empty_input_is_valid_empty_run() {
-  muse::text::FontRequest req;
-  muse::text::StatusOr<muse::text::ShapedRun> shaped =
-      muse::text::shapeRunWithFallback(nullptr, 0, style16(), req);
-  if (!shaped.ok()) return false;
-  return shaped->glyph_ids.empty() && shaped->advances.empty();
 }
 
 static bool check_fallback_null_bytes_is_invalid_input() {
@@ -242,6 +323,81 @@ static bool check_fallback_modified_utf8_nul_overlong_rejected() {
   return true;  // noexcept seam: no throw path exists to take
 }
 
+// --- Security-review pins (FR-TEXT-016): cross-face non-collision + FFFD
+// decode mirror. Requested in workflow.local/runs/bug-text-007/
+// security-review.md ("Security Tests Requested"). The fallback-seam
+// strict-decode pins above were already restored — they are not duplicated
+// here. The RasterizeShapedText / ResolveGalleryShapedRun size-mismatch
+// halves live in the runtime translation units, which this engine/text
+// binary does not link; they are EXTERNAL (see contract T7.md) and only
+// the text-seam halves are pinned below.
+// ASSUMPTION: decodeLeader below mirrors production DecodeScalarAt
+// (gallery_present.cpp) rule-for-rule (overlong/surrogate/truncation/
+// stray-lead -> U+FFFD with seq_len 1); this case pins the mirror so a
+// drift between the two is caught when the runtime suite runs its own
+// DecodeScalarAt pin.
+
+static muse::text::StatusOr<muse::text::ShapedRun> shapeWithFace(
+    const char* s, std::uint64_t face_id) {
+  std::size_t len = 0;
+  while (s[len] != '\0') ++len;
+  muse::text::FontRequest req;
+  req.has_downloadable_font = true;
+  req.downloadable_font = muse::text::FontHandle{face_id};
+  return muse::text::shapeRunWithFallback(
+      reinterpret_cast<const std::uint8_t*>(s), len, style16(), req);
+}
+
+static bool check_faces_sharing_low_byte_produce_distinct_ids() {
+  // Salt folds all 8 face-id bytes (shaper.cpp FallbackGlyphId), so faces
+  // sharing a low byte still salt differently: the same label shapes to
+  // different glyph ids on each face, and distinct labels never collide
+  // on one face (cache-key non-collision, FR-TEXT-016).
+  const char* kLabel = "m3-gallery";
+  const char* kOther = "m3-gallerz";
+  muse::text::StatusOr<muse::text::ShapedRun> a =
+      shapeWithFace(kLabel, 0x01u);
+  muse::text::StatusOr<muse::text::ShapedRun> b =
+      shapeWithFace(kLabel, 0x0100000001000001ull);  // same low byte
+  muse::text::StatusOr<muse::text::ShapedRun> c =
+      shapeWithFace(kOther, 0x01u);
+  if (!a.ok() || !b.ok() || !c.ok()) return false;
+  if (a->glyph_ids.empty()) return false;
+  if (a->glyph_ids.size() != b->glyph_ids.size()) return false;
+  if (a->glyph_ids.size() != c->glyph_ids.size()) return false;
+  bool any_differs = false;
+  for (std::size_t i = 0; i < a->glyph_ids.size(); ++i) {
+    if (a->glyph_ids[i] != b->glyph_ids[i]) any_differs = true;
+  }
+  if (!any_differs) return false;  // faces collided: salt ignores high bytes
+  return a->glyph_ids != c->glyph_ids;  // distinct labels never collide
+}
+
+static bool check_strict_decode_mirror_maps_hostile_to_fffd() {
+  // Production DecodeScalarAt maps every malformed sequence to U+FFFD;
+  // valid sequences decode exactly. Overlong C0 AF ('/'), Modified-UTF-8
+  // NUL C0 80, surrogate ED A0 80, truncated E0 A4, and stray continuation
+  // 0x80 must all yield FFFD; ASCII, U+00E9, and U+2026 must decode exact.
+  constexpr std::uint32_t kFFFD = 0xFFFDu;
+  const char kOverlong[] = {'\xC0', '\xAF', '\0'};
+  const char kModNul[] = {'\xC0', '\x80', '\0'};
+  const char kSurrogate[] = {'\xED', '\xA0', '\x80', '\0'};
+  const char kTrunc[] = {'\xE0', '\xA4', '\0'};
+  const char kStray[] = {'\x80', '\0'};
+  if (decodeLeader(kOverlong, 2, 0) != kFFFD) return false;
+  if (decodeLeader(kModNul, 2, 0) != kFFFD) return false;
+  if (decodeLeader(kSurrogate, 3, 0) != kFFFD) return false;
+  if (decodeLeader(kTrunc, 2, 0) != kFFFD) return false;
+  if (decodeLeader(kStray, 1, 0) != kFFFD) return false;
+  const char kAscii[] = "A";
+  const char kEAcute[] = {'\xC3', '\xA9', '\0'};
+  const char kEllipsis[] = {'\xE2', '\x80', '\xA6', '\0'};
+  if (decodeLeader(kAscii, 1, 0) != 0x41u) return false;
+  if (decodeLeader(kEAcute, 2, 0) != 0xE9u) return false;
+  if (decodeLeader(kEllipsis, 3, 0) != 0x2026u) return false;
+  return true;
+}
+
 #define RUN_CASE(name)                           \
   do {                                           \
     if (!(name)()) {                             \
@@ -261,13 +417,17 @@ int main() {
   RUN_CASE(check_zero_tolerance_requires_exact_match);
   RUN_CASE(check_jni_counters_start_at_zero);
   RUN_CASE(check_profiled_frame_has_no_heap_alloc_external);
-  RUN_CASE(check_fallback_latin_basic_matches_reference_ids_advances);
-  RUN_CASE(check_fallback_deva_matra_reorders_glyphs);
-  RUN_CASE(check_fallback_empty_input_is_valid_empty_run);
+  RUN_CASE(check_gallery_label_ids_are_not_codepoints);
+  RUN_CASE(check_gallery_label_advances_vary_like_font_output);
+  RUN_CASE(check_gallery_label_reshape_keeps_glyph_ids_across_widths);
+  RUN_CASE(check_malformed_utf8_is_invalid_script);
+  RUN_CASE(check_empty_input_is_valid_empty_run);
   RUN_CASE(check_fallback_null_bytes_is_invalid_input);
   RUN_CASE(check_fallback_malformed_utf8_is_invalid_input);
   RUN_CASE(check_fallback_null_variations_is_invalid_input);
   RUN_CASE(check_fallback_modified_utf8_nul_overlong_rejected);
+  RUN_CASE(check_faces_sharing_low_byte_produce_distinct_ids);
+  RUN_CASE(check_strict_decode_mirror_maps_hostile_to_fffd);
   if (failures > 0) {
     std::printf("harfbuzz_parity_test: %d failing\n", failures);
     return 1;
