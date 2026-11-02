@@ -212,7 +212,10 @@ FontHandle SystemFontEnumerator::LastResortFace(
 // NOTE: candidate names are the AOSP-conventional ones; the T10 device leg
 // verifies the Latn resolution on the x86_64 emulator.
 
+#include <android/log.h>
+
 #include <fstream>
+#include <string>
 
 namespace muse::text {
 namespace {
@@ -222,7 +225,12 @@ namespace {
 // same per-script coverage files).
 void CandidatesForFace(std::uint64_t id, const char*** out,
                          std::size_t* count) {
-  static const char* kLatn[] = {"Roboto-Regular.ttf"};
+  // A2 (BUG-TEXT-008): the static Latin cut shipped as
+  // Roboto-Regular.ttf on API 29 and as RobotoStatic-Regular.ttf on
+  // API 33+ (incl. the x86_64 API-35 image). Probe the legacy name
+  // first, then the current one, so both images resolve.
+  static const char* kLatn[] = {"Roboto-Regular.ttf",
+                                "RobotoStatic-Regular.ttf"};
   static const char* kArab[] = {"NotoNaskhArabic-Regular.ttf",
                                 "NotoSansArabic-Regular.ttf"};
   static const char* kDeva[] = {"NotoSansDevanagari-Regular.ttf"};
@@ -287,19 +295,49 @@ void CandidatesForFace(std::uint64_t id, const char*** out,
 
 }  // namespace
 
+// T2 (BUG-TEXT-008) device-triage tag: FontPathForFace probe outcomes log
+// here; the FT open-stage codes log from ResolveRealFont in shaper.cpp.
+constexpr const char* kMuseTextLogTag = "muse_text";
+
 StatusOr<std::string> FontPathForFace(FontHandle face) {
   try {
-    if (face.id == 0) return Status::kNoFaceAvailable;
+    if (face.id == 0) {
+      __android_log_print(ANDROID_LOG_WARN, kMuseTextLogTag,
+                          "FontPathForFace null handle -> kNoFaceAvailable "
+                          "[reason=path]");
+      return Status::kNoFaceAvailable;
+    }
     const char** names = nullptr;
     std::size_t count = 0;
     CandidatesForFace(face.id, &names, &count);
     for (std::size_t i = 0; i < count; ++i) {
       const std::string path = std::string("/system/fonts/") + names[i];
       std::ifstream probe(path.c_str());
-      if (probe.good()) return path;
+      const bool readable = probe.good();
+      __android_log_print(ANDROID_LOG_DEBUG, kMuseTextLogTag,
+                          "FontPathForFace id=%lu candidate=%s readable=%d",
+                          static_cast<unsigned long>(face.id), names[i],
+                          readable ? 1 : 0);
+      if (readable) {
+        __android_log_print(ANDROID_LOG_INFO, kMuseTextLogTag,
+                            "FontPathForFace id=%lu -> %s",
+                            static_cast<unsigned long>(face.id),
+                            path.c_str());
+        return path;
+      }
     }
+    // No candidate readable: the FT open stage is never reached, so no
+    // FT_New_Face ft_err exists for this handle — the open-stage ft_err
+    // logs from ResolveRealFont only when a path resolves (reason=ft-open).
+    __android_log_print(ANDROID_LOG_WARN, kMuseTextLogTag,
+                        "FontPathForFace id=%lu no readable candidate -> "
+                        "kNoFaceAvailable [reason=path]",
+                        static_cast<unsigned long>(face.id));
     return Status::kNoFaceAvailable;
   } catch (...) {
+    __android_log_print(ANDROID_LOG_WARN, kMuseTextLogTag,
+                        "FontPathForFace exception -> kNoFaceAvailable "
+                        "[reason=path]");
     return Status::kNoFaceAvailable;
   }
 }

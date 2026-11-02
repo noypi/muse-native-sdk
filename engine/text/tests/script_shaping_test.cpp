@@ -237,6 +237,84 @@ static bool check_empty_input_ok_empty() {
   }
 }
 
+// --- Batch 1 (BUG-TEXT-008) T1: host hermetic fail-path pin.
+// shapeRunWithFallback rejects malformed UTF-8 on every lane (never shapes
+// attacker bytes). Holds GREEN on host; guards the fail-closed contract. ---
+
+static bool check_fallback_malformed_input_fails() {
+  const uint8_t kBad[] = {0xE4, 0xB8};
+  try {
+    muse::text::TextStyle style{};
+    muse::text::FontRequest req{};
+    auto result = muse::text::shapeRunWithFallback(kBad, sizeof(kBad), style,
+                                                   req);
+    return !result.ok();
+  } catch (...) {
+    return false;
+  }
+}
+
+// --- Batch 1 (BUG-TEXT-008) T1: device-leg failing pin (DEVICE_GATED).
+// TRUE leg runs on the x86_64 emulator (127.0.0.1:6555) at verify time.
+// Host SKIP-passes so the hermetic suite stays green; never faked.
+// Pre-fix on device this FAILS (ResolveRealFont false -> kMissingGlyph);
+// post-fix it PASSES (Roboto labels shape, drawn>0).
+// NOTE: ResolveRealFont is TU-local to shaper.cpp (no header decl), so the
+// device leg pins it behaviorally through the public shapeRunWithFallback
+// boundary, per the plan Interface line. ---
+
+#if defined(__ANDROID__)
+static bool check_device_shape_run_with_fallback_latin_label_ok() {
+  const char kLabel[] = "m3-gallery";
+  try {
+    muse::text::TextStyle style{};
+    muse::text::FontRequest req{};
+    auto result = muse::text::shapeRunWithFallback(
+        reinterpret_cast<const uint8_t*>(kLabel), sizeof(kLabel) - 1, style,
+        req);
+    if (!result.ok()) return false;
+    return !(*result).glyph_ids.empty();
+  } catch (...) {
+    return false;
+  }
+}
+#else
+static bool check_device_shape_run_with_fallback_latin_label_ok() {
+  std::printf("SKIP device-gated (needs __ANDROID__ 6555 leg)\n");
+  return true;
+}
+#endif
+
+// --- Batch 1 (BUG-TEXT-008) T2: reason-coded fail-closed contract,
+// shaper side. Closest observable host behavior (TC-TEXT-047 grep
+// precedent): shaper.cpp must log FT_Init_FreeType/FT_New_Face return codes
+// and name the hb/missing-glyph reasons from the plan vocabulary
+// (`[reason=path|ft-open|hb|missing-glyph]`). RED now, GREEN after the coder
+// instruments. Same ASSUMPTION as system_fonts_test.cpp on exact spelling. ---
+
+static bool source_file_contains_shaper(const std::string& rel,
+                                        const char* token) {
+  const std::string path = source_dir() + "/" + rel;
+  std::ifstream in(path.c_str(), std::ios::binary);
+  if (!in.good()) return false;
+  const std::string content((std::istreambuf_iterator<char>(in)),
+                            std::istreambuf_iterator<char>());
+  return content.find(token) != std::string::npos;
+}
+
+static bool check_shaper_logs_ft_init_and_new_face_return_codes() {
+  const char* kFile = "../src/shaper.cpp";
+  return source_file_contains_shaper(kFile, "__android_log_print") &&
+         (source_file_contains_shaper(kFile, "FT_Error") ||
+          source_file_contains_shaper(kFile, "ft_err"));
+}
+
+static bool check_shaper_names_hb_and_missing_glyph_reasons() {
+  const char* kFile = "../src/shaper.cpp";
+  return source_file_contains_shaper(kFile, "reason=hb") &&
+         source_file_contains_shaper(kFile, "reason=missing-glyph");
+}
+
 #define RUN_CASE(name)                 \
   do {                                 \
     if (!(name)()) {                   \
@@ -261,6 +339,10 @@ int main() {
   RUN_CASE(check_hani_row);
   RUN_CASE(check_malformed_input_fails);
   RUN_CASE(check_empty_input_ok_empty);
+  RUN_CASE(check_fallback_malformed_input_fails);
+  RUN_CASE(check_device_shape_run_with_fallback_latin_label_ok);
+  RUN_CASE(check_shaper_logs_ft_init_and_new_face_return_codes);
+  RUN_CASE(check_shaper_names_hb_and_missing_glyph_reasons);
   if (failures > 0) {
     std::printf("script_shaping_test: %d failing\n", failures);
     return 1;

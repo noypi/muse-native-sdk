@@ -31,6 +31,10 @@
 #include <string>
 #include <vector>
 
+#if defined(__ANDROID__)
+#include <android/log.h>
+#endif
+
 // BUG-TEXT-007 T9 hermetic gate for the deterministic fallback below.
 // The salted FallbackGlyphId/FallbackAdvance stub is compiled in ONLY when
 // MUSE_TEXT_HERMETIC_FALLBACK is set — defaulted ON for non-Android lanes
@@ -290,14 +294,37 @@ struct RealFont {
 bool ResolveRealFont(FontHandle face, RealFont* out) {
   if (out == nullptr) return false;
   FT_Library lib = nullptr;
-  if (FT_Init_FreeType(&lib) != 0) return false;
+  // T2 (BUG-TEXT-008): log the FT return codes to the muse_text tag so
+  // logcat distinguishes path-miss (reason=path, logged by
+  // FontPathForFace) from open failure (reason=ft-open) at triage time.
+  const FT_Error ft_init_err = FT_Init_FreeType(&lib);
+#if defined(__ANDROID__)
+  __android_log_print(ANDROID_LOG_INFO, "muse_text",
+                      "ResolveRealFont FT_Init_FreeType ft_err=%d",
+                      static_cast<int>(ft_init_err));
+#endif
+  if (ft_init_err != 0) return false;
   FT_Face ftface = nullptr;
   StatusOr<std::string> path = FontPathForFace(face);
   if (path.ok() && !path->empty()) {
-    if (FT_New_Face(lib, path->c_str(), 0, &ftface) != 0) {
+    const FT_Error ft_err = FT_New_Face(lib, path->c_str(), 0, &ftface);
+#if defined(__ANDROID__)
+    __android_log_print(ft_err == 0 ? ANDROID_LOG_INFO : ANDROID_LOG_WARN,
+                        "muse_text",
+                        "ResolveRealFont FT_New_Face path=%s ft_err=%d %s",
+                        path->c_str(), static_cast<int>(ft_err),
+                        ft_err == 0 ? "opened" : "[reason=ft-open]");
+#endif
+    if (ft_err != 0) {
       ftface = nullptr;
     }
   }
+#if defined(__ANDROID__)
+  else {
+    __android_log_print(ANDROID_LOG_WARN, "muse_text",
+                        "ResolveRealFont no font path [reason=path]");
+  }
+#endif
   if (ftface == nullptr) {
     StatusOr<MemoryFontBytes> mem = TestOnlyMemoryFont();
     if (mem.ok() && mem->data != nullptr && mem->size != 0) {
@@ -488,13 +515,32 @@ StatusOr<ShapedRun> shapeRun(const std::uint8_t* utf8, std::size_t len,
   // lanes fail closed with kMissingGlyph instead of serving stub ids.
   {
     RealFont real;
-    if (ResolveRealFont(font, &real) &&
-        FontCoversAll(real.face, codepoints.data(), codepoints.size())) {
+    const bool resolved = ResolveRealFont(font, &real);
+    const bool covers =
+        resolved && FontCoversAll(real.face, codepoints.data(),
+                                  codepoints.size());
+    if (covers) {
       ShapedRun shaped;
       if (ShapeWithHarfBuzz(real.face, utf8, len, eff, &shaped)) {
         return shaped;
       }
+      // T2 (BUG-TEXT-008): the face opened and covers the input but
+      // HarfBuzz yielded nothing usable — log the hb sub-cause.
+#if defined(__ANDROID__)
+      __android_log_print(ANDROID_LOG_WARN, "muse_text",
+                          "shapeRun HarfBuzz shaping failed [reason=hb]");
+#endif
     }
+#if defined(__ANDROID__)
+    // T2 (BUG-TEXT-008): resolved but covering no glyph is the
+    // fail-closed coverage miss (!resolved already logged its
+    // reason=path / reason=ft-open line from ResolveRealFont).
+    if (!covers && resolved) {
+      __android_log_print(ANDROID_LOG_WARN, "muse_text",
+                          "shapeRun face covers no glyphs "
+                          "[reason=missing-glyph]");
+    }
+#endif
   }
 #if defined(MUSE_TEXT_HERMETIC_FALLBACK)
   pos = 0;
