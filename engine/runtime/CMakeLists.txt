@@ -220,6 +220,7 @@ if(DEFINED ANDROID_ABI AND NOT TARGET Runtime)
     src/input_chain.cpp
     src/gallery_present.cpp
     src/presenter.cpp
+    src/text_field.cpp
     ../graphics/vector/slug_msdf.cc
     ../text/src/shaper.cpp
     ../text/src/layout_cache.cpp
@@ -291,10 +292,17 @@ if(DEFINED ANDROID_ABI AND NOT TARGET Runtime)
     endif()
   endforeach()
   if(MUSE_RUNTIME_D3_STATIC_LIBS)
+    # T7: whole-archive so the vendored D3 objects (HarfBuzz/FreeType/ICU)
+    # define their entry points in the shared link. Archive-member extraction
+    # alone pulls nothing: shaper.cpp references D3 only through weak probes
+    # (hb_shape/FT_Init_FreeType/u_getVersion, null on hermetic builds), and
+    # weak-undefined refs do not extract archive members — leaving the probes
+    # weak-undefined (`w` in nm -D) instead of defined (`T`). Whole-archive
+    # pins the DT entries and the nm-visible symbols the proof checks.
     target_link_libraries(Runtime PRIVATE
-      "-Wl,--push-state,--no-as-needed"
+      "-Wl,--push-state,--whole-archive"
       ${MUSE_RUNTIME_D3_STATIC_LIBS}
-      "-Wl,--pop-state")
+      "-Wl,--no-whole-archive,--pop-state")
   endif()
 endif()
 

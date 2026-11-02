@@ -77,6 +77,13 @@ if(MUSE_TEXT_WITH_D3)
   set(MUSE_ICU_INSTALL_DIR "${CMAKE_BINARY_DIR}/d3/icu-install")
   file(MAKE_DIRECTORY "${MUSE_ICU_INSTALL_DIR}/include")
   file(MAKE_DIRECTORY "${MUSE_ICU_INSTALL_DIR}/lib")
+  # T7: D3 static archives link into the Android `Runtime` SHARED target, so
+  # every D3 object must be position-independent (a non-PIC archive fails the
+  # shared link with TEXTREL/R_AARCH64 errors). Applies to the HarfBuzz +
+  # FreeType sub-builds below (read at target-creation time) and to the ICU
+  # CFLAGS/CXXFLAGS (MUSE_ICU_PIC_FLAGS); harmless on the host lane.
+  set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+  set(MUSE_ICU_PIC_FLAGS "-fPIC")
   set(MUSE_ICU_UTF8_FLAGS "-DU_CHARSET_IS_UTF8=1")
   if(ANDROID)
     # Android NDK lane: the host tools build with the host compiler, then the
@@ -103,10 +110,12 @@ if(MUSE_TEXT_WITH_D3)
     ExternalProject_Add(icu_host
       SOURCE_DIR "${MUSE_ICU_SRC}"
       BINARY_DIR "${MUSE_ICU_HOST_DIR}"
-      CONFIGURE_COMMAND sh "${MUSE_ICU_SRC}/runConfigureICU" Linux
+      CONFIGURE_COMMAND ${CMAKE_COMMAND} -E env
+        "CFLAGS=${MUSE_ICU_UTF8_FLAGS} ${MUSE_ICU_PIC_FLAGS}"
+        "CXXFLAGS=${MUSE_ICU_UTF8_FLAGS} ${MUSE_ICU_PIC_FLAGS}"
+        sh "${MUSE_ICU_SRC}/runConfigureICU" Linux
         "--prefix=${MUSE_ICU_HOST_DIR}"
         --enable-static --disable-shared --with-data-packaging=archive
-        "CFLAGS=${MUSE_ICU_UTF8_FLAGS}" "CXXFLAGS=${MUSE_ICU_UTF8_FLAGS}"
       BUILD_COMMAND make -j
       INSTALL_COMMAND ""
       BUILD_BYPRODUCTS "${MUSE_ICU_HOST_DIR}/lib/libicuuc.a"
@@ -118,7 +127,8 @@ if(MUSE_TEXT_WITH_D3)
       CONFIGURE_COMMAND ${CMAKE_COMMAND} -E env
         "CC=${ANDROID_TOOLCHAIN_ROOT}/bin/${_muse_icu_triplet}${_muse_icu_api}-clang"
         "CXX=${ANDROID_TOOLCHAIN_ROOT}/bin/${_muse_icu_triplet}${_muse_icu_api}-clang++"
-        "CFLAGS=${MUSE_ICU_UTF8_FLAGS}" "CXXFLAGS=${MUSE_ICU_UTF8_FLAGS}"
+        "CFLAGS=${MUSE_ICU_UTF8_FLAGS} ${MUSE_ICU_PIC_FLAGS}"
+        "CXXFLAGS=${MUSE_ICU_UTF8_FLAGS} ${MUSE_ICU_PIC_FLAGS}"
         sh "${MUSE_ICU_SRC}/configure"
         "--prefix=${MUSE_ICU_INSTALL_DIR}"
         "--host=${_muse_icu_triplet}"
@@ -137,10 +147,12 @@ if(MUSE_TEXT_WITH_D3)
     ExternalProject_Add(icu_host
       SOURCE_DIR "${MUSE_ICU_SRC}"
       BINARY_DIR "${MUSE_ICU_HOST_DIR}"
-      CONFIGURE_COMMAND sh "${MUSE_ICU_SRC}/runConfigureICU" Linux
+      CONFIGURE_COMMAND ${CMAKE_COMMAND} -E env
+        "CFLAGS=${MUSE_ICU_UTF8_FLAGS} ${MUSE_ICU_PIC_FLAGS}"
+        "CXXFLAGS=${MUSE_ICU_UTF8_FLAGS} ${MUSE_ICU_PIC_FLAGS}"
+        sh "${MUSE_ICU_SRC}/runConfigureICU" Linux
         "--prefix=${MUSE_ICU_INSTALL_DIR}"
         --enable-static --disable-shared --with-data-packaging=archive
-        "CFLAGS=${MUSE_ICU_UTF8_FLAGS}" "CXXFLAGS=${MUSE_ICU_UTF8_FLAGS}"
       BUILD_COMMAND make -j
       INSTALL_COMMAND make install
       BUILD_BYPRODUCTS
