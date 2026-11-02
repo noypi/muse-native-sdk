@@ -16,6 +16,10 @@ enum class Status { kOk = 0, kInvalidArg = 1 };
 struct ShapedRun {
   std::vector<uint32_t> glyphIds;
   std::vector<float> advances;  // Advance width per glyph, in px.
+  // BUG-TEXT-007 T4: source Unicode scalar per glyph, threaded through
+  // placement so the outline stage classifies by codepoint, never by
+  // reinterpreting the font glyph id. Empty (or short) means unclassified.
+  std::vector<uint32_t> codepoints;
 };
 
 struct GlyphPlacement {
@@ -24,6 +28,7 @@ struct GlyphPlacement {
   float texelU = 0.0f;  // MSDF texel coords for this glyph.
   float texelV = 0.0f;
   int edgeCount = 0;  // Bezier edge records emitted for the Slug shader.
+  uint32_t codepoint = 0;  // BUG-TEXT-007 T4: source scalar (0 = unclassified).
 };
 
 struct MsdfResult {

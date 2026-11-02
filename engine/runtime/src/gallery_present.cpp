@@ -349,6 +349,12 @@ struct GalleryShaper {
   // T11 coverage seam: shaped glyph data per assigned handle, so
   // RasterizeShapedText resolves real runs (no synthesis, no second shape).
   std::map<std::uint32_t, muse::text::ShapedRun> runData;
+  // BUG-TEXT-007 T4: per-glyph source codepoints per assigned handle,
+  // decoded once at shape time from the label bytes via the run's
+  // cluster_map. The rasterizer classifies outlines by codepoint — never by
+  // reinterpreting the font glyph id — so the outline stage stays correct
+  // now that T3 ids are font-backed rather than codepoint-equal.
+  std::map<std::uint32_t, std::vector<std::uint32_t>> runCodepoints;
   std::uint32_t next = 0x1000u;
   // FR-RUNTIME-011 T4: glyph-atlas reuse counter. Incremented on every
   // run-cache hit (an identical label resolving to one shared run id across
@@ -451,13 +457,96 @@ int MeasureGalleryLabelWidth(const std::string& label, int scale) {
 // The handle is assigned from the T3 atlas key domain (chain face,
 // fontScale, shaped glyph-id sequence): identical labels shape identically
 // and resolve to one cached run (atlas reuse across rows and frames);
-// distinct shapes never collide within the process. Each shaped glyph's
-// texel record (advance from the engine run) is published to the T3
-// GlyphAtlas under (font, Density::fontScale, scale, glyphId), so
-// residency and LRU eviction follow T3 bound semantics; a kCacheFull
-// insert fails closed. Empty input (the kNoFaceAvailable/kShapingFailed
-// analogue on this boundary) yields the dangling sentinel 0: the caller
-// emits a fail-closed diagnostic, never a gallery bitmap.
+// distinct shapes never collide within the process. BUG-TEXT-007 T5: the
+// key carries the resolved face id and the font-backed T3 glyph-id sequence
+// (never label bytes, never stub codepoint ids), so identical labels hit
+// the same entry across frames while distinct labels land on distinct keys;
+// no flush/migration is needed for pre-T3 stub-keyed entries because the
+// cache is process-lifetime and stub-era keys are unconstructable once the
+// T3 backend is compiled in. Each shaped glyph's texel record (advance from
+// the engine run) is published to the T3 GlyphAtlas under (font,
+// Density::fontScale, scale, glyphId), so residency and LRU eviction follow
+// T3 bound semantics; a kCacheFull insert fails closed. Empty input (the
+// kNoFaceAvailable/kShapingFailed analogue on this boundary) yields the
+// dangling sentinel 0: the caller emits a fail-closed diagnostic, never a
+// gallery bitmap.
+//
+// Strict scalar decode of the UTF-8 sequence starting at byte pos.
+// Returns U+FFFD and a length of 1 on any malformed/truncated sequence so
+// the outline stage always has a concrete codepoint per glyph (fail-closed
+// shaping already rejected malformed labels above; this never runs on them).
+std::uint32_t DecodeScalarAt(const std::string& text, std::size_t pos,
+                             std::size_t* seq_len) {
+  const auto bytes = reinterpret_cast<const unsigned char*>(text.data());
+  const std::size_t len = text.size();
+  const unsigned char lead = bytes[pos];
+  if (lead < 0x80) {
+    *seq_len = 1;
+    return lead;
+  }
+  std::uint32_t cp = 0;
+  std::size_t want = 0;
+  std::uint32_t min = 0;
+  if ((lead & 0xE0u) == 0xC0u) {
+    cp = lead & 0x1Fu;
+    want = 2;
+    min = 0x80u;
+  } else if ((lead & 0xF0u) == 0xE0u) {
+    cp = lead & 0x0Fu;
+    want = 3;
+    min = 0x800u;
+  } else if ((lead & 0xF8u) == 0xF0u) {
+    cp = lead & 0x07u;
+    want = 4;
+    min = 0x10000u;
+  } else {
+    *seq_len = 1;
+    return 0xFFFDu;
+  }
+  if (pos + want > len) {
+    *seq_len = 1;
+    return 0xFFFDu;
+  }
+  for (std::size_t k = 1; k < want; ++k) {
+    if ((bytes[pos + k] & 0xC0u) != 0x80u) {
+      *seq_len = 1;
+      return 0xFFFDu;
+    }
+    cp = (cp << 6) | (bytes[pos + k] & 0x3Fu);
+  }
+  if (cp < min || cp > 0x10FFFFu || (cp >= 0xD800u && cp <= 0xDFFFu)) {
+    *seq_len = 1;
+    return 0xFFFDu;
+  }
+  *seq_len = want;
+  return cp;
+}
+
+// Per-glyph source codepoints for a shaped label: glyph g owns the bytes
+// [b, ...) with cluster_map[b] == g; the codepoint decoded at the lowest
+// owned byte is the glyph's source scalar (matra-reordered glyphs still
+// decode at their trailing-sign bytes, which is exactly the scalar the
+// outline stage must classify).
+std::vector<std::uint32_t> CodepointsForRun(
+    const std::string& text, const muse::text::ShapedRun& run) {
+  std::vector<std::uint32_t> out(run.glyph_ids.size(), 0xFFFDu);
+  if (text.empty() || run.glyph_ids.empty()) return out;
+  for (std::size_t g = 0; g < run.glyph_ids.size(); ++g) {
+    std::size_t leader = text.size();
+    for (std::size_t b = 0; b < text.size() && b < run.cluster_map.size();
+         ++b) {
+      if (run.cluster_map[b] == g) {
+        leader = b;
+        break;
+      }
+    }
+    if (leader >= text.size()) continue;
+    std::size_t seq_len = 1;
+    out[g] = DecodeScalarAt(text, leader, &seq_len);
+  }
+  return out;
+}
+
 std::uint32_t ShapeGalleryLabel(const std::string& label) {
   if (label.empty()) return 0;
   muse::text::ShapedRun run;
@@ -489,6 +578,11 @@ std::uint32_t ShapeGalleryLabel(const std::string& label) {
   if (shaper.next == 0u) shaper.next = 0x1000u;  // Never hand out 0.
   shaper.runs.emplace(std::move(key), id);
   shaper.runData.emplace(id, run);
+  // BUG-TEXT-007 T4: codepoints ride the handle so the rasterizer never
+  // reinterprets the font glyph id as a codepoint (the skew mechanism).
+  // Stored even on cache-hit labels: the same id always maps to the same
+  // codepoints because the same key implies the same shaped run.
+  shaper.runCodepoints[id] = CodepointsForRun(label, run);
   return id;
 }
 
@@ -2701,9 +2795,13 @@ void SetPresentImeBottom(float imeBottomPx) noexcept {
 // T11 coverage seam: resolve a ShapeGalleryLabel handle to the shaped glyph
 // data cached at assignment. Unknown/0 handles (or null outputs) fail
 // closed with false; the shaped data is never re-derived or synthesized.
+// BUG-TEXT-007 T4: optionally also resolves the per-glyph source codepoints
+// stored at assignment; the rasterizer classifies outlines by those, never
+// by reinterpreting the font glyph id.
 bool ResolveGalleryShapedRun(std::uint32_t handle,
                              std::vector<std::uint32_t>* glyphs,
-                             std::vector<float>* advances) {
+                             std::vector<float>* advances,
+                             std::vector<std::uint32_t>* codepoints) {
   if (handle == 0u || glyphs == nullptr || advances == nullptr) return false;
   try {
     GalleryShaper& shaper = GalleryShaperState();
@@ -2712,6 +2810,14 @@ bool ResolveGalleryShapedRun(std::uint32_t handle,
     if (it->second.glyph_ids.empty()) return false;
     *glyphs = it->second.glyph_ids;
     *advances = it->second.advances;
+    if (codepoints != nullptr) {
+      const auto cit = shaper.runCodepoints.find(handle);
+      if (cit == shaper.runCodepoints.end() ||
+          cit->second.size() != it->second.glyph_ids.size()) {
+        return false;
+      }
+      *codepoints = cit->second;
+    }
     return true;
   } catch (...) {
     return false;
