@@ -370,6 +370,15 @@ struct GalleryHandle {
   // layeringOverlayCount to the full stack (5) so away/back re-entry restarts
   // full. Guarded by mu like the rest of the handle.
   int lastPresentedPage = -1;
+  // T6 (demo-muse-demo-routing / FR-NAV-011 AC-NAV-033/038, FR-NAV-012
+  // AC-NAV-035): demo shell-state carriage slot. Stores only validated
+  // strings written by nativeSetDemoShellState (tab in lens|field|list plus
+  // the optional denied-link string the TSX denial branch reads). No routing
+  // decision lives here and no renderer/layout code reads or writes these —
+  // visibility comes from the proven nativeRenderFrame repaint. Guarded by
+  // mu like the rest of the handle.
+  std::string demoTab = "lens";
+  std::string demoDeniedLink;
 #ifdef __ANDROID__
   ANativeWindow* window = nullptr;
   // FR-STARTUP-003 T1 (RULE-STARTUP-002): single-owner render-thread frame
@@ -1356,6 +1365,98 @@ extern "C" MUSE_JNI_EXPORT jint Java_com_muse_host_MainActivity_nativeSetTheme(
       env->ExceptionClear();
     }
     return -1;
+  }
+}
+
+// T6 (demo-muse-demo-routing / FR-NAV-011 AC-NAV-033/038, FR-NAV-012
+// AC-NAV-035): engine state-carriage setter — no game logic, no routing
+// decision, no renderer/layout change. Java:
+// com.muse.host.MainActivity.nativeSetDemoShellState(long, String, String).
+// Stores the validated tab (lens|field|list) plus the optional denied-link
+// string into the live handle's shell-state slot the baked tree's existing
+// tab/denial branches read; visibility comes from the next nativeRenderFrame
+// repaint. Fail-closed: null env, pending exception, unregistered (zero,
+// forged, stale) handle, or a null/empty/unknown tab yields 0 with state
+// unchanged and no exception crossing into the VM. A null denied-link
+// normalizes to "" (still applied); a present denied-link is stored verbatim.
+// Returns 1 applied, 0 denied (jint, fail-closed ints).
+extern "C" MUSE_JNI_EXPORT jint Java_com_muse_host_MainActivity_nativeSetDemoShellState(
+    JNIEnv* env, jobject thiz, jlong handle, jstring tab, jstring deniedLink) {
+  // Returns jint: 1 applied, 0 denied/failed-closed.
+  (void)thiz;
+  if (env == nullptr || env->ExceptionCheck() == JNI_TRUE) {
+    return static_cast<jint>(0);
+  }
+  std::shared_ptr<GalleryHandle> g = ToGallery(handle);
+  if (g == nullptr) return static_cast<jint>(0);
+  try {
+    std::string tabCopy;
+    if (tab != nullptr) {
+      const jsize ulen = env->GetStringUTFLength(tab);
+      if (env->ExceptionCheck() == JNI_TRUE) {
+        env->ExceptionClear();
+        return 0;
+      }
+      if (ulen <= 0 || ulen > 64) {
+        return 0;
+      }
+      const char* chars = env->GetStringUTFChars(tab, nullptr);
+      if (env->ExceptionCheck() == JNI_TRUE) {
+        env->ExceptionClear();
+        return 0;
+      }
+      if (chars != nullptr) {
+        tabCopy.assign(chars, static_cast<std::size_t>(ulen));
+        env->ReleaseStringUTFChars(tab, chars);
+      }
+    }
+    if (env->ExceptionCheck() == JNI_TRUE) {
+      env->ExceptionClear();
+      return 0;
+    }
+    if (tabCopy != "lens" && tabCopy != "field" && tabCopy != "list") {
+      return static_cast<jint>(0);
+    }
+    std::string deniedCopy;
+    if (deniedLink != nullptr) {
+      const jsize dlen = env->GetStringUTFLength(deniedLink);
+      if (env->ExceptionCheck() == JNI_TRUE) {
+        env->ExceptionClear();
+        return 0;
+      }
+      if (dlen < 0 || dlen > 2048) {
+        return 0;
+      }
+      if (dlen > 0) {
+        const char* dchars = env->GetStringUTFChars(deniedLink, nullptr);
+        if (env->ExceptionCheck() == JNI_TRUE) {
+          env->ExceptionClear();
+          return 0;
+        }
+        if (dchars != nullptr) {
+          deniedCopy.assign(dchars, static_cast<std::size_t>(dlen));
+          env->ReleaseStringUTFChars(deniedLink, dchars);
+        }
+      }
+    }
+    if (env->ExceptionCheck() == JNI_TRUE) {
+      env->ExceptionClear();
+      return 0;
+    }
+    {
+      std::lock_guard<std::mutex> lock(g->mu);
+      g->demoTab = tabCopy;
+      g->demoDeniedLink = deniedCopy;
+    }
+#ifdef __ANDROID__
+    MuseLogInfo("nativeSetDemoShellState: tab=" + tabCopy + " applied=1");
+#endif
+    return static_cast<jint>(1);
+  } catch (...) {
+    if (env->ExceptionCheck() == JNI_TRUE) {
+      env->ExceptionClear();
+    }
+    return static_cast<jint>(0);
   }
 }
 

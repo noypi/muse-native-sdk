@@ -22,11 +22,12 @@ import { startRound, guess, reveal } from './guessMask';
 // link shapes through the single RouterBridge navigate path (demoNav
 // push/replace facade), never a direct setTab bypass.
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-const { createDemoNavigator } = require('./demoNav') as {
+const { createDemoNavigator, parseTabLink } = require('./demoNav') as {
   createDemoNavigator: () => {
     push: (route: string, params?: object) => { page: string } | { code: string };
     replace: (route: string, params?: object) => { page: string } | { code: string };
   };
+  parseTabLink: (link: unknown) => { id: string } | { code: string; link?: unknown };
 };
 const demoNavigator = createDemoNavigator();
 function tabLink(tab: Tab): string {
@@ -224,9 +225,48 @@ export default function App() {
     setDemoState(photos.length > 0 ? 'ready' : 'empty');
   };
   const goTab = (name: Tab): void => {
-    demoNavigator.push(tabLink(name), {});
-    setTab(name);
+    onOpenTabLink(tabLink(name));
   };
+  // T4 deep-link/tap entry (mirrors gallery onOpenStoryLink): every tab move
+  // resolves through the demoNav link shape + push (single navigate path),
+  // then lands on glass via setTab with a repaint log. Unknown ids keep the
+  // current tab and surface the named denial instead of a silent no-op.
+  const onOpenTabLink = (link: string): boolean => {
+    const parsed = parseTabLink(link);
+    if ((parsed as { code?: string }).code) {
+      setDeniedLink(link);
+      if (typeof console !== 'undefined') {
+        console.info(`[DemoPage] deep-link rejected (unknown-route) link=${link} destinationReached=false engineHosted=true`);
+      }
+      return false;
+    }
+    const id = (parsed as { id: string }).id;
+    const result = demoNavigator.push(link, {});
+    if ((result as { code?: string }).code) {
+      setDeniedLink(link);
+      return false;
+    }
+    setDeniedLink(undefined);
+    setTab(id as Tab);
+    if (typeof console !== 'undefined') {
+      console.info(`[DemoPage] advance tab=${id} route=${link} origin=shell-chrome repaint=1`);
+    }
+    return true;
+  };
+  // T4 fallback action: the denial banner's tap target. Fires the recovery
+  // (back to the default tab) through the same push path and clears the
+  // denial, so "tap fires the fallback action" is observable on glass.
+  const onFallbackRecover = (): void => {
+    setDeniedLink(undefined);
+    demoNavigator.push(tabLink('lens'), {});
+    setTab('lens');
+    if (typeof console !== 'undefined') {
+      console.info('[DemoPage] fallback fire action=return-to-lens tab=lens repaint=1');
+    }
+  };
+  // T4 hands-free contract: unknown routes fail closed with a NAMED denial
+  // that stays on glass (never blank) and carries its own tappable fallback.
+  const [deniedLink, setDeniedLink] = useState<string | undefined>(undefined);
   const onToggleTheme = (): void => {
     const next = theme.primary === 'primary' ? 'dark' : 'light';
     applyTheme(next, true);
@@ -300,6 +340,14 @@ export default function App() {
         ))}
       </View>
       <Text>{`${tabTitle(tab)} tab`}</Text>
+      {deniedLink !== undefined ? (
+        <View>
+          <Text color={theme.onSurface}>{`Unknown route ${deniedLink}`}</Text>
+          <View onTouchStart={onFallbackRecover}>
+            <Text color={theme.primary}>Return to Lens</Text>
+          </View>
+        </View>
+      ) : null}
       {tab === 'lens' && first ? (
         <View>
         <Annotator
