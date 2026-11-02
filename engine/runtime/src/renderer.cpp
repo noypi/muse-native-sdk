@@ -6,6 +6,12 @@
 #include "engine/graphics/vector/tile_raster.h"
 #include "runtime/content_registry.h"
 #include "runtime/gallery_present.h"
+// BUG-TEXT-008 t5r5 seam binding: this TU is the raster half of the executed
+// PresentDeviceGalleryPage -> ShapedText -> RasterizeShapedText -> BlendMask
+// lane; the column-order contract lives in muse/text/raster_blend_orientation.h
+// (Real adapter: engine/text/src/raster_blend_orientation.cpp). Pixel-dead
+// atlas-upload path untouched.
+#include "muse/text/raster_blend_orientation.h"
 
 namespace runtime {
 namespace {

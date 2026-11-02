@@ -85,6 +85,7 @@ target_sources(runtime PRIVATE
   ../text/src/font_discovery_android.cpp
   ../text/src/glyph_atlas.cpp
   ../text/src/glyph_raster_orientation.cpp
+  ../text/src/raster_blend_orientation.cpp
   ../text/src/rich_buffer.cpp
 )
 
@@ -296,6 +297,7 @@ if(DEFINED ANDROID_ABI AND NOT TARGET Runtime)
     ../text/src/font_discovery_android.cpp
     ../text/src/glyph_atlas.cpp
     ../text/src/glyph_raster_orientation.cpp
+    ../text/src/raster_blend_orientation.cpp
     ../text/src/rich_buffer.cpp
     ../graphics/vector/tile_raster.cc
     ../graphics/skia/present_skia.cpp
@@ -777,6 +779,14 @@ target_sources(flappy_security_test PRIVATE src/flappy_content.cpp)
 target_link_libraries(flappy_security_test PRIVATE runtime)
 target_compile_options(flappy_security_test PRIVATE -Wall -Wextra -Wpedantic)
 add_test(NAME flappy_security_test COMMAND flappy_security_test)
+
+# Run bug-text-008: raster->blend seam column-order pins. Test owned by
+# code-unit-tester. Definitions land in ../text/src/raster_blend_orientation.cpp
+# (already compiled into runtime).
+add_executable(raster_blend_orientation_test tests/raster_blend_orientation_test.cpp)
+target_link_libraries(raster_blend_orientation_test PRIVATE runtime)
+target_compile_options(raster_blend_orientation_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME raster_blend_orientation_test COMMAND raster_blend_orientation_test)
 
 # Batch 1 / T1+T2: content-tag registry seam (FR-RUNTIME-013 /
 # AC-RUNTIME-038/039). Test owned by code-unit-tester; binds only to the T1

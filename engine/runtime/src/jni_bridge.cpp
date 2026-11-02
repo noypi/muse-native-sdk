@@ -44,6 +44,13 @@
 #include "gesture_arena.h"
 #include "hit_test.h"
 #include "input/event_model.h"
+// BUG-TEXT-008 t5r5 seam binding: WindowSwapchain::BlendMask below is the
+// blend half of the executed
+// PresentDeviceGalleryPage -> ShapedText -> RasterizeShapedText -> BlendMask
+// lane; the column-order contract lives in
+// muse/text/raster_blend_orientation.h (Real adapter:
+// engine/text/src/raster_blend_orientation.cpp). Atlas-upload path untouched.
+#include "muse/text/raster_blend_orientation.h"
 
 #ifdef __ANDROID__
 #include <android/log.h>
