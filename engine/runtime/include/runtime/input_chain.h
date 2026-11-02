@@ -17,14 +17,23 @@
 // tap is decided here, then T5 routes it to the component handler.
 
 // Returns the tap-tree population entry point (BUG-M3-FIDELITY-007 review
-// BLOCKER): fills an empty HitTestTree from the gallery's laid-out bounds so
-// the device dispatch path resolves real button nodes instead of failing
-// closed on every tap. The populated shape mirrors the T4-seeded gallery
-// first-page geometry (400x800 root; Button-filled node 21 at
-// (50,100)-(250,180)); per-row LayoutEngine-bound hookup is a future run
-// decision, not invented here. A tree that already resolves a node at the
-// root probe point is left untouched (idempotent: safe to call at load and
-// re-attach). An unpopulated tree keeps resolving -1 (fail closed).
+// BLOCKER; BUG-INPUT-002 T2): fills a HitTestTree from the real laid-out
+// viewport so the device dispatch path resolves real button nodes instead
+// of failing closed on every tap outside the old gallery rect. Root 10 +
+// full-bleed scrim 20 share the same viewport rect (never a separate
+// hardcoded rect); content node 21 sits above the scrim at the laid-out
+// Button-filled bounds, so node-20 scrim routing (BUG-INPUT-001) is
+// preserved. Invalid/empty geometry keeps the prior tree (fail-closed, no
+// phantom nodes); a tree that already covers the viewport is left untouched
+// (idempotent: safe to call at load, re-attach, and on viewport change).
+// An unpopulated tree keeps resolving -1 (fail closed).
+void PopulateTapTreeFromLayout(HitTestTree& tree, float viewportW,
+                               float viewportH);
+
+// Zero-arg form: seeds from the fallback device-scale viewport (covers the
+// dp_t8c_sweep.log sweep: x=540, y up to 1690). Used at load before the
+// first frame presents the real window size; RenderLocked reseeds with the
+// presented viewport once known. Delegates to the viewport overload.
 void PopulateTapTreeFromLayout(HitTestTree& tree);
 
 // Returns the deepest laid-out node id at (x, y), or -1 when outside every
