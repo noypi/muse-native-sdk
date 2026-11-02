@@ -24,5 +24,6 @@
   "unordered-dense": { "file": "unordered-dense.tar.gz", "sha256": "bfbe9f8e6613682788deae4c5790e2acd36dc44edf472a1d7fc82d008cde2757" },
   "fmt": { "file": "fmt.tar.gz", "sha256": "c63e082dd70f83c72efe6d52dbc055cc68fe8fe597ca035ecc6c23a363a231b2" },
   "magic-enum": { "file": "magic-enum.tar.gz", "sha256": "46f52c112e9b4c79482804951a52f6a310175d32a1a3f2da26c82d0628b46535" },
-  "simdjson": { "file": "simdjson.tar.gz", "sha256": "33953702a69edfa2a279bfe7f39a60df80cc26acb5c8a1d8376963d11eccbc27" }
+  "simdjson": { "file": "simdjson.tar.gz", "sha256": "33953702a69edfa2a279bfe7f39a60df80cc26acb5c8a1d8376963d11eccbc27" },
+  "skia-m158": { "file": "skia-m158.tar.gz", "sha256": "9335578c0c5c29c1438618019a67238b6241e7bcc1124606c5f3d39ec1f390e9" }
 }

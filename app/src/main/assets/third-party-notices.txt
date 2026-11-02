@@ -47,6 +47,9 @@ Dependencies
    first paint where no system face resolves. No downloads; the downloadable-font provider
    stays nullable and is never consulted by the lookup.)
 28. Cronet — Licence: BSD-3-Clause — Owner: net — Link: dynamic
+29. Skia Graphite — Licence: BSD-3-Clause — Owner: graphics — Link: static
+    Copyright: Copyright (c) 2011 Google Inc. All rights reserved. (BSD-3-Clause
+    text from the snapshot LICENSE; full text: https://opensource.org/licenses/BSD-3-Clause)
 
 Licence texts and pointers
 --------------------------
