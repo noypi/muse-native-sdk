@@ -18,6 +18,20 @@ import { isTranscribeOn } from './profile';
 import { OnboardingPage } from './onboarding';
 import { renderSpeaker } from './speaker';
 import { startRound, guess, reveal } from './guessMask';
+// T2 routing: tab moves resolve via `muse-demo://tab/<lens|field|list>`
+// link shapes through the single RouterBridge navigate path (demoNav
+// push/replace facade), never a direct setTab bypass.
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { createDemoNavigator } = require('./demoNav') as {
+  createDemoNavigator: () => {
+    push: (route: string, params?: object) => { page: string } | { code: string };
+    replace: (route: string, params?: object) => { page: string } | { code: string };
+  };
+};
+const demoNavigator = createDemoNavigator();
+function tabLink(tab: Tab): string {
+  return `muse-demo://tab/${tab}`;
+}
 
 // T7 (AC-SAMPLE-033): guess-the-mask round wiring (<30s stub round).
 // Lens shows the photo with one mask hidden; the visitor taps a guess;
@@ -209,6 +223,10 @@ export default function App() {
     setDemoState('loading');
     setDemoState(photos.length > 0 ? 'ready' : 'empty');
   };
+  const goTab = (name: Tab): void => {
+    demoNavigator.push(tabLink(name), {});
+    setTab(name);
+  };
   const onToggleTheme = (): void => {
     const next = theme.primary === 'primary' ? 'dark' : 'light';
     applyTheme(next, true);
@@ -276,7 +294,7 @@ export default function App() {
       ) : null}
       <View>
         {TABS.map((name) => (
-          <View key={name} onTouchStart={() => setTab(name)}>
+          <View key={name} onTouchStart={() => goTab(name)}>
             <Text>{tabTitle(name)}</Text>
           </View>
         ))}
