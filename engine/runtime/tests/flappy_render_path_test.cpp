@@ -16,6 +16,8 @@
 // independent of static-init order. Assertions below are unchanged in
 // behavior, reached via RegisterFlappyContent() + tag resolution.
 #include "runtime/flappy_content.h"
+#include "runtime/gallery_present.h"
+#include "runtime/renderer.h"
 
 // --- T9 `Interface:` line (plan verbatim) --------------------------------
 // `renderTree(treeHandle: TreeHandle) -> FrameStats — maps each evaluated
@@ -200,23 +202,18 @@ static bool check_register_null_empty_preamble_returns_zero() {
   return true;
 }
 
-// ---- T1 (bug-runtime-009-010 Option A) RED cases ----
+// ---- T1 (bug-runtime-009-010 Option A) GREEN cases ----
 // Plan `Interface:` line (verbatim): `renderTree(treeHandle: int32_t) ->
 // FrameStats` — post-condition `stats.nodeCount == <emitted DrawCmd count>`
 // per kind; `DrawFlappySceneKind` returning true requires the command
 // appended to the sink/swapchain feed; unknown kind fails closed with kind
 // named.
-// Production sink surface (T3 coder implements in
+// Production sink surface (T3 landed in
 // engine/runtime/src/flappy_content.cpp, feeding the command list/swapchain
-// via engine/runtime/src/renderer.cpp): declared here against the plan; the
-// definition lands with T3, so linking the new cases below before then MUST
-// fail (expected red, not a malformed test). `g++ -c` on this file passes;
-// the full link fails on the undefined sink symbols below.
-struct DrawCmdSink;  // production-owned emission feed; T3 defines it.
-bool DrawFlappySceneKindToSink(const std::string& kind, std::int32_t nodeId,
-                               DrawCmdSink& sink);
-std::size_t EmittedDrawCmdCount(const DrawCmdSink& sink);
-DrawCmdSink& TestDrawCmdFeed();  // T3-provided hermetic feed accessor.
+// via engine/runtime/src/renderer.cpp): declared once in
+// runtime/flappy_content.h (single source; included above) — the cases
+// below bind those real symbols directly (GREEN). `g++ -c` on this file
+// passes and the full link resolves against the production objects.
 
 // Named case (emission): every scene kind appends exactly one DrawCmd —
 // true requires the append, so nodeCount equals the emitted count per kind.
@@ -275,6 +272,132 @@ static bool check_unknown_kind_appends_nothing_names_kind() {
   return true;
 }
 
+// Named case (review MAJOR 1 pin — suffixed token): a `Flappy`-prefixed
+// token that merely contains a known kind as a substring (e.g.
+// `FlappyBirdExtra`) is NOT a known kind — it registers as an unknown-kind
+// node, so renderTree fails closed with unknownKindCount > 0 and the full
+// token named (RULE-RUNTIME-001). Exact-match only; substring-skip is the
+// defect this pins.
+static bool check_suffixed_token_names_unknown_kind() {
+  const TreeHandle handle = RegisteredSceneTree(
+      "FlappyBird FlappyPipe FlappyBirdExtra");
+  const FrameStats stats = renderTree(handle);
+  if (stats.unknownKindCount <= 0) {
+    std::printf("  detail: suffixed token swallowed (unknownKindCount 0)\n");
+    return false;
+  }
+  if (stats.unknownKindName != "FlappyBirdExtra") {
+    std::printf("  detail: expected unknownKindName FlappyBirdExtra, got %s\n",
+                stats.unknownKindName.c_str());
+    return false;
+  }
+  return true;
+}
+
+// --- 5-arg drain-overload pins (review MAJOR 2 / re-review addendum) ---
+// `runtime::TryPresentContentScene(data, len, renderer, target, error)`
+// drains the frame's emitted DrawCmds via FlushFlappyFrameToSwapchain;
+// submitted==0 fails closed with a diagnostic. Hermetic: in-memory
+// FakeSwapchain, no GPU/device.
+
+// In-process fake swapchain: records every submitted cmd. No GPU.
+class FakeSwapchain : public runtime::Swapchain {
+ public:
+  void submit(const runtime::DrawCmd& cmd) override {
+    captured.push_back(cmd);
+  }
+  std::vector<runtime::DrawCmd> captured;
+};
+
+// Swapchain whose submit always throws: Flush catches per-cmd, so the
+// drained count stays 0 — the submitted==0 fail-closed leg. Never escapes.
+class ThrowingSwapchain : public runtime::Swapchain {
+ public:
+  void submit(const runtime::DrawCmd&) override {
+    throw 1;
+  }
+};
+
+static runtime::Renderer drain_test_renderer() {
+  runtime::DeviceCaps caps;
+  caps.apiMajor = 1;
+  caps.apiMinor = 1;
+  return runtime::Renderer(caps);
+}
+
+// Named case (drain happy path): a valid scene through the 5-arg overload
+// renders clean AND drains — returns true, *error untouched, and the
+// target captures the frame's DrawCmds.
+static bool check_5arg_drain_submits_staged_cmds() {
+  static const char kScene[] =
+      "FlappyTopAppBar FlappyHud FlappyBird FlappyPipe FlappyScore "
+      "FlappyGameOver";
+  runtime::Renderer renderer = drain_test_renderer();
+  FakeSwapchain target;
+  std::string error;
+  const bool ok = runtime::TryPresentContentScene(
+      kScene, sizeof(kScene) - 1, renderer, target, &error);
+  if (!ok) {
+    std::printf("  detail: valid scene 5-arg present failed: %s\n",
+                error.c_str());
+    return false;
+  }
+  if (!error.empty()) {
+    std::printf("  detail: success left a diagnostic: %s\n", error.c_str());
+    return false;
+  }
+  if (target.captured.empty()) {
+    std::printf("  detail: 5-arg present drained zero cmds\n");
+    return false;
+  }
+  return true;
+}
+
+// Named case (submitted==0 fails closed): when nothing can be drained the
+// 5-arg overload returns false with a non-blank diagnostic — never a
+// silent true with zero submissions.
+static bool check_5arg_drain_empty_fails_closed_with_diagnostic() {
+  static const char kScene[] =
+      "FlappyTopAppBar FlappyHud FlappyBird FlappyPipe FlappyScore "
+      "FlappyGameOver";
+  runtime::Renderer renderer = drain_test_renderer();
+  ThrowingSwapchain target;
+  std::string error;
+  const bool ok = runtime::TryPresentContentScene(
+      kScene, sizeof(kScene) - 1, renderer, target, &error);
+  if (ok) {
+    std::printf("  detail: zero-submission drain reported success\n");
+    return false;
+  }
+  if (error.empty()) {
+    std::printf("  detail: zero-submission drain left no diagnostic\n");
+    return false;
+  }
+  return true;
+}
+
+// Named case (unknown-kind drain fails closed naming the kind): a
+// recognized scene carrying a suffixed unknown token fails closed through
+// the 5-arg overload — returns false with the full token named.
+static bool check_5arg_drain_unknown_kind_names_kind() {
+  static const char kScene[] = "FlappyBird FlappyPipe FlappyBirdExtra";
+  runtime::Renderer renderer = drain_test_renderer();
+  FakeSwapchain target;
+  std::string error;
+  const bool ok = runtime::TryPresentContentScene(
+      kScene, sizeof(kScene) - 1, renderer, target, &error);
+  if (ok) {
+    std::printf("  detail: unknown-kind scene 5-arg present succeeded\n");
+    return false;
+  }
+  if (error.find("FlappyBirdExtra") == std::string::npos) {
+    std::printf("  detail: diagnostic did not name kind: %s\n",
+                error.c_str());
+    return false;
+  }
+  return true;
+}
+
 #define RUN_CASE(name)                                  \
   do {                                                  \
     if (!(name)()) {                                    \
@@ -301,6 +424,10 @@ int main() {
   RUN_CASE(check_each_kind_appends_exactly_one_draw_cmd);
   RUN_CASE(check_true_without_append_fails);
   RUN_CASE(check_unknown_kind_appends_nothing_names_kind);
+  RUN_CASE(check_suffixed_token_names_unknown_kind);
+  RUN_CASE(check_5arg_drain_submits_staged_cmds);
+  RUN_CASE(check_5arg_drain_empty_fails_closed_with_diagnostic);
+  RUN_CASE(check_5arg_drain_unknown_kind_names_kind);
   if (failures > 0) {
     std::printf("flappy_render_path_test: %d failing\n", failures);
     return 1;

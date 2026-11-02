@@ -5,6 +5,7 @@
 // resolves these through ContentRegistry by tag and never names them.
 #include "runtime/flappy_content.h"
 
+#include <cctype>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -14,7 +15,6 @@
 #include <vector>
 
 #include "runtime/content_registry.h"
-#include "runtime/flappy_content.h"
 #include "runtime/gallery_present.h"
 #include "runtime/js_runtime.h"
 #include "runtime/layout.h"
@@ -376,9 +376,9 @@ TreeHandle RegisterFlappyContentTree(const void* data, std::size_t len) {
       ++nodeId;
     }
     // Unknown scene-kind tokens: maximal [A-Za-z0-9_:] runs opening with
-    // "Flappy" that name no known kind (and contain none as a substring,
-    // so overlapping probe bytes cannot double-count). Each registers one
-    // unknown-kind node; renderTree then fails closed with the kind named.
+    // "Flappy" that name no known kind by exact match. Every other
+    // maximal run registers one unknown-kind node; renderTree then fails
+    // closed with the kind named.
     const char* text = static_cast<const char*>(data);
     for (std::size_t i = 0; i + 6 <= len;) {
       if (std::memcmp(text + i, "Flappy", 6) != 0 ||
@@ -398,7 +398,7 @@ TreeHandle RegisterFlappyContentTree(const void* data, std::size_t len) {
       i = end;
       bool known = false;
       for (const char* kind : kKinds) {
-        if (token == kind || token.find(kind) != std::string::npos) {
+        if (token == kind) {
           known = true;
           break;
         }
@@ -601,6 +601,46 @@ bool TryPresentContentScene(const void* data, std::size_t len,
                    : "flappy scene failed closed: " + stats.unknownKindName;
     }
     return false;
+  } catch (...) {
+    if (error != nullptr) {
+      *error = "content scene present failed";
+    }
+    return false;
+  }
+}
+
+// Draining present-path routing (T6 owner): same recognition +
+// fail-closed contract as the 3-arg entry, then drains the frame's
+// emitted DrawCmds to `target` through FlushFlappyFrameToSwapchain (the
+// real swapchain feed behind Renderer::draw). Returns true only when the
+// scene was recognized, rendered clean, and drained. Never throws.
+bool TryPresentContentScene(const void* data, std::size_t len,
+                            Renderer& renderer, Swapchain& target,
+                            std::string* error) {
+  (void)renderer;
+  try {
+    if (!IsFlappySceneContent(data, len)) {
+      return false;  // Not a content scene; *error untouched — the caller
+                     // falls through to the gallery rows.
+    }
+    const ::TreeHandle scene = ::RegisterFlappyContentTree(data, len);
+    const ::FrameStats stats = ::renderTree(scene);
+    if (stats.unknownKindCount != 0 || stats.nodeCount <= 0) {
+      if (error != nullptr) {
+        *error = stats.unknownKindName.empty()
+                     ? "flappy scene produced no draw nodes"
+                     : "flappy scene failed closed: " + stats.unknownKindName;
+      }
+      return false;
+    }
+    const std::size_t submitted = FlushFlappyFrameToSwapchain(target);
+    if (submitted == 0) {
+      if (error != nullptr) {
+        *error = "flappy scene staged no drainable draw nodes";
+      }
+      return false;
+    }
+    return true;
   } catch (...) {
     if (error != nullptr) {
       *error = "content scene present failed";
