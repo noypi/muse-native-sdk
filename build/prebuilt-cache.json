@@ -1,0 +1,56 @@
+{
+  "rows": [
+    {
+      "abi": "arm64-v8a",
+      "key": {
+        "abi": "arm64-v8a",
+        "gn_args_hash": "fcbe74d06a96d4e8de75b9922954a3ae8b3a742f92be2049d5af54fdc3caceaa",
+        "name": "skia-m158",
+        "ndk_rev": "27.2.12479018",
+        "snapshot_sha256": "9335578c0c5c29c1438618019a67238b6241e7bcc1124606c5f3d39ec1f390e9",
+        "version": "m158"
+      },
+      "objectBytes": 58083664,
+      "wallClockSec": 229.59433065099438
+    },
+    {
+      "abi": "armeabi-v7a",
+      "key": {
+        "abi": "armeabi-v7a",
+        "gn_args_hash": "667313450615589ab330422b9c5b27af45cb7e6c073b7a00216a0ef0376899e1",
+        "name": "skia-m158",
+        "ndk_rev": "27.2.12479018",
+        "snapshot_sha256": "9335578c0c5c29c1438618019a67238b6241e7bcc1124606c5f3d39ec1f390e9",
+        "version": "m158"
+      },
+      "objectBytes": 52637432,
+      "wallClockSec": 189.1210107299994
+    },
+    {
+      "abi": "x86_64",
+      "key": {
+        "abi": "x86_64",
+        "gn_args_hash": "311241624f81f1be20b4da304d52a07267ac8698467cad1ae2446c7ec1bb62bf",
+        "name": "skia-m158",
+        "ndk_rev": "27.2.12479018",
+        "snapshot_sha256": "9335578c0c5c29c1438618019a67238b6241e7bcc1124606c5f3d39ec1f390e9",
+        "version": "m158"
+      },
+      "objectBytes": 55690928,
+      "wallClockSec": 186.20180077500117
+    },
+    {
+      "abi": "x86",
+      "key": {
+        "abi": "x86",
+        "gn_args_hash": "c6f8acfa161a39c2faeba94c37dded820be05738c734f3ec9c323efbfeffe04d",
+        "name": "skia-m158",
+        "ndk_rev": "27.2.12479018",
+        "snapshot_sha256": "9335578c0c5c29c1438618019a67238b6241e7bcc1124606c5f3d39ec1f390e9",
+        "version": "m158"
+      },
+      "objectBytes": 55013080,
+      "wallClockSec": 198.59741287700308
+    }
+  ]
+}
