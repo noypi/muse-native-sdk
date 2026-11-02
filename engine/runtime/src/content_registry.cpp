@@ -27,3 +27,8 @@ const ContentHandlers* ContentRegistry::Resolve(ContentTag tag) const {
 }
 
 }  // namespace runtime
+
+runtime::ContentRegistry& GlobalContentRegistry() {
+  static runtime::ContentRegistry instance;
+  return instance;
+}

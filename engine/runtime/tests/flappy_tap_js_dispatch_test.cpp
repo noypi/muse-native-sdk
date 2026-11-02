@@ -278,31 +278,31 @@ static bool check_tap_record_evidence_is_log_literal_safe() {
 // "onTouchStart" records (true).
 static bool check_record_seam_denies_forged_node_and_handler() {
   try {
-    if (runtime::FlappyTouchHandlerName(kGalleryScrimNode) != nullptr) {
+    if (runtime::ContentTouchHandlerName(kGalleryScrimNode) != nullptr) {
       std::printf("  detail: scrim node 20 named a flappy handler\n");
       return false;
     }
-    if (runtime::FlappyTouchHandlerName(-999) != nullptr) {
+    if (runtime::ContentTouchHandlerName(-999) != nullptr) {
       std::printf("  detail: forged node named a flappy handler\n");
       return false;
     }
-    if (runtime::FireFlappyTapToJs(kGalleryScrimNode, "onTouchStart")) {
+    if (runtime::FireContentTapToJs(kGalleryScrimNode, "onTouchStart")) {
       std::printf("  detail: scrim node 20 recorded a tap\n");
       return false;
     }
-    if (runtime::FireFlappyTapToJs(-999, "onTouchStart")) {
+    if (runtime::FireContentTapToJs(-999, "onTouchStart")) {
       std::printf("  detail: forged node recorded a tap\n");
       return false;
     }
-    if (runtime::FireFlappyTapToJs(kFlappySteerNode, "onTouchEnd")) {
+    if (runtime::FireContentTapToJs(kFlappySteerNode, "onTouchEnd")) {
       std::printf("  detail: wrong handler recorded a tap\n");
       return false;
     }
-    if (runtime::FireFlappyTapToJs(kFlappySteerNode, nullptr)) {
+    if (runtime::FireContentTapToJs(kFlappySteerNode, nullptr)) {
       std::printf("  detail: null handler recorded a tap\n");
       return false;
     }
-    if (!runtime::FireFlappyTapToJs(kFlappySteerNode, "onTouchStart")) {
+    if (!runtime::FireContentTapToJs(kFlappySteerNode, "onTouchStart")) {
       std::printf("  detail: control node 31 + onTouchStart did not record\n");
       return false;
     }

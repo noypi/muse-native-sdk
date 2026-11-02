@@ -15,6 +15,7 @@
 #include <unordered_set>
 #include <vector>
 
+#include "runtime/content_registry.h"
 #include "runtime/input.h"
 
 namespace {
@@ -137,8 +138,8 @@ namespace {
 // Fallback viewport for the zero-arg entry (load-time seed before the first
 // frame presents the real window size): a real-device-scale portrait rect
 // covering the dp_t8c_sweep.log sweep (x=540, y up to 1690). Never 400x800:
-// that gallery-only rect is the BUG-INPUT-002 defect (flappy taps outside it
-// silently dropped). Far-outside probes (10000,10000) stay outside.
+// that gallery-only rect is the BUG-INPUT-002 defect (content taps outside
+// it silently dropped). Far-outside probes (10000,10000) stay outside.
 constexpr float kFallbackViewportW = 1080.0f;
 constexpr float kFallbackViewportH = 1920.0f;
 
@@ -341,15 +342,15 @@ bool RepaintWithinOneFrame(int32_t nodeId) {
   return g_firedEver.count(nodeId) > 0;
 }
 
-// Batch 5 / T10 — tap-tree-from-layout: real flappy bounds populate the
-// hit-test tree (AC-INPUT-020, AC-RUNTIME-004/005/001). The laid-out flappy
-// tree root is carried as an opaque handle; every entry below is read from
-// the actual layout rects each call (each frame, or on relayout) through the
-// layout-module provider (runtime::flappy_layout, layout.cpp), which runs
-// the LayoutEngine over the pass's tree and reads boxOf per nodeId —
-// replacing the hardcoded gallery rects in PopulateTapTreeFromLayout above.
-// Node identity stays stable across updates per AC-RUNTIME-001. Never
-// throws. Types are layout-identical to the T10 contract.
+// Batch 2 / T3 — tap-tree-from-registry: hit-test entries resolve through
+// the registered content layout providers (AC-INPUT-020,
+// AC-RUNTIME-004/005/001). The laid-out content tree root is carried as an
+// opaque handle; every entry below is read from the actual layout rects
+// each call (each frame, or on relayout) through the content module's
+// provider callbacks registered by tag — replacing the hardcoded gallery
+// rects in PopulateTapTreeFromLayout above. Node identity stays stable
+// across updates per AC-RUNTIME-001. Never throws. Types are
+// layout-identical to the T10 contract.
 struct Rect {
   float x = 0.0f;
   float y = 0.0f;
@@ -362,42 +363,40 @@ struct TapNode {
   std::string handlerId;
 };
 using LayoutNode = std::int32_t;  // opaque root handle; production owns it.
-namespace runtime {
-namespace flappy_layout {
-// Owned by layout.cpp: recompute the pass through LayoutEngine and read
-// the layout rect of one node id.
-int FlappyTapCount(std::int32_t layoutRoot);
-std::int32_t FlappyTapNodeId(std::int32_t layoutRoot, int index);
-const char* FlappyTapHandler(std::int32_t layoutRoot, int index);
-bool FlappyTapBounds(std::int32_t layoutRoot, std::int32_t nodeId, float* x,
-                     float* y, float* w, float* h);
-}  // namespace flappy_layout
-}  // namespace runtime
 std::vector<TapNode> buildTapTree(LayoutNode layoutRoot) {
   try {
-    // One TapNode per touchable flappy node; bounds are the layout rect of
-    // the same nodeId read from the layout module — never literals, never
-    // node 20 (the gallery scrim must never win for flappy content).
-    const int count =
-        runtime::flappy_layout::FlappyTapCount(layoutRoot);
+    // One TapNode per touchable content node; bounds are the layout rect of
+    // the same nodeId read from the content module — never literals, never
+    // an unregistered node. The first registration answering a root wins
+    // that root; unregistered roots resolve empty.
     std::vector<TapNode> nodes;
-    for (int i = 0; i < count; ++i) {
-      const std::int32_t nodeId =
-          runtime::flappy_layout::FlappyTapNodeId(layoutRoot, i);
-      const char* handler =
-          runtime::flappy_layout::FlappyTapHandler(layoutRoot, i);
-      float x = 0.0f, y = 0.0f, w = 0.0f, h = 0.0f;
-      if (nodeId < 0 || handler == nullptr ||
-          !runtime::flappy_layout::FlappyTapBounds(layoutRoot, nodeId, &x,
-                                                   &y, &w, &h)) {
-        continue;
-      }
-      TapNode node;
-      node.nodeId = nodeId;
-      node.bounds = {x, y, w, h};
-      node.handlerId = handler;
-      nodes.push_back(node);
-    }
+    GlobalContentRegistry().ForEach(
+        [&](runtime::ContentTag tag,
+            const runtime::ContentHandlers& handlers) {
+          (void)tag;
+          if (handlers.tapCount == nullptr ||
+              handlers.tapNodeId == nullptr ||
+              handlers.tapHandler == nullptr ||
+              handlers.tapBounds == nullptr) {
+            return;
+          }
+          const int count = handlers.tapCount(layoutRoot);
+          for (int i = 0; i < count; ++i) {
+            const std::int32_t nodeId =
+                handlers.tapNodeId(layoutRoot, i);
+            const char* handler = handlers.tapHandler(layoutRoot, i);
+            float x = 0.0f, y = 0.0f, w = 0.0f, h = 0.0f;
+            if (nodeId < 0 || handler == nullptr ||
+                !handlers.tapBounds(layoutRoot, nodeId, &x, &y, &w, &h)) {
+              continue;
+            }
+            TapNode node;
+            node.nodeId = nodeId;
+            node.bounds = {x, y, w, h};
+            node.handlerId = handler;
+            nodes.push_back(node);
+          }
+        });
     return nodes;
   } catch (...) {
     // Empty/missing layout and any failure: empty tap tree, never hardcoded
