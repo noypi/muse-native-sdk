@@ -19,6 +19,7 @@ set(MUSE_INPUT_SOURCES
 
 add_library(runtime
   src/tree.cpp
+  src/content_registry.cpp
   src/frame.cpp
   src/layout.cpp
   src/js_runtime.cpp
@@ -747,6 +748,14 @@ add_executable(flappy_tap_js_dispatch_test tests/flappy_tap_js_dispatch_test.cpp
 target_link_libraries(flappy_tap_js_dispatch_test PRIVATE runtime)
 target_compile_options(flappy_tap_js_dispatch_test PRIVATE -Wall -Wextra -Wpedantic)
 add_test(NAME flappy_tap_js_dispatch_test COMMAND flappy_tap_js_dispatch_test)
+
+# Batch 1 / T1+T2: content-tag registry seam (FR-RUNTIME-013 /
+# AC-RUNTIME-038/039). Test owned by code-unit-tester; binds only to the T1
+# `Interface:` line. Definitions land in src/content_registry.cpp.
+add_executable(content_registry_test tests/content_registry_test.cpp)
+target_link_libraries(content_registry_test PRIVATE runtime)
+target_compile_options(content_registry_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME content_registry_test COMMAND content_registry_test)
 
 # FR-GRAPHICS-015 batch 2 (T3): RULE-GRAPHICS-003 oracle-painter
 # reachability gate. Hermetic shell case (grep/nm over the page-target
