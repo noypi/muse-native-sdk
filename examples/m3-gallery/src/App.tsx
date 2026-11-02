@@ -193,7 +193,8 @@ export default function App() {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const clampedIndex = stories.length === 0 ? 0 : Math.min(Math.max(selectedIndex, 0), stories.length - 1);
   const selectedStory = stories.length === 0 ? null : stories[clampedIndex];
-  const prevDisabled = clampedIndex <= 0;
+  // Forward-only this run (A2): Prev forced disabled at all times.
+  const prevDisabled = true;
   const nextDisabled = stories.length === 0 || clampedIndex >= stories.length - 1;
   const onPrev = (origin: PagingOrigin = SHELL_ORIGIN): boolean => {
     if (!isPagingGesture(origin, 'tap')) {

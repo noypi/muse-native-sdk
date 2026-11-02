@@ -140,7 +140,7 @@ describe('T4b graphic-shape Button Prev/Next chrome (static source pins — RED 
 
   it('disabled maps to undefined handler (fail-closed chrome)', () => {
     const appSrc = readApp();
-    assert.ok(/prevDisabled\s*=\s*clampedIndex\s*<=\s*0/.test(appSrc), 'prevDisabled must stay clampedIndex <= 0');
+    assert.ok(/prevDisabled\s*=\s*true/.test(appSrc), 'prevDisabled must stay forced true (forward-only)');
     assert.ok(
       /nextDisabled\s*=\s*stories\.length\s*===\s*0\s*\|\|\s*clampedIndex\s*>=\s*stories\.length\s*-\s*1/.test(appSrc),
       'nextDisabled must stay stories.length === 0 || clampedIndex >= stories.length - 1',
