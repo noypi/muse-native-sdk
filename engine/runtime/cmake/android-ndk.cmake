@@ -109,6 +109,7 @@ else()
         src/input_chain.cpp
         src/gallery_present.cpp
         src/presenter.cpp
+        ../text/src/glyph_raster_orientation.cpp
         ${MUSE_INPUT_SOURCES}
         ../graphics/pacing/frame_rate.cc
         ../graphics/pacing/render_ahead.cc

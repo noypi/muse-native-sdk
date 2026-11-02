@@ -28,6 +28,7 @@
 
 #include "muse/text/font_discovery.h"
 #include "muse/text/glyph_atlas.h"
+#include "muse/text/glyph_raster_orientation.h"
 #include "muse/text/rich_buffer.h"
 #include "muse/text/shaper.h"
 #include "runtime/layout.h"
@@ -586,10 +587,23 @@ std::uint32_t ShapeGalleryLabel(const std::string& label) {
   if (!ShapeLabelThroughEngine(label, &run, &face)) return 0;
   GalleryShaper& shaper = GalleryShaperState();
   for (std::size_t i = 0; i < run.glyph_ids.size(); ++i) {
+    const float advance =
+        i < run.advances.size() ? run.advances[i] : 0.0f;
+    // BUG-TEXT-008 t5r4: the device raster path executes the orientation
+    // guard (FR-TEXT-007 AC-TEXT-013 + FR-TEXT-010 AC-TEXT-047). The label's
+    // own bytes are the upload rows and the shaped advance is the direction:
+    // a zero/negative advance (collapse) or a mirrored upload fails closed
+    // here with a diagnostic, never a mirrored bitmap. The Real upload
+    // (UploadGlyphBitmap) is an exact copy, so any valid LTR run passes.
+    if (!muse::text::GlyphUploadPreservesAdvanceDirection(
+            reinterpret_cast<const std::uint8_t*>(label.data()),
+            label.size(), 1, label.size(), advance)) {
+      g_last_gallery_shaping_reason = "orientation-mirror";
+      return 0;
+    }
     muse::text::TexelRecord texels;
     texels.glyph_id = run.glyph_ids[i];
-    texels.advance_px =
-        i < run.advances.size() ? run.advances[i] : 0.0f;
+    texels.advance_px = advance;
     if (shaper.atlas.insert(face, kGalleryFontScale, run.glyph_ids[i],
                             texels) != muse::text::Status::kOk) {
       g_last_gallery_shaping_reason = "missing-glyph";
