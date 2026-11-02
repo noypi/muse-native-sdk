@@ -1,0 +1,389 @@
+--------- beginning of main
+11-02 16:02:29.594  2814  2814 I sh      : type=1400 audit(0.0:337): avc:  denied  { getattr } for  path="/system/bin/am" dev="vda4" ino=276 scontext=u:r:shell:s0 tcontext=u:object_r:am_exec:s0 tclass=file permissive=1
+11-02 16:02:29.594  2814  2814 I sh      : type=1400 audit(0.0:338): avc:  denied  { execute } for  name="am" dev="vda4" ino=276 scontext=u:r:shell:s0 tcontext=u:object_r:am_exec:s0 tclass=file permissive=1
+11-02 16:02:29.594  2814  2814 I sh      : type=1400 audit(0.0:339): avc:  denied  { read open } for  path="/system/bin/am" dev="vda4" ino=276 scontext=u:r:shell:s0 tcontext=u:object_r:am_exec:s0 tclass=file permissive=1
+11-02 16:02:29.594  2814  2814 I sh      : type=1400 audit(0.0:340): avc:  denied  { execute_no_trans } for  path="/system/bin/am" dev="vda4" ino=276 scontext=u:r:shell:s0 tcontext=u:object_r:am_exec:s0 tclass=file permissive=1
+--------- beginning of system
+11-02 16:02:29.603   839  1289 W ActivityTaskManager: callingPackage for (uid=2000, pid=2816) has no WPC
+11-02 16:02:29.603  1704  2819 D TrafficStats: tagSocket(5) with statsTag=0xffffffff, statsUid=-1
+11-02 16:02:29.604   839  1289 W OptProp : Cannot read opt property android.window.PROPERTY_COMPAT_ALLOW_ORIENTATION_OVERRIDE
+11-02 16:02:29.604   839  1289 V GrammaticalInflectionUtils: AttributionSource: android.content.AttributionSource@1bec34b6 does not have READ_SYSTEM_GRAMMATICAL_GENDER permission.
+11-02 16:02:29.604   839  1289 W OptProp : Cannot read opt property android.window.PROPERTY_COMPAT_ALLOW_RESIZEABLE_ACTIVITY_OVERRIDES
+11-02 16:02:29.604   839  1289 W OptProp : Cannot read opt property android.window.PROPERTY_COMPAT_ALLOW_MIN_ASPECT_RATIO_OVERRIDE
+11-02 16:02:29.607   839  1289 I ActivityTaskManager: START u0 {flg=0x10000000 cmp=com.muse.host/.MainActivity} with LAUNCH_MULTIPLE from uid 2000 (BAL_ALLOW_PERMISSION) result code=0
+11-02 16:02:29.607  1101  1143 V WindowManagerShell: Transition requested (#9): android.os.BinderProxy@f060104 TransitionRequestInfo { type = OPEN, triggerTask = TaskInfo{userId=0 taskId=269 displayId=0 isRunning=true baseIntent=Intent { flg=0x10000000 cmp=com.muse.host/.MainActivity } baseActivity=ComponentInfo{com.muse.host/com.muse.host.MainActivity} topActivity=ComponentInfo{com.muse.host/com.muse.host.MainActivity} origActivity=null realActivity=ComponentInfo{com.muse.host/com.muse.host.MainActivity} numActivities=1 lastActiveTime=7566449 supportsMultiWindow=true resizeMode=1 isResizeable=true minWidth=-1 minHeight=-1 defaultMinSize=220 token=WCT{android.window.IWindowContainerToken$Stub$Proxy@6f5d6ed} topActivityType=1 pictureInPictureParams=null shouldDockBigOverlays=false launchIntoPipHostTaskId=-1 lastParentTaskIdBeforePip=-1 displayCutoutSafeInsets=null topActivityInfo=ActivityInfo{676e922 com.muse.host.MainActivity} launchCookies=[] positionInParent=Point(0, 0) parentTaskId=-1 isFocused=false isVisible=false isVisibleRequested=false isSleeping=false locusId=null displayAreaFeatureId=1 isTopActivityTransparent=false appCompatTaskInfo=AppCompatTaskInfo { topActivityInSizeCompat=false topActivityEligibleForLetterboxEducation= falseisLetterboxEducationEnabled= false isLetterboxDoubleTapEnabled= false topActivityEligibleForUserAspectRatioButton= false topActivityBoundsLetterboxed= false isFromLetterboxDoubleTap= false topActivityLetterboxVerticalPosition= -1 topActivityLetterboxHorizontalPosition= -1 topActivityLetterboxWidth=1080 topActivityLetterboxHeight=2280 isUserFullscreenOverrideEnabled=false isSystemFullscreenOverrideEnabled=false cameraCompatTaskInfo=CameraCompatTaskInfo { cameraCompatControlState=hidden freeformCameraCompatMode=inactive}}}, pipTask = null, remoteTransition = null, displayChange = null, flags = 0, debugId = 9 }
+11-02 16:02:29.607   839   860 V GrammaticalInflectionUtils: AttributionSource: android.content.AttributionSource@1bec34b6 does not have READ_SYSTEM_GRAMMATICAL_GENDER permission.
+11-02 16:02:29.608  1296  1296 W SplitSelectStateCtor: Missing session instanceIds
+11-02 16:02:29.608  1296  1296 D StatsLog: LAUNCHER_SPLIT_SELECTION_EXIT_INTERRUPTED
+11-02 16:02:29.608  1101  1143 D WindowManagerShell: setLauncherKeepClearAreaHeight: visible=false, height=294
+11-02 16:02:29.610   574   574 I BpBinder: onLastStrongRef automatically unlinking death recipients: 
+11-02 16:02:29.612  1296  1296 I TopTaskTracker: onTaskMovedToFront: (moved taskInfo to front) taskId=269, baseIntent=Intent { flg=0x10000000 cmp=com.muse.host/.MainActivity }
+11-02 16:02:29.615   839   860 W ProcessStats: Tracking association SourceState{1375f9c system/1000 ImpBg #437} whose proc state 6 is better than process ProcessState{6b5b974 com.android.inputmethod.latin/10052 pkg=com.android.inputmethod.latin} proc state 14 (4 skipped)
+11-02 16:02:29.615   534   534 D Zygote  : Forked child process 2821
+11-02 16:02:29.616   839   868 I ActivityManager: Start proc 2821:com.muse.host/u0a133 for next-top-activity {com.muse.host/com.muse.host.MainActivity}
+11-02 16:02:29.617  2821  2821 I Zygote  : seccomp disabled by setenforce 0
+11-02 16:02:29.619  2821  2821 I com.muse.host: Using CollectorTypeCMC GC.
+11-02 16:02:29.619  2821  2821 W com.muse.host: Unexpected CPU variant for x86: x86_64.
+11-02 16:02:29.619  2821  2821 W com.muse.host: Known variants: atom, sandybridge, silvermont, goldmont, goldmont-plus, goldmont-without-sha-xsaves, tremont, kabylake, default
+11-02 16:02:29.620  2821  2821 E com.muse.host: Not starting debugger since process cannot load the jdwp agent.
+11-02 16:02:29.621  2821  2821 D nativeloader: Load libframework-connectivity-tiramisu-jni.so using APEX ns com_android_tethering for caller /apex/com.android.tethering/javalib/framework-connectivity-t.jar: ok
+11-02 16:02:29.623  2821  2821 D CompatChangeReporter: Compat change id reported: 242716250; UID 10133; state: ENABLED
+11-02 16:02:29.625  2821  2821 D nativeloader: Configuring clns-7 for other apk /data/app/~~baEFfHBLYgo1t1p-dy7mfA==/com.muse.host-Tv8vh547k4JF0q86xFnfDg==/base.apk. target_sdk_version=34, uses_libraries=, library_path=/data/app/~~baEFfHBLYgo1t1p-dy7mfA==/com.muse.host-Tv8vh547k4JF0q86xFnfDg==/lib/x86_64:/data/app/~~baEFfHBLYgo1t1p-dy7mfA==/com.muse.host-Tv8vh547k4JF0q86xFnfDg==/base.apk!/lib/x86_64, permitted_path=/data:/mnt/expand:/data/user/0/com.muse.host
+11-02 16:02:29.627   839  1264 D CoreBackPreview: Window{3e9181f u0 Splash Screen com.muse.host}: Setting back callback OnBackInvokedCallbackInfo{mCallback=android.window.IOnBackInvokedCallback$Stub$Proxy@1b35070, mPriority=0, mIsAnimationCallback=false}
+11-02 16:02:29.628   553   553 D gralloc_ranchu: gralloc_alloc: Creating ashmem region of size 9850880
+11-02 16:02:29.629   553   553 E android.hardware.graphics.allocator@2.0-service: open_verbose_path:56: Could not open '/dev/goldfish_pipe_dprctd': No such file or directory
+11-02 16:02:29.629   553   553 E android.hardware.graphics.allocator@2.0-service: open_verbose:128: both vsock and goldfish_pipe paths failed
+11-02 16:02:29.630   553   553 D gralloc_ranchu: gralloc_alloc: Creating ashmem region of size 9850880
+11-02 16:02:29.631   553   553 E android.hardware.graphics.allocator@2.0-service: open_verbose_path:56: Could not open '/dev/goldfish_pipe_dprctd': No such file or directory
+11-02 16:02:29.631   553   553 E android.hardware.graphics.allocator@2.0-service: open_verbose:128: both vsock and goldfish_pipe paths failed
+11-02 16:02:29.631   553   553 D gralloc_ranchu: gralloc_alloc: Creating ashmem region of size 9850880
+11-02 16:02:29.633   553   553 E android.hardware.graphics.allocator@2.0-service: open_verbose_path:56: Could not open '/dev/goldfish_pipe_dprctd': No such file or directory
+11-02 16:02:29.633   553   553 E android.hardware.graphics.allocator@2.0-service: open_verbose:128: both vsock and goldfish_pipe paths failed
+11-02 16:02:29.634  2821  2821 V GraphicsEnvironment: Currently set values for:
+11-02 16:02:29.634  2821  2821 V GraphicsEnvironment:   angle_gl_driver_selection_pkgs=[]
+11-02 16:02:29.634  2821  2821 V GraphicsEnvironment:   angle_gl_driver_selection_values=[]
+11-02 16:02:29.634  2821  2821 V GraphicsEnvironment: Global.Settings values are invalid: number of packages: 0, number of values: 0
+11-02 16:02:29.634  2821  2821 V GraphicsEnvironment: Neither updatable production driver nor prerelease driver is supported.
+11-02 16:02:29.637   839   913 D IntervalStats: Unable to parse usage stats packages: [122, 123, 124, 125, 126, 127, 128, 129, 130, 131]
+11-02 16:02:29.637   839   913 D IntervalStats: Unable to parse event packages: [131]
+11-02 16:02:29.637   839   913 D IntervalStats: Unable to parse usage stats packages: [131, 132, 133, 134, 135]
+11-02 16:02:29.637   839   913 D IntervalStats: Unable to parse event packages: [135]
+11-02 16:02:29.638   839   913 D IntervalStats: Unable to parse usage stats packages: [135, 136, 137, 138, 139]
+11-02 16:02:29.638   839   913 D IntervalStats: Unable to parse event packages: [139]
+11-02 16:02:29.637  2821  2821 I RenderThread: type=1400 audit(0.0:341): avc:  denied  { read } for  name="libandroidemu.so" dev="vda4" ino=4447 scontext=u:r:untrusted_app:s0:c133,c256,c512,c768 tcontext=u:object_r:vendor_file:s0 tclass=file permissive=1 app=com.muse.host
+11-02 16:02:29.637  2821  2821 I RenderThread: type=1400 audit(0.0:342): avc:  denied  { open } for  path="/system/vendor/lib64/libandroidemu.so" dev="vda4" ino=4447 scontext=u:r:untrusted_app:s0:c133,c256,c512,c768 tcontext=u:object_r:vendor_file:s0 tclass=file permissive=1 app=com.muse.host
+11-02 16:02:29.638  2821  2821 I RenderThread: type=1400 audit(0.0:343): avc:  denied  { getattr } for  path="/system/vendor/lib64/libandroidemu.so" dev="vda4" ino=4447 scontext=u:r:untrusted_app:s0:c133,c256,c512,c768 tcontext=u:object_r:vendor_file:s0 tclass=file permissive=1 app=com.muse.host
+11-02 16:02:29.638  2821  2821 I RenderThread: type=1400 audit(0.0:344): avc:  denied  { map } for  path="/system/vendor/lib64/libandroidemu.so" dev="vda4" ino=4447 scontext=u:r:untrusted_app:s0:c133,c256,c512,c768 tcontext=u:object_r:vendor_file:s0 tclass=file permissive=1 app=com.muse.host
+11-02 16:02:29.642  1101  1119 V WindowManagerShell: onTransitionReady(transaction=3603477563701)
+11-02 16:02:29.642   839   857 V WindowManager: Sent Transition (#9) createdAt=11-02 16:02:29.605 via request=TransitionRequestInfo { type = OPEN, triggerTask = TaskInfo{userId=0 taskId=269 displayId=0 isRunning=true baseIntent=Intent { flg=0x10000000 cmp=com.muse.host/.MainActivity } baseActivity=ComponentInfo{com.muse.host/com.muse.host.MainActivity} topActivity=ComponentInfo{com.muse.host/com.muse.host.MainActivity} origActivity=null realActivity=ComponentInfo{com.muse.host/com.muse.host.MainActivity} numActivities=1 lastActiveTime=7566449 supportsMultiWindow=true resizeMode=1 isResizeable=true minWidth=-1 minHeight=-1 defaultMinSize=220 token=WCT{RemoteToken{48c5321 Task{8f2f0c2 #269 type=standard A=10133:com.muse.host}}} topActivityType=1 pictureInPictureParams=null shouldDockBigOverlays=false launchIntoPipHostTaskId=-1 lastParentTaskIdBeforePip=-1 displayCutoutSafeInsets=null topActivityInfo=ActivityInfo{d99a346 com.muse.host.MainActivity} launchCookies=[] positionInParent=Point(0, 0) parentTaskId=-1 isFocused=false isVisible=false isVisibleRequested=false isSleeping=false locusId=null displayAreaFeatureId=1 isTopActivityTransparent=false appCompatTaskInfo=AppCompatTaskInfo { topActivityInSizeCompat=false topActivityEligibleForLetterboxEducation= falseisLetterboxEducationEnabled= false isLetterboxDoubleTapEnabled= false topActivityEligibleForUserAspectRatioButton= false topActivityBoundsLetterboxed= false isFromLetterboxDoubleTap= false topActivityLetterboxVerticalPosition= -1 topActivityLetterboxHorizontalPosition= -1 topActivityLetterboxWidth=1080 topActivityLetterboxHeight=2280 isUserFullscreenOverrideEnabled=false isSystemFullscreenOverrideEnabled=false cameraCompatTaskInfo=CameraCompatTaskInfo { cameraCompatControlState=hidden freeformCameraCompatMode=inactive}}}, pipTask = null, remoteTransition = null, displayChange = null, flags = 0, debugId = 9 }
+11-02 16:02:29.642   839   857 V WindowManager:     startWCT=WindowContainerTransaction { changes = {} hops = [] errorCallbackToken=null taskFragmentOrganizer=null }
+11-02 16:02:29.642   839   857 V WindowManager:     info={id=9 t=OPEN f=0x0 trk=0 r=[0@Point(0, 0)] c=[
+11-02 16:02:29.642   839   857 V WindowManager:         {WCT{RemoteToken{48c5321 Task{8f2f0c2 #269 type=standard A=10133:com.muse.host}}} m=OPEN f=NONE leash=Surface(name=Task=269)/@0x172452b sb=Rect(0, 0 - 1080, 2280) eb=Rect(0, 0 - 1080, 2280) d=0 taskParent=-1},
+11-02 16:02:29.642   839   857 V WindowManager:         {WCT{RemoteToken{90dc961 Task{a0838a1 #1 type=home}}} m=TO_BACK f=SHOW_WALLPAPER leash=Surface(name=Task=1)/@0x999827d sb=Rect(0, 0 - 1080, 2280) eb=Rect(0, 0 - 1080, 2280) d=0 taskParent=-1}
+11-02 16:02:29.642   839   857 V WindowManager:     ]}
+11-02 16:02:29.642  1101  1143 V WindowManagerShell: onTransitionReady (#9) android.os.BinderProxy@f060104: {id=9 t=OPEN f=0x0 trk=0 r=[0@Point(0, 0)] c=[{WCT{android.window.IWindowContainerToken$Stub$Proxy@8e9161e} m=OPEN f=NONE leash=Surface(name=Task=269)/@0xe120ba3 sb=Rect(0, 0 - 1080, 2280) eb=Rect(0, 0 - 1080, 2280) d=0 taskParent=-1},{WCT{android.window.IWindowContainerToken$Stub$Proxy@92fbeff} m=TO_BACK f=SHOW_WALLPAPER leash=Surface(name=Task=1)/@0x4ccea0 sb=Rect(0, 0 - 1080, 2280) eb=Rect(0, 0 - 1080, 2280) d=0 taskParent=-1}]}
+11-02 16:02:29.642  1101  1143 V WindowManagerShell: Playing animation for (#9) android.os.BinderProxy@f060104@0
+11-02 16:02:29.642  1101  1143 V WindowManagerShell:  try handler com.android.wm.shell.transition.DefaultMixedHandler@316e8b
+11-02 16:02:29.642  1101  1143 V WindowManagerShell:  try handler com.android.wm.shell.keyguard.KeyguardTransitionHandler@f3c9b68
+11-02 16:02:29.642  1101  1143 V WindowManagerShell:  try handler com.android.wm.shell.pip.PipTransition@306042b
+11-02 16:02:29.642  1101  1143 V WindowManagerShell:  try handler com.android.wm.shell.activityembedding.ActivityEmbeddingController@3171088
+11-02 16:02:29.642  1101  1143 V WindowManagerShell:  try handler com.android.wm.shell.recents.RecentsTransitionHandler@e53ae46
+11-02 16:02:29.642  1101  1143 V ShellRecents: RecentsTransitionHandler.startAnimation: no controller found
+11-02 16:02:29.643  1101  1143 V WindowManagerShell:  try handler com.android.wm.shell.splitscreen.StageCoordinator@8deb807
+11-02 16:02:29.643  1101  1143 V WindowManagerShell:  try handler com.android.wm.shell.transition.RemoteTransitionHandler@f50ad34
+11-02 16:02:29.643  1101  1143 V WindowManagerShell: Transition doesn't have explicit remote, search filters for match for {id=9 t=OPEN f=0x0 trk=0 r=[0@Point(0, 0)] c=[{WCT{android.window.IWindowContainerToken$Stub$Proxy@8e9161e} m=OPEN f=NONE leash=Surface(name=Task=269)/@0xe120ba3 sb=Rect(0, 0 - 1080, 2280) eb=Rect(0, 0 - 1080, 2280) d=0 taskParent=-1},{WCT{android.window.IWindowContainerToken$Stub$Proxy@92fbeff} m=TO_BACK f=SHOW_WALLPAPER leash=Surface(name=Task=1)/@0x4ccea0 sb=Rect(0, 0 - 1080, 2280) eb=Rect(0, 0 - 1080, 2280) d=0 taskParent=-1}]}
+11-02 16:02:29.643  1101  1143 V WindowManagerShell:  Checking filter Pair{{types=[] flags=0x0] notFlags=0x100 checks=[{atype=home independent=true modes=[OPEN,TO_FRONT] flags=NONE mustBeTask=false order=TOP topActivity=ComponentInfo{com.android.launcher3/com.android.launcher3.uioverrides.QuickstepLauncher} launchCookie=null},{atype=standard independent=true modes=[CLOSE,TO_BACK] flags=NONE mustBeTask=false order=ANY topActivity=null launchCookie=null}]} RemoteTransition { remoteTransition = android.window.IRemoteTransition$Stub$Proxy@457c75d, appThread = android.app.IApplicationThread$Stub$Proxy@70c68d2, debugName = QuickstepLaunchHome }}
+11-02 16:02:29.643  1101  1143 V WindowManagerShell:  Delegate animation for (#9) to null
+11-02 16:02:29.643  1101  1143 V WindowManagerShell:  try handler com.android.wm.shell.transition.DefaultTransitionHandler@ca4cda3
+11-02 16:02:29.643  1101  1143 V WindowManagerShell: start default transition animation, info = {id=9 t=OPEN f=0x0 trk=0 r=[0@Point(0, 0)] c=[{WCT{android.window.IWindowContainerToken$Stub$Proxy@8e9161e} m=OPEN f=NONE leash=Surface(name=Task=269)/@0xe120ba3 sb=Rect(0, 0 - 1080, 2280) eb=Rect(0, 0 - 1080, 2280) d=0 taskParent=-1},{WCT{android.window.IWindowContainerToken$Stub$Proxy@92fbeff} m=TO_BACK f=SHOW_WALLPAPER leash=Surface(name=Task=1)/@0x4ccea0 sb=Rect(0, 0 - 1080, 2280) eb=Rect(0, 0 - 1080, 2280) d=0 taskParent=-1}]}
+11-02 16:02:29.643  1101  1143 V WindowManagerShell: loadAnimation: anim=android.view.animation.AnimationSet@cb4d315 animAttr=0x13 type=OPEN isEntrance=false
+11-02 16:02:29.643   839  1816 W UserManagerService: Requested status bar icon for non-badged user 0
+11-02 16:02:29.643  1101  1143 V WindowManagerShell: loadAnimation: anim=android.view.animation.AnimationSet@b9c8b91 animAttr=0x12 type=OPEN isEntrance=true
+11-02 16:02:29.644  1101  1143 V WindowManagerShell:  animated by com.android.wm.shell.transition.DefaultTransitionHandler@ca4cda3
+11-02 16:02:29.644  2821  2821 D nativeloader: Load /data/app/~~baEFfHBLYgo1t1p-dy7mfA==/com.muse.host-Tv8vh547k4JF0q86xFnfDg==/lib/x86_64/libRuntime.so using ns clns-7 from class loader (caller=/data/app/~~baEFfHBLYgo1t1p-dy7mfA==/com.muse.host-Tv8vh547k4JF0q86xFnfDg==/base.apk): ok
+11-02 16:02:29.646  1296  1763 D EGL_emulation: app_time_stats: avg=1129.72ms min=1.51ms max=25867.13ms count=23
+11-02 16:02:29.652   839  1292 D CompatChangeReporter: Compat change id reported: 161145287; UID 10133; state: ENABLED
+11-02 16:02:29.653  2821  2821 W HWUI    : Unknown dataspace 0
+11-02 16:02:29.654  2821  2838 I muse-host: nativeLoadTree: bytes=50760 rows=121 -> handle acquired
+11-02 16:02:29.654  2821  2838 I muse-host: nativeProvenance: engine-sha=bef7b60 gallery_present-sha=55b2c9eed17693176733e5e3914ef2c2eb4ebadf
+11-02 16:02:29.654  2821  2838 I GalleryPage: gallery-rows=121
+11-02 16:02:29.661   839  1816 D CoreBackPreview: Window{be20693 u0 com.muse.host/com.muse.host.MainActivity}: Setting back callback OnBackInvokedCallbackInfo{mCallback=android.window.IOnBackInvokedCallback$Stub$Proxy@a8b36c9, mPriority=0, mIsAnimationCallback=false}
+11-02 16:02:29.663   574   744 W ServiceManagerCppClient: Permission failure: android.permission.ACCESS_SURFACE_FLINGER from uid=10133 pid=0
+11-02 16:02:29.663   574  1156 W ServiceManagerCppClient: Permission failure: android.permission.ACCESS_SURFACE_FLINGER from uid=10133 pid=2821
+11-02 16:02:29.663   574  1156 D PermissionCache: checking android.permission.ACCESS_SURFACE_FLINGER for uid=10133 => denied (74 us)
+11-02 16:02:29.663   574   744 D PermissionCache: checking android.permission.ACCESS_SURFACE_FLINGER for uid=10133 => denied (122 us)
+11-02 16:02:29.663   574   744 W ServiceManagerCppClient: Permission failure: android.permission.ROTATE_SURFACE_FLINGER from uid=10133 pid=0
+11-02 16:02:29.663   574   744 D PermissionCache: checking android.permission.ROTATE_SURFACE_FLINGER for uid=10133 => denied (64 us)
+11-02 16:02:29.663   574  1156 W ServiceManagerCppClient: Permission failure: android.permission.ROTATE_SURFACE_FLINGER from uid=10133 pid=2821
+11-02 16:02:29.663   574  1156 D PermissionCache: checking android.permission.ROTATE_SURFACE_FLINGER for uid=10133 => denied (72 us)
+11-02 16:02:29.664   574   744 W ServiceManagerCppClient: Permission failure: android.permission.INTERNAL_SYSTEM_WINDOW from uid=10133 pid=0
+11-02 16:02:29.664   574  1156 W ServiceManagerCppClient: Permission failure: android.permission.INTERNAL_SYSTEM_WINDOW from uid=10133 pid=2821
+11-02 16:02:29.664   574   744 D PermissionCache: checking android.permission.INTERNAL_SYSTEM_WINDOW for uid=10133 => denied (51 us)
+11-02 16:02:29.664   574  1156 D PermissionCache: checking android.permission.INTERNAL_SYSTEM_WINDOW for uid=10133 => denied (50 us)
+11-02 16:02:29.664  2821  2835 I EGL_emulation: Opening libGLESv1_CM_emulation.so
+11-02 16:02:29.664  2821  2835 I EGL_emulation: Opening libGLESv2_emulation.so
+11-02 16:02:29.664  2821  2835 E com.muse.host: open_verbose_path:56: Could not open '/dev/goldfish_pipe_dprctd': No such file or directory
+11-02 16:02:29.664  2821  2835 E com.muse.host: open_verbose:128: both vsock and goldfish_pipe paths failed
+11-02 16:02:29.664  2821  2835 W com.muse.host: Process pipe failed
+11-02 16:02:29.665  2821  2835 D HostConnection: New host connection established 0x720c6ca39d50, pid 2821, tid 2835
+11-02 16:02:29.665   363  2842 D local_opengl: Sending id 29 to host
+11-02 16:02:29.665  2821  2821 I muse-host: SEAM-STEP:attach:ok:handle=1
+11-02 16:02:29.665  2821  2821 I muse-host: nativeAttachSurface: window 1080x2091
+11-02 16:02:29.665  2821  2821 I muse-host: SEAM-STEP:render:ok
+11-02 16:02:29.666   171   171 I hwservicemanager: getTransport: Cannot find entry android.hardware.graphics.mapper@4.0::IMapper/default in either framework or device VINTF manifest.
+11-02 16:02:29.666  2821  2841 I Gralloc4: mapper 4.x is not supported
+11-02 16:02:29.666   171   171 I hwservicemanager: getTransport: Cannot find entry android.hardware.graphics.mapper@3.0::IMapper/default in either framework or device VINTF manifest.
+11-02 16:02:29.666  2821  2841 W Gralloc3: mapper 3.x is not supported
+11-02 16:02:29.668   553   553 D gralloc_ranchu: gralloc_alloc: Creating ashmem region of size 9035776
+11-02 16:02:29.668   171   171 I hwservicemanager: getTransport: Cannot find entry android.hardware.configstore@1.0::ISurfaceFlingerConfigs/default in either framework or device VINTF manifest.
+11-02 16:02:29.669  2821  2835 W HWUI    : Failed to choose config with EGL_SWAP_BEHAVIOR_PRESERVED, retrying without...
+11-02 16:02:29.670  2821  2835 W HWUI    : Failed to initialize 101010-2 format, error = EGL_SUCCESS
+11-02 16:02:29.670   553   553 E android.hardware.graphics.allocator@2.0-service: open_verbose_path:56: Could not open '/dev/goldfish_pipe_dprctd': No such file or directory
+11-02 16:02:29.670   553   553 E android.hardware.graphics.allocator@2.0-service: open_verbose:128: both vsock and goldfish_pipe paths failed
+11-02 16:02:29.670  2821  2841 D HostConnection: New host connection established 0x720c6ca37d10, pid 2821, tid 2841
+11-02 16:02:29.671  2821  2835 E com.muse.host: open_verbose_path:56: Could not open '/dev/goldfish_pipe_dprctd': No such file or directory
+11-02 16:02:29.671  2821  2835 E com.muse.host: open_verbose:128: both vsock and goldfish_pipe paths failed
+11-02 16:02:29.674   363  2843 D local_opengl: Sending id 30 to host
+11-02 16:02:29.696   553   553 D gralloc_ranchu: gralloc_alloc: Creating ashmem region of size 9850880
+11-02 16:02:29.699   553   553 E android.hardware.graphics.allocator@2.0-service: open_verbose_path:56: Could not open '/dev/goldfish_pipe_dprctd': No such file or directory
+11-02 16:02:29.699   553   553 E android.hardware.graphics.allocator@2.0-service: open_verbose:128: both vsock and goldfish_pipe paths failed
+11-02 16:02:29.746  2821  2841 I GalleryPage: [layering] slice page=0 rows=[0,12] comps={TopAppBar|TopAppBar|TopAppBar|NavigationBar|NavigationRail|NavigationDrawer|BottomAppBar|SearchBar|SegmentedButton|ButtonGroup|SplitButton|Button|Button} labels={m3-gallery|m3-gallery|m3-gallery|NavigationBar selected=home|NavigationRail selected=home|NavigationDrawer selected=home|gallery|Search settings|SegmentedButton selected=day|ButtonGroup selected=bold|Create new|Primary action|Tonal action}
+11-02 16:02:29.944  1101  1143 V WindowManagerShell: Transition animation finished (aborted=false), notifying core (#9) android.os.BinderProxy@f060104@0
+11-02 16:02:29.944   839   857 V WindowManager: Finish Transition (#9): created at 11-02 16:02:29.605 collect-started=0.023ms request-sent=2.197ms started=2.645ms ready=31.282ms sent=36.604ms finished=339.526ms
+11-02 16:02:29.945  1296  1296 D VRI[QuickstepLauncher]: visibilityChanged oldVisibility=true newVisibility=false
+11-02 16:02:29.945  1101  1143 V WindowManagerShell: Track 0 became idle
+11-02 16:02:29.945  1101  1143 V WindowManagerShell: All active transition animations finished
+11-02 16:02:29.946   839  1292 W UserManagerService: Requested status bar icon for non-badged user 0
+11-02 16:02:29.946   839  1292 W UserManagerService: Requested status bar icon for non-badged user 0
+11-02 16:02:29.980  1101  1164 D EGL_emulation: app_time_stats: avg=1660.99ms min=13.51ms max=26334.11ms count=16
+11-02 16:02:30.483  2821  2841 I GalleryPage: gallery-rows=121 gallery-pages=9
+11-02 16:02:30.483  2821  2841 I GalleryPage: gallery-page=1/9
+11-02 16:02:30.483  2821  2821 I muse-host: nativeAttachSurface: window 1080x2091
+11-02 16:02:30.483  2821  2821 I muse-host: SEAM-STEP:render:ok
+11-02 16:02:30.483   553   553 D gralloc_ranchu: gralloc_alloc: Creating ashmem region of size 9035776
+11-02 16:02:30.484   553   553 E android.hardware.graphics.allocator@2.0-service: open_verbose_path:56: Could not open '/dev/goldfish_pipe_dprctd': No such file or directory
+11-02 16:02:30.484   553   553 E android.hardware.graphics.allocator@2.0-service: open_verbose:128: both vsock and goldfish_pipe paths failed
+11-02 16:02:30.513   553   553 D gralloc_ranchu: gralloc_alloc: Creating ashmem region of size 9850880
+11-02 16:02:30.514   553   553 E android.hardware.graphics.allocator@2.0-service: open_verbose_path:56: Could not open '/dev/goldfish_pipe_dprctd': No such file or directory
+11-02 16:02:30.514   553   553 E android.hardware.graphics.allocator@2.0-service: open_verbose:128: both vsock and goldfish_pipe paths failed
+11-02 16:02:30.531  2821  2821 I Choreographer: Skipped 51 frames!  The application may be doing too much work on its main thread.
+11-02 16:02:30.531   839  1292 W ServiceManagerCppClient: Permission failure: android.permission.ACCESS_SURFACE_FLINGER from uid=10133 pid=0
+11-02 16:02:30.531   839  1292 D PermissionCache: checking android.permission.ACCESS_SURFACE_FLINGER for uid=10133 => denied (75 us)
+11-02 16:02:30.531   839  1292 W ServiceManagerCppClient: Permission failure: android.permission.ROTATE_SURFACE_FLINGER from uid=10133 pid=0
+11-02 16:02:30.531   839  1292 D PermissionCache: checking android.permission.ROTATE_SURFACE_FLINGER for uid=10133 => denied (20 us)
+11-02 16:02:30.531   839  1292 W ServiceManagerCppClient: Permission failure: android.permission.INTERNAL_SYSTEM_WINDOW from uid=10133 pid=0
+11-02 16:02:30.531   839  1292 D PermissionCache: checking android.permission.INTERNAL_SYSTEM_WINDOW for uid=10133 => denied (8 us)
+11-02 16:02:30.532   839   857 I ActivityTaskManager: Displayed com.muse.host/.MainActivity for user 0: +929ms
+11-02 16:02:30.532   839   857 I ActivityTaskManager: Fully drawn com.muse.host/.MainActivity: +929ms
+11-02 16:02:30.534   553   553 D gralloc_ranchu: gralloc_alloc: Creating ashmem region of size 9850880
+11-02 16:02:30.534  1296  1296 D BaseDepthController: setSurface:
+11-02 16:02:30.534  1296  1296 D BaseDepthController: 	mWaitingOnSurfaceValidity: false
+11-02 16:02:30.534  1296  1296 D BaseDepthController: 	mSurface: null
+11-02 16:02:30.535  1296  1296 D StateManager: goToState - fromState: Normal, toState: Normal, partial trace:
+11-02 16:02:30.535  1296  1296 D StateManager: 	at com.android.launcher3.statemanager.StateManager.moveToRestState(StateManager.java:453)
+11-02 16:02:30.535  1296  1296 D StateManager: 	at com.android.launcher3.statemanager.StateManager.moveToRestState(StateManager.java:444)
+11-02 16:02:30.535  1296  1296 D StateManager: 	at com.android.launcher3.statemanager.StatefulActivity.onStop(StatefulActivity.java:119)
+11-02 16:02:30.535  1296  1296 D StatsLog: LAUNCHER_ONSTOP
+11-02 16:02:30.536   553   553 E android.hardware.graphics.allocator@2.0-service: open_verbose_path:56: Could not open '/dev/goldfish_pipe_dprctd': No such file or directory
+11-02 16:02:30.536   553   553 E android.hardware.graphics.allocator@2.0-service: open_verbose:128: both vsock and goldfish_pipe paths failed
+11-02 16:02:30.540  2821  2841 I GalleryPage: [layering] slice page=0 rows=[0,12] comps={TopAppBar|TopAppBar|TopAppBar|NavigationBar|NavigationRail|NavigationDrawer|BottomAppBar|SearchBar|SegmentedButton|ButtonGroup|SplitButton|Button|Button} labels={m3-gallery|m3-gallery|m3-gallery|NavigationBar selected=home|NavigationRail selected=home|NavigationDrawer selected=home|gallery|Search settings|SegmentedButton selected=day|ButtonGroup selected=bold|Create new|Primary action|Tonal action}
+11-02 16:02:30.546  2821  2844 I HWUI    : Davey! duration=859ms; Flags=0, FrameTimelineVsyncId=299951, IntendedVsync=7566518758562, Vsync=7567368758528, InputEventId=0, HandleInputStart=7567373360838, AnimationStart=7567373362698, PerformTraversalsStart=7567373368959, DrawStart=7567373477965, FrameDeadline=7566535425228, FrameInterval=7567373162915, FrameStartTime=16666666, SyncQueued=7567373549370, SyncStart=7567373568271, IssueDrawCommandsStart=7567373596303, SwapBuffers=7567374261764, FrameCompleted=7567378581845, DequeueBufferDuration=2217545, QueueBufferDuration=187152, GpuCompleted=7567374261764, SwapBuffersCompleted=7567378581845, DisplayPresentTime=0, CommandSubmissionCompleted=7567374261764, 
+11-02 16:02:30.564   839   936 I ImeTracker: com.muse.host:78ab8416: onRequestHide at ORIGIN_SERVER reason HIDE_UNSPECIFIED_WINDOW fromUser false
+11-02 16:02:30.565   839   936 I ImeTracker: com.muse.host:78ab8416: onCancelled at PHASE_SERVER_SHOULD_HIDE
+11-02 16:02:30.896  1101  1148 W WindowOnBackDispatcher: sendCancelIfRunning: isInProgress=false callback=android.view.ViewRootImpl$$ExternalSyntheticLambda11@3ebc446
+11-02 16:02:30.897   839  1292 D CoreBackPreview: Window{3e9181f u0 Splash Screen com.muse.host EXITING}: Setting back callback null
+11-02 16:02:30.897   839  1816 W InputManager-JNI: Input channel object '3e9181f Splash Screen com.muse.host (client)' was disposed without first being removed with the input manager!
+11-02 16:02:30.995  1101  1164 D EGL_emulation: app_time_stats: avg=16.75ms min=9.80ms max=48.58ms count=59
+11-02 16:02:31.304  2821  2841 I GalleryPage: gallery-rows=121 gallery-pages=9
+11-02 16:02:31.304  2821  2841 I GalleryPage: gallery-page=1/9
+11-02 16:02:32.618   839  1693 E TaskPersister: File error accessing recents directory (directory doesn't exist?).
+11-02 16:02:33.689   839   851 I BpBinder: onLastStrongRef automatically unlinking death recipients: 
+11-02 16:02:33.691   839   852 W System  : A resource failed to call CursorWindow.close. 
+11-02 16:02:33.691   839   852 W system_server: ApkAssets: Deleting an ApkAssets object '<empty> and /system/product/app/LatinIME/LatinIME.apk' with 1 weak references
+11-02 16:02:33.691   839   852 W System  : A resource failed to call release. 
+11-02 16:02:34.475  2508  2510 I AidlLazyServiceRegistrar: Process has 0 (of 1 available) client(s) in use after notification artd has clients: 0
+11-02 16:02:34.475  2508  2510 I AidlLazyServiceRegistrar: Trying to shut down the service. No clients in use for any service in process.
+11-02 16:02:34.476  2508  2510 I AidlLazyServiceRegistrar: Unregistered all clients and exiting
+11-02 16:02:39.714   839   884 E ResilientAtomicFile: Failed to verity-protect package restrictions
+11-02 16:02:39.714   839   884 E ResilientAtomicFile: java.io.IOException: Failed to enable fs-verity on FD(438): Operation not supported on transport endpoint
+11-02 16:02:39.714   839   884 E ResilientAtomicFile: 	at com.android.internal.security.VerityUtils.setUpFsverity(VerityUtils.java:94)
+11-02 16:02:39.714   839   884 E ResilientAtomicFile: 	at com.android.server.security.FileIntegrity.setUpFsVerity(FileIntegrity.java:66)
+11-02 16:02:39.714   839   884 E ResilientAtomicFile: 	at com.android.server.pm.ResilientAtomicFile.finishWrite(ResilientAtomicFile.java:151)
+11-02 16:02:39.714   839   884 E ResilientAtomicFile: 	at com.android.server.pm.Settings.writePackageRestrictions(Settings.java:2499)
+11-02 16:02:39.714   839   884 E ResilientAtomicFile: 	at com.android.server.pm.Settings.writePackageRestrictions(Settings.java:2324)
+11-02 16:02:39.714   839   884 E ResilientAtomicFile: 	at com.android.server.pm.PackageManagerService.writePendingRestrictions(PackageManagerService.java:1625)
+11-02 16:02:39.714   839   884 E ResilientAtomicFile: 	at com.android.server.pm.PackageManagerService$2.handleMessage(PackageManagerService.java:1652)
+11-02 16:02:39.714   839   884 E ResilientAtomicFile: 	at android.os.Handler.dispatchMessage(Handler.java:103)
+11-02 16:02:39.714   839   884 E ResilientAtomicFile: 	at android.os.Looper.loopOnce(Looper.java:232)
+11-02 16:02:39.714   839   884 E ResilientAtomicFile: 	at android.os.Looper.loop(Looper.java:317)
+11-02 16:02:39.714   839   884 E ResilientAtomicFile: 	at android.os.HandlerThread.run(HandlerThread.java:85)
+11-02 16:02:39.714   839   884 E ResilientAtomicFile: 	at com.android.server.ServiceThread.run(ServiceThread.java:46)
+11-02 16:02:43.422   839   921 D ActivityManager: freezing 2206 com.android.localtransport
+11-02 16:02:43.422   839   921 D ActivityManager: freezing 2549 com.android.keychain
+11-02 16:02:43.423   839   921 D ActivityManager: freezing 1267 com.android.settings
+11-02 16:02:43.762  2865  2865 W BpBinder: Linking to death on android.gui.ISurfaceComposer but there are no threads (yet?) listening to incoming transactions. See ProcessState::startThreadPool and ProcessState::setThreadPoolMaxThreadCount. Generally you should setup the binder threadpool before other initialization steps.
+11-02 16:02:43.763  2865  2865 W ProcessState: Extra binder thread started, but 0 threads requested. Do not use *startThreadPool when zero threads are requested.
+11-02 16:02:43.763   553   553 D gralloc_ranchu: gralloc_alloc: Creating ashmem region of size 9850880
+11-02 16:02:43.767   553   553 E android.hardware.graphics.allocator@2.0-service: open_verbose_path:56: Could not open '/dev/goldfish_pipe_dprctd': No such file or directory
+11-02 16:02:43.767   553   553 E android.hardware.graphics.allocator@2.0-service: open_verbose:128: both vsock and goldfish_pipe paths failed
+11-02 16:02:43.771   171   171 I hwservicemanager: getTransport: Cannot find entry android.hardware.graphics.mapper@4.0::IMapper/default in either framework or device VINTF manifest.
+11-02 16:02:43.772  2865  2866 I Gralloc4: mapper 4.x is not supported
+11-02 16:02:43.772   171   171 I hwservicemanager: getTransport: Cannot find entry android.hardware.graphics.mapper@3.0::IMapper/default in either framework or device VINTF manifest.
+11-02 16:02:43.772  2865  2866 W Gralloc3: mapper 3.x is not supported
+11-02 16:02:43.772  2865  2865 I binder:2865_1: type=1400 audit(0.0:346): avc:  denied  { getattr } for  path="/system/vendor/lib64/hw/gralloc.ranchu.so" dev="vda4" ino=4431 scontext=u:r:shell:s0 tcontext=u:object_r:vendor_file:s0 tclass=file permissive=1
+11-02 16:02:43.772  2865  2865 I binder:2865_1: type=1400 audit(0.0:347): avc:  denied  { read } for  name="gralloc.ranchu.so" dev="vda4" ino=4431 scontext=u:r:shell:s0 tcontext=u:object_r:vendor_file:s0 tclass=file permissive=1
+11-02 16:02:43.772  2865  2865 I binder:2865_1: type=1400 audit(0.0:348): avc:  denied  { open } for  path="/system/vendor/lib64/hw/gralloc.ranchu.so" dev="vda4" ino=4431 scontext=u:r:shell:s0 tcontext=u:object_r:vendor_file:s0 tclass=file permissive=1
+11-02 16:02:43.772  2865  2865 I binder:2865_1: type=1400 audit(0.0:349): avc:  denied  { map } for  path="/system/vendor/lib64/hw/gralloc.ranchu.so" dev="vda4" ino=4431 scontext=u:r:shell:s0 tcontext=u:object_r:vendor_file:s0 tclass=file permissive=1
+11-02 16:02:43.773  2865  2865 I binder:2865_1: type=1400 audit(0.0:350): avc:  denied  { execute } for  path="/system/vendor/lib64/libdrm.so" dev="vda4" ino=4468 scontext=u:r:shell:s0 tcontext=u:object_r:vendor_file:s0 tclass=file permissive=1
+11-02 16:02:43.774  2865  2866 E screencap: open_verbose_path:56: Could not open '/dev/goldfish_pipe_dprctd': No such file or directory
+11-02 16:02:43.774  2865  2866 E screencap: open_verbose:128: both vsock and goldfish_pipe paths failed
+11-02 16:02:43.774  2865  2866 W screencap: Process pipe failed
+11-02 16:02:43.774  2865  2866 D HostConnection: New host connection established 0x77b52261bc90, pid 2865, tid 2866
+11-02 16:02:43.775   363  2867 D local_opengl: Sending id 31 to host
+11-02 16:03:00.021  1101  1164 D EGL_emulation: app_time_stats: avg=60002.59ms min=60002.59ms max=60002.59ms count=1
+11-02 16:03:01.280  2821  2821 I muse-host: nativeDispatchTouch: action=0 x=900.0 y=37.0 pointer=0
+11-02 16:03:01.280  2821  2821 I muse-host: SEAM-STEP:touch:ok
+11-02 16:03:01.280  2821  2821 D MainActivity: touch x=900.0 y=36.999023 claimed=-1
+11-02 16:03:01.280  2821  2821 I muse-host: nativeDispatchTouch: tap fired node=20 repaint=1
+11-02 16:03:01.280  2821  2821 I muse-host: SEAM-STEP:touch:ok
+11-02 16:03:01.280  2821  2821 D MainActivity: touch x=900.0 y=36.999023 claimed=20
+11-02 16:03:01.280   839   881 V DisplayPowerController2[0]: Brightness [0.39763778] reason changing to: 'manual', previous reason: 'manual [ dim ]'.
+11-02 16:03:01.280   839   881 I DisplayPowerController2[0]: BrightnessEvent: disp=0, physDisp=local:4619827259835644672, displayState=ON, displayPolicy=BRIGHT, brt=0.39763778, initBrt=0.05, rcmdBrt=NaN, preBrt=NaN, lux=0.0, preLux=0.0, hbmMax=1.0, hbmMode=off, rbcStrength=0, thrmMax=1.0, powerFactor=1.0, wasShortTermModelActive=false, flags=, reason=manual, autoBrightness=false, strategy=InvalidBrightnessStrategy, autoBrightnessMode=default
+11-02 16:03:01.310   558   558 I lights_service_exampl..: main::lights: Lights setting state for id=1 to color ff0f0f0f
+11-02 16:03:01.327   558   558 I lights_service_exampl..: main::lights: Lights setting state for id=1 to color ff101010
+11-02 16:03:01.334  2821  2841 I GalleryPage: [layering] slice page=0 rows=[0,12] comps={TopAppBar|TopAppBar|TopAppBar|NavigationBar|NavigationRail|NavigationDrawer|BottomAppBar|SearchBar|SegmentedButton|ButtonGroup|SplitButton|Button|Button} labels={m3-gallery|m3-gallery|m3-gallery|NavigationBar selected=home|NavigationRail selected=home|NavigationDrawer selected=home|gallery|Search settings|SegmentedButton selected=day|ButtonGroup selected=bold|Create new|Primary action|Tonal action}
+11-02 16:03:01.343   558   558 I lights_service_exampl..: main::lights: Lights setting state for id=1 to color ff111111
+11-02 16:03:01.360   558   558 I lights_service_exampl..: main::lights: Lights setting state for id=1 to color ff121212
+11-02 16:03:01.377   558   558 I lights_service_exampl..: main::lights: Lights setting state for id=1 to color ff131313
+11-02 16:03:01.410   558   558 I lights_service_exampl..: main::lights: Lights setting state for id=1 to color ff141414
+11-02 16:03:01.427   558   558 I lights_service_exampl..: main::lights: Lights setting state for id=1 to color ff151515
+11-02 16:03:01.443   558   558 I lights_service_exampl..: main::lights: Lights setting state for id=1 to color ff161616
+11-02 16:03:01.460   558   558 I lights_service_exampl..: main::lights: Lights setting state for id=1 to color ff171717
+11-02 16:03:01.477   558   558 I lights_service_exampl..: main::lights: Lights setting state for id=1 to color ff181818
+11-02 16:03:01.493   558   558 I lights_service_exampl..: main::lights: Lights setting state for id=1 to color ff1a1a1a
+11-02 16:03:01.510   558   558 I lights_service_exampl..: main::lights: Lights setting state for id=1 to color ff1b1b1b
+11-02 16:03:01.527   558   558 I lights_service_exampl..: main::lights: Lights setting state for id=1 to color ff1c1c1c
+11-02 16:03:01.543   558   558 I lights_service_exampl..: main::lights: Lights setting state for id=1 to color ff1e1e1e
+11-02 16:03:01.560   558   558 I lights_service_exampl..: main::lights: Lights setting state for id=1 to color ff1f1f1f
+11-02 16:03:01.577   558   558 I lights_service_exampl..: main::lights: Lights setting state for id=1 to color ff212121
+11-02 16:03:01.593   558   558 I lights_service_exampl..: main::lights: Lights setting state for id=1 to color ff232323
+11-02 16:03:01.610   558   558 I lights_service_exampl..: main::lights: Lights setting state for id=1 to color ff252525
+11-02 16:03:01.626   558   558 I lights_service_exampl..: main::lights: Lights setting state for id=1 to color ff272727
+11-02 16:03:01.643   558   558 I lights_service_exampl..: main::lights: Lights setting state for id=1 to color ff292929
+11-02 16:03:01.660   558   558 I lights_service_exampl..: main::lights: Lights setting state for id=1 to color ff2b2b2b
+11-02 16:03:01.676   558   558 I lights_service_exampl..: main::lights: Lights setting state for id=1 to color ff2d2d2d
+11-02 16:03:01.693   558   558 I lights_service_exampl..: main::lights: Lights setting state for id=1 to color ff303030
+11-02 16:03:01.710   558   558 I lights_service_exampl..: main::lights: Lights setting state for id=1 to color ff333333
+11-02 16:03:01.727   558   558 I lights_service_exampl..: main::lights: Lights setting state for id=1 to color ff363636
+11-02 16:03:01.743   558   558 I lights_service_exampl..: main::lights: Lights setting state for id=1 to color ff393939
+11-02 16:03:01.760   558   558 I lights_service_exampl..: main::lights: Lights setting state for id=1 to color ff3c3c3c
+11-02 16:03:01.777   558   558 I lights_service_exampl..: main::lights: Lights setting state for id=1 to color ff404040
+11-02 16:03:01.793   558   558 I lights_service_exampl..: main::lights: Lights setting state for id=1 to color ff444444
+11-02 16:03:01.810   558   558 I lights_service_exampl..: main::lights: Lights setting state for id=1 to color ff484848
+11-02 16:03:01.827   558   558 I lights_service_exampl..: main::lights: Lights setting state for id=1 to color ff4c4c4c
+11-02 16:03:01.843   558   558 I lights_service_exampl..: main::lights: Lights setting state for id=1 to color ff515151
+11-02 16:03:01.860   558   558 I lights_service_exampl..: main::lights: Lights setting state for id=1 to color ff565656
+11-02 16:03:01.877   558   558 I lights_service_exampl..: main::lights: Lights setting state for id=1 to color ff5b5b5b
+11-02 16:03:01.893   558   558 I lights_service_exampl..: main::lights: Lights setting state for id=1 to color ff616161
+11-02 16:03:01.910   558   558 I lights_service_exampl..: main::lights: Lights setting state for id=1 to color ff666666
+11-02 16:03:02.035  2821  2841 I GalleryPage: gallery-rows=121 gallery-pages=9
+11-02 16:03:02.035  2821  2841 I GalleryPage: gallery-page=1/9
+11-02 16:03:02.035  2821  2821 I muse-host: nativeAdvancePage: page 2
+11-02 16:03:02.035  2821  2821 I muse-host: SEAM-STEP:render:ok
+11-02 16:03:02.035   553   553 D gralloc_ranchu: gralloc_alloc: Creating ashmem region of size 9035776
+11-02 16:03:02.036   553   553 E android.hardware.graphics.allocator@2.0-service: open_verbose_path:56: Could not open '/dev/goldfish_pipe_dprctd': No such file or directory
+11-02 16:03:02.036   553   553 E android.hardware.graphics.allocator@2.0-service: open_verbose:128: both vsock and goldfish_pipe paths failed
+11-02 16:03:02.083  2821  2841 I GalleryPage: [layering] slice page=1 rows=[13,27] comps={Button|Button|Button|IconButton|Fab|ExtendedFab|Card|Card|Card|Chip|Chip|Chip|Chip|Checkbox|Checkbox} labels={Outlined action|Text action|Elevated action|IconButton variant=filled icon=favorite|Fab size=medium icon=add|Compose|Card variant=elevated|Card variant=filled|Card variant=outlined|Assist chip|Filter chip|Input chip|Suggestion chip|Checkbox|Checkbox}
+11-02 16:03:02.567  2821  2841 I GalleryPage: gallery-rows=121 gallery-pages=9
+11-02 16:03:02.567  2821  2841 I GalleryPage: gallery-page=2/9
+11-02 16:03:02.618  2821  2841 I GalleryPage: [layering] slice page=1 rows=[13,27] comps={Button|Button|Button|IconButton|Fab|ExtendedFab|Card|Card|Card|Chip|Chip|Chip|Chip|Checkbox|Checkbox} labels={Outlined action|Text action|Elevated action|IconButton variant=filled icon=favorite|Fab size=medium icon=add|Compose|Card variant=elevated|Card variant=filled|Card variant=outlined|Assist chip|Filter chip|Input chip|Suggestion chip|Checkbox|Checkbox}
+11-02 16:03:03.096  2821  2841 I GalleryPage: gallery-rows=121 gallery-pages=9
+11-02 16:03:03.096  2821  2841 I GalleryPage: gallery-page=2/9
+11-02 16:03:04.097  2878  2878 W BpBinder: Linking to death on android.gui.ISurfaceComposer but there are no threads (yet?) listening to incoming transactions. See ProcessState::startThreadPool and ProcessState::setThreadPoolMaxThreadCount. Generally you should setup the binder threadpool before other initialization steps.
+11-02 16:03:04.097  2878  2878 W ProcessState: Extra binder thread started, but 0 threads requested. Do not use *startThreadPool when zero threads are requested.
+11-02 16:03:04.098   553   553 D gralloc_ranchu: gralloc_alloc: Creating ashmem region of size 9850880
+11-02 16:03:04.099   553   553 E android.hardware.graphics.allocator@2.0-service: open_verbose_path:56: Could not open '/dev/goldfish_pipe_dprctd': No such file or directory
+11-02 16:03:04.099   553   553 E android.hardware.graphics.allocator@2.0-service: open_verbose:128: both vsock and goldfish_pipe paths failed
+11-02 16:03:04.102   171   171 I hwservicemanager: getTransport: Cannot find entry android.hardware.graphics.mapper@4.0::IMapper/default in either framework or device VINTF manifest.
+11-02 16:03:04.102  2878  2879 I Gralloc4: mapper 4.x is not supported
+11-02 16:03:04.102   171   171 I hwservicemanager: getTransport: Cannot find entry android.hardware.graphics.mapper@3.0::IMapper/default in either framework or device VINTF manifest.
+11-02 16:03:04.102  2878  2879 W Gralloc3: mapper 3.x is not supported
+11-02 16:03:04.105  2878  2879 E screencap: open_verbose_path:56: Could not open '/dev/goldfish_pipe_dprctd': No such file or directory
+11-02 16:03:04.105  2878  2879 E screencap: open_verbose:128: both vsock and goldfish_pipe paths failed
+11-02 16:03:04.105  2878  2879 W screencap: Process pipe failed
+11-02 16:03:04.105  2878  2879 D HostConnection: New host connection established 0x76a02c954d90, pid 2878, tid 2879
+11-02 16:03:04.106   363  2880 D local_opengl: Sending id 32 to host
+11-02 16:03:08.635  2881  2881 I sh      : type=1400 audit(0.0:351): avc:  denied  { getattr } for  path="/system/bin/am" dev="vda4" ino=276 scontext=u:r:shell:s0 tcontext=u:object_r:am_exec:s0 tclass=file permissive=1
+11-02 16:03:08.635  2881  2881 I sh      : type=1400 audit(0.0:352): avc:  denied  { execute } for  name="am" dev="vda4" ino=276 scontext=u:r:shell:s0 tcontext=u:object_r:am_exec:s0 tclass=file permissive=1
+11-02 16:03:08.635  2881  2881 I sh      : type=1400 audit(0.0:353): avc:  denied  { read open } for  path="/system/bin/am" dev="vda4" ino=276 scontext=u:r:shell:s0 tcontext=u:object_r:am_exec:s0 tclass=file permissive=1
+11-02 16:03:08.635  2881  2881 I sh      : type=1400 audit(0.0:354): avc:  denied  { execute_no_trans } for  path="/system/bin/am" dev="vda4" ino=276 scontext=u:r:shell:s0 tcontext=u:object_r:am_exec:s0 tclass=file permissive=1
+11-02 16:03:08.642   839  1264 I ActivityManager: Broadcasting: Intent { act=muse.native.PROOF_ADVANCE_PAGE flg=0x400000 }
+11-02 16:03:08.643   839  1264 I ActivityManager: Enqueued broadcast Intent { act=muse.native.PROOF_ADVANCE_PAGE flg=0x400000 }: 0
+11-02 16:03:08.643  2821  2821 I muse-host: nativeAdvancePage: page 3
+11-02 16:03:08.643  2821  2821 I GalleryPage: PROOF_ADVANCE_PAGE page=2
+11-02 16:03:08.643   839   857 I ActivityManager: Broadcast completed: result=0
+11-02 16:03:08.691  2821  2841 I GalleryPage: [layering] slice page=2 rows=[28,42] comps={Radio|Radio|Switch|Switch|Slider|LinearProgress|CircularProgress|Badge|ListItem|Avatar|Icon|Image|Divider|TextFieldEditCore|TextInput} labels={Radio|Radio|Switch|Switch|Slider|LinearProgress|CircularProgress|3|Inbox headline|AB|favorite|Image contentFit=cover source=gallery-hero|Divider orientation=horizontal|Search settings|Search settings}
+11-02 16:03:09.191  2821  2841 I GalleryPage: gallery-rows=121 gallery-pages=9
+11-02 16:03:09.191  2821  2841 I GalleryPage: gallery-page=3/9
+11-02 16:03:10.706  2891  2891 W BpBinder: Linking to death on android.gui.ISurfaceComposer but there are no threads (yet?) listening to incoming transactions. See ProcessState::startThreadPool and ProcessState::setThreadPoolMaxThreadCount. Generally you should setup the binder threadpool before other initialization steps.
+11-02 16:03:10.706  2891  2891 W ProcessState: Extra binder thread started, but 0 threads requested. Do not use *startThreadPool when zero threads are requested.
+11-02 16:03:10.707   553   553 D gralloc_ranchu: gralloc_alloc: Creating ashmem region of size 9850880
+11-02 16:03:10.708   553   553 E android.hardware.graphics.allocator@2.0-service: open_verbose_path:56: Could not open '/dev/goldfish_pipe_dprctd': No such file or directory
+11-02 16:03:10.708   553   553 E android.hardware.graphics.allocator@2.0-service: open_verbose:128: both vsock and goldfish_pipe paths failed
+11-02 16:03:10.711   171   171 I hwservicemanager: getTransport: Cannot find entry android.hardware.graphics.mapper@4.0::IMapper/default in either framework or device VINTF manifest.
+11-02 16:03:10.711  2891  2892 I Gralloc4: mapper 4.x is not supported
+11-02 16:03:10.711   171   171 I hwservicemanager: getTransport: Cannot find entry android.hardware.graphics.mapper@3.0::IMapper/default in either framework or device VINTF manifest.
+11-02 16:03:10.711  2891  2892 W Gralloc3: mapper 3.x is not supported
+11-02 16:03:10.714  2891  2892 E screencap: open_verbose_path:56: Could not open '/dev/goldfish_pipe_dprctd': No such file or directory
+11-02 16:03:10.714  2891  2892 E screencap: open_verbose:128: both vsock and goldfish_pipe paths failed
+11-02 16:03:10.714  2891  2892 W screencap: Process pipe failed
+11-02 16:03:10.714  2891  2892 D HostConnection: New host connection established 0x7878b2dd4010, pid 2891, tid 2892
+11-02 16:03:10.715   363  2893 D local_opengl: Sending id 33 to host
+11-02 16:03:15.094  2821  2821 I muse-host: nativeDispatchTouch: action=0 x=50.0 y=87.0 pointer=0
+11-02 16:03:15.094  2821  2821 I muse-host: SEAM-STEP:touch:ok
+11-02 16:03:15.094  2821  2821 D MainActivity: touch x=50.0 y=87.0 claimed=-1
+11-02 16:03:15.095  2821  2821 I muse-host: nativeDispatchTouch: tap fired node=20 repaint=1
+11-02 16:03:15.095  2821  2821 I muse-host: SEAM-STEP:touch:ok
+11-02 16:03:15.095  2821  2821 D MainActivity: touch x=50.0 y=87.0 claimed=20
+11-02 16:03:15.096  2821  2821 I ImeTracker: com.muse.host:934d809a: onRequestShow at ORIGIN_CLIENT reason SHOW_SOFT_INPUT fromUser true
+11-02 16:03:15.096  2821  2821 I ImeTracker: com.muse.host:934d809a: onFailed at PHASE_CLIENT_VIEW_SERVED
+11-02 16:03:15.096  2821  2821 W InputMethodManager: Ignoring showSoftInput() as view=android.widget.EditText{4b273c6 VFED...L. ......ID 0,0-1,1 aid=1073741824} is not served.
+11-02 16:03:15.096  2821  2821 I muse-host: SEAM-STEP:render:ok
+11-02 16:03:15.113  2821  2835 D EGL_emulation: app_time_stats: avg=14860.16ms min=3.44ms max=44533.54ms count=3
+11-02 16:03:15.142  2821  2841 I GalleryPage: [layering] slice page=2 rows=[28,42] comps={Radio|Radio|Switch|Switch|Slider|LinearProgress|CircularProgress|Badge|ListItem|Avatar|Icon|Image|Divider|TextFieldEditCore|TextInput} labels={Radio|Radio|Switch|Switch|Slider|LinearProgress|CircularProgress|3|Inbox headline|AB|favorite|Image contentFit=cover source=gallery-hero|Divider orientation=horizontal|Search settings|Search settings}
+11-02 16:03:15.504   839  1264 W BatteryExternalStatsWorker: error reading Bluetooth stats: 11
+11-02 16:03:15.627  2821  2841 I GalleryPage: gallery-rows=121 gallery-pages=9
+11-02 16:03:15.627  2821  2841 I GalleryPage: gallery-page=3/9
+11-02 16:03:15.678  2821  2841 I GalleryPage: [layering] slice page=2 rows=[28,42] comps={Radio|Radio|Switch|Switch|Slider|LinearProgress|CircularProgress|Badge|ListItem|Avatar|Icon|Image|Divider|TextFieldEditCore|TextInput} labels={Radio|Radio|Switch|Switch|Slider|LinearProgress|CircularProgress|3|Inbox headline|AB|favorite|Image contentFit=cover source=gallery-hero|Divider orientation=horizontal|Search settings|Search settings}
+11-02 16:03:16.115  2821  2835 D EGL_emulation: app_time_stats: avg=500.89ms min=499.03ms max=502.75ms count=2
+11-02 16:03:16.182  2821  2841 I GalleryPage: gallery-rows=121 gallery-pages=9
+11-02 16:03:16.182  2821  2841 I GalleryPage: gallery-page=3/9
+11-02 16:03:17.158  2904  2904 W BpBinder: Linking to death on android.gui.ISurfaceComposer but there are no threads (yet?) listening to incoming transactions. See ProcessState::startThreadPool and ProcessState::setThreadPoolMaxThreadCount. Generally you should setup the binder threadpool before other initialization steps.
+11-02 16:03:17.158  2904  2904 W ProcessState: Extra binder thread started, but 0 threads requested. Do not use *startThreadPool when zero threads are requested.
+11-02 16:03:17.158   553   553 D gralloc_ranchu: gralloc_alloc: Creating ashmem region of size 9850880
+11-02 16:03:17.160   553   553 E android.hardware.graphics.allocator@2.0-service: open_verbose_path:56: Could not open '/dev/goldfish_pipe_dprctd': No such file or directory
+11-02 16:03:17.160   553   553 E android.hardware.graphics.allocator@2.0-service: open_verbose:128: both vsock and goldfish_pipe paths failed
+11-02 16:03:17.163   171   171 I hwservicemanager: getTransport: Cannot find entry android.hardware.graphics.mapper@4.0::IMapper/default in either framework or device VINTF manifest.
+11-02 16:03:17.163  2904  2905 I Gralloc4: mapper 4.x is not supported
+11-02 16:03:17.163   171   171 I hwservicemanager: getTransport: Cannot find entry android.hardware.graphics.mapper@3.0::IMapper/default in either framework or device VINTF manifest.
+11-02 16:03:17.163  2904  2905 W Gralloc3: mapper 3.x is not supported
+11-02 16:03:17.166  2904  2905 E screencap: open_verbose_path:56: Could not open '/dev/goldfish_pipe_dprctd': No such file or directory
+11-02 16:03:17.166  2904  2905 E screencap: open_verbose:128: both vsock and goldfish_pipe paths failed
+11-02 16:03:17.166  2904  2905 W screencap: Process pipe failed
+11-02 16:03:17.166  2904  2905 D HostConnection: New host connection established 0x7bfba2a679d0, pid 2904, tid 2905
+11-02 16:03:17.167   363  2906 D local_opengl: Sending id 34 to host
+11-02 16:03:17.306  2821  2821 I muse-host: nativeDispatchTouch: action=0 x=500.0 y=437.0 pointer=0
+11-02 16:03:17.306  2821  2821 I muse-host: SEAM-STEP:touch:ok
+11-02 16:03:17.306  2821  2821 D MainActivity: touch x=500.0 y=436.99902 claimed=-1
+11-02 16:03:17.355  2821  2841 I GalleryPage: [layering] slice page=2 rows=[28,42] comps={Radio|Radio|Switch|Switch|Slider|LinearProgress|CircularProgress|Badge|ListItem|Avatar|Icon|Image|Divider|TextFieldEditCore|TextInput} labels={Radio|Radio|Switch|Switch|Slider|LinearProgress|CircularProgress|3|Inbox headline|AB|favorite|Image contentFit=cover source=gallery-hero|Divider orientation=horizontal|Search settings|Search settings}
+11-02 16:03:17.860  2821  2841 I GalleryPage: gallery-rows=121 gallery-pages=9
+11-02 16:03:17.860  2821  2841 I GalleryPage: gallery-page=3/9
+11-02 16:03:17.860  2821  2821 I muse-host: nativeDispatchTouch: tap fired node=20 repaint=1
+11-02 16:03:17.860  2821  2821 I muse-host: SEAM-STEP:touch:ok
+11-02 16:03:17.860  2821  2821 D MainActivity: touch x=500.0 y=436.99902 claimed=20
+11-02 16:03:17.861  2821  2821 I ImeTracker: com.muse.host:77477a72: onRequestShow at ORIGIN_CLIENT reason SHOW_SOFT_INPUT fromUser true
+11-02 16:03:17.862  2821  2821 I ImeTracker: com.muse.host:77477a72: onFailed at PHASE_CLIENT_VIEW_SERVED
+11-02 16:03:17.862  2821  2821 W InputMethodManager: Ignoring showSoftInput() as view=android.widget.EditText{4b273c6 VFED...L. ......ID 0,0-1,1 aid=1073741824} is not served.
+11-02 16:03:17.862  2821  2821 I muse-host: SEAM-STEP:render:ok
+11-02 16:03:17.879  2821  2835 D EGL_emulation: app_time_stats: avg=588.06ms min=497.84ms max=766.30ms count=3
+11-02 16:03:17.912  2821  2841 I GalleryPage: [layering] slice page=2 rows=[28,42] comps={Radio|Radio|Switch|Switch|Slider|LinearProgress|CircularProgress|Badge|ListItem|Avatar|Icon|Image|Divider|TextFieldEditCore|TextInput} labels={Radio|Radio|Switch|Switch|Slider|LinearProgress|CircularProgress|3|Inbox headline|AB|favorite|Image contentFit=cover source=gallery-hero|Divider orientation=horizontal|Search settings|Search settings}
+11-02 16:03:18.416  2821  2841 I GalleryPage: gallery-rows=121 gallery-pages=9
+11-02 16:03:18.416  2821  2841 I GalleryPage: gallery-page=3/9
+11-02 16:03:18.464  2821  2841 I GalleryPage: [layering] slice page=2 rows=[28,42] comps={Radio|Radio|Switch|Switch|Slider|LinearProgress|CircularProgress|Badge|ListItem|Avatar|Icon|Image|Divider|TextFieldEditCore|TextInput} labels={Radio|Radio|Switch|Switch|Slider|LinearProgress|CircularProgress|3|Inbox headline|AB|favorite|Image contentFit=cover source=gallery-hero|Divider orientation=horizontal|Search settings|Search settings}
+11-02 16:03:18.881  2821  2835 D EGL_emulation: app_time_stats: avg=500.80ms min=485.91ms max=515.68ms count=2
+11-02 16:03:18.950  2821  2841 I GalleryPage: gallery-rows=121 gallery-pages=9
+11-02 16:03:18.950  2821  2841 I GalleryPage: gallery-page=3/9
+11-02 16:03:19.922  2917  2917 W BpBinder: Linking to death on android.gui.ISurfaceComposer but there are no threads (yet?) listening to incoming transactions. See ProcessState::startThreadPool and ProcessState::setThreadPoolMaxThreadCount. Generally you should setup the binder threadpool before other initialization steps.
+11-02 16:03:19.922  2917  2917 W ProcessState: Extra binder thread started, but 0 threads requested. Do not use *startThreadPool when zero threads are requested.
+11-02 16:03:19.922   553   553 D gralloc_ranchu: gralloc_alloc: Creating ashmem region of size 9850880
+11-02 16:03:19.923   553   553 E android.hardware.graphics.allocator@2.0-service: open_verbose_path:56: Could not open '/dev/goldfish_pipe_dprctd': No such file or directory
+11-02 16:03:19.923   553   553 E android.hardware.graphics.allocator@2.0-service: open_verbose:128: both vsock and goldfish_pipe paths failed
+11-02 16:03:19.927   171   171 I hwservicemanager: getTransport: Cannot find entry android.hardware.graphics.mapper@4.0::IMapper/default in either framework or device VINTF manifest.
+11-02 16:03:19.927  2917  2918 I Gralloc4: mapper 4.x is not supported
+11-02 16:03:19.927   171   171 I hwservicemanager: getTransport: Cannot find entry android.hardware.graphics.mapper@3.0::IMapper/default in either framework or device VINTF manifest.
+11-02 16:03:19.927  2917  2918 W Gralloc3: mapper 3.x is not supported
+11-02 16:03:19.930  2917  2918 E screencap: open_verbose_path:56: Could not open '/dev/goldfish_pipe_dprctd': No such file or directory
+11-02 16:03:19.930  2917  2918 E screencap: open_verbose:128: both vsock and goldfish_pipe paths failed
+11-02 16:03:19.930  2917  2918 W screencap: Process pipe failed
+11-02 16:03:19.930  2917  2918 D HostConnection: New host connection established 0x7d39c5cecd50, pid 2917, tid 2918
+11-02 16:03:19.930   363  2919 D local_opengl: Sending id 35 to host

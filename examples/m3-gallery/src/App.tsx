@@ -4,7 +4,7 @@
 // presenter seam). Device frames render real components only; no stand-in
 // box/caption output is emitted on any page path.
 import { useEffect, useState } from 'react';
-import { View, Text, manifest, components, TopAppBar, BottomAppBar, NavigationRail, OverlayHost } from '@muse/native';
+import { View, Text, Button, manifest, components, TopAppBar, BottomAppBar, NavigationRail, OverlayHost } from '@muse/native';
 import { spring } from '@muse/core';
 import ButtonScreen from "./screens/ButtonScreen";
 import { LayeringPage } from "./Showcase";
@@ -193,7 +193,8 @@ export default function App() {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const clampedIndex = stories.length === 0 ? 0 : Math.min(Math.max(selectedIndex, 0), stories.length - 1);
   const selectedStory = stories.length === 0 ? null : stories[clampedIndex];
-  const prevDisabled = clampedIndex <= 0;
+  // Forward-only this run (A2): Prev forced disabled at all times.
+  const prevDisabled = true;
   const nextDisabled = stories.length === 0 || clampedIndex >= stories.length - 1;
   const onPrev = (origin: PagingOrigin = SHELL_ORIGIN): boolean => {
     if (!isPagingGesture(origin, 'tap')) {
@@ -332,11 +333,11 @@ export default function App() {
       <TopAppBar title="m3-gallery" />
       <View>
         <View onTouchStart={prevDisabled ? undefined : () => onPrev(SHELL_ORIGIN)}>
-          <Text color={theme.onSurface}>{prevDisabled ? 'Prev (disabled)' : 'Prev'}</Text>
+          <Button variant="tonal" label="" enabled={!prevDisabled} />
         </View>
         <Text color={theme.onSurface}>{`${clampedIndex + 1} of ${stories.length}`}</Text>
         <View onTouchStart={nextDisabled ? undefined : () => onNext(SHELL_ORIGIN)}>
-          <Text color={theme.onSurface}>{nextDisabled ? 'Next (disabled)' : 'Next'}</Text>
+          <Button variant="tonal" label="" enabled={!nextDisabled} />
         </View>
       </View>
       <NavigationRail selected="home" />
