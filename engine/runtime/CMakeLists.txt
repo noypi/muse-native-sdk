@@ -765,6 +765,14 @@ target_link_libraries(gallery_layering_test PRIVATE runtime)
 target_compile_options(gallery_layering_test PRIVATE -Wall -Wextra -Wpedantic)
 add_test(NAME gallery_layering_test COMMAND gallery_layering_test)
 
+# BUG-M3-FIDELITY-015 Batch 1 (FR-M3-007/AC-M3-015, FR-M3-011/AC-M3-025):
+# T1+T2 RED pins — per-row interior presence via EmitGalleryWindowCmds +
+# retained-vs-layering ownership. Hermetic, no device.
+add_executable(gallery_interior_emit_test tests/gallery_interior_emit_test.cpp)
+target_link_libraries(gallery_interior_emit_test PRIVATE runtime)
+target_compile_options(gallery_interior_emit_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME gallery_interior_emit_test COMMAND gallery_interior_emit_test)
+
 # BUG-RUNTIME-004 T1: anchorSheetToImeInset hermetic contract (ported from
 # run/bug-m3-fidelity-008). Coder-wired: the tester owns test files only.
 add_executable(layering_anchor_test tests/layering_anchor_test.cpp)
