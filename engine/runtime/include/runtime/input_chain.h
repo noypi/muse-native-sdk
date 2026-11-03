@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -62,6 +63,24 @@ void PopulateTapTreeFromLayout(HitTestTree& tree, float viewportW,
 // first frame presents the real window size; RenderLocked reseeds with the
 // presented viewport once known. Delegates to the viewport overload.
 void PopulateTapTreeFromLayout(HitTestTree& tree);
+
+// Content-scene tap-tree refresh (T8R6/F4; FR-INPUT-011 / AC-INPUT-020,
+// FR-RUNTIME-013 / AC-RUNTIME-038/039): rebuilds the hit-test tree from the
+// PRESENTED scene bytes instead of the load-time gallery geometry. Returns
+// true when the bytes were recognized as a registered content scene and the
+// tree was rebuilt from that scene's laid-out touchable bounds (gallery
+// fallback nodes removed, so scene taps never resolve to gallery node 20);
+// returns false for non-content bytes with the tree untouched, so the caller
+// keeps the gallery fallback path. Implemented here in generic dispatch over
+// the content-provided plain-data query
+// (runtime::QueryPresentedSceneTaps, declared in
+// runtime/content_registry.h) — this file names no content bundle. Never
+// throws. A non-positive viewport skips the viewport check (load-time use
+// before the first frame presents the real window size); an unusable
+// positive viewport fails closed with the tree untouched.
+bool RefreshTapTreeFromPresentedScene(HitTestTree& tree, const void* data,
+                                      std::size_t len, float viewportW,
+                                      float viewportH);
 
 // Returns the deepest laid-out node id at (x, y), or -1 when outside every
 // bound (including the empty tree). Negative coordinates are untrusted

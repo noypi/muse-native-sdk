@@ -780,6 +780,16 @@ target_link_libraries(flappy_security_test PRIVATE runtime)
 target_compile_options(flappy_security_test PRIVATE -Wall -Wextra -Wpedantic)
 add_test(NAME flappy_security_test COMMAND flappy_security_test)
 
+# T8R4 tester-owned acceptance regression (T8R3/F1): presents the REAL built
+# tree bytes (`examples/flappy/dist/tree.mui.bin`) and asserts the flappy
+# scene presents (no gallery fallback). Integration test — reads the
+# filesystem by design; not hermetic, not a unit test.
+add_executable(flappy_real_tree_acceptance_test tests/flappy_real_tree_acceptance_test.cpp)
+target_sources(flappy_real_tree_acceptance_test PRIVATE src/flappy_content.cpp)
+target_link_libraries(flappy_real_tree_acceptance_test PRIVATE runtime)
+target_compile_options(flappy_real_tree_acceptance_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME flappy_real_tree_acceptance_test COMMAND flappy_real_tree_acceptance_test)
+
 # Run bug-text-008: raster->blend seam column-order pins. Test owned by
 # code-unit-tester. Definitions land in ../text/src/raster_blend_orientation.cpp
 # (already compiled into runtime).

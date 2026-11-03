@@ -1,9 +1,22 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <map>
 #include <string>
 #include <string_view>
+
+// Presented-scene tap entry (T8R6/F4; FR-INPUT-011 / AC-INPUT-020,
+// FR-RUNTIME-013): plain-data seam so generic dispatch can rebuild the
+// hit-test tree from the presented scene without naming any content
+// bundle. Bounds are the scene's laid-out rects verbatim (never literals).
+struct PresentedSceneTap {
+  std::int32_t nodeId = -1;
+  float x = 0.0f;
+  float y = 0.0f;
+  float w = 0.0f;
+  float h = 0.0f;
+};
 
 namespace runtime {
 
@@ -69,13 +82,22 @@ class ContentRegistry {
       fn(static_cast<ContentTag>(entry.first), entry.second);
     }
   }
-
  private:
   // std::map (not unordered_map): node addresses stay stable across
   // inserts, so pointers handed out by Resolve never dangle after later
   // Register calls. Transparent comparator for string_view lookup.
   std::map<std::string, ContentHandlers, std::less<>> entries_;
 };
+
+// Presented-scene tap query (T8R6/F4; FR-RUNTIME-013 / AC-RUNTIME-039).
+// Implemented by the content module; generic dispatch calls it without
+// naming any content bundle. Fills up to `capacity` entries of the
+// presented scene's laid-out touchables (bounds verbatim, never literals)
+// and returns the count; returns 0 when the bytes are not a recognized
+// content scene, when no touchable lays out, or on null/empty input —
+// never negative, never throws. The caller keeps its fallback tree on 0.
+int QueryPresentedSceneTaps(const void* data, std::size_t len,
+                            ::PresentedSceneTap* out, int capacity);
 
 }  // namespace runtime
 
