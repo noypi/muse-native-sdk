@@ -99,6 +99,14 @@ class ContentRegistry {
 int QueryPresentedSceneTaps(const void* data, std::size_t len,
                             ::PresentedSceneTap* out, int capacity);
 
+// F3 divergence-probe diagnostic line (BUG-RUNTIME-014 / AC-RUNTIME-038).
+// Implemented by the content module; generic dispatch logs the returned
+// line verbatim without naming any content tag. Never throws.
+std::string FormatContentDiagLine(const void* data, std::size_t len,
+                                  bool presented,
+                                  const char* contentErrOrNull,
+                                  int fallbackRows);
+
 }  // namespace runtime
 
 // Process-wide registry consulted by generic dispatch. Content modules
