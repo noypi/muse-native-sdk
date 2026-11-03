@@ -73,7 +73,7 @@ export type CardVariant = 'elevated' | 'filled' | 'outlined';
 export type ChipVariant = 'assist' | 'filter' | 'input' | 'suggestion';
 
 export type ButtonProps = {
-  variant?: 'filled' | 'tonal' | 'outlined' | 'text' | 'elevated';
+  variant?: ButtonVariant;
   label: string;
   enabled?: boolean;
   icon?: string;

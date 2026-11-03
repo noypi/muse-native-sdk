@@ -149,9 +149,22 @@ test('TC-M3-035: check-props parity — manifest == index.d.ts unions == factory
   const dts = readFileSync(DTS_URL, 'utf8');
   const body = dts.slice(dts.indexOf('ButtonProps'));
   const closed = body.slice(0, body.indexOf('};'));
-  for (const value of props.variant.values) {
-    assert.ok(closed.includes(`'${value}'`), `ButtonProps must include manifest value "${value}"`);
+  // Resolve the mandated `variant?: ButtonVariant` alias exactly as the
+  // authoritative check-props.js gate does: collect literals in the variant
+  // fragment, falling back to the ButtonVariant alias union when the
+  // fragment holds only the alias name.
+  const variantFrag = /variant\s*\??:\s*([^;,}]+)/.exec(closed)?.[1] ?? '';
+  const lits = (frag) => [...frag.matchAll(/'([^']*)'|"([^"]*)"/g)].map((m) => m[1] ?? m[2]);
+  let resolved = lits(variantFrag);
+  if (resolved.length === 0 && variantFrag.includes('ButtonVariant')) {
+    const aliasBody = /type\s+ButtonVariant\s*=\s*([^;]+);/s.exec(dts)?.[1] ?? '';
+    resolved = lits(aliasBody);
   }
+  assert.deepEqual(
+    [...resolved].sort(),
+    [...props.variant.values].sort(),
+    'ButtonProps variant union (via ButtonVariant alias) must equal the manifest values list',
+  );
   assert.ok(/\bonPress\??:/.test(closed), 'ButtonProps must declare the onPress event prop');
   const handler = () => {};
   const { components } = require('../index.js');

@@ -16,6 +16,12 @@ const manifest = require('./muse.manifest.json');
 // package surface keeps one registry map.
 const { TextInput, createTextInput } = require('./textinput.js');
 
+// FR-M3-013 — Button event-handle surface (T4, real adapter wiring).
+// Required beside the other handle modules (not after the export) so the
+// package public entry exposes the same fail-closed `createButton` graph
+// the tests import; attachments below join the static tier-map export.
+const { createButton, foldButtonFrames, onButtonPress, resetButtonTapState } = require('./button.js');
+
 // FR-M3-008 / AC-M3-018 — numeric M3 state-layer opacities resolved from the
 // M3 token table (T1). Each driveState spelling maps to the state-layer role
 // token used by the engine/layout token path (`md.sys.state.<state>.opacity`,
@@ -651,14 +657,13 @@ function assertPreviewFill(family, sampledArgb) {
 }
 
 module.exports = { primitives, components, manifest, driveState, createTextInput, TextInput, onSelectTap, onSliderScrub, assertPreviewFill };
-// FR-M3-013 — Button event-handle surface (T4, real adapter wiring).
-// The canonical delivery-lane copy lives in ./button.js beside the
-// selection.js handles; it is wired here so the package public entry
-// exposes the same fail-closed `createButton` graph the tests import.
-const { createButton, foldButtonFrames, onButtonPress } = require('./button.js');
+// FR-M3-013 — Button event-handle surface attached here (requires hoisted
+// beside the other handle modules above): the canonical delivery-lane copy
+// lives in ./button.js beside the selection.js handles.
 module.exports.createButton = createButton;
 module.exports.foldButtonFrames = foldButtonFrames;
 module.exports.onButtonPress = onButtonPress;
+module.exports.resetButtonTapState = resetButtonTapState;
 // FR-MUSE-013 — connector re-export (T4, additive; existing surface untouched).
 // MuseMcpHandle is `{ registry, tools, call, dispose }` from ./muse-mcp.js.
 const { createMuseMcp } = require('./muse-mcp.js');

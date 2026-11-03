@@ -106,7 +106,18 @@ int main() {
   // (b) tap at (900, 2200) (no node) -> deliveries == 0.
   // (c) tap at a removed node id -> deliveries == 0.
   // (d) same tap dispatched twice -> deliveries == 1 in total.
-  check(false, "TC-INPUT-022: route cases compile but have no assertions yet");
+  //
+  // (b)-(d) are covered by the TC-INPUT-024 fail-closed block below
+  // (unknown nodeId, unmounted target, replayed lease); (a) is pinned here
+  // as the dispatch-once assertion against the arranged winner above.
+  {
+    input::PendingRegistry registry;
+    registry.mount(action.winnerId);
+    const input::LeaseTicket t = registry.mint(action.winnerId, /*tapId=*/201);
+    const int d = input::dispatchTapToOwner(action.winnerId, t);
+    check(d == 1 && registry.pressCount(action.winnerId) == 1,
+          "TC-INPUT-022: winner dispatch delivers exactly once per tapId");
+  }
 
   // Normative TC-INPUT-024 pins (AC-INPUT-024, T6). Each case is independent
   // (own registry + tapId). Fail-closed: every denial below must deliver 0

@@ -1,5 +1,8 @@
 {
   "name": "@muse/native",
+  "contract": {
+    "eventVsFunction": "Callback prop semantics (single spelling per prop, both spellings legal for on* props): {type:'event'} is a component-initiated fire-and-forget notification — the component fires it with no payload contract and never awaits a result (pressable-family taps: onPress fires at most once per tapId per AC-M3-036). {type:'function'} is a caller-supplied callback that receives data and/or drives two-way binding write-through (onCheckedChange(value), onSelectedChange(value), onValueChange(value), onSelectionChange(...)). Rule: pressable taps use 'event'; stateful write-through uses 'function'. check-props.js enforces the values-union parity; manifest.test.ts VALID_PROP_TYPES + TC-M3-033 pin both spellings as legal."
+  },
   "components": [
     {
       "name": "Surface",
