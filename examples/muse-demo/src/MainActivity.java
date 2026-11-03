@@ -49,6 +49,19 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     private static native int nativeDispatchTouch(
             long handle, int action, float x, float y, int pointerId, long timestampMs);
 
+    /**
+     * T9 (fr-nav-014-thin-host / AC-NAV-042): generic engine shell-state
+     * carriage. Stores the opaque shellRoute string plus the optional
+     * shellNotice string into the native handle slot; validity is decided
+     * by the route table in JS, never natively. Fail-closed: returns 1
+     * applied, 0 denied (null/empty/over-2048 route, bad handle); never
+     * throws into the VM. Declared {@code int} to pair with the JNI
+     * {@code Java_com_muse_host_MainActivity_nativeSetShellState} export;
+     * callers treat the result as opaque (plan {@code : void}). Instance
+     * (non-static) to match the export's {@code jobject} receiver.
+     */
+    private native int nativeSetShellState(long handle, String shellRoute, String shellNotice);
+
     private static final String TAG = "muse-host";
 
     /** True while the surface lives; gates the Choreographer render loop. */

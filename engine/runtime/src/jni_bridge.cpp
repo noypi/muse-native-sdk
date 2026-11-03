@@ -156,9 +156,9 @@ PresenterError Runtime_detachSurface() {
   }
 }
 
-// T2 (BUG-M3-FIDELITY-003 / FR-M3-006): JNI-lane view of the live probe
-// field. The IME/touch entries consult this before routing composition or
-// caret events at the probe page: while no live field is attached the static
+// T2 (BUG-M3-FIDELITY-003 / FR-M3-006): JNI-lane view of the live probe.
+// The IME/touch entries consult this before routing composition or
+// caret events at the probe page: while no live probe is attached the static
 // box painter stands in (fail-closed, never a phantom editable). Consumes the
 // RULE-M3-004 attach gate (FR-TEXT-008/009/013, FR-LAYOUT-012) without
 // reimplementing it. Never throws across the VM boundary.
@@ -395,6 +395,11 @@ struct GalleryHandle {
   // handle.
   std::string shellRoute;
   std::string shellNotice;
+  // T9 present rule (fr-nav-014-thin-host / AC-NAV-042): last opaque shell
+  // marker RenderLocked surfaced. Change-triggered so a steady slot stays
+  // silent; holds opaque values only, never a routing verdict. Guarded by mu
+  // like the rest of the handle.
+  std::string lastShellMarker;
 #ifdef __ANDROID__
   ANativeWindow* window = nullptr;
   // FR-STARTUP-003 T1 (RULE-STARTUP-002): single-owner render-thread frame
@@ -1129,6 +1134,17 @@ void RenderLocked(GalleryHandle* g) {
   }
   const int drawn = presented ? static_cast<int>(g->rows.size()) : 0;
   ANativeWindow_unlockAndPost(win);
+  // T9 present rule (fr-nav-014-thin-host / AC-NAV-042): surface the opaque
+  // shell slot through the existing proof-marker seam. Opaque values only —
+  // never parsed, never matched against route names, never a validity verdict
+  // (the route table in JS plus the engine commit gate own validity). A
+  // non-empty slot that changed since the last present emits one marker line;
+  // the presented pixels above already rode the proven Surface copy.
+  if (!g->shellRoute.empty() && g->shellRoute != g->lastShellMarker) {
+    g->lastShellMarker = g->shellRoute;
+    GalleryLogInfo("shell-state route=" + g->shellRoute +
+                   " notice=" + g->shellNotice);
+  }
   // Proof markers for the presented page (device's own row model + pager).
   EmitGalleryMarkersLocked(g, pages, w, h);
   if (!error.empty() || drawn == 0) {
@@ -1604,7 +1620,11 @@ extern "C" MUSE_JNI_EXPORT jint Java_com_muse_host_MainActivity_nativeSetShellSt
       g->shellRoute = routeCopy;
       g->shellNotice = noticeCopy;
     }
+    // T9 present rule: post the repaint that makes the stored slot visible —
+    // same single-owner queue as every other entry, never inline on the
+    // calling thread (FR-STARTUP-003 T2 mirror of nativeSetTheme).
 #ifdef __ANDROID__
+    EnqueueFrame(g);
     MuseLogInfo("nativeSetShellState: route=" + routeCopy + " applied=1");
 #endif
     return static_cast<jint>(1);
@@ -1914,7 +1934,7 @@ extern "C" MUSE_JNI_EXPORT jint Java_com_muse_host_MainActivity_nativeCommitEngi
 // Java: com.muse.host.MainActivity.nativeSetImeBottom(long, float), fed per
 // animation frame by onInsetsFrame(imeBottomPx). Forwards the frame height
 // into runtime::SetPresentImeBottom so PresentDeps().insets.imeBottom (the
-// same px field the T1 anchor consumes via the T4 call site) follows the
+// same px value the T1 anchor consumes via the T4 call site) follows the
 // keyboard within one frame. Fail-closed mirror of the sibling entries:
 // null env, pending exception, or an unregistered (zero, forged, stale)
 // handle yields a no-op with no exception crossing into the VM and no
@@ -2309,7 +2329,7 @@ extern "C" MUSE_JNI_EXPORT jlong Java_com_muse_host_MainActivity_nativeSeamGetFr
 // T8 (BUG-M3-FIDELITY-003 / FR-M3-006 / AC-M3-011/012/014): in-app
 // IME/text/clipboard observation surface — logcat-relay sink.
 //
-// The Java probe field (`IMEInterceptingEditText`) forwards every IME,
+// The Java probe view (`IMEInterceptingEditText`) forwards every IME,
 // TextWatcher, and clipboard event through `nativeOnIMEEvent` /
 // `nativeOnTextUpdated` (exact contract signatures). This sink does no heavy
 // work in the callback: it copies the strings, canonicalizes the event id,
