@@ -9,6 +9,12 @@
 // pass lands — so compiling this file before then MUST fail (expected red,
 // not a malformed test). The tests never define the registry themselves.
 //
+// BUG-RUNTIME-012: the per-app content module is deleted. This file binds
+// only the generic tag-registry seam plus the surviving record seam; cases
+// that needed the removed module (scene-store cap, dual-tag gate) are
+// deleted — see the run contract for their lines. The forged-node case
+// drives the seam through a test-local fake under a test tag.
+//
 // Seam note: this file names no per-app symbol. That is the T2 assertion in
 // miniature — generic dispatch (and its tests) resolve content by tag,
 // never by app name.
@@ -19,8 +25,7 @@
 #include <vector>
 
 #include "runtime/content_registry.h"
-#include "runtime/flappy_content.h"
-#include "runtime/gallery_present.h"
+#include "runtime/presenter.h"
 
 // Forward-declared (per gallery_layering_test.cpp): FireTapHandler lives in
 // input_chain.cpp, whose header needs PRIVATE input paths unavailable here.
@@ -118,67 +123,23 @@ static bool check_unknown_stays_null_after_registrations() {
   return registry.Resolve(kTagB) == nullptr;
 }
 
-// Named case: scene-store cap (security LOW pin; kMaxFlappySceneTrees=32).
-// Many distinct content payloads must stop inserting and fail closed
-// (return 0, no eviction); re-registering a known payload refreshes in
-// place and still succeeds, and the known handle still renders.
-static bool check_scene_store_cap_fail_closed() {
-  std::string firstPayload;
-  TreeHandle firstHandle = 0;
-  std::size_t accepted = 0;
-  bool sawZero = false;
-  for (int i = 0; i < 400; ++i) {
-    const std::string payload =
-        "FlappyBird|FlappyPipe#cap-probe-" + std::to_string(i) +
-        "-pad................................";
-    const TreeHandle handle =
-        RegisterFlappyContentTree(payload.data(), payload.size());
-    if (i == 0) {
-      firstPayload = payload;
-      firstHandle = handle;
-    }
-    if (handle == 0) {
-      sawZero = true;
-    } else {
-      ++accepted;
-    }
-  }
-  if (firstHandle == 0) return false;
-  if (accepted > 32) return false;
-  if (!sawZero) return false;
-  if (RegisterFlappyContentTree(firstPayload.data(), firstPayload.size()) !=
-      firstHandle) {
-    return false;
-  }
-  return renderTree(firstHandle).nodeCount > 0;
+// Test-local record double honoring the record-seam contract: only the
+// steer node (31) with the exact handler records; everything else denies.
+// Registered under a test tag — never a production content name.
+const char* fake_gate_touch_handler_name(std::int32_t nodeId) {
+  return nodeId == 31 ? "onTouchStart" : nullptr;
 }
-
-// Named case: dual-tag gate pin — a single stray token must never reroute
-// gallery bytes onto the content-scene path (*error untouched so the caller
-// falls through to gallery rows); both anchor tags present.
-static bool check_dual_tag_gate_single_token_denied() {
-  const std::string birdOnly = "gallery-bytes FlappyBird stray-token";
-  std::string error;
-  if (runtime::TryPresentContentScene(birdOnly.data(), birdOnly.size(),
-                                      &error)) {
-    return false;
-  }
-  if (!error.empty()) return false;
-  const std::string pipeOnly = "gallery-bytes FlappyPipe stray-token";
-  if (runtime::TryPresentContentScene(pipeOnly.data(), pipeOnly.size(),
-                                      &error)) {
-    return false;
-  }
-  if (!error.empty()) return false;
-  if (runtime::TryPresentContentScene(nullptr, 0, &error)) return false;
-  if (!error.empty()) return false;
-  const std::string both = "scene-bytes FlappyBird FlappyPipe";
-  std::string sceneError;
-  if (!runtime::TryPresentContentScene(both.data(), both.size(),
-                                       &sceneError)) {
-    return false;
-  }
-  return sceneError.empty();
+bool fake_gate_record_tap(std::int32_t nodeId, const char* handler) {
+  if (handler == nullptr) return false;
+  return nodeId == 31 && std::string_view(handler) == "onTouchStart";
+}
+bool RegisterTestRecordTag() {
+  runtime::ContentHandlers handlers;
+  handlers.touchHandlerName = &fake_gate_touch_handler_name;
+  handlers.recordTap = &fake_gate_record_tap;
+  // First wins: re-registration across cases keeps the first bundle.
+  (void)GlobalContentRegistry().Register("test-content-record", handlers);
+  return GlobalContentRegistry().Resolve("test-content-record") != nullptr;
 }
 
 // Named case: first-wins re-register keeps the FIRST bundle's handlers
@@ -245,7 +206,7 @@ static bool check_nullptr_bundle_fails_closed_all_paths() {
       dispatched = true;
     }
     if (handlers.drawSceneKind != nullptr) {
-      const std::string kind = "FlappyBird";
+      const std::string kind = "test-kind-a";
       handlers.drawSceneKind(kind, 31);
       dispatched = true;
     }
@@ -254,19 +215,24 @@ static bool check_nullptr_bundle_fails_closed_all_paths() {
 }
 
 // Named case: forged/stale/zero node ids fail closed. Only the steer node
-// (31) with the exact handler records; wrong node, handler mismatch,
-// nullptr handler, and zero ids never record. Unclaimed ids (zero,
-// negative, never-granted) never fire.
+// (31) with the exact handler records through the test-local fake and the
+// surviving generic record seam; wrong node, handler mismatch, nullptr
+// handler, and zero ids never record. Unclaimed ids (zero, negative,
+// never-granted) never fire.
 static bool check_forged_node_ids_fail_closed() {
-  if (!runtime::RegisterFlappyContent()) return false;
+  if (!RegisterTestRecordTag()) return false;
   const runtime::ContentHandlers* handlers =
-      GlobalContentRegistry().Resolve("flappy");
+      GlobalContentRegistry().Resolve("test-content-record");
   if (handlers == nullptr || handlers->recordTap == nullptr) return false;
   if (!handlers->recordTap(31, "onTouchStart")) return false;
   if (handlers->recordTap(20, "onTouchStart")) return false;
   if (handlers->recordTap(31, "onHudTouch")) return false;
   if (handlers->recordTap(31, nullptr)) return false;
   if (handlers->recordTap(0, "onTouchStart")) return false;
+  // Same denials through the surviving generic record seam.
+  if (runtime::ContentTouchHandlerName(20) != nullptr) return false;
+  if (!runtime::FireContentTapToJs(31, "onTouchStart")) return false;
+  if (runtime::FireContentTapToJs(20, "onTouchStart")) return false;
   if (FireTapHandler(0)) return false;
   if (FireTapHandler(-1)) return false;
   if (FireTapHandler(31)) return false;
@@ -294,11 +260,9 @@ int main() {
   RUN_CASE(check_duplicate_register_returns_false_first_wins);
   RUN_CASE(check_two_tags_resolve_independently_by_tag);
   RUN_CASE(check_unknown_stays_null_after_registrations);
-  RUN_CASE(check_dual_tag_gate_single_token_denied);
   RUN_CASE(check_first_wins_keeps_handler_identity);
   RUN_CASE(check_nullptr_bundle_fails_closed_all_paths);
   RUN_CASE(check_forged_node_ids_fail_closed);
-  RUN_CASE(check_scene_store_cap_fail_closed);
   if (failures > 0) {
     std::printf("content_registry_test: %d failing\n", failures);
     return 1;

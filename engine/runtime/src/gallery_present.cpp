@@ -2479,22 +2479,6 @@ void EmitTextRowCmds(const GalleryRow& row, int bx, int by, int bw, int bh,
 bool PresentGallery(const void* mui1Data, std::size_t len, Renderer& renderer,
                     Swapchain& target, std::string* error) {
   try {
-    // Content-scene routing (FR-RUNTIME-013 / T5): registered content
-    // scenes present through the content module behind the registration
-    // seam — the gallery-row geometry below never sees them. Fails closed
-    // per RULE-RUNTIME-001 with a named diagnostic; non-content bytes fall
-    // through to the gallery rows untouched.
-    std::string contentError;
-    if (TryPresentContentScene(mui1Data, len, renderer, target,
-                               &contentError)) {
-      return true;
-    }
-    if (!contentError.empty()) {
-      if (error != nullptr) {
-        *error = contentError;
-      }
-      return false;
-    }
     std::string parseError;
     std::vector<GalleryRow> rows =
         ParseGalleryRows(mui1Data, len, &parseError);

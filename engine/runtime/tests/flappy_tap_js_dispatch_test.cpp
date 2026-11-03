@@ -14,7 +14,6 @@
 #include <limits>
 #include <string>
 
-#include "runtime/flappy_content.h"
 #include "runtime/presenter.h"
 #include "runtime/content_registry.h"
 
@@ -33,16 +32,49 @@
 //   F3DIAG tag + hasTag("...") kind probe (~1038-1053, content-kind
 //   knowledge in the generic file).
 // (2) PRESENCE (callable, GREEN today): the registration call stays —
-// TryPresentContentScene (content_registry.h) + RefreshTapTreeFromPresentedScene
-// + ContentTouchHandlerName/FireContentTapToJs seam. The cases below
-// reference the seam so removing the call breaks the link; source
-// presence is additionally audited by grep (lines ~1010, ~1020/~1313,
-// ~1824-1828 byte-kept per plan D1).
+// the content-tag registry seam (content_registry.h) +
+// RefreshTapTreeFromPresentedScene + ContentTouchHandlerName/FireContentTapToJs
+// seam. The cases below reference the seam so removing the call breaks the
+// link; source presence is additionally audited by grep (lines ~1010,
+// ~1020/~1313, ~1824-1828 byte-kept per plan D1).
+// BUG-RUNTIME-012: the per-app content module is deleted. The registration
+// below is a test-local fake under a test tag; the seam under test is the
+// generic registry-driven dispatch, never app content.
+namespace {
+// Test-local tap-record providers (hermetic fake standing in for the
+// removed content module): nodes 31/32/33 name distinct internal-literal
+// handlers; every other node names nothing.
+const char* test_touch_handler_name(std::int32_t nodeId) {
+  switch (nodeId) {
+    case 31:
+      return "onTouchStart";
+    case 32:
+      return "onHudTouch";
+    case 33:
+      return "onPipeTouch";
+    default:
+      return nullptr;
+  }
+}
+bool test_record_tap(std::int32_t nodeId, const char* handler) {
+  if (handler == nullptr) return false;
+  const char* expected = test_touch_handler_name(nodeId);
+  if (expected == nullptr) return false;
+  return std::string(handler) == expected;
+}
+bool RegisterTestTapRecord() {
+  runtime::ContentHandlers handlers;
+  handlers.touchHandlerName = &test_touch_handler_name;
+  handlers.recordTap = &test_record_tap;
+  (void)GlobalContentRegistry().Register("test-tap-record", handlers);
+  return GlobalContentRegistry().Resolve("test-tap-record") != nullptr;
+}
+}  // namespace
 static bool check_t1_registration_seam_callable() {
-  // RegisterFlappyContent links the content-module owner; the generic
-  // seam resolves through it — removing the registration call breaks this.
-  if (!runtime::RegisterFlappyContent()) {
-    std::printf("  detail: RegisterFlappyContent failed\n");
+  // The test-local fake links the registry owner; the generic seam
+  // resolves through it — removing the registration call breaks this.
+  if (!RegisterTestTapRecord()) {
+    std::printf("  detail: test tap-record registration failed\n");
     return false;
   }
   // Content seam callable: steer node names its handler; scrim/forged do not.
@@ -355,45 +387,23 @@ static bool check_record_seam_denies_forged_node_and_handler() {
 }
 
 // ---- T2 (bug-runtime-009-010 Option A) RED cases ----
-// Plan `Interface:` line (verbatim): `dispatchTouch(nodeId: int,
-// action: TouchAction, x: float, y: float) -> DispatchResult
-// { fired: bool, nodeId: int, jsHandled: bool }` — a tap on any
-// evaluated/hit-test node (not only 31) with a registered handler returns
-// `jsHandled=true` via `JsRuntime` invocation; unregistered/miss returns
-// `fired=false`. Store contract: `EvaluatedFlappyTrees()` is empty at
-// startup (no 101/102/103 without registration/evaluation).
-// Production JsRuntime dispatch surface (T4 coder implements in
-// engine/runtime/src/js_runtime.cpp + engine/runtime/src/presenter.cpp,
-// handler resolved per node via registration in
-// engine/runtime/src/flappy_content.cpp): declared here against the plan;
-// the definition lands with T4, so linking the jsHandled case below before
-// then MUST fail (expected red). The two probes below it compile and run
-// today and FAIL on current behavior (literal-31 gate, static seeder).
-
+// BUG-RUNTIME-012: the per-app content module (and with it the JsRuntime
+// dispatch surface, the scene store, and the diag-line helper the cases
+// below bound) is deleted. The dispatch/seam legs that survive live in the
+// cases above; the module-bound legs are deleted — see the run contract
+// for their lines:
+// - `dispatchTouch` non-31 JsRuntime dispatch (`jsHandled` via a live
+//   JsRuntime invocation of the node's registered handler);
+// - store contract `EvaluatedFlappyTrees()` empty at startup (no 101/102/103
+//   without registration/evaluation);
+// - `FormatContentDiagLine` hostile-err bounded single-line pin (production
+//   helper deleted with the module; the F3DIAG logcat leg stays device
+//   proof and is not re-pinned here).
 // Desired Option-A dispatch result: jsHandled comes from a real JsRuntime
 // invocation of the node's registered handler, never record-plus-logcat.
-struct JsDispatchResult {
-  bool fired = false;
-  std::int32_t nodeId = -1;
-  bool jsHandled = false;
-};
-JsDispatchResult DispatchTapViaJsRuntime(std::int32_t nodeId,
-                                         const char* handler);
-
-// Named case (JsRuntime dispatch): a tap on evaluated non-31 touchable node
-// 32 reaches JsRuntime and returns jsHandled — the literal-31 gate fails it.
-static bool check_non31_touchable_dispatches_via_jsruntime() {
-  const JsDispatchResult r = DispatchTapViaJsRuntime(32, "onHudTouch");
-  if (!r.fired || r.nodeId != 32 || !r.jsHandled) {
-    std::printf("  detail: expected {fired, node 32, jsHandled} via JsRuntime\n");
-    return false;
-  }
-  return true;
-}
 
 // Named case (registration gate): every evaluated touchable (31/32/33)
 // names its handler through registration — never a literal-31 gate.
-// Compiles and runs today; FAILS (32/33 resolve nullptr) until T4.
 static bool check_every_touchable_names_handler_via_registration() {
   if (runtime::ContentTouchHandlerName(31) == nullptr) {
     std::printf("  detail: steer node 31 names no handler\n");
@@ -414,79 +424,7 @@ static bool check_every_touchable_names_handler_via_registration() {
   return true;
 }
 
-// Named case (store starts empty): handles 101/102/103 do not resolve
-// before registration/evaluation. Compiles and runs today; FAILS (static
-// seeder pre-seeds them) until T4 deletes the seeder.
-static bool check_startup_store_has_no_preseeded_handles() {
-  const FrameStats a = renderTree(101);
-  const FrameStats b = renderTree(102);
-  const FrameStats c = renderTree(103);
-  if (a.nodeCount != 0 || b.nodeCount != 0 || c.nodeCount != 0) {
-    std::printf("  detail: pre-seeded handles resolve without registration\n");
-    return false;
-  }
-  if (b.unknownKindCount != 0) {
-    std::printf("  detail: pre-seeded unknown tree present at startup\n");
-    return false;
-  }
-  return true;
-}
-
-// Named case (security — bug-runtime-014 review pin): hostile contentErr
-// inputs to FormatContentDiagLine stay a single bounded log line — no
-// format interpretation, no unbounded growth, fail-closed naming intact.
-// Hermetic, in-process only (C++17, no device/logcat/env/filesystem).
-static bool check_format_content_diag_line_hostile_err_stays_bounded() {
-  try {
-    const std::string nullLine =
-        runtime::FormatContentDiagLine(nullptr, 0, false, nullptr, 0);
-    const std::string emptyLine =
-        runtime::FormatContentDiagLine(nullptr, 0, false, "", 0);
-    for (const auto& line : {nullLine, emptyLine}) {
-      if (line.rfind("F3DIAG ", 0) != 0 ||
-          line.find("contentErr=-") == std::string::npos ||
-          line.find('\n') != std::string::npos || line.size() >= 320) {
-        std::printf("  detail: null/empty err not fail-closed single line\n");
-        return false;
-      }
-    }
-    // Format-specifier-looking payload must ride verbatim, never interpreted.
-    const char* fmtPayload = "%s %n %x %d %i contentErr=%s";
-    const std::string fmtLine =
-        runtime::FormatContentDiagLine(nullptr, 0, false, fmtPayload, 3);
-    if (fmtLine.rfind("F3DIAG ", 0) != 0 ||
-        fmtLine.find(fmtPayload) == std::string::npos ||
-        fmtLine.find('\n') != std::string::npos || fmtLine.size() >= 320) {
-      std::printf("  detail: format-looking err not verbatim/bounded\n");
-      return false;
-    }
-    // Overlong payload (5000B) must truncate to the 320B diag bound.
-    const std::string overlong(5000, 'E');
-    const std::string longLine =
-        runtime::FormatContentDiagLine(nullptr, 0, true, overlong.c_str(), 7);
-    if (longLine.rfind("F3DIAG ", 0) != 0 ||
-        longLine.find('\n') != std::string::npos || longLine.size() >= 320) {
-      std::printf("  detail: overlong err grew past the diag bound\n");
-      return false;
-    }
-    // Newline injection: bounded + prefix + verbatim (no format
-    // interpretation). NOTE: embedded newlines currently pass through
-    // (pre-existing residual per security-review; identical pre/post move),
-    // so this leg pins boundedness/naming, not sanitization.
-    const char* nlPayload = "boom\nINJECTED_TAG contentErr=hacked";
-    const std::string nlLine =
-        runtime::FormatContentDiagLine(nullptr, 0, false, nlPayload, 1);
-    if (nlLine.rfind("F3DIAG ", 0) != 0 || nlLine.size() >= 320 ||
-        nlLine.find("boom") == std::string::npos) {
-      std::printf("  detail: newline err broke bound/prefix/verbatim\n");
-      return false;
-    }
-  } catch (...) {
-    std::printf("  detail: FormatContentDiagLine must never throw\n");
-    return false;
-  }
-  return true;
-}
+// BUG-RUNTIME-012 module-bound legs deleted (see T2 block above).
 
 #define RUN_CASE(name)                                  \
   do {                                                  \
@@ -501,9 +439,13 @@ static bool check_format_content_diag_line_hostile_err_stays_bounded() {
 int main() {
   int failures = 0;
   // T6 seam setup (FR-RUNTIME-013): reach dispatch through the content-tag
-  // registry via explicit registration (never app name; never static-init
-  // order). Idempotent; first registration wins.
-  (void)runtime::RegisterFlappyContent();
+  // registry via explicit test-local registration (never app content;
+  // never static-init order). Idempotent; first registration wins.
+  if (!RegisterTestTapRecord()) {
+    std::printf("FAIL test_tap_record_registration\n");
+    return 1;
+  }
+  std::printf("PASS test_tap_record_registration\n");
   RUN_CASE(check_harness_entry_reached);
   RUN_CASE(check_fired_steer_tap_records_with_identity);
   RUN_CASE(check_tap_miss_fails_closed_naming_node_and_handler);
@@ -516,10 +458,7 @@ int main() {
   RUN_CASE(check_record_seam_denies_forged_node_and_handler);
   RUN_CASE(check_tap_record_evidence_is_log_literal_safe);
   RUN_CASE(check_t1_registration_seam_callable);
-  RUN_CASE(check_format_content_diag_line_hostile_err_stays_bounded);
-  RUN_CASE(check_non31_touchable_dispatches_via_jsruntime);
   RUN_CASE(check_every_touchable_names_handler_via_registration);
-  RUN_CASE(check_startup_store_has_no_preseeded_handles);
   if (failures > 0) {
     std::printf("flappy_tap_js_dispatch_test: %d failing\n", failures);
     return 1;

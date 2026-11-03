@@ -89,29 +89,10 @@ class ContentRegistry {
   std::map<std::string, ContentHandlers, std::less<>> entries_;
 };
 
-// Presented-scene tap query (T8R6/F4; FR-RUNTIME-013 / AC-RUNTIME-039).
-// Implemented by the content module; generic dispatch calls it without
-// naming any content bundle. Fills up to `capacity` entries of the
-// presented scene's laid-out touchables (bounds verbatim, never literals)
-// and returns the count; returns 0 when the bytes are not a recognized
-// content scene, when no touchable lays out, or on null/empty input —
-// never negative, never throws. The caller keeps its fallback tree on 0.
-int QueryPresentedSceneTaps(const void* data, std::size_t len,
-                            ::PresentedSceneTap* out, int capacity);
-
-// F3 divergence-probe diagnostic line (BUG-RUNTIME-014 / AC-RUNTIME-038).
-// Implemented by the content module; generic dispatch logs the returned
-// line verbatim without naming any content tag. Never throws.
-std::string FormatContentDiagLine(const void* data, std::size_t len,
-                                  bool presented,
-                                  const char* contentErrOrNull,
-                                  int fallbackRows);
-
 }  // namespace runtime
 
 // Process-wide registry consulted by generic dispatch. Content modules
-// register their tags here (see RegisterFlappyContent in
-// runtime/flappy_content.h); generic files resolve through it and never
-// name content. Function-local static: safe initialization, no teardown
+// used to register their tags here; generic files resolve through it and
+// never name content. Function-local static: safe initialization, no teardown
 // ordering hazards (leaked on exit, never destroyed mid-dispatch).
 runtime::ContentRegistry& GlobalContentRegistry();
