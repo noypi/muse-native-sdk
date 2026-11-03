@@ -125,3 +125,86 @@ describe('T5 handleDemoIntent/routeDemoLink live in JS (RED pre-move)', () => {
 });
 });
 
+// --- Batch 2 hardening (security review 2026-11-03): crafted-link denial
+// matrix, AC-NAV-044. Every shape below must fail closed with the named
+// `unknown-route` code, leaving router state and transport untouched.
+
+describe('hardening: forwardIntent crafted-link denial matrix (AC-NAV-044)', () => {
+  const BAD_OPAQUES = [
+    'muse-demo://tab/nope',
+    'muse-demo://tab/',
+    'muse-demo://tab/lens/evil',
+    'muse-demo://tab/lens?seed=1',
+    'muse-demo://tab/lens#frag',
+    'muse-demo://tab/lens/',
+    'muse-demo://tab/%6Cens',
+    'muse-demo://tab/LENS',
+    'other-demo://tab/lens',
+    'muse-demo://other/lens',
+    'muse-demo://lens',
+    'muse-demo://tab/lens/..%2Ffield',
+    'MUSE-DEMO://tab/lens',
+    '',
+  ];
+
+  for (const opaque of BAD_OPAQUES) {
+    it(`forwardIntent denies ${JSON.stringify(opaque)} with unknown-route, state unchanged`, async () => {
+      const transport = fakeTransport();
+      const router = demoNav.createDemoRouter({ transport });
+      await router.forwardIntent('muse-demo://tab/lens');
+      const callsBefore = transport.calls.length;
+      const res = await router.forwardIntent(opaque);
+      assert.deepEqual(res, { ok: false, code: 'unknown-route' });
+      assert.equal(router.current, 'lens');
+      assert.equal(transport.calls.length, callsBefore, 'denial must not reach transport');
+    });
+  }
+
+  for (const opaque of [null, undefined, 42, {}, [], true]) {
+    it(`forwardIntent denies non-string ${String(opaque)} with unknown-route`, async () => {
+      const transport = fakeTransport();
+      const router = demoNav.createDemoRouter({ transport });
+      await router.forwardIntent('muse-demo://tab/lens');
+      const res = await router.forwardIntent(opaque);
+      assert.deepEqual(res, { ok: false, code: 'unknown-route' });
+      assert.equal(router.current, 'lens');
+      assert.equal(transport.calls.length, 1);
+    });
+  }
+});
+
+// --- Batch 2 hardening (security review 2026-11-03): opaque verbatim
+// forward, AC-NAV-044. `forwardIntent(opaque)` must land the same dest as
+// the equivalent `push(id)` — byte-identical stash content resolves
+// identically, host forwards unparsed.
+
+describe('hardening: forwardIntent≡push parity (AC-NAV-044)', () => {
+  for (const id of ['lens', 'field', 'list', 'home']) {
+    it(`forwardIntent('muse-demo://tab/${id}') observes same result as push('${id}')`, async () => {
+      const tForward = fakeTransport();
+      const tPush = fakeTransport();
+      const viaForward = demoNav.createDemoRouter({ transport: tForward });
+      const viaPush = demoNav.createDemoRouter({ transport: tPush });
+      const opaque = `muse-demo://tab/${id}`;
+      const resForward = await viaForward.forwardIntent(opaque);
+      const resPush = await viaPush.push(id);
+      assert.deepEqual(resForward, { ok: true });
+      assert.deepEqual(resForward, resPush, 'opaque forward must equal equivalent push');
+      assert.equal(viaForward.current, viaPush.current);
+      assert.deepEqual(tForward.calls, tPush.calls);
+      assert.equal(tForward.calls[0].payload.route, id);
+    });
+  }
+
+  it('forwardIntent forwards the stashed string verbatim (no re-parse, no params)', async () => {
+    const seen = [];
+    const transport = { invoke: async (m, p) => { seen.push({ m, p }); return { ok: true }; } };
+    const router = demoNav.createDemoRouter({ transport });
+    const opaque = 'muse-demo://tab/field';
+    const res = await router.forwardIntent(opaque);
+    assert.deepEqual(res, { ok: true });
+    assert.equal(seen.length, 1);
+    assert.deepEqual(seen[0].p, { route: 'field', params: {} });
+  });
+});
+

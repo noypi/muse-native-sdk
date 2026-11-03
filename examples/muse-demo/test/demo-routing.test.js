@@ -258,3 +258,114 @@ describe('T2 — no direct-setTab bypass + flag gate as-is (static pins)', () =>
     assert.equal(nav.isArbitraryRouteEnabled({ MUSE_ARBITRARY_ROUTE_ENABLED: '0' }), false, 'env 0 must disable');
   });
 });
+
+// --- Batch 2 hardening (security review 2026-11-03): JS-side-only denial
+// logging, AC-NAV-047. A denied push/replace must record nothing (no
+// transport call, no state change) and leak no internals through logs:
+// the only observable is the returned NavResult.
+
+describe('hardening: denials are JS-side only, nothing recorded (AC-NAV-047)', () => {
+  function fakeRouterTransport() {
+    const calls = [];
+    return { calls, invoke: async (method, payload) => { calls.push({ method, payload }); return { ok: true }; } };
+  }
+
+  function captureConsole() {
+    const seen = [];
+    const methods = ['debug', 'log', 'info', 'warn', 'error'];
+    const originals = {};
+    for (const m of methods) {
+      originals[m] = console[m];
+      console[m] = (...args) => { seen.push({ method: m, args: args.map(String) }); };
+    }
+    return { seen, restore() { for (const m of methods) { console[m] = originals[m]; } } };
+  }
+
+  for (const bad of ['muse-demo://tab/nope', 'gallery://story/x', null, 42]) {
+    it(`denied push/replace of ${JSON.stringify(bad)} records nothing, only NavResult observed`, async () => {
+      requireNav();
+      const transport = fakeRouterTransport();
+      const router = nav.createDemoRouter({ transport });
+      await router.push('lens');
+      const cap = captureConsole();
+      let pushRes;
+      let replaceRes;
+      try {
+        pushRes = await router.push(bad);
+        replaceRes = await router.replace(bad);
+      } finally {
+        cap.restore();
+      }
+      assert.equal(pushRes && pushRes.ok, false);
+      assert.equal(replaceRes && replaceRes.ok, false);
+      assert.equal(transport.calls.length, 1, 'denials must never reach transport');
+      assert.equal(router.current, 'lens', 'denial must leave state unchanged');
+      assert.equal(cap.seen.length, 0, 'denial must emit no log record');
+    });
+  }
+
+  it('denial logs never carry the raw opaque input', async () => {
+    requireNav();
+    const transport = fakeRouterTransport();
+    const router = nav.createDemoRouter({ transport });
+    const evil = 'muse-demo://tab/lens?seed=<script>';
+    const cap = captureConsole();
+    try {
+      const res = await router.forwardIntent(evil);
+      assert.deepEqual(res, { ok: false, code: 'unknown-route' });
+    } finally {
+      cap.restore();
+    }
+    for (const entry of cap.seen) {
+      for (const arg of entry.args) {
+        assert.ok(!arg.includes(evil), 'raw opaque input must never appear in logs');
+      }
+    }
+  });
+});
+
+// --- Batch 2 hardening (security review 2026-11-03): non-object params
+// container denied with `bad-params`, AC-NAV-047 (typed params, fail
+// closed). The transport seam must never see a mistyped container.
+
+describe('hardening: non-object params denied with bad-params (AC-NAV-047)', () => {
+  function fakeRouterTransport() {
+    const calls = [];
+    return { calls, invoke: async (method, payload) => { calls.push({ method, payload }); return { ok: true }; } };
+  }
+
+  for (const params of ['evil-string', 42, true, ['lens'], null]) {
+    it(`push('lens', ${JSON.stringify(params)}) denies bad-params, transport never called`, async () => {
+      requireNav();
+      const transport = fakeRouterTransport();
+      const router = nav.createDemoRouter({ transport });
+      const before = router.current;
+      const res = await router.push('lens', params);
+      assert.deepEqual(res, { ok: false, code: 'bad-params' });
+      assert.equal(transport.calls.length, 0, 'mistyped container must not cross the transport seam');
+      assert.equal(router.current, before, 'denial must leave state unchanged');
+    });
+
+    it(`replace('lens', ${JSON.stringify(params)}) denies bad-params, transport never called`, async () => {
+      requireNav();
+      const transport = fakeRouterTransport();
+      const router = nav.createDemoRouter({ transport });
+      const before = router.current;
+      const res = await router.replace('lens', params);
+      assert.deepEqual(res, { ok: false, code: 'bad-params' });
+      assert.equal(transport.calls.length, 0, 'mistyped container must not cross the transport seam');
+      assert.equal(router.current, before, 'denial must leave state unchanged');
+    });
+  }
+
+  it('denied params leave router state unchanged', async () => {
+    requireNav();
+    const transport = fakeRouterTransport();
+    const router = nav.createDemoRouter({ transport });
+    await router.push('lens');
+    const res = await router.push('field', 'evil-string');
+    assert.deepEqual(res, { ok: false, code: 'bad-params' });
+    assert.equal(router.current, 'lens');
+    assert.equal(transport.calls.length, 1);
+  });
+});
