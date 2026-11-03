@@ -121,11 +121,40 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         if (raw == null || raw.isEmpty()) {
             return;
         }
-        if (engineHandle == 0) {
-            pendingOpaqueLink = raw;
+        pendingOpaqueLink = raw;
+    }
+
+    /**
+     * JS-readable drain of the stashed opaque link. Returns the stashed
+     * string once, clearing the slot; never parses (AC-NAV-044 stash rule).
+     * The JS routing layer resolves it via the router once ready.
+     */
+    String consumePendingOpaqueLink() {
+        String link = pendingOpaqueLink;
+        pendingOpaqueLink = null;
+        return link;
+    }
+
+    /**
+     * Handoff into the JS routing layer. Host never parses; the stashed
+     * opaque string stays available for the JS drain above. Same channel
+     * serves cold-start (onCreate) and warm (onNewIntent) arrivals.
+     */
+    void forwardOpaqueToRouter(String opaqueLink) {
+        if (opaqueLink == null || opaqueLink.isEmpty()) {
             return;
         }
-        pendingOpaqueLink = raw;
+        Log.i(TAG, "opaque-intent-ready engineHosted=true");
+        // Slot intentionally left populated: JS consumes it unparsed via
+        // consumePendingOpaqueLink() once the router is ready.
+    }
+
+    /** Drain the cold-start stash into the router once ready (unparsed). */
+    private void drainPendingOpaqueLink() {
+        if (pendingOpaqueLink == null || engineHandle == 0) {
+            return;
+        }
+        forwardOpaqueToRouter(pendingOpaqueLink);
     }
 
     @Override
@@ -165,9 +194,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         // Cold-start VIEW: stash opaque, then drain unparsed now that the
         // handle exists (warm arrivals drain via onNewIntent below).
         stashOpaqueIntent(getIntent());
-        if (pendingOpaqueLink != null && engineHandle != 0) {
-            pendingOpaqueLink = null;
-        }
+        drainPendingOpaqueLink();
     }
 
     /**
