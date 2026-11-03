@@ -24,6 +24,12 @@
 
 #include "runtime/egl_blit.h"
 
+#if defined(MUSE_TEST_SEAM) && (MUSE_TEST_SEAM == 1)
+#define SEAM_ON 1
+#else
+#define SEAM_ON 0
+#endif
+
 // --- test-only fault-injection seam (shared with T2) ------------------------
 // Provided by `runtime/egl_blit.h` (coder's host stub-EGL claim; same header
 // serves both test executables — they link separately, so no ODR clash).
@@ -42,13 +48,19 @@
 namespace {
 
 struct FaultGuard {
+#if SEAM_ON
   FaultGuard() { egl_blit_test::SetFaultHooks(nullptr); }
   ~FaultGuard() {
     egl_blit_test::SetFaultHooks(nullptr);
     EglBlitShutdown();
   }
+#else
+  FaultGuard() { EglBlitShutdown(); }
+  ~FaultGuard() { EglBlitShutdown(); }
+#endif
 };
 
+#if SEAM_ON
 bool trigger_mentions(const std::string& trigger, const char* needle) {
   if (trigger.empty() || needle == nullptr) return false;
   std::string hay = trigger;
@@ -57,6 +69,7 @@ bool trigger_mentions(const std::string& trigger, const char* needle) {
   for (char& c : ndl) c = static_cast<char>(std::tolower(c));
   return hay.find(ndl) != std::string::npos;
 }
+#endif  // SEAM_ON
 
 std::vector<uint32_t> two_by_two() {
   return {0xFF0000FFu, 0xFF00FF00u, 0xFFFF0000u, 0xFFFFFFFFu};
@@ -80,6 +93,7 @@ static bool check_failure_protocol_shape() {
 
 // --- T3 cases ----------------------------------------------------------------
 
+#if SEAM_ON
 // Named case: healthy EGL path pushes the frame and reports no fallback
 // (empty trigger). A frame is always pushed: returns true.
 static bool check_healthy_path_returns_true_no_fallback() {
@@ -202,6 +216,35 @@ static bool check_repeated_fallbacks_stay_live() {
   return true;
 }
 
+#else
+// --- OFF lane: seam absent — fail closed to CPU push, never silently pass ---
+// No seam names here by construction. OFF host EGL always fails, so every
+// frame falls back in-process (returns true) with a non-empty trigger.
+static bool check_off_fallback_pushes_frame() {
+  FaultGuard g;
+  std::vector<uint32_t> px = two_by_two();
+  std::string trigger;
+  bool ok = PresentFrameWithFallback(px.data(), 2, 2, &trigger);
+  return ok && !trigger.empty();
+}
+static bool check_off_null_trigger_tolerated() {
+  FaultGuard g;
+  std::vector<uint32_t> px = two_by_two();
+  return PresentFrameWithFallback(px.data(), 2, 2, nullptr);
+}
+static bool check_off_repeated_fallbacks_stay_live() {
+  FaultGuard g;
+  std::vector<uint32_t> px = two_by_two();
+  for (int i = 0; i < 3; ++i) {
+    std::string trigger;
+    if (!PresentFrameWithFallback(px.data(), 2, 2, &trigger) ||
+        trigger.empty())
+      return false;
+  }
+  return true;
+}
+#endif  // SEAM_ON
+
 #define RUN_CASE(name)                                       \
   do {                                                       \
     if (!(name)()) {                                         \
@@ -217,6 +260,7 @@ int main() {
   RUN_CASE(check_harness_entry_reached);
   RUN_CASE(check_all_green_returns_zero);
   RUN_CASE(check_failure_protocol_shape);
+#if SEAM_ON
   RUN_CASE(check_healthy_path_returns_true_no_fallback);
   RUN_CASE(check_init_fail_falls_back_in_process);
   RUN_CASE(check_context_lost_falls_back_in_process);
@@ -226,6 +270,11 @@ int main() {
   RUN_CASE(check_null_pixels_never_blank_no_crash);
   RUN_CASE(check_zero_dims_no_crash);
   RUN_CASE(check_repeated_fallbacks_stay_live);
+#else
+  RUN_CASE(check_off_fallback_pushes_frame);
+  RUN_CASE(check_off_null_trigger_tolerated);
+  RUN_CASE(check_off_repeated_fallbacks_stay_live);
+#endif
   if (failures > 0) {
     std::printf("present_fallback_test: %d failing\n", failures);
     return 1;

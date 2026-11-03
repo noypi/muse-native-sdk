@@ -20,6 +20,12 @@
 
 #include "runtime/egl_blit.h"
 
+#if defined(MUSE_TEST_SEAM) && (MUSE_TEST_SEAM == 1)
+#define SEAM_ON 1
+#else
+#define SEAM_ON 0
+#endif
+
 // --- test-only fault-injection seam ------------------------------------------
 // Provided by `runtime/egl_blit.h` (coder's host stub-EGL claim; device lane
 // may no-op it). `nullptr` clears all faults. Minimal surface for the plan's
@@ -38,11 +44,18 @@
 namespace {
 
 struct FaultGuard {
+#if SEAM_ON
   FaultGuard() { egl_blit_test::SetFaultHooks(nullptr); }
   ~FaultGuard() {
     egl_blit_test::SetFaultHooks(nullptr);
     EglBlitShutdown();
   }
+#else
+  // OFF lane: seam undeclared — never names it; just shuts down.
+  // Fail-closed proof lives in the OFF cases below.
+  FaultGuard() { EglBlitShutdown(); }
+  ~FaultGuard() { EglBlitShutdown(); }
+#endif
 };
 
 struct FakeNativeWindow {
@@ -128,6 +141,7 @@ static bool check_present_tolerates_null_error() {
   return true;  // reaching here without crashing is the assertion
 }
 
+#if SEAM_ON
 // Named case: null pixels never present — fail closed with a named trigger.
 static bool check_present_null_pixels_fails_closed() {
   FaultGuard g;
@@ -226,6 +240,30 @@ static bool check_shutdown_then_present_fails_and_reinit_ok() {
   return EglBlitInit(handle, &re_err) && re_err.code == BlitCode::kOk;
 }
 
+#else
+// --- OFF lane: seam absent — fail closed, never silently pass ----------------
+static bool check_off_init_fails_closed() {
+  FaultGuard g;
+  FakeNativeWindow w;
+  BlitError err{BlitCode::kOk, ""};
+  bool ok = EglBlitInit(static_cast<void*>(&w), &err);
+  return !ok && err.code != BlitCode::kOk && has_trigger(err);
+}
+static bool check_off_present_fails_closed() {
+  FaultGuard g;
+  std::vector<uint32_t> px = two_by_two();
+  BlitError err{BlitCode::kOk, ""};
+  bool ok = EglBlitPresent(px.data(), 2, 2, &err);
+  return !ok && err.code != BlitCode::kOk && has_trigger(err);
+}
+static bool check_off_shutdown_idempotent() {
+  FaultGuard g;
+  EglBlitShutdown();
+  EglBlitShutdown();
+  return true;
+}
+#endif  // SEAM_ON
+
 #define RUN_CASE(name)                                       \
   do {                                                       \
     if (!(name)()) {                                         \
@@ -245,12 +283,18 @@ int main() {
   RUN_CASE(check_init_tolerates_null_error);
   RUN_CASE(check_present_without_init_fails_closed);
   RUN_CASE(check_present_tolerates_null_error);
+#if SEAM_ON
   RUN_CASE(check_present_null_pixels_fails_closed);
   RUN_CASE(check_present_zero_dims_fails_closed);
   RUN_CASE(check_double_init_same_window_fails);
   RUN_CASE(check_swap_fail_injects_kSwapFailed);
   RUN_CASE(check_context_loss_injects_kContextLost);
   RUN_CASE(check_shutdown_then_present_fails_and_reinit_ok);
+#else
+  RUN_CASE(check_off_init_fails_closed);
+  RUN_CASE(check_off_present_fails_closed);
+  RUN_CASE(check_off_shutdown_idempotent);
+#endif
   if (failures > 0) {
     std::printf("egl_blit_test: %d failing\n", failures);
     return 1;
