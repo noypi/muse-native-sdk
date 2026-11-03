@@ -28,8 +28,8 @@ import { InlineError, dismissSnackbarNotice, useInlineProxyError } from './error
 // Avatar resolves from the profile description (MuseImage generate-image);
 // like-or-take/upload-photo completes settings. Redirect carries the persisted
 // transcribe state. Resolves via the `reason` then `generate-image`
-// routes/stub (turn reduction mirrors reason.onboarding; avatar mirrors
-// generate-image fixtures — see proxy/lib/stub.js FIXTURES).
+// routes/stub (turn reduction follows reason.onboarding; avatar follows the
+// generate-image route response — see proxy/lib/stub.js FIXTURES).
 
 // RULE-MUSE-007 rejection shape (never raw text): the code names the class,
 // `retry` re-fires the same call with the same arguments.
@@ -60,7 +60,7 @@ export function completeOnboarding(transcript: string[]): Promise<OnboardingResu
   // (AC-SAMPLE-036): a `force-<code>:` marker rejects once with that code so
   // the page can surface SnackbarHost + inline error with a working retry;
   // `retry` re-fires the same call, which resolves once the (simulated)
-  // fixture recovers. Mirrors the `./suggestions` / `./transcribe` prefix
+  // fixture recovers. Follows the `./suggestions` / `./transcribe` prefix
   // convention and the stub `force-<code>:` trigger in proxy/lib/stub.js.
   const forcedKey = turns.join('\n');
   const forcedMatch = /force-(auth|upstream|timeout|schema):/.exec(forcedKey);
