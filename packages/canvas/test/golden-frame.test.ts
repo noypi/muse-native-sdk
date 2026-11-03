@@ -8,13 +8,13 @@
 // CircleArc, ShapedText, StateLayer — engine/runtime/include/runtime/renderer.h);
 // no invented kinds; no engine/graphics/sample edits.
 // Hermetic: node:test + node:assert/strict only. No device, no network.
-// RED by construction: ../src/canvas.tsx does not exist (Batch 3 T6 owns src/).
+// RECONCILED: Batch 3 T6 landed the Real in ../src/canvas (plain TS, no JSX).
 
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
 // @ts-expect-error RED: implementation lands in Batch 3 (T6)
-import { emitFrame, CanvasUnknownKindError } from '../src/canvas.tsx';
+import { emitFrame, CanvasUnknownKindError } from '../src/canvas.ts';
 
 // Fixed tick for the golden frame. Never Date.now(), never Math.random().
 const T_FIXED = 1000;
