@@ -102,6 +102,41 @@ void HatchRing(TileSegs& segs, double cx, double cy, double rx, double ry,
   HatchRing(segs, cx, cy, rx, ry, w, 0.0);
 }
 
+// Left-vented ring variant (digit '3': bowl openings face left, so the vent
+// goes on the LEFT wall and the right spine stands). Chord math mirrors
+// HatchRing's right-gap topology row for row — solid chord rows emit one
+// full-width span exactly as above — so a vented bowl keeps zero enclosed
+// counters while reading 3, not E. Fail-closed like HatchRing: degenerate
+// radii/width emit nothing.
+void HatchRingLeftGap(TileSegs& segs, double cx, double cy, double rx,
+                      double ry, double w, double gapLeftHalf) {
+  if (!(rx > 0.0) || !(ry > 0.0) || !(w > 0.0)) return;
+  const double step = 1.0 / static_cast<double>(kSamplesPerTexel);
+  const double irx = rx - w;
+  const double iry = ry - w;
+  const bool hasHole = irx > 0.0 && iry > 0.0;
+  for (double y = cy - ry + 0.5 * step; y < cy + ry; y += step) {
+    const double yn = (y - cy) / ry;
+    if (yn <= -1.0 || yn >= 1.0) continue;
+    const double ox = rx * std::sqrt(1.0 - yn * yn);
+    double ix = -1.0;
+    if (hasHole) {
+      const double yi = (y - cy) / iry;
+      if (yi > -1.0 && yi < 1.0) ix = irx * std::sqrt(1.0 - yi * yi);
+    }
+    if (ix < 0.0) {  // Solid chord row: one full-width span, as above.
+      EmitSeg(segs, cx - ox, y, cx + ox, y);
+      continue;
+    }
+    if (gapLeftHalf > 0.0 && std::fabs(y - cy) < gapLeftHalf) {
+      EmitSeg(segs, cx + ix, y, cx + ox, y);  // Vent left, spine stands right.
+      continue;
+    }
+    EmitSeg(segs, cx - ox, y, cx - ix, y);
+    EmitSeg(segs, cx + ix, y, cx + ox, y);
+  }
+}
+
 // Procedural glyph outline in mask-texel coordinates: cell (x0, y0) of size
 // (adv, h). BUG-TEXT-007 T4: classified by an explicit source codepoint.
 // The outline stage must never reinterpret a font glyph id as a codepoint:
@@ -268,11 +303,34 @@ void BuildGlyphOutline(TileSegs& segs, std::uint32_t codepoint, double x0,
       HatchStroke(segs, xr, yt, xl, base, sw);
       return;
     }
-    if (cp == 'Y' || cp == 'y') {
+    if (cp == 'Y') {
       const double my = (yt + base) / 2.0;
       HatchStroke(segs, xl, yt, cx, my, sw);
       HatchStroke(segs, xr, yt, cx, my, sw);
       vbar(cx - sw / 2.0, cx + sw / 2.0, my, base);
+      return;
+    }
+    if (cp == 'y') {
+      // Lowercase y carries a descender below baseline (no Y-form): arms
+      // meet at mid, stem continues past base, then hooks left. The hook
+      // is anchored to base + a fraction of the below-baseline depth
+      // (never to y0+h): BlendMask proportionally downsamples the 14px
+      // caption mask onto fewer dest rows (570x1230 class: 14 mask rows
+      // -> 11 dest rows, so mask row 13 is never sampled). A y0+h-anchored
+      // foot parks its bulk in that dropped row and the device reads
+      // Y-form with the stem ending exactly at baseline. The base-anchored
+      // hook keeps the distinguishing ink in sampled row 12; same
+      // left-sweep precedent as the 'g' tail, which stays visible on the
+      // same path. V arms keep x-height.
+      const double my = (yt + base) / 2.0;
+      const double yDepth = (y0 + h) - base;
+      HatchStroke(segs, xl, yt, cx, my, sw);
+      HatchStroke(segs, xr, yt, cx, my, sw);
+      vbar(cx - sw / 2.0, cx + sw / 2.0, my, base + sw * 0.25);
+      HatchStroke(segs, cx, base - sw * 0.5, xl + sw * 0.75,
+                  base + yDepth * 0.45, sw * 0.7);
+      HatchRect(segs, xl + sw * 0.75, base + yDepth * 0.15,
+                cx - sw * 0.25, base + yDepth * 0.45);
       return;
     }
     if (cp == '4') {  // Left diagonal + stem + crossbar.
@@ -354,20 +412,45 @@ void BuildGlyphOutline(TileSegs& segs, std::uint32_t codepoint, double x0,
       // Two stacked bowls: top bowl opens lower-left, bottom upper-right.
       const double my = (yt + base) / 2.0;
       if (cp == '3') {
-        // Open topology (C/G gapRightHalf pattern): vent each bowl to the
-        // background on the right so '3' carries no enclosed counter while
-        // '8' (two closed rings below) keeps two.
+        // Open topology (left-vented mirror of the C/G right-gap pattern):
+        // '3' bowl openings face LEFT, so each bowl vents on the left while
+        // the right spine stands; '8' (two closed rings below) keeps two
+        // enclosed counters. Venting right instead renders E (t5r7 device
+        // finding: per-glyph X-mirror of '3' on the executed CPU raster lane).
         const double topRy = (my - yt) / 2.0;
         const double botRy = (base - my) / 2.0;
-        HatchRing(segs, cx, (yt + my) / 2.0, rx, topRy, ringW(topRy), topRy * 0.65);
-        HatchRing(segs, cx, (my + base) / 2.0, rx, botRy, ringW(botRy), botRy * 0.65);
+        HatchRingLeftGap(segs, cx, (yt + my) / 2.0, rx, topRy, ringW(topRy),
+                         topRy * 0.65);
+        HatchRingLeftGap(segs, cx, (my + base) / 2.0, rx, botRy, ringW(botRy),
+                         botRy * 0.65);
         return;
       }
-      HatchRing(segs, cx, (yt + my) / 2.0, rx, (my - yt) / 2.0,
-                ringW((my - yt) / 2.0), 0.0);
-      HatchRing(segs, cx, (my + base) / 2.0, rx, (base - my) / 2.0,
-                ringW((base - my) / 2.0), 0.0);
-      if (cp == '5') HatchRect(segs, xl, yt, xr, yt + sw);  // Top bar.
+      // 'S'/'s': single open S-spine — two stacked bowls each with one
+      // left vent (same HatchRingLeftGap precedent as F1 '3'), joined by
+      // S's OWN diagonal spine: a top-right -> bottom-left stroke across
+      // the inter-bowl joint, reaching into both bowls as dead-end spurs
+      // (never wall-to-wall, so the enclosed-counter count is unchanged).
+      // '3' keeps its right spine (branch above, untouched); the diagonal
+      // joint is what reads S rather than 3-like on device. '5' keeps its
+      // closed-bowl + top-bar form.
+      if (cp == 'S' || cp == 's') {
+        const double topRy = (my - yt) / 2.0;
+        const double botRy = (base - my) / 2.0;
+        HatchRingLeftGap(segs, cx, (yt + my) / 2.0, rx, topRy, ringW(topRy),
+                         topRy * 0.65);
+        HatchRingLeftGap(segs, cx, (my + base) / 2.0, rx, botRy, ringW(botRy),
+                         botRy * 0.65);
+        HatchStroke(segs, cx + rx * 0.55, my - topRy * 0.9,
+                    cx - rx * 0.55, my + botRy * 0.9, sw);
+        return;
+      }
+      if (cp == '5') {
+        HatchRing(segs, cx, (yt + my) / 2.0, rx, (my - yt) / 2.0,
+                  ringW((my - yt) / 2.0), 0.0);
+        HatchRing(segs, cx, (my + base) / 2.0, rx, (base - my) / 2.0,
+                  ringW((base - my) / 2.0), 0.0);
+        HatchRect(segs, xl, yt, xr, yt + sw);  // Top bar.
+      }
       return;
     }
     if (cp == '6' || cp == '9') {  // Bowl + opposing stem.
