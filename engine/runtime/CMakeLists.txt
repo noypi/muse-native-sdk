@@ -471,6 +471,11 @@ target_link_libraries(relayout_scope_test PRIVATE runtime)
 target_compile_options(relayout_scope_test PRIVATE -Wall -Wextra -Wpedantic)
 add_test(NAME relayout_scope_test COMMAND relayout_scope_test)
 
+add_executable(layout_to_draw_test tests/layout_to_draw_test.cpp)
+target_link_libraries(layout_to_draw_test PRIVATE runtime)
+target_compile_options(layout_to_draw_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME layout_to_draw_test COMMAND layout_to_draw_test)
+
 add_executable(js_abi_isolation_test tests/js_abi_isolation_test.cpp)
 target_link_libraries(js_abi_isolation_test PRIVATE runtime)
 target_compile_options(js_abi_isolation_test PRIVATE -Wall -Wextra -Wpedantic)
