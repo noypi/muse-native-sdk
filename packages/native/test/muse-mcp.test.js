@@ -287,6 +287,161 @@ describe('SEC — hostile getTurn() shapes fail closed with stale-id', () => {
   });
 });
 
+describe('T8 — tools snapshot carries name+args+capabilities, no remote wiring (AC-MUSE-041)', () => {
+  it('every tools() entry exposes name, args and capabilities only', () => {
+    const handle = createMuseMcp({
+      abilities: [
+        ability(),
+        ability({
+          name: 'notes.save',
+          capabilities: ['notes.write'],
+          args: { title: 'string' },
+        }),
+      ],
+      control: { turnId: 'turn-8-tools-shape' },
+      capabilities: ['gallery.read', 'notes.write'],
+    });
+    const tools = typeof handle.tools === 'function' ? handle.tools() : handle.tools;
+    assert.equal(tools.length, 2);
+    for (const t of tools) {
+      assert.equal(typeof t.name, 'string');
+      assert.ok(t.args && typeof t.args === 'object', 'entry must carry args map');
+      assert.ok(Array.isArray(t.capabilities), 'entry must carry capabilities');
+      for (const key of ['transport', 'providerUrl', 'apiKey', 'client']) {
+        assert.ok(!(key in Object(t)), `tools entry must not carry ${key}`);
+      }
+    }
+    const open = tools.find((t) => t.name === 'gallery.open');
+    assert.deepEqual(open.args, { itemId: 'string' });
+    assert.deepEqual(open.capabilities, ['gallery.read']);
+  });
+
+  it('empty abilities registers nothing: tools() is [] and call() fails unknown-ability', async () => {
+    const handle = createMuseMcp({
+      abilities: [],
+      control: { turnId: 'turn-8-empty' },
+      capabilities: ['gallery.read'],
+    });
+    const tools = typeof handle.tools === 'function' ? handle.tools() : handle.tools;
+    assert.deepEqual(tools, []);
+    const code = await callCode(undefined, () =>
+      handle.call('gallery.open', { itemId: 'x' })
+    );
+    assert.equal(code, 'unknown-ability');
+  });
+});
+
+describe('T8 — capability gating + turn binding hold through handle.call (AC-MUSE-040/041)', () => {
+  it('call() for an ungranted capability fails closed with { code: capability-denied }', async () => {
+    const handle = createMuseMcp({
+      abilities: [
+        ability({ name: 'notes.save', capabilities: ['notes.write'] }),
+      ],
+      control: { turnId: 'turn-8-denied' },
+      capabilities: ['gallery.read'],
+    });
+    const code = await callCode(undefined, () =>
+      handle.call('notes.save', { title: 't' })
+    );
+    assert.equal(code, 'capability-denied');
+  });
+
+  it('call() with a turn-less control fails closed with { code: stale-id }', async () => {
+    const handle = createMuseMcp({
+      abilities: [ability()],
+      control: {},
+      capabilities: ['gallery.read'],
+    });
+    const code = await callCode(undefined, () =>
+      handle.call('gallery.open', { itemId: 'x' })
+    );
+    assert.equal(code, 'stale-id');
+  });
+});
+
+describe('T8 — no server process: source carries no server/socket wiring (AC-MUSE-041)', () => {
+  it('muse-mcp.js wires no server, socket, http, or port listener', () => {
+    const src = fs.readFileSync(path.join(__dirname, '..', 'muse-mcp.js'), 'utf8');
+    for (const token of [
+      /require\(\s*['"]http['"]\s*\)/,
+      /require\(\s*['"]net['"]\s*\)/,
+      /createServer/,
+      /WebSocket/,
+      /\.listen\s*\(/,
+      /\bnet\.connect\s*\(/,
+      /\bnew\s+Socket\s*\(/,
+    ]) {
+      assert.ok(!token.test(src), `muse-mcp.js must not wire server surface ${token}`);
+    }
+  });
+});
+
+describe('T9 — forbidden keys denied by construction regardless of value (AC-MUSE-042)', () => {
+  for (const key of ['transport', 'providerUrl', 'apiKey', 'client']) {
+    for (const value of [undefined, null, false, 0, '']) {
+      it(`own-property ${key}=${String(value)} still throws TypeError`, () => {
+        assert.throws(
+          () =>
+            createMuseMcp({
+              abilities: [ability()],
+              control: { turnId: 'turn-9-any-value' },
+              capabilities: ['gallery.read'],
+              [key]: value,
+            }),
+          (err) => err instanceof TypeError
+        );
+      });
+    }
+  }
+});
+
+describe('T10 — exclusivity holds through the abilities path (AC-MUSE-043, FR-MUSE-007)', () => {
+  it('docs/meta-first.md states the abilities-path exclusivity rule (TC-MUSE-042)', () => {
+    const doc = fs.readFileSync(
+      path.join(__dirname, '..', '..', '..', 'docs', 'meta-first.md'),
+      'utf8'
+    );
+    assert.ok(
+      /Through the abilities path, the only remote path is the adapter's server-side capability re-check/i.test(
+        doc
+      ),
+      'doc must state the abilities-path remote rule'
+    );
+    assert.ok(/AC-MUSE-019/.test(doc), 'doc must cite AC-MUSE-019');
+  });
+
+  it('no smart-component source describes transport/providerUrl/apiKey (AC-MUSE-042)', () => {
+    const roots = [
+      path.join(__dirname, '..', 'composites'),
+      path.join(__dirname, '..', 'selection.js'),
+      path.join(__dirname, '..', 'textinput.js'),
+      path.join(__dirname, '..', 'theme.js'),
+      path.join(__dirname, '..', 'index.js'),
+    ];
+    const files = [];
+    for (const r of roots) {
+      if (!fs.existsSync(r)) continue;
+      const st = fs.statSync(r);
+      if (st.isDirectory()) {
+        for (const f of fs.readdirSync(r)) files.push(path.join(r, f));
+      } else {
+        files.push(r);
+      }
+    }
+    assert.ok(files.length > 0, 'expected component sources to scan');
+    for (const f of files) {
+      const src = fs.readFileSync(f, 'utf8');
+      // `transport` is matched only in option/wiring shape: bare prose
+      // (e.g. "clipboard transport failures") is not provider wiring.
+      for (const token of [/providerUrl/, /apiKey/, /[.{"']transport\b|\btransport\s*[:=]/]) {
+        assert.ok(
+          !token.test(src),
+          `${path.basename(f)} must not describe ${token}`
+        );
+      }
+    }
+  });
+});
 describe('SEC — proto-inherited forbidden keys are not honored (own-property guard only)', () => {
   for (const key of ['transport', 'providerUrl', 'apiKey', 'client']) {
     it(`inherited ${key} on the prototype is ignored: construction succeeds and call() works`, async () => {
