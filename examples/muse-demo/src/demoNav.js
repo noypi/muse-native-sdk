@@ -184,7 +184,22 @@ function createDemoRouter({ transport } = {}) {
   const rawPush = router.push.bind(router);
   const rawReplace = router.replace.bind(router);
 
+  // T9 (AC-NAV-041): unbound bridge fails closed. When no transport was
+  // injected (nothing bound `globalThis.RouterBridge` at boot), navigation
+  // cannot forward — return a named denial, never throw, never silently
+  // succeed, page unchanged. Never a silent no-op (T4 mode).
+  const bound =
+    transport !== null &&
+    typeof transport === 'object' &&
+    typeof transport.invoke === 'function';
+  function unboundDenial() {
+    return { ok: false, code: 'transport-error' };
+  }
+
   async function forwardIntent(opaque) {
+    if (!bound) {
+      return unboundDenial();
+    }
     const id = linkToId(opaque);
     if (id === undefined) {
       return { ok: false, code: 'unknown-route' };
@@ -195,6 +210,9 @@ function createDemoRouter({ transport } = {}) {
   const TAB_ORDER = ['lens', 'field', 'list'];
 
   async function tapAdvance() {
+    if (!bound) {
+      return unboundDenial();
+    }
     const cur = router.current;
     const idx = TAB_ORDER.indexOf(cur);
     // Single computation: idx -1 covers home/unknown current (fail-closed to 'field').
@@ -203,6 +221,9 @@ function createDemoRouter({ transport } = {}) {
   }
 
   async function onFallbackRecover() {
+    if (!bound) {
+      return unboundDenial();
+    }
     const cur = router.current || DEMO_HOME;
     const res = await rawReplace(cur);
     if (typeof console !== 'undefined' && console.debug) {
@@ -212,6 +233,9 @@ function createDemoRouter({ transport } = {}) {
   }
 
   async function push(to, params) {
+    if (!bound) {
+      return unboundDenial();
+    }
     const id = normalizeTo(to);
     if (typeof id !== 'string') {
       return { ok: false, code: 'unknown-route' };
@@ -223,6 +247,9 @@ function createDemoRouter({ transport } = {}) {
   }
 
   async function replace(to, params) {
+    if (!bound) {
+      return unboundDenial();
+    }
     const id = normalizeTo(to);
     if (typeof id !== 'string') {
       return { ok: false, code: 'unknown-route' };
@@ -250,7 +277,8 @@ function createDemoRouter({ transport } = {}) {
 // Pulls the taken opaque string via `consume` exactly once and delivers it
 // through `forwardIntent` (same RouterBridge.invoke channel as warm intents).
 // Never parses here; unknown/invalid input fails closed via forwardIntent.
-// Returns null when nothing was stashed; never throws.
+// Returns null when nothing was stashed; a rejecting transport fails closed
+// with a named denial; never throws.
 async function drainStashedOpaqueLink(router, consume) {
   let opaque;
   try {
@@ -262,7 +290,12 @@ async function drainStashedOpaqueLink(router, consume) {
   if (opaque === null || opaque === undefined || opaque === '') {
     return null;
   }
-  return router.forwardIntent(opaque);
+  try {
+    return await router.forwardIntent(opaque);
+  } catch (err) {
+    void err;
+    return { ok: false, code: 'transport-error' };
+  }
 }
 
 // Opaque-link consumer seam (AC-NAV-044 stash rule, AC-NAV-041 transport).
@@ -304,6 +337,38 @@ function getOpaqueLinkConsumer() {
   }
 }
 
+// T9 boot binding (AC-NAV-041): app-owned adapter binds the default
+// `globalThis.RouterBridge` once at module load so `demoTransport()` (App
+// boot) is non-null on device. First-wins: an engine/host-installed bridge
+// keeps priority; fail-closed on missing globalThis; never throws. The
+// default bridge resolves `invoke` in-memory (`{ok:true}`) — route validity
+// stays with the route table + guards, which run before any invoke — so a
+// bound-but-unknown route still denies, never silently succeeds.
+function ensureRouterBridge() {
+  try {
+    if (typeof globalThis === 'undefined') {
+      return false;
+    }
+    const existing = globalThis.RouterBridge;
+    if (
+      existing !== null &&
+      typeof existing === 'object' &&
+      typeof existing.invoke === 'function'
+    ) {
+      return true;
+    }
+    globalThis.RouterBridge = {
+      invoke: async () => ({ ok: true }),
+    };
+    return true;
+  } catch (err) {
+    void err;
+    return false;
+  }
+}
+
+ensureRouterBridge();
+
 module.exports = {
   createDemoNavigator,
   push: shared.push,
@@ -318,4 +383,5 @@ module.exports = {
   drainStashedOpaqueLink,
   installOpaqueLinkConsumer,
   getOpaqueLinkConsumer,
+  ensureRouterBridge,
 };

@@ -1,28 +1,36 @@
 'use strict';
-// T7 — Host pushes validated tab state into shell (warm + cold, fallback banner).
-// Hermetic: node:test + node:assert/strict only. Binds to the plan T7
-// Interface `pushValidatedTab(link: String): { applied: boolean, code?: "unknown-route" }`
-// plus static source pins: demoNav.parseTabLink stays the allowlist source of
-// truth; MainActivity.java funnels cold (getIntent/stashed drain) + warm
-// (onNewIntent singleTask) + tap-advance + onFallbackRecover through the
-// setter, calling nativeSetDemoShellState then nativeRenderFrame, logging
-// `unknown-route` + `destinationReached=false` on denial and keeping the
-// current tab. No device, no downloads, no secrets, no config,
-// no host-env mutation. No production code touched.
+// T9 — Thin host opaque-forward + app-adapter bridge binding (AC-NAV-041/044).
+// Hermetic: node:test + node:assert/strict only. Static source pins over
+// `examples/muse-demo/src/MainActivity.java` (opaque stash / take-and-clear
+// drain / unparsed forward, no parsing, no demo setter) plus hermetic
+// doubles over `examples/muse-demo/src/demoNav.js` (`ensureRouterBridge`
+// first-wins binding, `drainStashedOpaqueLink` take-and-clear once,
+// unbound fail-closed denials). No device, no downloads, no secrets, no
+// config, no host-env mutation. No production code touched.
 //
-// ASSUMPTION A1: `pushValidatedTab` is exercised here through a hermetic
-// host-side double that mirrors the specified funnel (validate via
-// demoNav.parseTabLink -> setter -> repaint); the coder wires the real
-// MainActivity.java path to satisfy the same observable contract + pins.
+// Supersedes the retired `pushValidatedTab` funnel pins: the host no longer
+// validates tabs or calls a demo setter + repaint; JS route validity lives
+// in the route table + guards behind the single `RouterBridge.invoke` path.
+// Kept intent: take-and-clear (consume exactly once) and fail-closed
+// denials (named code, page/state unchanged, never throw).
+//
+// ASSUMPTION A1: the hermetic doubles below mirror the specified funnel
+// (opaque stash -> take-and-clear consume -> forwardIntent -> RouterBridge);
+// the real MainActivity.java / demoNav.js paths satisfy the same observable
+// contract + pins.
 
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
 const { readFileSync } = require('node:fs');
 const { join } = require('node:path');
 
-const NAV_PATH = '../src/demoNav.js';
 const RUN_ROOT = join(__dirname, '..', '..', '..');
 const ACTIVITY_PATH = join(RUN_ROOT, 'examples', 'muse-demo', 'src', 'MainActivity.java');
+const NAV_PATH = '../src/demoNav.js';
+
+function read(p) {
+  return readFileSync(p, 'utf8');
+}
 
 let navError = null;
 let nav = null;
@@ -34,168 +42,113 @@ try {
 
 function requireNav() {
   assert.equal(navError, null, `demoNav module missing: ${navError && navError.message}`);
-  assert.equal(typeof nav.parseTabLink, 'function', 'demoNav must export parseTabLink()');
 }
 
-function read(p) {
-  return readFileSync(p, 'utf8');
-}
-
-// Hermetic host double for the specified pushValidatedTab funnel:
-// validate with demoNav.parseTabLink (source of truth), call the injected
-// setter then repaint, log denial, keep current tab. Mirrors the plan's
-// Java-carries-state-only constraint (no tab machine, no banner copy beyond
-// the denied-link string).
-function makePushValidatedTab(deps) {
-  let current = deps.initialTab || 'lens';
-  const calls = { setter: [], repaint: 0 };
-  const logs = [];
-  function pushValidatedTab(link) {
-    const parsed = nav.parseTabLink(link);
-    if (parsed.code) {
-      logs.push(`unknown-route destinationReached=false link=${String(link)}`);
-      return { applied: false, code: 'unknown-route' };
-    }
-    const rc = deps.setter(deps.handle, parsed.id, null);
-    calls.setter.push([deps.handle, parsed.id]);
-    if (rc !== 1) {
-      logs.push(`unknown-route destinationReached=false link=${String(link)}`);
-      return { applied: false, code: 'unknown-route' };
-    }
-    deps.repaint(deps.handle);
-    calls.repaint += 1;
-    current = parsed.id;
-    logs.push(`tab=${parsed.id} destinationReached=true repaint=1`);
-    return { applied: true };
-  }
-  return { pushValidatedTab, calls, logs, current: () => current };
-}
-
-describe('T7 — parseTabLink stays the allowlist source of truth', () => {
-  it('accepts muse-demo://tab/<lens|field|list>', () => {
-    requireNav();
-    for (const tab of ['lens', 'field', 'list']) {
-      assert.deepEqual(nav.parseTabLink(`muse-demo://tab/${tab}`), { id: tab });
-    }
-  });
-
-  it('rejects unknown/host/scheme variants with unknown-route', () => {
-    requireNav();
-    for (const bad of [
-      'muse-demo://tab/nope',
-      'muse-demo://tab/',
-      'muse-demo://tab/LENS',
-      'gallery://story/x',
-      'muse-demo://lens',
-      '',
-      'muse-demo://tab/lens?seed=1',
-    ]) {
-      assert.equal(nav.parseTabLink(bad).code, 'unknown-route', `must deny ${JSON.stringify(bad)}`);
-    }
-  });
-});
-
-describe('T7 — pushValidatedTab applies valid links via setter + repaint', () => {
-  it('warm link applies, calls setter then repaint, lands on the tab', () => {
-    requireNav();
-    const order = [];
-    const h = makePushValidatedTab({
-      handle: 1,
-      initialTab: 'lens',
-      setter: () => { order.push('setter'); return 1; },
-      repaint: () => { order.push('repaint'); },
-    });
-    assert.deepEqual(h.pushValidatedTab('muse-demo://tab/field'), { applied: true });
-    assert.deepEqual(order, ['setter', 'repaint'], 'setter must precede repaint');
-    assert.equal(h.current(), 'field');
-    assert.equal(h.calls.repaint, 1);
-  });
-
-  it('cold link (same funnel) applies identically', () => {
-    requireNav();
-    const h = makePushValidatedTab({
-      handle: 1,
-      initialTab: 'lens',
-      setter: () => 1,
-      repaint: () => {},
-    });
-    assert.deepEqual(h.pushValidatedTab('muse-demo://tab/list'), { applied: true });
-    assert.equal(h.current(), 'list');
-  });
-
-  it('tap-advance and fallback-recovery reuse the same setter path', () => {
-    requireNav();
-    const h = makePushValidatedTab({
-      handle: 1,
-      initialTab: 'lens',
-      setter: () => 1,
-      repaint: () => {},
-    });
-    assert.deepEqual(h.pushValidatedTab('muse-demo://tab/lens'), { applied: true });
-    assert.equal(h.calls.setter.length, 1);
-    assert.equal(h.calls.repaint, 1);
-  });
-});
-
-describe('T7 — pushValidatedTab fail-closed: unknown keeps tab, logs denial', () => {
-  it('unknown link denies, never calls setter/repaint, keeps tab', () => {
-    requireNav();
-    const h = makePushValidatedTab({
-      handle: 1,
-      initialTab: 'field',
-      setter: () => { throw new Error('setter must not run on denial'); },
-      repaint: () => { throw new Error('repaint must not run on denial'); },
-    });
-    const out = h.pushValidatedTab('muse-demo://tab/nope');
-    assert.deepEqual(out, { applied: false, code: 'unknown-route' });
-    assert.equal(h.current(), 'field', 'denied link keeps the current tab (never blank)');
-    assert.match(h.logs.join('\n'), /unknown-route/);
-    assert.match(h.logs.join('\n'), /destinationReached=false/);
-  });
-
-  it('setter returning 0 denies with unknown-route and keeps tab', () => {
-    requireNav();
-    let repainted = false;
-    const h = makePushValidatedTab({
-      handle: 0,
-      initialTab: 'lens',
-      setter: () => 0,
-      repaint: () => { repainted = true; },
-    });
-    assert.deepEqual(h.pushValidatedTab('muse-demo://tab/field'), { applied: false, code: 'unknown-route' });
-    assert.equal(h.current(), 'lens');
-    assert.equal(repainted, false);
-  });
-
-  it('wrong scheme/host denies without touching state', () => {
-    requireNav();
-    const h = makePushValidatedTab({
-      handle: 1,
-      initialTab: 'list',
-      setter: () => { throw new Error('must not run'); },
-      repaint: () => { throw new Error('must not run'); },
-    });
-    for (const bad of ['gallery://story/x', 'muse-demo://lens', null, undefined, 42]) {
-      assert.deepEqual(h.pushValidatedTab(bad), { applied: false, code: 'unknown-route' });
-    }
-    assert.equal(h.current(), 'list');
-  });
-});
-
-describe('T7 — MainActivity.java funnel pins (routeDemoLink/onNewIntent/tap/fallback via setter)', () => {
-  it('declares pushValidatedTab-equivalent routeDemoLink calling nativeSetDemoShellState then nativeRenderFrame', () => {
+describe('T9 — MainActivity stays opaque-only (no parsing, no demo setter)', () => {
+  it('declares no demo seam (nativeSetDemoShellState/routeDemoLink/parseTabLink absent)', () => {
     const src = read(ACTIVITY_PATH);
-    assert.match(src, /nativeSetDemoShellState/, 'host must call the T6 setter');
-    const idx = src.indexOf('nativeSetDemoShellState');
-    const window = src.slice(Math.max(0, idx - 500), idx + 1500);
-    assert.match(window, /nativeRenderFrame/, 'setter path must repaint via nativeRenderFrame');
+    assert.ok(!src.includes('nativeSetDemoShellState'), 'host must not call the retired demo setter');
+    assert.ok(!src.includes('routeDemoLink'), 'host must not carry the retired routeDemoLink funnel');
+    assert.ok(!src.includes('parseTabLink'), 'host must never parse links (validity lives in JS)');
   });
 
-  it('keeps cold (stashed drain) + warm (onNewIntent) entries and denial logging', () => {
+  it('stashes inbound intents opaque with a bounded single slot and take-and-clear drain', () => {
     const src = read(ACTIVITY_PATH);
+    assert.match(src, /stashOpaqueIntent/, 'host must stash inbound intents opaque');
+    assert.match(src, /consumePendingOpaqueLink/, 'host must expose a take-and-clear drain');
+    assert.match(src, /pendingOpaqueLink = null/, 'drain must clear the slot (take-and-clear)');
+    assert.match(src, /MAX_OPAQUE_LINK_CHARS/, 'stash must stay bounded (oversize dropped fail-closed)');
+  });
+});
+
+describe('T9 — MainActivity forwards opaque via the sink on both entries (take-and-clear kept)', () => {
+  it('cold (onCreate) + warm (onNewIntent) arrivals drain unparsed through forwardOpaqueToRouter', () => {
+    const src = read(ACTIVITY_PATH);
+    assert.match(src, /forwardOpaqueToRouter/, 'host must hand the taken string to the router channel');
     assert.match(src, /onNewIntent/, 'warm path via onNewIntent singleTask must exist');
-    assert.match(src, /pendingDeepLink|stashed/i, 'cold stashed-drain path must exist');
-    assert.match(src, /unknown-route/, 'denial must log unknown-route');
-    assert.match(src, /destinationReached=false/, 'denial must log destinationReached=false');
+    assert.match(src, /installDefaultOpaqueLinkSink/, 'cold path must install the live sink before draining');
+    assert.match(src, /drainPendingOpaqueLink/, 'both entries must drain the stash once ready');
+  });
+
+  it('sink stores the taken string unparsed and never crashes the host (fail-closed)', () => {
+    const src = read(ACTIVITY_PATH);
+    assert.match(src, /opaqueLinkSink/, 'host must deliver through the injected sink seam');
+    assert.match(src, /lastForwardedOpaqueLink/, 'sink retains the taken opaque string unparsed');
+    assert.match(src, /opaque-sink-accept/, 'delivery must stay observable in logcat');
+    const idx = src.indexOf('forwardOpaqueToRouter(String opaqueLink)');
+    assert.ok(idx >= 0, 'forward entry must exist (companion pin)');
+    const window = src.slice(idx, idx + 1200);
+    assert.match(window, /catch \(Throwable ignored\)/, 'a bad sink must fail closed, never crash the host');
+  });
+});
+
+describe('T9 — demoNav binds the bridge at boot (first-wins, never throws)', () => {
+  it('ensureRouterBridge installs a default RouterBridge without clobbering an existing one', () => {
+    requireNav();
+    assert.equal(typeof nav.ensureRouterBridge, 'function', 'demoNav must export ensureRouterBridge()');
+    const had = globalThis.RouterBridge;
+    try {
+      delete globalThis.RouterBridge;
+      assert.equal(nav.ensureRouterBridge(), true, 'binding must install the default bridge');
+      assert.equal(typeof globalThis.RouterBridge.invoke, 'function', 'default bridge must expose invoke');
+      const installed = globalThis.RouterBridge;
+      assert.equal(nav.ensureRouterBridge(), true, 're-bind must stay fail-closed');
+      assert.equal(globalThis.RouterBridge, installed, 'first-wins: an installed bridge keeps priority');
+    } finally {
+      if (had === undefined) delete globalThis.RouterBridge;
+      else globalThis.RouterBridge = had;
+    }
+  });
+
+  it(' bound bridge resolves invoke in-memory so demoTransport() is non-null at boot', async () => {
+    requireNav();
+    const had = globalThis.RouterBridge;
+    try {
+      delete globalThis.RouterBridge;
+      nav.ensureRouterBridge();
+      const bridge = globalThis.RouterBridge;
+      assert.ok(bridge && typeof bridge.invoke === 'function', 'bridge must be bound after boot');
+      const res = await bridge.invoke('navigate', { route: 'lens' });
+      assert.ok(res && typeof res === 'object', 'default invoke must resolve a result object');
+    } finally {
+      if (had === undefined) delete globalThis.RouterBridge;
+      else globalThis.RouterBridge = had;
+    }
+  });
+});
+
+describe('T9 — take-and-clear + fail-closed denials kept (drainStashedOpaqueLink / unbound router)', () => {
+  it('drain consumes the stash exactly once and forwards through forwardIntent', async () => {
+    requireNav();
+    let takes = 0;
+    const seen = [];
+    const router = {
+      forwardIntent: async (opaque) => {
+        seen.push(opaque);
+        return { ok: true };
+      },
+    };
+    const out = await nav.drainStashedOpaqueLink(router, () => {
+      takes += 1;
+      return 'muse-demo://tab/field';
+    });
+    assert.deepEqual(out, { ok: true });
+    assert.equal(takes, 1, 'stash must be taken exactly once');
+    assert.deepEqual(seen, ['muse-demo://tab/field']);
+    const empty = await nav.drainStashedOpaqueLink(router, () => null);
+    assert.equal(empty, null, 'nothing stashed must yield null (never a denial, never a throw)');
+  });
+
+  it('unbound push/forwardIntent fail closed with a named code, page unchanged, never throw', async () => {
+    requireNav();
+    const router = nav.createDemoRouter({ transport: undefined });
+    const before = router.current;
+    const r1 = await router.push('lens');
+    assert.equal(r1.ok, false, 'unbound push must fail closed, never {ok:true} silent no-op');
+    assert.ok(typeof r1.code === 'string' && r1.code.length > 0, 'denial must carry a named code');
+    assert.equal(router.current, before, 'denial leaves current unchanged');
+    const r2 = await router.forwardIntent('muse-demo://tab/lens');
+    assert.equal(r2.ok, false, 'unbound forwardIntent must fail closed');
+    assert.equal(router.current, before, 'denial leaves current unchanged');
   });
 });
