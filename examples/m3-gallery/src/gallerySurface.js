@@ -4,11 +4,47 @@
 //
 // Default path renders themed sections from `buildStories(manifest)`
 // descriptors through the `components` table (+ `OverlayHost` nesting per
-// RULE-M3-006) with zero hand-edited label rows. The static root survives
-// solely as the explicit-flag diagnostic `renderStaticFallback`, reachable
-// only via `--static-fallback` (CLI) / `MUSE_STATIC_FALLBACK=1` (env), which
-// reports the fallback and fails the proof gate
-// (`muse-native gallery-tree --assert-evaluated --fail-on-static-fallback`).
+// RULE-M3-006) with zero hand-edited label rows. Proof-gate decisions live in
+// `packages/cli/lib/gallery-proof.js` (FR-SAMPLE-017) — this module exports
+// only the hosting surface below and carries no gate helper of its own.
+// The sole in-app diagnostic is the `__DEV__`-guarded helper further down;
+// any release/prod bundle fails closed without rendering a fallback.
+
+// __DEV__ gate (AC-SAMPLE-048, BUG-RUNTIME-015 Batch 1 T2). No `__DEV__`
+// bundler define, `NODE_ENV` gate, or JS transform step exists anywhere in
+// this repo's gallery build (plain Makefile invoking `muse-native build`,
+// zero `__DEV__` tokens repo-wide) — so part of T2 is creating the
+// mechanism. Chosen: a single module-load-time constant derived from an
+// explicit opt-in runtime flag (`globalThis.__MUSE_GALLERY_DEV__`), read
+// exactly once here. Rejected: a Makefile `sed`/env define (no JS bundling
+// step exists to host it — new tooling for one token) and `NODE_ENV`
+// sniffing (the gallery build never sets it, so release vs debug would be
+// indistinguishable). Fail-closed by construction: the default is `false`,
+// only a debug harness sets the global before requiring this module, and a
+// release/prod bundle therefore cannot accidentally carry the debug value.
+const __DEV__ = globalThis.__MUSE_GALLERY_DEV__ === true;
+
+// Debug-only static-fallback diagnostic (AC-SAMPLE-048). In a debug session
+// (`__DEV__` true) it reports the fallback and pins the proof gate to
+// `fail`; in any release/prod bundle (`__DEV__` false) it renders no
+// fallback and still fails the gate — the release path cannot take it.
+function renderDevFallbackDiagnostic(reason) {
+  if (!__DEV__) {
+    return { staticFallback: false, reported: false, proofGate: 'fail' };
+  }
+  let label = '';
+  try {
+    label = typeof reason === 'string' ? reason : String(reason);
+  } catch (_) {
+    label = '<unprintable>';
+  }
+  try {
+    process.stderr.write(`[gallery] dev fallback diagnostic (reported, proofGate=fail): ${label.slice(0, 200)}\n`);
+  } catch (_) {
+    // Reporting must never throw; the returned shape carries the report.
+  }
+  return { staticFallback: true, reported: true, proofGate: 'fail' };
+}
 
 const THEMES = ['light', 'dark'];
 
@@ -61,44 +97,6 @@ function renderGallerySection(theme, stories) {
     if (!tags.includes(tag)) tags.push(tag);
   }
   return { tags, staticFallback: false };
-}
-
-// Fail-closed explicit-flag decision. Only the exact CLI flag
-// `--static-fallback` or exactly `MUSE_STATIC_FALLBACK=1` enables the static
-// fallback diagnostic; every near-miss value denies. Never reads
-// `process.env`; the caller supplies `{ argv, env }`.
-function isStaticFallbackEnabled(input) {
-  const argv = input && Array.isArray(input.argv) ? input.argv : [];
-  const env = input && input.env && typeof input.env === 'object' ? input.env : {};
-  for (const arg of argv) {
-    if (arg === '--static-fallback') return true;
-  }
-  return env.MUSE_STATIC_FALLBACK === '1';
-}
-
-// Explicit-flag static-fallback diagnostic (AC-RUNTIME-032). Logs/reports
-// the fallback and pins the proof gate to `fail`: no reason string — empty,
-// hostile, or otherwise — may flip the gate to `pass`.
-function renderStaticFallback(reason) {
-  let label = '';
-  try {
-    label = typeof reason === 'string' ? reason : String(reason);
-  } catch (_) {
-    label = '<unprintable>';
-  }
-  try {
-    process.stderr.write(`[gallery] static fallback diagnostic (reported, proofGate=fail): ${label.slice(0, 200)}\n`);
-  } catch (_) {
-    // Reporting must never throw; the returned shape carries the report.
-  }
-  return { staticFallback: true, reported: true, proofGate: 'fail' };
-}
-
-// Proof-gate decision (AC-RUNTIME-032): the default evaluated tree passes;
-// the static fallback fails. Fail-closed: any truthy `staticFallback` fails.
-function evaluateProofGate(input) {
-  const failed = !!(input && input.staticFallback);
-  return { pass: !failed };
 }
 
 // FR-M3-011 T1 — gallery pages attach through the engine-owned Surface host
@@ -162,8 +160,6 @@ module.exports = {
   attachGallerySurface,
   BuildError,
   renderGallerySection,
-  renderStaticFallback,
-  isStaticFallbackEnabled,
-  evaluateProofGate,
+  renderDevFallbackDiagnostic,
   THEMES,
 };

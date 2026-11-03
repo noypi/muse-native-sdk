@@ -1184,7 +1184,50 @@ function saveScreenshot({ serial, page, shot, frame } = {}) {
   return Promise.resolve(shot);
 }
 
+// Proof-gate relocation home (FR-SAMPLE-017 / AC-SAMPLE-047, BUG-RUNTIME-015
+// Batch 1 T1). The gate helpers formerly lived in the shipped gallery surface
+// (`examples/m3-gallery/src/gallerySurface.js`); that module now exports only
+// the hosting surface (`renderGallerySection` + `attachGallerySurface`) and
+// the names below must never reappear there (TC-SAMPLE-048 negated grep).
+//
+// `evaluateProofGate` follows the plan shape `{ proofGate: 'pass'|'fail' }`
+// (fail-closed: any truthy `staticFallback` fails). The sibling
+// explicit-flag decision and static-fallback diagnostic moved here with it so
+// the shipped bundle carries no fallback path of its own.
+
+function isStaticFallbackEnabled(input) {
+  const argv = input && Array.isArray(input.argv) ? input.argv : [];
+  const env = input && input.env && typeof input.env === 'object' ? input.env : {};
+  for (const arg of argv) {
+    if (arg === '--static-fallback') return true;
+  }
+  return env.MUSE_STATIC_FALLBACK === '1';
+}
+
+function renderStaticFallback(reason) {
+  let label = '';
+  try {
+    label = typeof reason === 'string' ? reason : String(reason);
+  } catch (_) {
+    label = '<unprintable>';
+  }
+  try {
+    process.stderr.write(`[gallery] static fallback diagnostic (reported, proofGate=fail): ${label.slice(0, 200)}\n`);
+  } catch (_) {
+    // Reporting must never throw; the returned shape carries the report.
+  }
+  return { staticFallback: true, reported: true, proofGate: 'fail' };
+}
+
+function evaluateProofGate(input) {
+  const failed = !!(input && input.staticFallback);
+  return { proofGate: failed ? 'fail' : 'pass' };
+}
+
 module.exports = {
+  evaluateProofGate,
+  isStaticFallbackEnabled,
+  renderStaticFallback,
   runGalleryProof,
   readDeviceCounts,
   parseDeviceCounts,
