@@ -2241,11 +2241,21 @@ void EmitFamilyCmd(const GalleryRow& row, PrimitiveKind kind, int bx,
       cmd.bounds = {static_cast<float>(x0), static_cast<float>(y0),
                     static_cast<float>(cw), static_cast<float>(ch)};
       cmd.radius = 16.0f;
+      // BUG-M3-FIDELITY-014 follow-up: the accent fill rides the same
+      // resolvePresentFill choke point as the card, or the CPU InkFor
+      // (payload-0 -> uniform surface-variant default) paints a uniform
+      // rect over the differentiated card. Image resolves to kWhite.
+      cmd.payload.stateColor = resolvePresentFill(
+          static_cast<std::uint32_t>(PrimitiveKind::Image), 0);
       break;
     case PrimitiveKind::Rect:
       cmd.bounds = {static_cast<float>(bx + 32), static_cast<float>(y0 + 8),
                     static_cast<float>(bw - 64),
                     static_cast<float>(ch - 16)};
+      // Same choke point as above; Rect resolves to the surface-variant
+      // default (pixel-identical, fail-closed for payload-0 preserved).
+      cmd.payload.stateColor = resolvePresentFill(
+          static_cast<std::uint32_t>(PrimitiveKind::Rect), 0);
       break;
     case PrimitiveKind::ShapedText:
     default:
