@@ -18,18 +18,30 @@ import { isTranscribeOn } from './profile';
 import { OnboardingPage } from './onboarding';
 import { renderSpeaker } from './speaker';
 import { startRound, guess, reveal } from './guessMask';
-// T2 routing: tab moves resolve via `muse-demo://tab/<lens|field|list>`
-// link shapes through the single RouterBridge navigate path (demoNav
+// T5/T6 routing: tab moves resolve via `muse-demo://tab/<lens|field|list>`
+// link shapes through the single RouterBridge navigate path (createDemoRouter
 // push/replace facade), never a direct setTab bypass.
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-const { createDemoNavigator, parseTabLink } = require('./demoNav') as {
-  createDemoNavigator: () => {
-    push: (route: string, params?: object) => { page: string } | { code: string };
-    replace: (route: string, params?: object) => { page: string } | { code: string };
+const { createDemoRouter, drainStashedOpaqueLink, getOpaqueLinkConsumer } = require('./demoNav') as {
+  createDemoRouter: (opts?: { transport?: { invoke: (method: string, payload: unknown) => Promise<unknown> } }) => {
+    current: string | null;
+    push: (to: unknown, params?: object) => Promise<{ ok: boolean; code?: string }>;
+    replace: (to: unknown, params?: object) => Promise<{ ok: boolean; code?: string }>;
+    forwardIntent: (opaque: unknown) => Promise<{ ok: boolean; code?: string }>;
+    tapAdvance: () => Promise<{ ok: boolean; code?: string }>;
+    onFallbackRecover: () => Promise<{ ok: boolean; code?: string }>;
   };
-  parseTabLink: (link: unknown) => { id: string } | { code: string; link?: unknown };
+  drainStashedOpaqueLink: (router: { current: string | null; forwardIntent: (opaque: unknown) => Promise<{ ok: boolean; code?: string }> }, consume: () => unknown) => Promise<{ ok: boolean; code?: string } | null>;
+  getOpaqueLinkConsumer: () => (() => unknown) | undefined;
 };
-const demoNavigator = createDemoNavigator();
+function demoTransport(): { invoke: (method: string, payload: unknown) => Promise<unknown> } | undefined {
+  const bridge = (globalThis as unknown as { RouterBridge?: { invoke: (m: string, p: unknown) => Promise<unknown> } }).RouterBridge;
+  if (bridge && typeof bridge.invoke === 'function') {
+    return { invoke: (method, payload) => bridge.invoke(method, payload) };
+  }
+  return undefined;
+}
+const demoRouter = createDemoRouter({ transport: demoTransport() });
 function tabLink(tab: Tab): string {
   return `muse-demo://tab/${tab}`;
 }
@@ -214,6 +226,16 @@ export default function App() {
   useEffect(() => {
     heroMotion.animateTo(1, { velocity: 0.5 });
   }, []);
+  // Cold-start drain: consume the host's stashed opaque link (take-and-clear,
+  // unparsed) exactly once at boot and deliver it through forwardIntent —
+  // the same RouterBridge.invoke channel as warm intents. Fail-closed.
+  useEffect(() => {
+    const consume = getOpaqueLinkConsumer();
+    if (typeof consume !== 'function') return;
+    void drainStashedOpaqueLink(demoRouter, consume).then((result) => {
+      if (result && result.ok) setTab(demoRouter.current as Tab);
+    });
+  }, []);
   const [renderMode, setRenderMode] = useState<RenderMode>('by_object');
   const photos = galleryManifest as Photo[];
   const keywords = keywordsSidecar as Record<string, string[]>;
@@ -235,38 +257,33 @@ export default function App() {
   // resolves through the demoNav link shape + push (single navigate path),
   // then lands on glass via setTab with a repaint log. Unknown ids keep the
   // current tab and surface the named denial instead of a silent no-op.
-  const onOpenTabLink = (link: string): boolean => {
-    const parsed = parseTabLink(link);
-    if ((parsed as { code?: string }).code) {
-      setDeniedLink(link);
-      if (typeof console !== 'undefined') {
-        console.info(`[DemoPage] deep-link rejected (unknown-route) link=${link} destinationReached=false engineHosted=true`);
+  const onOpenTabLink = (link: string): void => {
+    void demoRouter.forwardIntent(link).then((result) => {
+      if (!result.ok) {
+        setDeniedLink(link);
+        if (typeof console !== 'undefined') {
+          console.info(`[DemoPage] deep-link rejected (unknown-route) link=${link} destinationReached=false engineHosted=true`);
+        }
+        return;
       }
-      return false;
-    }
-    const id = (parsed as { id: string }).id;
-    const result = demoNavigator.push(link, {});
-    if ((result as { code?: string }).code) {
-      setDeniedLink(link);
-      return false;
-    }
-    setDeniedLink(undefined);
-    setTab(id as Tab);
-    if (typeof console !== 'undefined') {
-      console.info(`[DemoPage] advance tab=${id} route=${link} origin=shell-chrome repaint=1`);
-    }
-    return true;
+      setDeniedLink(undefined);
+      setTab(demoRouter.current as Tab);
+      if (typeof console !== 'undefined') {
+        console.info(`[DemoPage] advance tab=${demoRouter.current} route=${link} origin=shell-chrome repaint=1`);
+      }
+    });
   };
   // T4 fallback action: the denial banner's tap target. Fires the recovery
   // (back to the default tab) through the same push path and clears the
   // denial, so "tap fires the fallback action" is observable on glass.
   const onFallbackRecover = (): void => {
     setDeniedLink(undefined);
-    demoNavigator.push(tabLink('lens'), {});
-    setTab('lens');
-    if (typeof console !== 'undefined') {
-      console.info('[DemoPage] fallback fire action=return-to-lens tab=lens repaint=1');
-    }
+    void demoRouter.push(tabLink('lens'), {}).then(() => {
+      setTab('lens');
+      if (typeof console !== 'undefined') {
+        console.info('[DemoPage] fallback fire action=return-to-lens tab=lens repaint=1');
+      }
+    });
   };
   const onToggleTheme = (): void => {
     const next = theme.primary === 'primary' ? 'dark' : 'light';

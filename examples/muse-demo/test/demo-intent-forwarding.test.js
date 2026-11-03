@@ -1,0 +1,210 @@
+'use strict';
+// Batch 1 (T3) — muse-demo opaque intent-forwarding pins (TC-NAV-045 / AC-NAV-044).
+// Target: host MainActivity forwards inbound VIEW intents as OPAQUE route
+// strings to JS (`forwardIntent(opaqueString): void`); all route knowledge
+// (muse-demo scheme/host/id validation, tab branching) lives in demoNav.js
+// via @muse/router descriptors + guards, never in Java.
+// Hermetic: node:test + node:assert/strict only. Fake transport injected
+// in-process; no network, no secrets, no app config, no live services.
+// RED state: `../src/demoNav.js` is still the hand-rolled per-example facade
+// (parseTabLink/push(route,params), no facade binding, no forwardIntent),
+// so the migration-target describes below FAIL until T5.
+
+const { describe, it } = require('node:test');
+const assert = require('node:assert/strict');
+
+const { createRoutes, createRouter } = require('../../../packages/router/src/index.js');
+const demoNav = require('../src/demoNav.js');
+
+// --- Fakes (in-test only) -------------------------------------------------
+
+function fakeTransport() {
+  const calls = [];
+  return {
+    calls,
+    invoke: async (method, payload) => {
+      calls.push({ method, payload });
+      return { ok: true };
+    },
+  };
+}
+
+// Demo link shapes the migrated demoNav must declare as facade descriptors.
+function demoTable() {
+  return createRoutes([
+    { id: 'home', link: 'muse-demo://tab/home', params: {} },
+    { id: 'lens', link: 'muse-demo://tab/lens', params: {} },
+    { id: 'field', link: 'muse-demo://tab/field', params: {} },
+    { id: 'list', link: 'muse-demo://tab/list', params: {} },
+  ]);
+}
+
+// --- Facade-shape contract (target semantics, via authoritative facade) -----
+
+describe('demo intent-forwarding target semantics (facade, demo shapes)', () => {
+  it('opaque demo link resolves to the same dest as push() of its route', async () => {
+    const transport = fakeTransport();
+    const router = createRouter({ routes: demoTable(), home: 'home', transport });
+    const viaLink = await router.push('lens');
+    assert.deepEqual(viaLink, { ok: true });
+    assert.equal(transport.calls[0].payload.route, 'lens');
+    assert.equal(router.current, 'lens');
+  });
+
+  it('unknown demo route fails closed unknown-route, page unchanged', async () => {
+    const transport = fakeTransport();
+    const router = createRouter({ routes: demoTable(), home: 'home', transport });
+    await router.push('lens');
+    const res = await router.push('no-such-tab');
+    assert.deepEqual(res, { ok: false, code: 'unknown-route' });
+    assert.equal(router.current, 'lens');
+    assert.equal(transport.calls.length, 1);
+  });
+
+  it('opaque string is never parsed by the forwarder: transport receives it verbatim', async () => {
+    const transport = fakeTransport();
+    const router = createRouter({ routes: demoTable(), home: 'home', transport });
+    const opaque = 'muse-demo://tab/lens';
+    const res = await router.push('lens');
+    assert.deepEqual(res, { ok: true });
+    assert.equal(typeof opaque, 'string');
+    assert.equal(transport.calls[0].payload.route, 'lens');
+  });
+});
+
+// --- Migration-target RED pins (fail until T5 migrates demoNav) ------------
+
+describe('demo migration target (binding does not exist yet — RED)', () => {
+  // ASSUMPTION (A-T3-1): the plan names `forwardIntent(opaqueString): void`
+  // but not its owner. These pins bind it as a method on the migrated
+  // `createDemoRouter({ transport })` router (transport injected, platform
+  // binds RouterBridge once at boot). Reconcile the owner, not the
+  // behavior, if the coder places it differently.
+  it('migrated demoNav exposes createDemoRouter({ transport }) on the facade', () => {
+    assert.equal(
+      typeof demoNav.createDemoRouter,
+      'function',
+      'demoNav must export createDemoRouter({ transport }) built on createRoutes/createRouter (AC-NAV-043)',
+    );
+  });
+
+// --- T5 migration pins (Batch 2 — intent/link lives in JS, RED pre-move) ---
+
+describe('T5 handleDemoIntent/routeDemoLink live in JS (RED pre-move)', () => {
+  it('demoNav declares link descriptors muse-demo://tab/<lens|field|list> via createRoutes', () => {
+    assert.equal(typeof demoNav.demoDescriptors, 'object', 'demoNav must export demoDescriptors (AC-NAV-047)');
+    const table = createRoutes(demoNav.demoDescriptors);
+    for (const id of ['lens', 'field', 'list']) {
+      assert.ok(table[id], `descriptor for ${id} must exist`);
+      assert.equal(table[id].link, `muse-demo://tab/${id}`);
+    }
+  });
+
+  it('createDemoRouter exposes beforeEach guard + typed-params validation in JS', async () => {
+    assert.equal(typeof demoNav.createDemoRouter, 'function', 'demoNav must export createDemoRouter (T5 Interface)');
+    const transport = fakeTransport();
+    const router = demoNav.createDemoRouter({ transport });
+    assert.equal(typeof router.beforeEach, 'function', 'router must expose beforeEach');
+    assert.equal(typeof router.forwardIntent, 'function', 'router must expose forwardIntent (host onNewIntent forwards opaque)');
+    const ok = await router.forwardIntent('muse-demo://tab/lens');
+    assert.deepEqual(ok, { ok: true });
+    const bad = await router.forwardIntent('muse-demo://tab/nope');
+    assert.deepEqual(bad, { ok: false, code: 'unknown-route' });
+    assert.equal(router.current, 'lens', 'router current replaces currentDemoTab mirror');
+  });
+
+  it('host onNewIntent forwards opaque unparsed (no handleDemoIntent parsing in Java)', async () => {
+    assert.equal(typeof demoNav.createDemoRouter, 'function', 'createDemoRouter must exist');
+    const seen = [];
+    const transport = { invoke: async (m, p) => { seen.push({ m, p }); return { ok: true }; } };
+    const router = demoNav.createDemoRouter({ transport });
+    await router.forwardIntent('muse-demo://tab/field');
+    assert.equal(seen.length, 1);
+    assert.equal(seen[0].m, 'navigate');
+  });
+});
+});
+
+// --- Batch 2 hardening (security review 2026-11-03): crafted-link denial
+// matrix, AC-NAV-044. Every shape below must fail closed with the named
+// `unknown-route` code, leaving router state and transport untouched.
+
+describe('hardening: forwardIntent crafted-link denial matrix (AC-NAV-044)', () => {
+  const BAD_OPAQUES = [
+    'muse-demo://tab/nope',
+    'muse-demo://tab/',
+    'muse-demo://tab/lens/evil',
+    'muse-demo://tab/lens?seed=1',
+    'muse-demo://tab/lens#frag',
+    'muse-demo://tab/lens/',
+    'muse-demo://tab/%6Cens',
+    'muse-demo://tab/LENS',
+    'other-demo://tab/lens',
+    'muse-demo://other/lens',
+    'muse-demo://lens',
+    'muse-demo://tab/lens/..%2Ffield',
+    'MUSE-DEMO://tab/lens',
+    '',
+  ];
+
+  for (const opaque of BAD_OPAQUES) {
+    it(`forwardIntent denies ${JSON.stringify(opaque)} with unknown-route, state unchanged`, async () => {
+      const transport = fakeTransport();
+      const router = demoNav.createDemoRouter({ transport });
+      await router.forwardIntent('muse-demo://tab/lens');
+      const callsBefore = transport.calls.length;
+      const res = await router.forwardIntent(opaque);
+      assert.deepEqual(res, { ok: false, code: 'unknown-route' });
+      assert.equal(router.current, 'lens');
+      assert.equal(transport.calls.length, callsBefore, 'denial must not reach transport');
+    });
+  }
+
+  for (const opaque of [null, undefined, 42, {}, [], true]) {
+    it(`forwardIntent denies non-string ${String(opaque)} with unknown-route`, async () => {
+      const transport = fakeTransport();
+      const router = demoNav.createDemoRouter({ transport });
+      await router.forwardIntent('muse-demo://tab/lens');
+      const res = await router.forwardIntent(opaque);
+      assert.deepEqual(res, { ok: false, code: 'unknown-route' });
+      assert.equal(router.current, 'lens');
+      assert.equal(transport.calls.length, 1);
+    });
+  }
+});
+
+// --- Batch 2 hardening (security review 2026-11-03): opaque verbatim
+// forward, AC-NAV-044. `forwardIntent(opaque)` must land the same dest as
+// the equivalent `push(id)` — byte-identical stash content resolves
+// identically, host forwards unparsed.
+
+describe('hardening: forwardIntent≡push parity (AC-NAV-044)', () => {
+  for (const id of ['lens', 'field', 'list', 'home']) {
+    it(`forwardIntent('muse-demo://tab/${id}') observes same result as push('${id}')`, async () => {
+      const tForward = fakeTransport();
+      const tPush = fakeTransport();
+      const viaForward = demoNav.createDemoRouter({ transport: tForward });
+      const viaPush = demoNav.createDemoRouter({ transport: tPush });
+      const opaque = `muse-demo://tab/${id}`;
+      const resForward = await viaForward.forwardIntent(opaque);
+      const resPush = await viaPush.push(id);
+      assert.deepEqual(resForward, { ok: true });
+      assert.deepEqual(resForward, resPush, 'opaque forward must equal equivalent push');
+      assert.equal(viaForward.current, viaPush.current);
+      assert.deepEqual(tForward.calls, tPush.calls);
+      assert.equal(tForward.calls[0].payload.route, id);
+    });
+  }
+
+  it('forwardIntent forwards the stashed string verbatim (no re-parse, no params)', async () => {
+    const seen = [];
+    const transport = { invoke: async (m, p) => { seen.push({ m, p }); return { ok: true }; } };
+    const router = demoNav.createDemoRouter({ transport });
+    const opaque = 'muse-demo://tab/field';
+    const res = await router.forwardIntent(opaque);
+    assert.deepEqual(res, { ok: true });
+    assert.equal(seen.length, 1);
+    assert.deepEqual(seen[0].p, { route: 'field', params: {} });
+  });
+});
+

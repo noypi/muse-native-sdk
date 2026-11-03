@@ -134,6 +134,241 @@ function createDemoNavigator() {
 
 const shared = createDemoNavigator();
 
+// --- Facade binding (T5/T6, FR-NAV-014 thin-host) ---------------------------
+// Link-shape validation lives here via `createRoutes` descriptors +
+// `@muse/router` beforeEach guard + typed-params validation. The host
+// forwards inbound VIEW intents as opaque strings; `forwardIntent` resolves
+// them to the same dest as `push`. Outcomes/logs are observed `NavResult`s.
+const { createRoutes, createRouter } = require('../../../packages/router/src/index.js');
+
+const DEMO_HOME = 'lens';
+
+const demoDescriptors = [
+  { id: 'home', link: 'muse-demo://tab/home', params: {} },
+  { id: 'lens', link: 'muse-demo://tab/lens', params: {} },
+  { id: 'field', link: 'muse-demo://tab/field', params: {} },
+  { id: 'list', link: 'muse-demo://tab/list', params: {} },
+];
+
+const DEMO_LINK_RE = /^muse-demo:\/\/tab\/([A-Za-z0-9-]+)(\?.*)?$/;
+
+function linkToId(opaque) {
+  if (typeof opaque !== 'string') {
+    return undefined;
+  }
+  const m = DEMO_LINK_RE.exec(opaque);
+  if (!m || m[2] !== undefined) {
+    return undefined;
+  }
+  const id = m[1];
+  if (id !== 'lens' && id !== 'field' && id !== 'list' && id !== 'home') {
+    return undefined;
+  }
+  return id;
+}
+
+function normalizeTo(to) {
+  if (typeof to === 'string' && to.indexOf('://') !== -1) {
+    return linkToId(to);
+  }
+  if (to && typeof to === 'object' && typeof to.id === 'string') {
+    return to.id;
+  }
+  return to;
+}
+
+function createDemoRouter({ transport } = {}) {
+  const routes = createRoutes(demoDescriptors);
+  const router = createRouter({ routes, home: DEMO_HOME, transport });
+  router.beforeEach(async () => true);
+  const rawPush = router.push.bind(router);
+  const rawReplace = router.replace.bind(router);
+
+  // T9 (AC-NAV-041): unbound bridge fails closed. When no transport was
+  // injected (nothing bound `globalThis.RouterBridge` at boot), navigation
+  // cannot forward — return a named denial, never throw, never silently
+  // succeed, page unchanged. Never a silent no-op (T4 mode).
+  const bound =
+    transport !== null &&
+    typeof transport === 'object' &&
+    typeof transport.invoke === 'function';
+  function unboundDenial() {
+    return { ok: false, code: 'transport-error' };
+  }
+
+  async function forwardIntent(opaque) {
+    if (!bound) {
+      return unboundDenial();
+    }
+    const id = linkToId(opaque);
+    if (id === undefined) {
+      return { ok: false, code: 'unknown-route' };
+    }
+    return rawPush(id);
+  }
+
+  const TAB_ORDER = ['lens', 'field', 'list'];
+
+  async function tapAdvance() {
+    if (!bound) {
+      return unboundDenial();
+    }
+    const cur = router.current;
+    const idx = TAB_ORDER.indexOf(cur);
+    // Single computation: idx -1 covers home/unknown current (fail-closed to 'field').
+    const next = idx === -1 ? 'field' : TAB_ORDER[(idx + 1) % TAB_ORDER.length];
+    return rawPush(next);
+  }
+
+  async function onFallbackRecover() {
+    if (!bound) {
+      return unboundDenial();
+    }
+    const cur = router.current || DEMO_HOME;
+    const res = await rawReplace(cur);
+    if (typeof console !== 'undefined' && console.debug) {
+      console.debug('demo recover dest=' + cur + ' ok=' + (res && res.ok));
+    }
+    return res;
+  }
+
+  async function push(to, params) {
+    if (!bound) {
+      return unboundDenial();
+    }
+    const id = normalizeTo(to);
+    if (typeof id !== 'string') {
+      return { ok: false, code: 'unknown-route' };
+    }
+    if (params !== undefined && (typeof params !== 'object' || params === null || Array.isArray(params))) {
+      return { ok: false, code: 'bad-params' };
+    }
+    return rawPush(params !== undefined ? { id, params } : id);
+  }
+
+  async function replace(to, params) {
+    if (!bound) {
+      return unboundDenial();
+    }
+    const id = normalizeTo(to);
+    if (typeof id !== 'string') {
+      return { ok: false, code: 'unknown-route' };
+    }
+    if (params !== undefined && (typeof params !== 'object' || params === null || Array.isArray(params))) {
+      return { ok: false, code: 'bad-params' };
+    }
+    return rawReplace(params !== undefined ? { id, params } : id);
+  }
+
+  return {
+    get current() {
+      return router.current;
+    },
+    beforeEach: router.beforeEach.bind(router),
+    push,
+    replace,
+    forwardIntent,
+    tapAdvance,
+    onFallbackRecover,
+  };
+}
+
+// Cold-start drain helper (AC-NAV-044 stash rule, AC-NAV-041 transport).
+// Pulls the taken opaque string via `consume` exactly once and delivers it
+// through `forwardIntent` (same RouterBridge.invoke channel as warm intents).
+// Never parses here; unknown/invalid input fails closed via forwardIntent.
+// Returns null when nothing was stashed; a rejecting transport fails closed
+// with a named denial; never throws.
+async function drainStashedOpaqueLink(router, consume) {
+  let opaque;
+  try {
+    opaque = typeof consume === 'function' ? consume() : undefined;
+  } catch (err) {
+    void err;
+    return { ok: false, code: 'unknown-route' };
+  }
+  if (opaque === null || opaque === undefined || opaque === '') {
+    return null;
+  }
+  try {
+    return await router.forwardIntent(opaque);
+  } catch (err) {
+    void err;
+    return { ok: false, code: 'transport-error' };
+  }
+}
+
+// Opaque-link consumer seam (AC-NAV-044 stash rule, AC-NAV-041 transport).
+// The platform/engine owns the backing take-and-clear consume (bound to the
+// host stash); this adapter owns the `__museConsumeOpaqueLink` global so app
+// code never touches it directly. First-wins: an engine-installed producer
+// keeps priority; fail-closed on non-functions; never throws.
+function installOpaqueLinkConsumer(consume) {
+  try {
+    if (typeof consume !== 'function') {
+      return false;
+    }
+    if (typeof globalThis === 'undefined') {
+      return false;
+    }
+    if (typeof globalThis.__museConsumeOpaqueLink === 'function') {
+      return false;
+    }
+    globalThis.__museConsumeOpaqueLink = consume;
+    return true;
+  } catch (err) {
+    void err;
+    return false;
+  }
+}
+
+// Adapter read of the installed consumer (undefined when none installed).
+// Never throws.
+function getOpaqueLinkConsumer() {
+  try {
+    if (typeof globalThis === 'undefined') {
+      return undefined;
+    }
+    const consume = globalThis.__museConsumeOpaqueLink;
+    return typeof consume === 'function' ? consume : undefined;
+  } catch (err) {
+    void err;
+    return undefined;
+  }
+}
+
+// T9 boot binding (AC-NAV-041): app-owned adapter binds the default
+// `globalThis.RouterBridge` once at module load so `demoTransport()` (App
+// boot) is non-null on device. First-wins: an engine/host-installed bridge
+// keeps priority; fail-closed on missing globalThis; never throws. The
+// default bridge resolves `invoke` in-memory (`{ok:true}`) — route validity
+// stays with the route table + guards, which run before any invoke — so a
+// bound-but-unknown route still denies, never silently succeeds.
+function ensureRouterBridge() {
+  try {
+    if (typeof globalThis === 'undefined') {
+      return false;
+    }
+    const existing = globalThis.RouterBridge;
+    if (
+      existing !== null &&
+      typeof existing === 'object' &&
+      typeof existing.invoke === 'function'
+    ) {
+      return true;
+    }
+    globalThis.RouterBridge = {
+      invoke: async () => ({ ok: true }),
+    };
+    return true;
+  } catch (err) {
+    void err;
+    return false;
+  }
+}
+
+ensureRouterBridge();
+
 module.exports = {
   createDemoNavigator,
   push: shared.push,
@@ -143,4 +378,10 @@ module.exports = {
   NAVIGATE_ACTION,
   TAB_LINK_PREFIX,
   DEMO_TABS,
+  demoDescriptors,
+  createDemoRouter,
+  drainStashedOpaqueLink,
+  installOpaqueLinkConsumer,
+  getOpaqueLinkConsumer,
+  ensureRouterBridge,
 };
