@@ -6,6 +6,7 @@
 #include "runtime/flappy_content.h"
 
 #include <cctype>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -337,11 +338,24 @@ bool HasSceneTag(const void* data, std::size_t len, const char* tag) {
   }
   return false;
 }
+bool IsRealFlappyTreeContent(const void* data, std::size_t len) {
+  // The real content pipeline never emits the synthetic FlappyBird /
+  // FlappyPipe anchors: the built flappy tree carries its evaluated
+  // component tags (TopAppBar, sharedId "flappy-hero", HUD, score, ...).
+  // Gallery content never carries "flappy-hero", so this pair never
+  // reroutes gallery bytes onto the game-scene path. (T8R3/F1: the real
+  // 12944 B tree carries neither synthetic anchor, so the gate below must
+  // recognize the real tree — the tree build is NOT changed to emit fake
+  // tags. AC-RUNTIME-032.)
+  return HasSceneTag(data, len, "flappy-hero") &&
+         HasSceneTag(data, len, "TopAppBar");
+}
 bool IsFlappySceneContent(const void* data, std::size_t len) {
   // Both anchor tags required: a single stray token never reroutes gallery
   // content onto the game-scene path.
-  return HasSceneTag(data, len, "FlappyBird") &&
-         HasSceneTag(data, len, "FlappyPipe");
+  return (HasSceneTag(data, len, "FlappyBird") &&
+          HasSceneTag(data, len, "FlappyPipe")) ||
+         IsRealFlappyTreeContent(data, len);
 }
 }  // namespace
 // Register an evaluated scene from presented content bytes (open
@@ -371,9 +385,14 @@ TreeHandle RegisterFlappyContentTree(const void* data, std::size_t len) {
         "FlappyTopAppBar", "FlappyHud",     "FlappyBird",
         "FlappyPipe",      "FlappyScore",   "FlappyGameOver",
     };
+    // A real flappy tree (App.tsx) always declares every scene part
+    // (TopAppBar/HUD/bird/bodies/score/game-over), so recognition by the
+    // real-tree anchors above implies the full canonical scene — the
+    // synthetic per-kind tags are only one evidence shape, not the scene.
+    const bool realTree = IsRealFlappyTreeContent(data, len);
     std::int32_t nodeId = 1;
     for (const char* kind : kKinds) {
-      if (HasSceneTag(data, len, kind)) {
+      if (HasSceneTag(data, len, kind) || realTree) {
         nodes.push_back({kind, nodeId});
       }
       ++nodeId;
@@ -399,6 +418,12 @@ TreeHandle RegisterFlappyContentTree(const void* data, std::size_t len) {
       }
       const std::string token(text + i, end - i);
       i = end;
+      if (token.size() == 6) {
+        // Bare "Flappy" prose word (e.g. the "// Flappy demo entry"
+        // comment baked into the real tree bytes), not a scene kind —
+        // only Flappy-prefixed kind names fail closed below.
+        continue;
+      }
       bool known = false;
       for (const char* kind : kKinds) {
         if (token == kind) {
@@ -649,6 +674,51 @@ bool TryPresentContentScene(const void* data, std::size_t len,
       *error = "content scene present failed";
     }
     return false;
+  }
+}
+}  // namespace runtime
+
+namespace runtime {
+// Presented-scene tap query (T8R6/F4; declared in
+// runtime/content_registry.h so generic dispatch binds without naming
+// content). Reports the scene's touchables over the canonical layout pass
+// — the same Yoga rects ClampTapBounds/buildTapTree report, never literals.
+// Non-scene bytes, null/empty input, and layout failure all report 0 so the
+// caller keeps its fallback tree. Never throws.
+int QueryPresentedSceneTaps(const void* data, std::size_t len,
+                            ::PresentedSceneTap* out, int capacity) {
+  try {
+    if (out == nullptr || capacity <= 0) {
+      return 0;
+    }
+    if (!IsFlappySceneContent(data, len)) {
+      return 0;
+    }
+    int count = 0;
+    for (const flappy_layout::FlappyTouchable& t :
+         flappy_layout::kTouchables) {
+      if (count >= capacity) {
+        break;
+      }
+      float x = 0.0f, y = 0.0f, w = 0.0f, h = 0.0f;
+      if (!FlappyTapBounds(flappy_layout::kLayoutPassA, t.nodeId, &x, &y, &w,
+                           &h)) {
+        continue;
+      }
+      if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(w) ||
+          !std::isfinite(h) || w <= 0.0f || h <= 0.0f) {
+        continue;
+      }
+      out[count].nodeId = t.nodeId;
+      out[count].x = x;
+      out[count].y = y;
+      out[count].w = w;
+      out[count].h = h;
+      ++count;
+    }
+    return count;
+  } catch (...) {
+    return 0;
   }
 }
 }  // namespace runtime

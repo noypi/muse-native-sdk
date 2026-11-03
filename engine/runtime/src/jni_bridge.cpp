@@ -998,9 +998,64 @@ void RenderLocked(GalleryHandle* g) {
     g->layeringOverlayCount = 5;
     g->lastPresentedPage = g->page;
   }
-  const bool presented = ::runtime::PresentDeviceGalleryPage(
-      g->rows, g->page, *g->renderer, window, h, &error,
-      g->layeringOverlayCount);
+  // F2 (T8R4): route the device frame through the registered content-scene
+  // gate first (FR-RUNTIME-013: generic dispatch binds only the gate in
+  // runtime/gallery_present.h, never content by name). Recognized flappy
+  // bytes present as the game scene via the draining overload; non-content
+  // bytes leave error untouched and fall through to the gallery rows below.
+  // A recognized-but-failed scene fails closed with its named diagnostic.
+  std::string contentError;
+  const void* contentData =
+      g->tree.empty() ? nullptr : static_cast<const void*>(g->tree.data());
+  const bool contentPresented = ::runtime::TryPresentContentScene(
+      contentData, g->tree.size(), *g->renderer, window, &contentError);
+  bool presented = false;
+  if (contentPresented) {
+    presented = true;
+    // T8R6/F4: the frame presents the content scene, so taps must traverse
+    // that same scene — rebuild the hit-test tree from the presented bytes
+    // (gallery fallback nodes removed). Runs under mu (caller holds it), so
+    // no dispatch entry observes a partial tree. A failed refresh keeps the
+    // prior tree (fail closed, never a phantom node).
+    RefreshTapTreeFromPresentedScene(g->tapTree, contentData, g->tree.size(),
+                                     static_cast<float>(w),
+                                     static_cast<float>(h));
+  } else if (!contentError.empty()) {
+    error = contentError;
+  } else {
+    presented = ::runtime::PresentDeviceGalleryPage(
+        g->rows, g->page, *g->renderer, window, h, &error,
+        g->layeringOverlayCount);
+  }
+#ifdef __ANDROID__
+  if (!contentPresented || !contentError.empty()) {
+  // F3 (T8R5 divergence probe, failure-only per RenderLocked convention):
+  // logs the gate decision only when the scene path does NOT present, so a
+  // healthy frame stays silent. Anchors quoted verbatim; no behavior change.
+    const char* tdata =
+        g->tree.empty() ? nullptr : reinterpret_cast<const char*>(g->tree.data());
+    const std::size_t tlen = g->tree.size();
+    auto hasTag = [&](const char* tag) -> int {
+      if (tdata == nullptr || tag == nullptr || tlen == 0) return 0;
+      const std::size_t tl = std::strlen(tag);
+      if (tl == 0 || tl > tlen) return 0;
+      for (std::size_t i = 0; i + tl <= tlen; ++i) {
+        if (std::memcmp(tdata + i, tag, tl) == 0) return 1;
+      }
+      return 0;
+    };
+    char diag[320];
+    std::snprintf(diag, sizeof(diag),
+                  "F3DIAG contentLen=%d hero=%d topappbar=%d bird=%d pipe=%d "
+                  "presented=%d contentErr=%s fallbackRows=%d",
+                  static_cast<int>(tlen), hasTag("flappy-hero"),
+                  hasTag("TopAppBar"), hasTag("FlappyBird"),
+                  hasTag("FlappyPipe"), contentPresented ? 1 : 0,
+                  contentError.empty() ? "-" : contentError.c_str(),
+                  static_cast<int>(g->rows.size()));
+    MuseLogInfo(diag);
+  }
+#endif
   // FR-GRAPHICS-014 T2: requested-vs-effective present-path selection with
   // probe downgrade to the proven CPU push (AC-GRAPHICS-040/041). The
   // requested renderer defaults to `skia`; the resolve gate maps it against
@@ -1252,8 +1307,13 @@ extern "C" MUSE_JNI_EXPORT jlong Java_com_muse_host_MainActivity_nativeLoadTree(
     // Review BLOCKER: populate the tap tree from the laid-out bounds at
     // load so the device dispatch path resolves real button nodes. Runs
     // before registration (single-threaded here: no entry can observe the
-    // handle yet, so no lock is needed).
-    PopulateTapTreeFromLayout(g->tapTree);
+    // handle yet, so no lock is needed). T8R6/F4: when the loaded bytes are
+    // a recognized content scene, the tap tree is the scene's touchables
+    // (same scene the gate presents); otherwise the gallery fallback seed.
+    if (!RefreshTapTreeFromPresentedScene(g->tapTree, g->tree.data(),
+                                          g->tree.size(), 0.0f, 0.0f)) {
+      PopulateTapTreeFromLayout(g->tapTree);
+    }
     RegisterHandle(g);
 #ifdef __ANDROID__
     char msg[192];
