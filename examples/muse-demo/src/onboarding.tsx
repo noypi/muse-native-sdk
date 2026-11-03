@@ -42,7 +42,7 @@ export type OnboardingResult = {
 };
 export type OnboardingError = {
   code: OnboardingErrorCode;
-  retry: () => Promise<OnboardingResult>;
+  retry: () => ReturnType<typeof completeOnboarding>;
 };
 
 export type { Profile, Avatar };
@@ -54,7 +54,7 @@ export type { Profile, Avatar };
 // generation never blocks completion: the promise resolves at redirect time
 // with the current (cached or preview) avatar while generation refreshes the
 // cache afterwards.
-export function completeOnboarding(transcript: string[]): Promise<OnboardingResult> {
+export async function completeOnboarding(transcript: string[]) {
   const turns = Array.isArray(transcript) ? transcript : [];
   // T8 forced-error simulation for the reason/generate-image path
   // (AC-SAMPLE-036): a `force-<code>:` marker rejects once with that code so
@@ -65,8 +65,8 @@ export function completeOnboarding(transcript: string[]): Promise<OnboardingResu
   const forcedKey = turns.join('\n');
   const forcedMatch = /force-(auth|upstream|timeout|schema):/.exec(forcedKey);
   const forcedCode = forcedMatch ? (forcedMatch[1] as OnboardingErrorCode) : undefined;
-  if (forcedCode && !consumedForce.has(forcedKey)) {
-    consumedForce.add(forcedKey);
+  if (forcedCode && consumedForce[forcedKey] !== true) {
+    consumedForce[forcedKey] = true;
     const err: OnboardingError = {
       code: forcedCode,
       retry: () => completeOnboarding(transcript),
@@ -151,11 +151,11 @@ function repromptResponseHint(missing: ReturnType<typeof missingRequired>): stri
 }
 
 // T8 forced-error once-only state (see completeOnboarding above).
-const consumedForce = new Set<string>();
+let consumedForce: { [key: string]: true } = {};
 
 // Test/manual-reset hook: clears forced-error state.
 export function clearOnboardingState(): void {
-  consumedForce.clear();
+  consumedForce = {};
 }
 
 // --- Profile-settings page (presentational shell over the same flow) --------
@@ -166,7 +166,7 @@ export type OnboardingPageProps = {
 
 export function OnboardingPage({ onDone }: OnboardingPageProps = {}) {
   const [listening, setListening] = useState<boolean>(isTranscribeOn());
-  const [lines, setLines] = useState<string[]>([]);
+  const [lines, setLines] = useState([] as string[]);
   // T8 inline error state (AC-SAMPLE-036): designed message + the same retry
   // posted to the SnackbarHost via `fire` — never raw text. Kept separate
   // from the reprompt `notice` below so proxy errors and missing-info
@@ -174,7 +174,7 @@ export function OnboardingPage({ onDone }: OnboardingPageProps = {}) {
   const inlineError = useInlineProxyError();
   const stateRef = useRef(inlineError);
   stateRef.current = inlineError;
-  const [notice, setNotice] = useState<string | undefined>(undefined);
+  const [notice, setNotice] = useState(undefined as string | undefined);
 
   // Route a rejection: the required-check reprompt loop (missing fields,
   // no forced-error marker) keeps the designed reprompt notice; a forced
@@ -248,7 +248,6 @@ export function OnboardingPage({ onDone }: OnboardingPageProps = {}) {
         <Text>Introduce yourself</Text>
       </View>
       {notice ? <Text>{notice}</Text> : null}
-      {inlineError.error ? <InlineError error={inlineError.error} /> : null}
     </View>
   );
 }

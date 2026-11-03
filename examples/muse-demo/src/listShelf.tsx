@@ -45,7 +45,7 @@ export function groupAnnotatedRecords(
 ): ShelfView {
   const annotated = Array.isArray(records) ? records : [];
   if (renderMode === 'by_photo') {
-    const byPhoto = new Map<string, AnnotatedRecord[]>();
+    const byPhoto = new Map();
     for (const record of annotated) {
       const list = byPhoto.get(record.photoId) || [];
       list.push(record);
@@ -61,7 +61,7 @@ export function groupAnnotatedRecords(
     };
   }
   if (renderMode === 'by_object') {
-    const byLabel = new Map<string, AnnotatedRecord[]>();
+    const byLabel = new Map();
     for (const record of annotated) {
       const list = byLabel.get(record.label) || [];
       list.push(record);

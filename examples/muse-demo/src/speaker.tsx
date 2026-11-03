@@ -1,7 +1,7 @@
 // T9 — persistent MuseVoiceSpeaker (AC-SAMPLE-037).
 // `renderSpeaker(state, opts)` is strictly presentational: it records which
 // turn state the docked speaker shows and never issues a proxy call (no route
-// import, no fetch, no stub access). The `<Speaker/>` below renders that
+// import, no fetch, no stub access). The `Speaker` below renders that
 // recorded presentation; `reduceMotion` drops motion (static frame per state,
 // meaning unchanged); `transcribeOn: false` renders off/idle, never hidden.
 
@@ -22,23 +22,23 @@ export type SpeakerOpts = {
   transcribeOn: boolean;
 };
 
-const VALID_STATES: ReadonlySet<string> = new Set([
-  'idle',
-  'listening',
-  'loading',
-  'thinking',
-  'ready',
-  'denied',
-  'no-speech',
-]);
+const VALID_STATES: { [state: string]: true } = {
+  idle: true,
+  listening: true,
+  loading: true,
+  thinking: true,
+  ready: true,
+  denied: true,
+  'no-speech': true,
+};
 
 export function isSpeakerState(value: unknown): value is SpeakerState {
-  return typeof value === 'string' && VALID_STATES.has(value);
+  return typeof value === 'string' && VALID_STATES[value] === true;
 }
 
 // Distinct static presentation per state so all seven turn states are readable
 // at a glance (shape/label preserved with or without motion).
-const STATE_LABELS: Record<SpeakerState, string> = {
+const STATE_LABELS: { idle: string; listening: string; loading: string; thinking: string; ready: string; denied: string; 'no-speech': string } = {
   idle: 'Speaker idle',
   listening: 'Speaker listening…',
   loading: 'Speaker loading…',
