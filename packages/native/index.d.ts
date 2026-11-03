@@ -77,6 +77,7 @@ export type ButtonProps = {
   label: string;
   enabled?: boolean;
   icon?: string;
+  onPress?: () => void;
 };
 
 export type IconButtonProps = {
@@ -84,24 +85,28 @@ export type IconButtonProps = {
   icon: string;
   enabled?: boolean;
   selected?: boolean;
+  onPress?: () => void;
 };
 
 export type FabProps = {
   size?: 'small' | 'medium' | 'large';
   icon: string;
   enabled?: boolean;
+  onPress?: () => void;
 };
 
 export type ExtendedFabProps = {
   label: string;
   icon?: string;
   enabled?: boolean;
+  onPress?: () => void;
 };
 
 export type CardProps = {
   variant?: CardVariant;
   content?: unknown;
   enabled?: boolean;
+  onPress?: () => void;
 };
 
 export type ChipProps = {
@@ -109,29 +114,34 @@ export type ChipProps = {
   label: string;
   selected?: boolean;
   enabled?: boolean;
+  onPress?: () => void;
 };
 
 export type CheckboxProps = {
   checked?: boolean;
   enabled?: boolean;
   error?: boolean;
+  onCheckedChange?: (value: boolean) => void;
 };
 
 export type RadioProps = {
   selected?: boolean;
   enabled?: boolean;
   error?: boolean;
+  onSelectedChange?: (value: boolean) => void;
 };
 
 export type SwitchProps = {
   checked?: boolean;
   enabled?: boolean;
   icon?: string;
+  onCheckedChange?: (value: boolean) => void;
 };
 
 export type SliderProps = {
   value: number;
   enabled?: boolean;
+  onValueChange?: (value: number) => void;
 };
 
 export type BadgeProps = {
@@ -302,6 +312,7 @@ export type NavigationDrawerProps = {
 export type SegmentedButtonProps = {
   selected: string;
   enabled?: boolean;
+  onPress?: () => void;
 };
 
 export type DialogProps = {
@@ -348,12 +359,14 @@ export type ButtonGroupProps = {
   selected: string;
   enabled?: boolean;
   content?: unknown;
+  onPress?: () => void;
 };
 
 export type SplitButtonProps = {
   label: string;
   enabled?: boolean;
   icon?: string;
+  onPress?: () => void;
 };
 
 export type Tier3Name =

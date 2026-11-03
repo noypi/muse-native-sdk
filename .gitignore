@@ -5,3 +5,6 @@ build/**/
 third-party/
 *.apk
 dist/
+
+# ctest run-byproduct logs (Batch 2 review MINOR: never tracked)
+engine/input/Testing/

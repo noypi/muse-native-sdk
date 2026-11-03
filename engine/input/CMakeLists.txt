@@ -101,3 +101,10 @@ target_link_libraries(drag_drop_test PRIVATE input)
 target_compile_options(drag_drop_test PRIVATE -Wall -Wextra -Wpedantic)
 
 add_test(NAME drag_drop_test COMMAND drag_drop_test)
+
+add_executable(tap_dispatch_test tests/tap_dispatch_test.cpp)
+target_include_directories(tap_dispatch_test PRIVATE include)
+target_link_libraries(tap_dispatch_test PRIVATE input)
+target_compile_options(tap_dispatch_test PRIVATE -Wall -Wextra -Wpedantic)
+
+add_test(NAME tap_dispatch_test COMMAND tap_dispatch_test)
