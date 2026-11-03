@@ -1,7 +1,7 @@
 // T6 — profile model for muse-demo onboarding (AC-SAMPLE-023).
 // Pure logic: required-field check, reprompt loop helpers, and the global
-// persisted transcribe toggle. The `reason`-route binding mirrors the stub
-// `reason.onboarding` fixture (see proxy/lib/stub.js FIXTURES); the running
+// persisted transcribe toggle. The `reason`-route binding follows the
+// `reason.onboarding` route contract (see proxy/lib/stub.js FIXTURES); the running
 // demo resolves turns through that route, this module owns the transcript →
 // profile reduction so the page component stays presentational.
 

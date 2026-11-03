@@ -23,8 +23,8 @@ export type TranscribeError = {
 // fallback per row (rendered by `./echoToggle.tsx`).
 export const SPOKEN_CAP = 5;
 
-// Stub-fixture markers for the denied/no-speech terminal states (mirrors the
-// `transcribe.denied` / `transcribe.noSpeech` fixtures in proxy/lib/stub.js).
+// Terminal markers for the denied/no-speech states (matching the
+// `transcribe.denied` / `transcribe.noSpeech` route responses in proxy/lib/stub.js).
 // The running demo resolves these through the `transcribe` route; this module
 // owns the terminal reduction so the page component stays presentational.
 export const DENIED_MARKER = 'denied';
@@ -69,7 +69,7 @@ export function transcribeTerminal(utterance: string): TranscribeTerminal | unde
   return undefined;
 }
 
-// Deterministic recorded-style enhancement mirroring the stub `reason` route:
+// Deterministic enhancement following the `reason` route response shape:
 // the enhanced text always carries the entry it enhances (entryId echoes
 // listEntryId per A-T7-1; cross-entry moves are out of scope).
 function reasonEnhancement(entryId: string, utterance: string): string {

@@ -26,7 +26,7 @@ export type AnnotateError = {
   retry: () => Promise<AnnotateResult>;
 };
 
-// Width of the suggestion viewport the stub fixtures are authored against.
+// Width of the suggestion viewport the `segment` route responses are authored against.
 export const SUGGESTION_VIEWPORT_PX = 768;
 // Suggestions fire once the tap settles (no further taps within this window).
 export const SETTLE_MS = 150;
@@ -53,7 +53,7 @@ export type SegmentRouteFn = (req: SegmentRouteRequest) => {
 
 // Default transport: the stub proxy handle (the T2-pinned RealAdapter).
 // Required directly — per the BUG-SAMPLE-008 report, demo sources must reach
-// the proxy rather than re-implement its fixtures.
+// the proxy rather than re-implementing route content locally.
 const { handle: stubRouteHandle } = require('../../../proxy/lib/stub.js') as {
   handle: (req: Record<string, unknown>) => { status: number; body: unknown };
 };
@@ -113,7 +113,7 @@ const memo = new Map<string, AnnotateResult>();
 
 // Forced-error simulation for the manual error path: a photoId prefixed
 // `force-<code>:` rejects once with that code; `retry()` re-fires the same
-// call, which resolves once the (simulated) fixture recovers.
+// call, which resolves once the route recovers.
 const FORCED_CODES: AnnotateErrorCode[] = ['auth', 'upstream', 'timeout', 'schema'];
 const consumedForce = new Set<string>();
 
@@ -226,7 +226,7 @@ export async function annotatePhoto(photoId: string, point: TapPoint): Promise<A
   try {
     // The forced-error prefix is a demo-side manual path marker, not part of
     // the photo identity: the retry dispatches the stripped photoId so the
-    // `segment` route resolves once the (simulated) fixture recovers.
+    // `segment` route resolves once the endpoint recovers.
     res = dispatchSegment({ route: 'segment', photoId: stripForcePrefix(photoId), point });
   } catch (err) {
     throw toAnnotateError(err, () => annotatePhoto(photoId, point));

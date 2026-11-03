@@ -1,12 +1,11 @@
 // T4 (BUG-SAMPLE-008, AC-SAMPLE-033) — guess-the-mask round against the stub
 // proxy `segment` route (mask truth) and the `reason` route (reason stream).
-// Stub fixtures are inline dummy data — no proxy call is the bypass this
-// item removes: the round now dispatches `{ route: 'segment', ... }` through
-// the stub proxy handle (proxy/lib/stub.js, the single source of truth) and
-// reads the reason stream from `{ route: 'reason', ... }` (Q-MUSE-004: web
-// image search stays out), no secrets/config.
+// The round dispatches `{ route: 'segment', ... }` through the stub proxy
+// handle (proxy/lib/stub.js, the single source of truth) and reads the
+// reason stream from `{ route: 'reason', ... }` (Q-MUSE-004: web image
+// search stays out), no secrets/config.
 //
-// Round mask derivation from the recorded `segment` body: mask-1 is
+// Round mask derivation from the routed `segment` body: mask-1 is
 // matches[0].mask (the tap-region truth), mask-2 is suggestions[0] (the first
 // dashed alternative). Mask ids stay stable (mask-1, mask-2) so round wiring
 // such as the App tap handler is untouched by swaps; polygons follow the
@@ -31,46 +30,15 @@ type GuessPoint = {
 
 type StubHandle = (req: Record<string, unknown>) => { status: number; body: any };
 
-// Live `segment`/`reason` route transport. The require is guarded and
-// function-local so this module stays dependency-free under import-less
-// evaluation (the m3-gallery viral suite transpiles this file with no module
-// loader): every real runtime (host/dev, node) resolves the stub proxy
-// handle and the round dispatches live; otherwise the recorded snapshot
-// below applies.
-function liveRouteHandle(): StubHandle | undefined {
-  try {
-    if (typeof require !== 'function') return undefined;
-    const mod = require('../../../proxy/lib/stub.js') as { handle?: unknown };
-    if (!mod || typeof mod.handle !== 'function') return undefined;
-    return mod.handle as StubHandle;
-  } catch {
-    return undefined;
-  }
-}
-
-// Recorded `segment`/`reason` fixture snapshot (proxy/lib/stub.js
-// FIXTURES.segment mask + first suggestion, FIXTURES.reason streams.masked):
-// import-less evaluation fallback ONLY. The live `segment` route is the
-// single source of truth at runtime; this snapshot mirrors its recorded
-// polygons so hermetic evaluation reduces identically.
-const RECORDED_MATCH_MASK: number[][] = [
-  [360, 360],
-  [408, 360],
-  [408, 408],
-  [360, 408],
-];
-
-const RECORDED_SUGGESTION_FIRST: number[][] = [
-  [330, 350],
-  [370, 350],
-  [370, 390],
-  [330, 390],
-];
-
-const RECORDED_REASON_MASKED: string[] = [
-  '{"reasoning_content":"recorded-thinking"}',
-  '{"content":"recorded-insight"}',
-];
+// Live `segment`/`reason` route transport: the stub proxy handle
+// (proxy/lib/stub.js, the single source of truth). Required directly — per
+// the BUG-SAMPLE-008 report, demo sources must reach the proxy rather than
+// re-implement its fixtures. T5 deleted the recorded-snapshot fallback here:
+// a second source of truth cannot stand in for the route without defeating
+// the AC-SAMPLE-026 swap (an import-less copy never follows the endpoint).
+const { handle } = require('../../../proxy/lib/stub.js') as {
+  handle: StubHandle;
+};
 
 // Swap seam (AC-SAMPLE-026): the composition root injects the edge-proxy
 // segment body here; the endpoint-swap proof swaps it with no
@@ -81,17 +49,8 @@ export function setRoundSegmentRoute(fn: ((photoId: string, point: GuessPoint) =
   roundSegmentOverride = fn;
 }
 
-function recordedSegmentBody(): unknown {
-  return {
-    matches: [{ name: 'tap-region', mask: { encoding: 'polygon', points: RECORDED_MATCH_MASK } }],
-    suggestions: [{ encoding: 'polygon', points: RECORDED_SUGGESTION_FIRST }],
-  };
-}
-
 function resolveSegmentBody(photoId: string, point: GuessPoint): unknown {
   if (roundSegmentOverride) return roundSegmentOverride(photoId, point);
-  const handle = liveRouteHandle();
-  if (!handle) return recordedSegmentBody();
   const res = handle({ route: 'segment', photoId, point });
   if (!res || res.status !== 200) {
     throw new Error(`guessMask: segment route status ${res && res.status}`);
@@ -100,8 +59,6 @@ function resolveSegmentBody(photoId: string, point: GuessPoint): unknown {
 }
 
 function resolveReasonChunks(photoId: string, label: string): string[] {
-  const handle = liveRouteHandle();
-  if (!handle) return [...RECORDED_REASON_MASKED];
   const res = handle({ route: 'reason', context: `masked:${label}:${photoId}` });
   if (!res || res.status !== 200) {
     throw new Error(`guessMask: reason route status ${res && res.status}`);
@@ -130,7 +87,7 @@ function polygonPoints(value: unknown): number[][] {
 }
 
 // masksFromSegment — round mask derivation from the `segment` route body
-// (see header): exactly two stable ids over the recorded polygons.
+// (see header): exactly two stable ids over the routed polygons.
 function masksFromSegment(body: unknown): Mask[] {
   if (!body || typeof body !== 'object') {
     throw new Error('guessMask: segment route returned no body');

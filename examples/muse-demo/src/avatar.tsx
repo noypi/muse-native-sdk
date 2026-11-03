@@ -1,8 +1,8 @@
 // T6 — avatar resolution for muse-demo onboarding (AC-SAMPLE-023).
 // Cache-first fetch of the profile avatar; `generate-image` runs only on
 // 404/empty. Generation is async post-redirect with progressive preview and
-// never blocks onboarding completion. Request shape mirrors the stub
-// `generate-image` fixture (see proxy/lib/stub.js FIXTURES): style
+// never blocks onboarding completion. Request shape follows the
+// `generate-image` route contract (see proxy/lib/stub.js FIXTURES): style
 // 3D-or-cartoon from profile.artStyle, size 512, seed profile.idHash,
 // cacheKey avatar:{profile.id}.
 
@@ -59,9 +59,9 @@ export function clearAvatarCache(): void {
   cache.clear();
 }
 
-// Deterministic recorded-style generation mirroring the stub
-// `generate-image.generated` fixture. Honors the moderated flag shape from
-// the `generate-image.moderated` fixture (surfaced, never silently dropped).
+// Deterministic generation matching the `generate-image.generated` route
+// response shape. Honors the moderated flag shape from the
+// `generate-image.moderated` response (surfaced, never silently dropped).
 export function generateAvatar(profile: Profile): Promise<Avatar> {
   const request = generateImageRequest(profile);
   const uri = `generated:${request.cacheKey}:${request.style}:${request.size}:${request.seed}`;
