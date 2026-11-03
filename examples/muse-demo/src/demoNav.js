@@ -197,11 +197,8 @@ function createDemoRouter({ transport } = {}) {
   async function tapAdvance() {
     const cur = router.current;
     const idx = TAB_ORDER.indexOf(cur);
+    // Single computation: idx -1 covers home/unknown current (fail-closed to 'field').
     const next = idx === -1 ? 'field' : TAB_ORDER[(idx + 1) % TAB_ORDER.length];
-    if (cur === 'lens' && TAB_ORDER.indexOf(cur) !== -1) {
-      // Cycle step from the home tab lands on 'field', matching push('field').
-      return rawPush('field');
-    }
     return rawPush(next);
   }
 
@@ -219,6 +216,9 @@ function createDemoRouter({ transport } = {}) {
     if (typeof id !== 'string') {
       return { ok: false, code: 'unknown-route' };
     }
+    if (params !== undefined && (typeof params !== 'object' || params === null || Array.isArray(params))) {
+      return { ok: false, code: 'bad-params' };
+    }
     return rawPush(params !== undefined ? { id, params } : id);
   }
 
@@ -226,6 +226,9 @@ function createDemoRouter({ transport } = {}) {
     const id = normalizeTo(to);
     if (typeof id !== 'string') {
       return { ok: false, code: 'unknown-route' };
+    }
+    if (params !== undefined && (typeof params !== 'object' || params === null || Array.isArray(params))) {
+      return { ok: false, code: 'bad-params' };
     }
     return rawReplace(params !== undefined ? { id, params } : id);
   }

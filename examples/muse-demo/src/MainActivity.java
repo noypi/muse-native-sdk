@@ -103,6 +103,9 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     /** Opaque route string that arrived before the engine was ready; drained after load. */
     private String pendingOpaqueLink = null;
 
+    /** Bounded opaque stash: single slot, OS intent URIs are short; oversize dropped fail-closed. */
+    private static final int MAX_OPAQUE_LINK_CHARS = 2048;
+
     /**
      * Stash an inbound VIEW intent as an opaque string. No scheme/host/id
      * parsing here; the JS routing layer resolves the stashed string once
@@ -119,6 +122,9 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             raw = null;
         }
         if (raw == null || raw.isEmpty()) {
+            return;
+        }
+        if (raw.length() > MAX_OPAQUE_LINK_CHARS) {
             return;
         }
         pendingOpaqueLink = raw;
@@ -145,8 +151,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             return;
         }
         Log.i(TAG, "opaque-intent-ready engineHosted=true");
-        // Slot intentionally left populated: JS consumes it unparsed via
-        // consumePendingOpaqueLink() once the router is ready.
+        // Consume-once: caller passes the taken value; slot already cleared.
     }
 
     /** Drain the cold-start stash into the router once ready (unparsed). */
@@ -154,7 +159,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         if (pendingOpaqueLink == null || engineHandle == 0) {
             return;
         }
-        forwardOpaqueToRouter(pendingOpaqueLink);
+        String link = consumePendingOpaqueLink();
+        forwardOpaqueToRouter(link);
     }
 
     @Override
@@ -206,6 +212,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         super.onNewIntent(intent);
         setIntent(intent);
         stashOpaqueIntent(intent);
+        drainPendingOpaqueLink();
     }
 
     @Override
