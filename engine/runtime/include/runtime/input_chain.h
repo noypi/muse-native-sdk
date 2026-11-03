@@ -72,8 +72,9 @@ void PopulateTapTreeFromLayout(HitTestTree& tree);
 // fallback nodes removed, so scene taps never resolve to gallery node 20);
 // returns false for non-content bytes with the tree untouched, so the caller
 // keeps the gallery fallback path. Implemented here in generic dispatch over
-// the content-provided plain-data query
-// (runtime::QueryPresentedSceneTaps, declared in
+// the content-provided plain-data tap query callbacks
+// (runtime::ContentHandlers tapCount/tapNodeId/tapHandler/tapBounds,
+// resolved via GlobalContentRegistry, declared in
 // runtime/content_registry.h) — this file names no content bundle. Never
 // throws. A non-positive viewport skips the viewport check (load-time use
 // before the first frame presents the real window size); an unusable
