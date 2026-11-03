@@ -46,6 +46,20 @@ function tabLink(tab: Tab): string {
   return `muse-demo://tab/${tab}`;
 }
 
+// T3 (fallback-kinds, AC-SAMPLE-023): demo tree build path. Every row
+// `comp` emitted on device resolves through `mapDemoKind` — gate-known
+// generic out, or a named `unknown demo kind '<kind>'` throw at
+// build/dev time (never silent substitution, never an unmapped demo
+// kind at runtime). `segment` route + stub-bundling behavior unchanged.
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { mapDemoKind } = require('./demoKindMap') as {
+  mapDemoKind: (demoKind: string) => string;
+};
+export type DemoRow = { comp: string; tab: Tab };
+export function buildDemoTree(tab: Tab): DemoRow[] {
+  return [{ comp: mapDemoKind(tab), tab }, { comp: mapDemoKind('ErrorSnackbar'), tab }];
+}
+
 // T7 (AC-SAMPLE-033): guess-the-mask round wiring (<30s stub round).
 // Lens shows the photo with one mask hidden; the visitor taps a guess;
 // reveal streams the reason and posts the by_object shelf entry.
@@ -219,6 +233,9 @@ export function applyTheme(mode: 'light' | 'dark', seedFallback: boolean): void 
 export default function App() {
   const [page, setPage] = useState<Page>('onboarding');
   const [tab, setTab] = useState<Tab>('lens');
+  // T3: every emitted row comp routes through `mapDemoKind` — an unmapped
+  // tab fails closed NAMED here before reaching glass.
+  void buildDemoTree(tab);
   const [demoState, setDemoState] = useState<DemoState>('ready');
   const [theme, setTheme] = useState<ThemePalette>(() => currentPalette());
   const heroMotion = spring(0);

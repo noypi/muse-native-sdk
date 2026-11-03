@@ -10,6 +10,19 @@
 import { useEffect, useState } from 'react';
 import { View, Text, SnackbarHost } from '@muse/native';
 
+// T3 (fallback-kinds, AC-SAMPLE-023): ErrorSnackbar emits only the
+// gate-known `SnackbarHost` comp. Resolved through `mapDemoKind` at
+// module load so an unmapped demo kind fails closed NAMED at build/dev
+// time (never silent substitution, never an unmapped comp at runtime).
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { mapDemoKind } = require('./demoKindMap') as {
+  mapDemoKind: (demoKind: string) => string;
+};
+const ERROR_SNACKBAR_COMP: string = mapDemoKind('ErrorSnackbar');
+if (ERROR_SNACKBAR_COMP !== 'SnackbarHost') {
+  throw new Error(`unknown demo kind 'ErrorSnackbar' (expected gate-known 'SnackbarHost', got '${ERROR_SNACKBAR_COMP}')`);
+}
+
 export type ProxyErrorCode = 'auth' | 'upstream' | 'timeout' | 'schema';
 
 export type ProxyErrorSurface = {

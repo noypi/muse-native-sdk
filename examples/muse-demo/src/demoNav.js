@@ -23,6 +23,19 @@ const NAVIGATE_ACTION = 'muse.native.NAVIGATE';
 const TAB_LINK_PREFIX = 'muse-demo://tab/';
 const DEMO_TABS = ['lens', 'field', 'list'];
 
+// T3 (fallback-kinds, AC-SAMPLE-023): demo-kind emission seam. Every demo
+// descriptor kind emitted toward the engine gate resolves through
+// `mapDemoKind` — gate-known generic out, or a named
+// `unknown demo kind '<kind>'` throw at build/dev time (never silent
+// substitution, never an unmapped demo kind at runtime).
+const { mapDemoKind } = require('./demoKindMap');
+
+// demoCompFor(demoKind) — the single demo→gate comp seam for this module.
+// Passthrough to `mapDemoKind` so unknown kinds fail closed NAMED here.
+function demoCompFor(demoKind) {
+  return mapDemoKind(demoKind);
+}
+
 function isArbitraryRouteEnabled(env) {
   const source = env !== null && typeof env === 'object' ? env : {};
   const raw =
@@ -149,6 +162,15 @@ const demoDescriptors = [
   { id: 'field', link: 'muse-demo://tab/field', params: {} },
   { id: 'list', link: 'muse-demo://tab/list', params: {} },
 ];
+
+// Build/dev-time gate: every demo tab kind in the descriptor table must
+// resolve through `demoCompFor` (fail closed NAMED on unmapped). The
+// `home` alias is not a demo kind — it resolves to DEMO_HOME, whose comp
+// is validated via the same seam.
+for (const tab of DEMO_TABS) {
+  demoCompFor(tab);
+}
+demoCompFor(DEMO_HOME);
 
 const DEMO_LINK_RE = /^muse-demo:\/\/tab\/([A-Za-z0-9-]+)(\?.*)?$/;
 
@@ -371,6 +393,7 @@ ensureRouterBridge();
 
 module.exports = {
   createDemoNavigator,
+  demoCompFor,
   push: shared.push,
   replace: shared.replace,
   parseTabLink,
