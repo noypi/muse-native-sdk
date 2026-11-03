@@ -13,7 +13,6 @@
 #include "engine/graphics/vector/tile_raster.h"
 #include "muse/text/font_discovery.h"
 #include "runtime/content_registry.h"
-#include "muse/text/font_discovery.h"
 #include "runtime/gallery_present.h"
 // BUG-TEXT-008 t5r5 seam binding: this TU is the raster half of the executed
 // PresentDeviceGalleryPage -> ShapedText -> RasterizeShapedText -> BlendMask

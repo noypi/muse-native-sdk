@@ -1054,14 +1054,14 @@ static bool check_gallery_seam_chain_must_match_latn_resolution() {
 }
 
 static bool check_latn_chain_is_stable_script_covered_face() {
-  // Guard (green pre/post): the Latn target of the fixed seam is stable and
-  // script-covered; script 0 is unsupported — the asymmetry that makes the
-  // current seam silently file-less.
+  // Guard (reconciled post-convergence: main #257 + run T14 centralize
+  // 0→Latn via EffectiveScript, so script 0 IS Latn-routed and
+  // SupportsScript(0) is true — the old 0-unsupported asymmetry is gone).
   try {
     if (!muse::text::SystemFontEnumerator().SupportsScript(kT13Latn)) {
       return false;
     }
-    if (muse::text::SystemFontEnumerator().SupportsScript(0)) return false;
+    if (!muse::text::SystemFontEnumerator().SupportsScript(0)) return false;
     muse::text::StatusOr<muse::text::FontHandle> a =
         muse::text::resolveFallbackChain(kT13Latn, nullptr, nullptr);
     muse::text::StatusOr<muse::text::FontHandle> b =
@@ -1079,26 +1079,38 @@ static bool check_latn_chain_is_stable_script_covered_face() {
 }
 
 static bool check_unmapped_script_discover_fails_closed_while_chain_is_silent() {
-  // Boundary (green pre/post): discoverFonts on a genuinely unmapped script
-  // fails closed (kNoFaceAvailable), while resolveFallbackChain on the same
-  // script silently succeeds with the file-less bundled terminus — the trap
-  // the gallery seam falls into. kNoFaceAvailable must mean "genuinely
-  // unmapped", never a quiet file-less face.
+  // Boundary (reconciled post-convergence: main #257 + run T14 centralize
+  // 0→Latn via EffectiveScript, so script 0 is Latn-routed and discoverable;
+  // the fail-closed half now uses a genuinely unmapped non-zero tag 'Xxxx').
+  // discoverFonts on 'Xxxx' fails closed (kNoFaceAvailable), while
+  // resolveFallbackChain on the same tag silently succeeds with the bundled
+  // terminus. kNoFaceAvailable must mean "genuinely unmapped", never a quiet
+  // file-less face.
+  static constexpr std::uint32_t kUnmapped = 0x58787878u;  // 'Xxxx'
   try {
     muse::text::FontQuery q;
     q.family = "Roboto";
-    q.scriptTag = 0;
+    q.scriptTag = kUnmapped;
     muse::text::StatusOr<std::vector<muse::text::FontHandle>> chain =
         muse::text::discoverFonts(q);
     if (chain.ok()) return false;
     if (chain.status() != muse::text::Status::kNoFaceAvailable) return false;
     muse::text::StatusOr<muse::text::FontHandle> silent =
-        muse::text::resolveFallbackChain(0, nullptr, nullptr);
+        muse::text::resolveFallbackChain(kUnmapped, nullptr, nullptr);
     if (!silent.ok()) return false;  // silent success is the defect surface
     muse::text::StatusOr<std::string> path =
         muse::text::FontPathForFace(*silent);
     if (path.ok()) return false;
-    return path.status() == muse::text::Status::kNoFaceAvailable;
+    if (path.status() != muse::text::Status::kNoFaceAvailable) return false;
+    // Converged seam: script 0 now routes to the Latn face (0→Latn), and on
+    // the hermetic host every face stays file-less per the T8 contract.
+    muse::text::StatusOr<muse::text::FontHandle> zero =
+        muse::text::resolveFallbackChain(0, nullptr, nullptr);
+    muse::text::StatusOr<muse::text::FontHandle> latn =
+        muse::text::resolveFallbackChain(kT13Latn, nullptr, nullptr);
+    if (!zero.ok() || !latn.ok()) return false;
+    if (!(*zero == *latn)) return false;
+    return true;
   } catch (...) {
     return false;
   }
