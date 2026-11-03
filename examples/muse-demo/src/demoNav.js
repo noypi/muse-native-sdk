@@ -134,6 +134,115 @@ function createDemoNavigator() {
 
 const shared = createDemoNavigator();
 
+// --- Facade binding (T5/T6, FR-NAV-014 thin-host) ---------------------------
+// Link-shape validation lives here via `createRoutes` descriptors +
+// `@muse/router` beforeEach guard + typed-params validation. The host
+// forwards inbound VIEW intents as opaque strings; `forwardIntent` resolves
+// them to the same dest as `push`. Outcomes/logs are observed `NavResult`s.
+const { createRoutes, createRouter } = require('../../../packages/router/src/index.js');
+
+const DEMO_HOME = 'lens';
+
+const demoDescriptors = [
+  { id: 'home', link: 'muse-demo://tab/home', params: {} },
+  { id: 'lens', link: 'muse-demo://tab/lens', params: {} },
+  { id: 'field', link: 'muse-demo://tab/field', params: {} },
+  { id: 'list', link: 'muse-demo://tab/list', params: {} },
+];
+
+const DEMO_LINK_RE = /^muse-demo:\/\/tab\/([A-Za-z0-9-]+)(\?.*)?$/;
+
+function linkToId(opaque) {
+  if (typeof opaque !== 'string') {
+    return undefined;
+  }
+  const m = DEMO_LINK_RE.exec(opaque);
+  if (!m || m[2] !== undefined) {
+    return undefined;
+  }
+  const id = m[1];
+  if (id !== 'lens' && id !== 'field' && id !== 'list' && id !== 'home') {
+    return undefined;
+  }
+  return id;
+}
+
+function normalizeTo(to) {
+  if (typeof to === 'string' && to.indexOf('://') !== -1) {
+    return linkToId(to);
+  }
+  if (to && typeof to === 'object' && typeof to.id === 'string') {
+    return to.id;
+  }
+  return to;
+}
+
+function createDemoRouter({ transport } = {}) {
+  const routes = createRoutes(demoDescriptors);
+  const router = createRouter({ routes, home: DEMO_HOME, transport });
+  router.beforeEach(async () => true);
+  const rawPush = router.push.bind(router);
+  const rawReplace = router.replace.bind(router);
+
+  async function forwardIntent(opaque) {
+    const id = linkToId(opaque);
+    if (id === undefined) {
+      return { ok: false, code: 'unknown-route' };
+    }
+    return rawPush(id);
+  }
+
+  const TAB_ORDER = ['lens', 'field', 'list'];
+
+  async function tapAdvance() {
+    const cur = router.current;
+    const idx = TAB_ORDER.indexOf(cur);
+    const next = idx === -1 ? 'field' : TAB_ORDER[(idx + 1) % TAB_ORDER.length];
+    if (cur === 'lens' && TAB_ORDER.indexOf(cur) !== -1) {
+      // Cycle step from the home tab lands on 'field', matching push('field').
+      return rawPush('field');
+    }
+    return rawPush(next);
+  }
+
+  async function onFallbackRecover() {
+    const cur = router.current || DEMO_HOME;
+    const res = await rawReplace(cur);
+    if (typeof console !== 'undefined' && console.debug) {
+      console.debug('demo recover dest=' + cur + ' ok=' + (res && res.ok));
+    }
+    return res;
+  }
+
+  async function push(to, params) {
+    const id = normalizeTo(to);
+    if (typeof id !== 'string') {
+      return { ok: false, code: 'unknown-route' };
+    }
+    return rawPush(params !== undefined ? { id, params } : id);
+  }
+
+  async function replace(to, params) {
+    const id = normalizeTo(to);
+    if (typeof id !== 'string') {
+      return { ok: false, code: 'unknown-route' };
+    }
+    return rawReplace(params !== undefined ? { id, params } : id);
+  }
+
+  return {
+    get current() {
+      return router.current;
+    },
+    beforeEach: router.beforeEach.bind(router),
+    push,
+    replace,
+    forwardIntent,
+    tapAdvance,
+    onFallbackRecover,
+  };
+}
+
 module.exports = {
   createDemoNavigator,
   push: shared.push,
@@ -143,4 +252,6 @@ module.exports = {
   NAVIGATE_ACTION,
   TAB_LINK_PREFIX,
   DEMO_TABS,
+  demoDescriptors,
+  createDemoRouter,
 };
