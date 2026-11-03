@@ -20,6 +20,10 @@ namespace muse::text {
 // through the stage. Asymmetric wedges (ink x=0, clear x=w-1, the "3" vs "E"
 // signature) must keep their ordering; a per-glyph X-flip returns false
 // (fail closed). Symmetric/uniform inputs carry no order signal: pass.
+// RasterPreservesGlyphColumnOrder is pinned by its unit tests and the
+// Blend-half guard; the RasterizeOutlineBlock raster-half guard compares
+// segment-mean against the coverage centroid instead (bbox edge columns
+// are vacuous for inset stems like '6'/'2').
 // Never throws; false on invalid input. No substitution, no fallback change.
 bool RasterPreservesGlyphColumnOrder(const float* alpha, std::size_t width,
                                      std::size_t height) noexcept;

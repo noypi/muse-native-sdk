@@ -8,10 +8,10 @@
 #include "runtime/gallery_present.h"
 // BUG-TEXT-008 t5r5 seam binding: this TU is the raster half of the executed
 // PresentDeviceGalleryPage -> ShapedText -> RasterizeShapedText -> BlendMask
-// lane; the column-order contract lives in muse/text/raster_blend_orientation.h
-// (Real adapter: engine/text/src/raster_blend_orientation.cpp). Pixel-dead
-// atlas-upload path untouched.
-#include "muse/text/raster_blend_orientation.h"
+// lane; the Blend-half column-order contract lives in
+// muse/text/raster_blend_orientation.h (Real adapter:
+// engine/text/src/raster_blend_orientation.cpp). Pixel-dead atlas-upload
+// path untouched.
 
 namespace runtime {
 namespace {
@@ -710,13 +710,20 @@ void RasterizeOutlineBlock(const TileSegs& segs, CoverageMask& mask) {
   }
   // BUG-TEXT-008 t5r5 seam guard, raster half (FR-TEXT-007 AC-TEXT-013 +
   // FR-TEXT-010 AC-TEXT-047): compare the input segments' column dominance
-  // against the rasterized block's via RasterPreservesGlyphColumnOrder. A
-  // left-dominant outline that rasterizes right-dominant is a per-glyph
-  // mirror — restore the snapshot (fail closed, never mirrored texels).
-  // Symmetric/right-dominant outlines carry no left-order signal, so the
-  // guard only enforces strictly left-dominant inputs (half-texel margin;
-  // matches the predicate's vacuous-pass convention) — never a false blank
-  // of a legitimately right-heavy glyph. The guard itself executes on every
+  // against the rasterized block's coverage centroid. A left-dominant
+  // outline that rasterizes right-dominant is a per-glyph mirror — restore
+  // the snapshot (fail closed, never mirrored texels). Symmetric/
+  // right-dominant outlines carry no left-order signal, so the guard only
+  // enforces strictly left-dominant inputs (half-texel margin) — never a
+  // false blank of a legitimately right-heavy glyph. The raster side uses
+  // the coverage-weighted mean x over the block, NOT the bbox extreme
+  // columns: pad margins make the edge columns vacuous for glyphs whose
+  // ink does not reach the segment-bbox edge ('6' left stem sits inset by
+  // pad while its bowl wall nears the right edge; '2' likewise), so the
+  // edge comparison false-tripped and blanked them. The centroid compares
+  // like for like with the segment mean above: a true X-flip mirrors the
+  // centroid across the block center and still trips. An empty block
+  // carries no signal and passes. The guard itself executes on every
   // block, so a through-raster pin driving a left-dominant wedge through
   // BuildGlyphOutline/RasterizeOutlineBlock observes it (no bypass seam).
   {
@@ -732,17 +739,21 @@ void RasterizeOutlineBlock(const TileSegs& segs, CoverageMask& mask) {
     const bool inputLeftDominant =
         segN > 0 && (segMeanX / static_cast<double>(segN)) + 0.5 < blockCenterX;
     if (inputLeftDominant && blockW <= 1024 && blockH <= 1024) {
-      std::vector<float> blockOut(static_cast<std::size_t>(blockW * blockH));
+      double weight = 0.0;
+      double weightedX = 0.0;
       for (int by = 0; by < blockH; ++by) {
         for (int bx = 0; bx < blockW; ++bx) {
-          blockOut[static_cast<std::size_t>(by * blockW + bx)] =
-              mask.alpha[static_cast<std::size_t>((ty0 + by) * mask.width +
-                                                  tx0 + bx)];
+          const float a = mask.alpha[static_cast<std::size_t>(
+              (ty0 + by) * mask.width + tx0 + bx)];
+          if (!(a > 0.0f) || !std::isfinite(a)) continue;
+          weight += static_cast<double>(a);
+          weightedX += static_cast<double>(a) *
+                       (static_cast<double>(tx0 + bx) + 0.5);
         }
       }
-      if (!muse::text::RasterPreservesGlyphColumnOrder(
-              blockOut.data(), static_cast<std::size_t>(blockW),
-              static_cast<std::size_t>(blockH))) {
+      const bool mirrored =
+          weight > 0.0 && weightedX / weight > blockCenterX + 0.5;
+      if (mirrored) {
         for (int by = 0; by < blockH; ++by) {
           for (int bx = 0; bx < blockW; ++bx) {
             mask.alpha[static_cast<std::size_t>((ty0 + by) * mask.width +
