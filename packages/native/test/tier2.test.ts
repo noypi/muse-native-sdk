@@ -590,7 +590,7 @@ test('TC-M3-004: every manifest variant value constructs and echoes (Button/Card
 test('TC-M3-004: accepted shared keys construct (enabled/selected/error/icon)', () => {
   assert.equal(components.Button({ variant: 'filled', enabled: true }).props.enabled, true);
   assert.equal(components.Chip({ variant: 'assist', selected: true }).props.selected, true);
-  assert.equal(components.Checkbox({ checked: true, error: 'bad' }).props.error, 'bad');
+  assert.equal(components.Checkbox({ checked: true, error: true }).props.error, true);
   assert.equal(components.Button({ variant: 'filled', icon: 'star' }).props.icon, 'star');
 });
 
