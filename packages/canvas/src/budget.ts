@@ -53,6 +53,7 @@ export function createCanvas(opts: CanvasOpts): Surface {
         logTo(sink, { message: err.message, budget: 'maxDraws' });
         throw err;
       }
+      // NOTE: maxInstances counts emitted instances 1:1 with descriptors — emitFrame maps one descriptor to one instance/DrawCmd, so descriptors.length IS the instance count by definition (no separate instancing field exists).
       if (n > opts.maxInstances) {
         const err = new CanvasBudgetError('maxInstances', n, opts.maxInstances);
         logTo(sink, { message: err.message, budget: 'maxInstances' });

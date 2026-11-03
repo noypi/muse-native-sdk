@@ -6,5 +6,6 @@ export type DrawCmd = Record<string, unknown>;
 
 export function tick(state: unknown, t: number, dt: number): DrawCmd[] {
   const snapshot = JSON.parse(JSON.stringify(state));
+  // NOTE: 'Tick' is envelope-only (test/diagnostic wrapper) — never a graphics PrimitiveKind, never fed to emitFrame/engine.
   return [{ kind: 'Tick', t, dt, state: snapshot }];
 }

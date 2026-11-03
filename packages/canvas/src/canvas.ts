@@ -3,14 +3,9 @@
 // descriptors onto DrawCmds using EXISTING PrimitiveKinds only, deterministically
 // per t with no wall-clock reads. Unknown kinds fail closed named.
 
-export class CanvasUnknownKindError extends Error {
-  kind: string;
-  constructor(kind: string) {
-    super(`unknown canvas kind: ${kind}`);
-    this.name = 'CanvasUnknownKindError';
-    this.kind = kind;
-  }
-}
+// Single canonical error: defined in recorder.ts, re-exported here so cross-module instanceof holds.
+import { CanvasUnknownKindError } from './recorder.ts';
+export { CanvasUnknownKindError };
 
 export interface Descriptor {
   verb?: string;
