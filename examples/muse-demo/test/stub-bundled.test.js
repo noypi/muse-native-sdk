@@ -126,6 +126,50 @@ describe('T2 — stub route is resolvable and bundled', () => {
   });
 });
 
+describe('T2 — setSegmentRoute seam accepts function refs only (security pin, AC-SAMPLE-026)', () => {
+  function readSuggestions() {
+    return readFileSync(join(DEMO_ROOT, 'src', 'suggestions.ts'), 'utf8');
+  }
+
+  it('seam signature takes a function ref, never a string/URL endpoint', () => {
+    const src = readSuggestions();
+    assert.match(
+      src,
+      /export function setSegmentRoute\(fn: SegmentRouteFn \| undefined\)/,
+      'setSegmentRoute must keep the function-ref-only signature',
+    );
+    assert.doesNotMatch(
+      src,
+      /setSegmentRoute\([^)]*(url|string|endpoint|URL)/i,
+      'seam must expose no string/URL endpoint overload',
+    );
+  });
+
+  it('bundled dispatch invokes the override as a function ref, with no string/URL branch', () => {
+    const src = readSuggestions();
+    assert.match(
+      src,
+      /if \(segmentRouteOverride\) return segmentRouteOverride\(req\)/,
+      'dispatch must invoke the override as a function ref',
+    );
+    assert.doesNotMatch(
+      src,
+      /typeof segmentRouteOverride === 'string'/,
+      'dispatch must never treat the override as a string endpoint',
+    );
+    assert.doesNotMatch(
+      src,
+      /segmentRouteOverride\s*===?\s*['"`]/,
+      'dispatch must never compare the override against a string literal',
+    );
+    assert.doesNotMatch(
+      src,
+      /new URL\(segmentRouteOverride|fetch\(segmentRouteOverride/,
+      'dispatch must never fetch the override as a URL',
+    );
+  });
+});
+
 describe('T2 — tree asset bytes are the assembled bytes (informational)', () => {
   it('dist/tree.mui.bin exists and assets copy matches when present', () => {
     const dist = join(DEMO_ROOT, 'dist', 'tree.mui.bin');

@@ -123,12 +123,50 @@ bool check_probe_unknown_fail_closed() {
   return ProbeFailsClosedNamed("unknown");
 }
 
+// Security pins (security-review 2026-11-03): adversarial unknown-kind
+// shapes stay fail-closed NAMED — huge, newline-bearing, and
+// quote-bearing kinds draw 0 rows, touch no pixels, and name the kind.
+// Empty comp is pinned at the oracle level only (IsKnown("") == false):
+// the production gate skips empty (`!row.comp.empty() && ...`, pre-existing
+// shape per review N4), so raster behavior for empty is downstream
+// handling, not this gate.
+bool check_probe_huge_kind_fail_closed() {
+  const std::string huge(4096, 'A');
+  return ProbeFailsClosedNamed(huge.c_str());
+}
+
+bool check_probe_newline_kind_fail_closed() {
+  return ProbeFailsClosedNamed("lens\nINJECTED: forged-log-line");
+}
+
+bool check_probe_quote_kind_fail_closed() {
+  return ProbeFailsClosedNamed("a'b");
+}
+
 // Oracle legs: the known set is unchanged by this pin. Unknown probes are
 // not known; retained kinds stay known (T4 must not over-block).
-bool check_unknown_probes_not_known() {
+bool check_empty_kind_never_known() {
+  if (runtime::IsKnownGalleryComponent("")) {
+    std::printf("  detail: empty comp reported known\n");
+    return false;
+  }
+  return true;
+}
+
+bool check_adversarial_shapes_never_known() {
   for (const char* kind : kUnknownProbes) {
     if (runtime::IsKnownGalleryComponent(kind)) {
       std::printf("  detail: probe '%s' reported known\n", kind);
+      return false;
+    }
+  }
+  const std::string huge(4096, 'A');
+  const char* adversarial[] = {
+      huge.c_str(), "lens\nINJECTED: forged-log-line", "a'b",
+  };
+  for (const char* kind : adversarial) {
+    if (runtime::IsKnownGalleryComponent(kind)) {
+      std::printf("  detail: adversarial shape reported known\n");
       return false;
     }
   }
@@ -162,7 +200,11 @@ int main() {
   RUN_CASE(check_probe_animatableprop_fail_closed);
   RUN_CASE(check_probe_inlineerror_fail_closed);
   RUN_CASE(check_probe_unknown_fail_closed);
-  RUN_CASE(check_unknown_probes_not_known);
+  RUN_CASE(check_probe_huge_kind_fail_closed);
+  RUN_CASE(check_probe_newline_kind_fail_closed);
+  RUN_CASE(check_probe_quote_kind_fail_closed);
+  RUN_CASE(check_empty_kind_never_known);
+  RUN_CASE(check_adversarial_shapes_never_known);
   RUN_CASE(check_retained_kinds_stay_known);
   if (failures > 0) {
     std::printf("fallback_gate_kinds_test: %d failing\n", failures);
