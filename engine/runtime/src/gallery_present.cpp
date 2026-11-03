@@ -1998,6 +1998,22 @@ int RasterGalleryPage(const std::vector<GalleryRow>& rows, int page,
       return 0;
     }
 
+    // demo-fallback-boot T4 (FR-SAMPLE-009/010, AC-SAMPLE-023): unknown/new
+    // component kinds fail closed NAMED on the raster path — the same gate
+    // as the PresentGallery proof gate. Zero rows drawn, pixels untouched,
+    // kind named in *error; never a substitute fallback card. Runs before
+    // any paint (including the page wash below), so the fail-closed legs
+    // observe a pristine buffer.
+    for (const GalleryRow& row : rows) {
+      if (!row.comp.empty() && !IsKnownGalleryComponent(row.comp)) {
+        if (error != nullptr) {
+          *error = "unknown gallery component kind '" + row.comp +
+                   "' (rasterGate=fail: no substitution)";
+        }
+        return 0;
+      }
+    }
+
     // Page wash first: no black gutters between bands. Rows paint their own
     // light/dark theme bands over this.
     FillRect(pixels, stridePx, width, height, 0, 0, width, height,

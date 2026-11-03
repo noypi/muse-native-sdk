@@ -39,6 +39,10 @@ apk:
 	rm -f $(UNSIGNED_APK)
 	muse-native build .
 	mkdir -p assets && cp dist/tree.mui.bin assets/tree.mui.bin
+	@built_hash="$$(sha256sum dist/tree.mui.bin 2>/dev/null | cut -d' ' -f1)"; \
+	staged_hash="$$(sha256sum assets/tree.mui.bin 2>/dev/null | cut -d' ' -f1)"; \
+	if [ -z "$$built_hash" ] || [ -z "$$staged_hash" ]; then echo "error: stale-asset: assets/tree.mui.bin vs dist/tree.mui.bin: missing tree bytes (built='$$built_hash' staged='$$staged_hash') — rebuild required" >&2; exit 1; fi; \
+	if [ "$$built_hash" != "$$staged_hash" ]; then echo "error: stale-asset: assets/tree.mui.bin baked $$staged_hash != built dist/tree.mui.bin $$built_hash — rebuild required" >&2; exit 1; fi
 	mkdir -p $(STAGING_DIR) $(BUILD_DIR)/gen $(BUILD_DIR)/classes $(BUILD_DIR)/dex
 	aapt2 compile --dir res -o $(BUILD_DIR)/compiled.zip
 	aapt2 link -o $(LINKED_ZIP) -I $(ANDROID_JAR) --manifest AndroidManifest.xml --java $(BUILD_DIR)/gen -A assets $(BUILD_DIR)/compiled.zip
@@ -50,7 +54,12 @@ apk:
 	cp "$(MUSE_NATIVE_HOME)/android-armeabi-v7a/libRuntime.so" $(STAGING_DIR)/lib/armeabi-v7a/libRuntime.so
 	cp "$(MUSE_NATIVE_HOME)/android-x86_64/libRuntime.so" $(STAGING_DIR)/lib/x86_64/libRuntime.so
 	cp "$(MUSE_NATIVE_HOME)/android-x86/libRuntime.so" $(STAGING_DIR)/lib/x86/libRuntime.so
+	@if ! cmp -s "$(MUSE_NATIVE_HOME)/android-arm64-v8a/libRuntime.so" $(STAGING_DIR)/lib/arm64-v8a/libRuntime.so; then echo "error: STALE_LIB: staged lib/arm64-v8a/libRuntime.so != fresh $(MUSE_NATIVE_HOME)/android-arm64-v8a/libRuntime.so — reinstall the SDK" >&2; exit 1; fi
+	@if ! cmp -s "$(MUSE_NATIVE_HOME)/android-armeabi-v7a/libRuntime.so" $(STAGING_DIR)/lib/armeabi-v7a/libRuntime.so; then echo "error: STALE_LIB: staged lib/armeabi-v7a/libRuntime.so != fresh $(MUSE_NATIVE_HOME)/android-armeabi-v7a/libRuntime.so — reinstall the SDK" >&2; exit 1; fi
+	@if ! cmp -s "$(MUSE_NATIVE_HOME)/android-x86_64/libRuntime.so" $(STAGING_DIR)/lib/x86_64/libRuntime.so; then echo "error: STALE_LIB: staged lib/x86_64/libRuntime.so != fresh $(MUSE_NATIVE_HOME)/android-x86_64/libRuntime.so — reinstall the SDK" >&2; exit 1; fi
+	@if ! cmp -s "$(MUSE_NATIVE_HOME)/android-x86/libRuntime.so" $(STAGING_DIR)/lib/x86/libRuntime.so; then echo "error: STALE_LIB: staged lib/x86/libRuntime.so != fresh $(MUSE_NATIVE_HOME)/android-x86/libRuntime.so — reinstall the SDK" >&2; exit 1; fi
 	cp $(BUILD_DIR)/dex/classes.dex $(STAGING_DIR)/classes.dex
+	cp ../../proxy/lib/stub.js $(STAGING_DIR)/assets/stub.js
 	cp -r tree/* $(STAGING_DIR)/assets/tree/ 2>/dev/null || cp -r assets/* $(STAGING_DIR)/assets/ 2>/dev/null || true
 	# NOTE (T2, AC-023): next line's parent-dir ref stays inside BUILD_DIR staging; exempt from no-traversal rule.
 	cd $(STAGING_DIR) && zip -r ../$(notdir $(UNSIGNED_APK)) AndroidManifest.xml classes.dex lib assets && zip -g -0 ../$(notdir $(UNSIGNED_APK)) resources.arsc
