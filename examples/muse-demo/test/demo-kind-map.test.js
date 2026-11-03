@@ -9,16 +9,17 @@
 //   `field→TextInput`, `list→Card`, `ErrorSnackbar→SnackbarHost`;
 //   every other demo/unknown kind fails closed NAMED
 //   (`unknown demo kind '<kind>'`, never silent, never substituted).
-// ASSUMPTIONS: CommonJS at `../src/demoKindMap.js` exporting `mapDemoKind`;
-// unknown input throws `Error('unknown demo kind \'<kind>\'')` (fail closed
-// named, per the approved mapping — the plan's `Interface:` line lists the
-// four exact pairs; the fail-closed tail follows T1's no-substitution rule).
+// ASSUMPTIONS: CommonJS at `../src/demoNav.js` exporting `demoCompFor`
+// (the shipped seam, aliased here as mapDemoKind); unknown input throws
+// `Error('unknown demo kind \'<kind>\'')` (fail closed named, per the
+// approved mapping — the plan's `Interface:` line lists the four exact
+// pairs; the fail-closed tail follows T1's no-substitution rule).
 // Spec refs: AC-SAMPLE-023.
 
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
 
-const MAP_PATH = '../src/demoKindMap.js';
+const MAP_PATH = '../src/demoNav.js';
 
 // Exact per-item contract mapping: demo descriptor -> generic target.
 const EXACT_MAP = [
@@ -66,7 +67,7 @@ const FORBIDDEN_EMISSIONS = new Set([
 let mapError = null;
 let mapDemoKind = null;
 try {
-  ({ mapDemoKind } = require(MAP_PATH));
+  ({ demoCompFor: mapDemoKind } = require(MAP_PATH));
 } catch (err) {
   mapError = err;
 }
@@ -75,12 +76,12 @@ function requireMap() {
   assert.equal(
     mapError,
     null,
-    `demoKindMap module missing at ${MAP_PATH}: ${mapError && mapError.message} (RED: Batch 2 coder owns src/demoKindMap.js)`,
+    `demoNav seam missing at ${MAP_PATH}: ${mapError && mapError.message} (RED: coder owns src/demoNav.js demoCompFor)`,
   );
   assert.equal(
     typeof mapDemoKind,
     'function',
-    'demoKindMap must export mapDemoKind(demoKind)',
+    'demoNav must export demoCompFor(demoKind)',
   );
 }
 
