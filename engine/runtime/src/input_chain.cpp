@@ -207,11 +207,10 @@ void PopulateTapTreeFromLayout(HitTestTree& tree) {
 }
 
 // Content-scene tap-tree refresh (T8R6/F4; FR-RUNTIME-013: generic dispatch
-// binds only the plain-data query below, never content by name). Rebuilds
-// the tree from the presented scene's touchables; non-scene bytes (query
-// count 0) leave the tree untouched so the caller keeps the gallery
-// fallback. No viewport scaling: entries are the laid-out rects verbatim
-// per the T10 contract. Never throws.
+// binds only the plain-data query, never content by name). The content
+// module is removed (BUG-RUNTIME-012): no scene bytes can be recognized, so
+// this entry fails closed with the tree untouched and the caller keeps the
+// gallery fallback. Never throws.
 bool RefreshTapTreeFromPresentedScene(HitTestTree& tree, const void* data,
                                       std::size_t len, float viewportW,
                                       float viewportH) {
@@ -221,30 +220,10 @@ bool RefreshTapTreeFromPresentedScene(HitTestTree& tree, const void* data,
         return false;
       }
     }
-    PresentedSceneTap taps[8];
-    const int count = runtime::QueryPresentedSceneTaps(
-        data, len, taps, static_cast<int>(sizeof(taps) / sizeof(taps[0])));
-    if (count <= 0) {
-      return false;
-    }
-    HitTestTree scene;
-    int added = 0;
-    for (int i = 0; i < count; ++i) {
-      if (taps[i].nodeId < 0 || !std::isfinite(taps[i].x) ||
-          !std::isfinite(taps[i].y) || !std::isfinite(taps[i].w) ||
-          !std::isfinite(taps[i].h) || taps[i].w <= 0.0f ||
-          taps[i].h <= 0.0f) {
-        continue;
-      }
-      scene.AddNode(taps[i].nodeId, 0,
-                    HitRect{taps[i].x, taps[i].y, taps[i].w, taps[i].h});
-      ++added;
-    }
-    if (added == 0) {
-      return false;
-    }
-    tree = scene;
-    return true;
+    (void)tree;
+    (void)data;
+    (void)len;
+    return false;
   } catch (...) {
     return false;
   }

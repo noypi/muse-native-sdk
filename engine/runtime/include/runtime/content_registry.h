@@ -110,8 +110,7 @@ std::string FormatContentDiagLine(const void* data, std::size_t len,
 }  // namespace runtime
 
 // Process-wide registry consulted by generic dispatch. Content modules
-// register their tags here (see RegisterFlappyContent in
-// runtime/flappy_content.h); generic files resolve through it and never
-// name content. Function-local static: safe initialization, no teardown
+// used to register their tags here; generic files resolve through it and
+// never name content. Function-local static: safe initialization, no teardown
 // ordering hazards (leaked on exit, never destroyed mid-dispatch).
 runtime::ContentRegistry& GlobalContentRegistry();

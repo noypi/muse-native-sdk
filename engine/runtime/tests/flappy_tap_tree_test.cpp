@@ -18,7 +18,7 @@
 // T6 seam setup header: buildTapTree resolves layout providers through the
 // content-tag registry; explicit registration keeps the suite independent
 // of static-init order.
-#include "runtime/flappy_content.h"
+#include "runtime/content_registry.h"
 
 // --- T10 `Interface:` line (plan verbatim) -------------------------------
 // `buildTapTree(layoutRoot: LayoutNode) -> TapNode[] — returns one TapNode
@@ -57,6 +57,69 @@ constexpr LayoutNode kEmptyLayout = 0;     // empty / missing layout root.
 // pins only the contract: steer tap resolves the flappy handler node,
 // never node 20, and bounds equal the Yoga rect of the same nodeId).
 constexpr int32_t kGalleryScrimNode = 20;  // must NEVER win for flappy.
+// Test-local layout providers (hermetic fake standing in for the removed
+// content module): three touchables (31/32/33) with named handlers and
+// provider-owned rects. The relayout root (203) keeps node identity but
+// moves every rect, so only a tree genuinely read from the provider each
+// frame/relayout can satisfy the cases below; the suite pins no numeric
+// rects. Unregistered roots (0, others) expose nothing.
+int test_tap_count(LayoutNode root) {
+  return (root == kFlappyLayoutA || root == kFlappyLayoutB) ? 3 : 0;
+}
+std::int32_t test_tap_node_id(LayoutNode root, int index) {
+  if (root != kFlappyLayoutA && root != kFlappyLayoutB) return -1;
+  static const std::int32_t kIds[] = {31, 32, 33};
+  return (index >= 0 && index < 3) ? kIds[index] : -1;
+}
+const char* test_tap_handler(LayoutNode root, int index) {
+  if (root != kFlappyLayoutA && root != kFlappyLayoutB) return nullptr;
+  static const char* const kHandlers[] = {"onTouchStart", "onHudTouch",
+                                          "onPipeTouch"};
+  return (index >= 0 && index < 3) ? kHandlers[index] : nullptr;
+}
+bool test_tap_bounds(LayoutNode root, std::int32_t nodeId, float* x, float* y,
+                       float* w, float* h) {
+  if (x == nullptr || y == nullptr || w == nullptr || h == nullptr) {
+    return false;
+  }
+  // Provider-owned rects: distinct per node, shifted on relayout, never
+  // the canned gallery triple (see is_canned_gallery_rect).
+  const float dx = (root == kFlappyLayoutB) ? 17.0f : 0.0f;
+  const float dy = (root == kFlappyLayoutB) ? -11.0f : 0.0f;
+  if (root != kFlappyLayoutA && root != kFlappyLayoutB) return false;
+  switch (nodeId) {
+    case 31:
+      *x = 140.0f + dx;
+      *y = 390.0f + dy;
+      *w = 44.0f;
+      *h = 44.0f;
+      return true;
+    case 32:
+      *x = 60.0f + dx;
+      *y = 120.0f + dy;
+      *w = 200.0f;
+      *h = 60.0f;
+      return true;
+    case 33:
+      *x = 250.0f + dx;
+      *y = 500.0f + dy;
+      *w = 90.0f;
+      *h = 70.0f;
+      return true;
+    default:
+      return false;
+  }
+}
+bool RegisterTestTapProviders() {
+  runtime::ContentHandlers handlers;
+  handlers.tapCount = &test_tap_count;
+  handlers.tapNodeId = &test_tap_node_id;
+  handlers.tapHandler = &test_tap_handler;
+  handlers.tapBounds = &test_tap_bounds;
+  // First wins: re-registration across runs keeps the first bundle.
+  (void)GlobalContentRegistry().Register("test-tap-tree", handlers);
+  return GlobalContentRegistry().Resolve("test-tap-tree") != nullptr;
+}
 }  // namespace
 
 // Canned gallery rects the pre-tightening stub returned for its shared magic
@@ -250,8 +313,12 @@ static bool check_tap_tree_exposes_non31_touchables_with_handlers() {
 int main() {
   int failures = 0;
   // T6 seam setup (FR-RUNTIME-013): layout providers resolve through the
-  // content-tag registry via explicit registration. Idempotent.
-  (void)runtime::RegisterFlappyContent();
+  // content-tag registry via explicit test-local registration. Idempotent.
+  if (!RegisterTestTapProviders()) {
+    std::printf("FAIL test_tap_provider_registration\n");
+    return 1;
+  }
+  std::printf("PASS test_tap_provider_registration\n");
   RUN_CASE(check_harness_entry_reached);
   RUN_CASE(check_every_touchable_node_has_id_bounds_handler);
   RUN_CASE(check_relayout_moves_bounds_identity_stable);

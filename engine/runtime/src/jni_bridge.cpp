@@ -1005,49 +1005,11 @@ void RenderLocked(GalleryHandle* g) {
     g->layeringOverlayCount = 5;
     g->lastPresentedPage = g->page;
   }
-  // F2 (T8R4): route the device frame through the registered content-scene
-  // gate first (FR-RUNTIME-013: generic dispatch binds only the gate in
-  // runtime/gallery_present.h, never content by name). Recognized content
-  // bytes present as the registered scene via the draining overload; non-content
-  // bytes leave error untouched and fall through to the gallery rows below.
-  // A recognized-but-failed scene fails closed with its diagnostic.
-  std::string contentError;
-  const void* contentData =
-      g->tree.empty() ? nullptr : static_cast<const void*>(g->tree.data());
-  const bool contentPresented = ::runtime::TryPresentContentScene(
-      contentData, g->tree.size(), *g->renderer, window, &contentError);
-  bool presented = false;
-  if (contentPresented) {
-    presented = true;
-    // T8R6/F4: the frame presents the content scene, so taps must traverse
-    // that same scene — rebuild the hit-test tree from the presented bytes
-    // (gallery fallback nodes removed). Runs under mu (caller holds it), so
-    // no dispatch entry observes a partial tree. A failed refresh keeps the
-    // prior tree (fail closed, never a phantom node).
-    RefreshTapTreeFromPresentedScene(g->tapTree, contentData, g->tree.size(),
-                                     static_cast<float>(w),
-                                     static_cast<float>(h));
-  } else if (!contentError.empty()) {
-    error = contentError;
-  } else {
-    presented = ::runtime::PresentDeviceGalleryPage(
-        g->rows, g->page, *g->renderer, window, h, &error,
-        g->layeringOverlayCount);
-  }
-#ifdef __ANDROID__
-  if (!contentPresented || !contentError.empty()) {
-  // F3 (T8R5 divergence probe, failure-only per RenderLocked convention):
-  // logs the gate decision only when the scene path does NOT present, so a
-  // healthy frame stays silent. The kind breakdown lives in the content
-  // module (FormatContentDiagLine); this TU logs the opaque line verbatim.
-  // Anchors quoted verbatim; no behavior change.
-    const std::string diagLine = ::runtime::FormatContentDiagLine(
-        contentData, g->tree.size(), contentPresented,
-        contentError.empty() ? nullptr : contentError.c_str(),
-        static_cast<int>(g->rows.size()));
-    MuseLogInfo(diagLine.c_str());
-  }
-#endif
+  // Generic present path: gallery rows present through the retained
+  // device page entry; no per-content routing in this TU.
+  const bool presented = ::runtime::PresentDeviceGalleryPage(
+      g->rows, g->page, *g->renderer, window, h, &error,
+      g->layeringOverlayCount);
   // FR-GRAPHICS-014 T2: requested-vs-effective present-path selection with
   // probe downgrade to the proven CPU push (AC-GRAPHICS-040/041). The
   // requested renderer defaults to `skia`; the resolve gate maps it against
