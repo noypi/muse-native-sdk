@@ -42,6 +42,13 @@ int RasterGalleryPage(const std::vector<GalleryRow>& rows, int page,
 // Page count for the given viewport (same row metrics as RasterGalleryPage).
 int GalleryPageCount(const std::vector<GalleryRow>& rows, int height);
 
+// Closed known-kind inventory for the gallery path (demo-fallback-boot T4,
+// FR-SAMPLE-009/010, AC-SAMPLE-023): true for every component the retained
+// and raster paths can present (the FamilyKind branches plus TopAppBar).
+// Anything else fails closed NAMED (`unknown gallery component kind
+// '<kind>'`), never substituted. Never throws.
+bool IsKnownGalleryComponent(const std::string& comp);
+
 // Real-component page entry (FR-GRAPHICS-015 / AC-GRAPHICS-042,
 // RULE-GRAPHICS-003): rows from ParseGalleryRows descriptors instantiate
 // real components emitting only the retained 11-kind vocabulary via
