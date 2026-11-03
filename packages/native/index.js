@@ -669,3 +669,42 @@ module.exports.resetButtonTapState = resetButtonTapState;
 const { createMuseMcp } = require('./muse-mcp.js');
 module.exports.createMuseMcp = createMuseMcp;
 module.exports.lintAppLiteral = require('./scripts/check-tokens.js').lintAppLiteral;
+// FR-MUSE-016 — smart-component re-export surface (additive; existing surface untouched).
+// `@muse/native` is the single import surface; `packages/intelligence` stays the
+// implementation home — this entry re-exports the proven
+// `packages/intelligence/lib/` implementations with no logic fork (no new native
+// primitive, no new `Muse*` wire name; wire-string cleanup deferred per Q-MUSE-009).
+// Map: MuseLens -> lens.js (`segmentAt`/`reasonAboutMask`); MuseField -> field.js
+// (`classifyAndRoute`/`fieldError`/`bindField`); MuseList -> list.js
+// (`structureData`/`remode`/`selectRow`/`retainSelection`); MuseVoice -> voice.js
+// (`createMuseVoice`/`MuseVoice`/`startTurn`/`openListeningSheet`/`commitSheet`/
+// `MuseVoiceSpeaker`); MuseImage -> image.js (`MuseImage`). `{ route, latencyMs }`
+// returns feed the existing nfr-audit rows.
+const { segmentAt, reasonAboutMask } = require('../intelligence/lib/lens.js');
+const { classifyAndRoute, fieldError, bindField } = require('../intelligence/lib/field.js');
+const { structureData, remode, selectRow, retainSelection } = require('../intelligence/lib/list.js');
+const {
+  createMuseVoice,
+  MuseVoice,
+  startTurn,
+  openListeningSheet,
+  commitSheet,
+  MuseVoiceSpeaker,
+} = require('../intelligence/lib/voice.js');
+const { MuseImage } = require('../intelligence/lib/image.js');
+module.exports.segmentAt = segmentAt;
+module.exports.reasonAboutMask = reasonAboutMask;
+module.exports.classifyAndRoute = classifyAndRoute;
+module.exports.fieldError = fieldError;
+module.exports.bindField = bindField;
+module.exports.structureData = structureData;
+module.exports.remode = remode;
+module.exports.selectRow = selectRow;
+module.exports.retainSelection = retainSelection;
+module.exports.createMuseVoice = createMuseVoice;
+module.exports.MuseVoice = MuseVoice;
+module.exports.startTurn = startTurn;
+module.exports.openListeningSheet = openListeningSheet;
+module.exports.commitSheet = commitSheet;
+module.exports.MuseVoiceSpeaker = MuseVoiceSpeaker;
+module.exports.MuseImage = MuseImage;
