@@ -570,7 +570,87 @@ function onSliderScrub(prev, gesture) {
   return { value: Math.min(Math.max(prev.value, prev.min), prev.max), claimsGesture: true };
 }
 
-module.exports = { primitives, components, manifest, driveState, createTextInput, TextInput, onSelectTap, onSliderScrub };
+// FR-M3-005/AC-M3-009, FR-M3-008/AC-M3-018 (BUG-M3-FIDELITY-014 T2/T3) —
+// per-family preview-fill assertion for the gallery-proof gate (TC-M3-021)
+// and the golden-diff uniform-fill regression gate (TC-M3-022 shadow).
+// T1.3 home settlement: lives on the package public entry beside
+// driveState; the plan names this surface only via the test file + CLI bin.
+// Mirrors the C++ present path in engine/runtime/src/gallery_present.cpp:
+// FamilyKind maps each component to its retained kind and emitFamilyFill
+// maps each kind to its token-resolved card fill, so the expected values
+// below are the same M3 role tokens the device path submits to
+// renderer.draw (T2 names the InkFor owner: payload-0 Rect/RoundedRect/Image
+// resolves to the surface-variant tonal default; T3 wires the per-family
+// payload).
+// Values use the sampler AARRGGBB packing of the T1 pins (0xFFE7E0EC for the
+// uniform surface-variant baseline), matching the observed device sample,
+// not the C++ LE word.
+// TextFieldEditCore/TextInput pin the static-box Image fill; the live
+// retained-kind override (liveKindOverrideActive) is device state the static
+// gate cannot observe. Unknown/empty families and non-u32 samples fail
+// closed (false, never throw) per AC-M3-018.
+const FAMILY_PREVIEW_FILL = {
+  // StateLayer kind → secondary-container token.
+  Button: 0xffe8def8,
+  ExtendedFab: 0xffe8def8,
+  Chip: 0xffe8def8,
+  Checkbox: 0xffe8def8,
+  Switch: 0xffe8def8,
+  Slider: 0xffe8def8,
+  LinearProgress: 0xffe8def8,
+  GalleryRow: 0xffe8def8,
+  Surface: 0xffe8def8,
+  // Ripple kind → tertiary-container token.
+  IconButton: 0xffffd8e4,
+  Fab: 0xffffd8e4,
+  Ripple: 0xffffd8e4,
+  // OverlayScrim kind → inverse-surface token.
+  Dialog: 0xff322f35,
+  Menu: 0xff322f35,
+  Tooltip: 0xff322f35,
+  // VectorIcon kind → on-primary-container token.
+  Icon: 0xff4f378b,
+  Avatar: 0xff4f378b,
+  Image: 0xff4f378b,
+  // CircleArc kind → primary token.
+  CircularProgress: 0xff6750a4,
+  Radio: 0xff6750a4,
+  Badge: 0xff6750a4,
+  // Image kind (static box) → white token.
+  TextFieldEditCore: 0xffffffff,
+  TextInput: 0xffffffff,
+  SearchBar: 0xffffffff,
+  Carousel: 0xffffffff,
+  // Rect kind → default surface-variant token (unchanged T2 default).
+  Card: 0xffe7e0ec,
+  Divider: 0xffe7e0ec,
+  BottomSheet: 0xffe7e0ec,
+  NavigationBar: 0xffe7e0ec,
+  SegmentedButton: 0xffe7e0ec,
+  ButtonGroup: 0xffe7e0ec,
+  SplitButton: 0xffe7e0ec,
+  NavigationRail: 0xffe7e0ec,
+  NavigationDrawer: 0xffe7e0ec,
+  BottomAppBar: 0xffe7e0ec,
+  SnackbarHost: 0xffe7e0ec,
+};
+
+function assertPreviewFill(family, sampledArgb) {
+  if (typeof family !== 'string' || family.length === 0) return false;
+  const expected = FAMILY_PREVIEW_FILL[family];
+  if (expected === undefined) return false;
+  if (
+    typeof sampledArgb !== 'number' ||
+    !Number.isInteger(sampledArgb) ||
+    sampledArgb < 0 ||
+    sampledArgb > 0xffffffff
+  ) {
+    return false;
+  }
+  return (sampledArgb >>> 0) === expected;
+}
+
+module.exports = { primitives, components, manifest, driveState, createTextInput, TextInput, onSelectTap, onSliderScrub, assertPreviewFill };
 // FR-MUSE-013 — connector re-export (T4, additive; existing surface untouched).
 // MuseMcpHandle is `{ registry, tools, call, dispose }` from ./muse-mcp.js.
 const { createMuseMcp } = require('./muse-mcp.js');

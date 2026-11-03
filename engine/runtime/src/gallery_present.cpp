@@ -2130,6 +2130,50 @@ PrimitiveKind FamilyKind(const std::string& comp) {
   return PrimitiveKind::ShapedText;
 }
 
+// T2 (BUG-M3-FIDELITY-014 / FR-M3-005): uniform-fill source query.
+// Returns the token/blend ARGB the CPU present path actually submits to
+// renderer.draw for a Rect/RoundedRect/Image cmd: a nonzero payload selects
+// the emitted fill; payload-0 selects the presented-window InkFor default,
+// WindowRGBA(0xE7, 0xE0, 0xEC) (M3 surface-variant tonal) resolved by InkFor
+// in jni_bridge.cpp — the owner of the uniform #E7E0EC. familyKind is the
+// PrimitiveKind value from FamilyKind above (kept for per-kind defaults;
+// the current default is kind-independent).
+// Present path only: no tree/pager/JNI/glyph change.
+std::uint32_t resolvePresentFill(std::uint32_t familyKind,
+                                 std::uint32_t payloadBytes) {
+  (void)familyKind;
+  if (payloadBytes != 0) return payloadBytes;
+  return kLightSurfaceVariant;
+}
+
+// T3 (BUG-M3-FIDELITY-014 / FR-M3-005/AC-M3-009, FR-M3-008/AC-M3-018):
+// token-resolved per-family card fill for the CPU present path. Distinct
+// FamilyKind groups return distinct M3 role-token fills so component rows
+// stop presenting the uniform InkFor default; Rect cards keep the default
+// surface-variant. Unknown kinds fail closed to the current default — never
+// blank/transparent, never a generic fallback surface. Present path only.
+std::uint32_t emitFamilyFill(std::uint32_t familyKind) {
+  const auto kind = static_cast<PrimitiveKind>(familyKind);
+  switch (kind) {
+    case PrimitiveKind::StateLayer:
+      return kLightSecondaryContainer;
+    case PrimitiveKind::Ripple:
+      return kLightTertiaryContainer;
+    case PrimitiveKind::OverlayScrim:
+      return kLightInverseSurface;
+    case PrimitiveKind::VectorIcon:
+      return kLightOnPrimaryContainer;
+    case PrimitiveKind::CircleArc:
+      return kLightPrimary;
+    case PrimitiveKind::Image:
+      return kWhite;
+    case PrimitiveKind::Rect:
+    case PrimitiveKind::RoundedRect:
+    default:
+      return kLightSurfaceVariant;
+  }
+}
+
 // One accent content cmd for a component row: centered control rect with
 // theme payload payload colors. nodeId (== rowIndex + 1, never the 0
 // sentinel) is the row key golden tooling uses to resolve label strings;
@@ -2259,9 +2303,13 @@ void EmitComponentRowCmds(const GalleryRow& row, int bx, int by, int bw,
   card.bounds = shadow.bounds;
   card.radius = 20.0f;
   card.nodeId = node;
-  // T11: the card fill stays payload-0 (the default surface-container in
-  // the presented-window InkFor); the ElevationShadow above carries the
-  // wash and the caption below carries the vector text.
+  // T3 (BUG-M3-FIDELITY-014): the card fill carries the token-resolved
+  // per-family fill (emitFamilyFill over FamilyKind) instead of payload-0,
+  // so families stop presenting the uniform InkFor default; the
+  // ElevationShadow above carries the wash and the caption below carries
+  // the vector text.
+  card.payload.stateColor = emitFamilyFill(
+      static_cast<std::uint32_t>(FamilyKind(row.comp)));
   out.push_back(card);
   // T61 state-row wash (retained lane, mirrors the oracle lane 1:1):
   // GalleryRow/Surface/Ripple rows paint through the shared resolver so the
