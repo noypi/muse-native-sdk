@@ -198,6 +198,47 @@ describe('T2 — unknown-route fail-closed in both push and replace', () => {
   });
 });
 
+describe('T6 outcomes/logs observed as router results in JS (RED pre-move)', () => {
+  function fakeRouterTransport() {
+    const calls = [];
+    return { calls, invoke: async (method, payload) => { calls.push({ method, payload }); return { ok: true }; } };
+  }
+
+  it('migrated demoNav exposes router push/replace returning NavResult observed in JS', async () => {
+    requireNav();
+    assert.equal(typeof nav.createDemoRouter, 'function', 'demoNav must export createDemoRouter (T6 Interface)');
+    const transport = fakeRouterTransport();
+    const router = nav.createDemoRouter({ transport });
+    const ok = await router.push('lens');
+    assert.deepEqual(ok, { ok: true });
+    assert.equal(transport.calls.length, 1);
+    assert.equal(transport.calls[0].method, 'navigate');
+    const rep = await router.replace('field');
+    assert.deepEqual(rep, { ok: true });
+  });
+
+  it('onFallbackRecover lives JS-side and returns NavResult', async () => {
+    requireNav();
+    assert.equal(typeof nav.createDemoRouter, 'function', 'createDemoRouter must exist');
+    const transport = fakeRouterTransport();
+    const router = nav.createDemoRouter({ transport });
+    assert.equal(typeof router.onFallbackRecover, 'function', 'router must expose onFallbackRecover(): NavResult');
+    const res = await router.onFallbackRecover();
+    assert.ok(res && (res.ok === true || res.ok === false), 'must return NavResult');
+  });
+
+  it('tap-advance lands same dest as push (no applyValidatedTab in Java)', async () => {
+    requireNav();
+    assert.equal(typeof nav.createDemoRouter, 'function', 'createDemoRouter must exist');
+    const transport = fakeRouterTransport();
+    const router = nav.createDemoRouter({ transport });
+    assert.equal(typeof router.tapAdvance, 'function', 'router must expose tap-advance observed in JS');
+    const viaTap = await router.tapAdvance();
+    const viaPush = await router.push('field');
+    assert.deepEqual(viaTap, viaPush);
+  });
+});
+
 describe('T2 — no direct-setTab bypass + flag gate as-is (static pins)', () => {
   it('App.tsx moves tabs only via push/replace, never direct setTab alone', () => {
     const { readFileSync } = require('node:fs');

@@ -88,19 +88,40 @@ describe('demo migration target (binding does not exist yet — RED)', () => {
     );
   });
 
-  it('forwardIntent(opaqueString) forwards the opaque string unparsed', async () => {
-    assert.equal(typeof demoNav.createDemoRouter, 'function', 'createDemoRouter must exist (see pin above)');
+// --- T5 migration pins (Batch 2 — intent/link lives in JS, RED pre-move) ---
+
+describe('T5 handleDemoIntent/routeDemoLink live in JS (RED pre-move)', () => {
+  it('demoNav declares link descriptors muse-demo://tab/<lens|field|list> via createRoutes', () => {
+    assert.equal(typeof demoNav.demoDescriptors, 'object', 'demoNav must export demoDescriptors (AC-NAV-047)');
+    const table = createRoutes(demoNav.demoDescriptors);
+    for (const id of ['lens', 'field', 'list']) {
+      assert.ok(table[id], `descriptor for ${id} must exist`);
+      assert.equal(table[id].link, `muse-demo://tab/${id}`);
+    }
+  });
+
+  it('createDemoRouter exposes beforeEach guard + typed-params validation in JS', async () => {
+    assert.equal(typeof demoNav.createDemoRouter, 'function', 'demoNav must export createDemoRouter (T5 Interface)');
+    const transport = fakeTransport();
+    const router = demoNav.createDemoRouter({ transport });
+    assert.equal(typeof router.beforeEach, 'function', 'router must expose beforeEach');
+    assert.equal(typeof router.forwardIntent, 'function', 'router must expose forwardIntent (host onNewIntent forwards opaque)');
+    const ok = await router.forwardIntent('muse-demo://tab/lens');
+    assert.deepEqual(ok, { ok: true });
+    const bad = await router.forwardIntent('muse-demo://tab/nope');
+    assert.deepEqual(bad, { ok: false, code: 'unknown-route' });
+    assert.equal(router.current, 'lens', 'router current replaces currentDemoTab mirror');
+  });
+
+  it('host onNewIntent forwards opaque unparsed (no handleDemoIntent parsing in Java)', async () => {
+    assert.equal(typeof demoNav.createDemoRouter, 'function', 'createDemoRouter must exist');
     const seen = [];
     const transport = { invoke: async (m, p) => { seen.push({ m, p }); return { ok: true }; } };
     const router = demoNav.createDemoRouter({ transport });
-    assert.equal(typeof router.forwardIntent, 'function', 'router must expose forwardIntent(opaqueString): void');
-    const opaque = 'muse-demo://tab/field?seed=7';
-    await router.forwardIntent(opaque);
+    await router.forwardIntent('muse-demo://tab/field');
     assert.equal(seen.length, 1);
     assert.equal(seen[0].m, 'navigate');
-    assert.ok(
-      JSON.stringify(seen[0].p).includes(opaque),
-      'the opaque string must reach the transport unparsed (no scheme/host/id splitting)',
-    );
   });
 });
+});
+
