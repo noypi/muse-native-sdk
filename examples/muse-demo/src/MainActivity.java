@@ -194,11 +194,18 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
      */
     void forwardOpaqueToRouter(String opaqueLink) {
         if (opaqueLink == null || opaqueLink.isEmpty()) {
+            Log.i(TAG, "opaque-forward-dropped-empty");
             return;
         }
         try {
-            nativeSetShellState(engineHandle, opaqueLink, "");
+            int applied = nativeSetShellState(engineHandle, opaqueLink, "");
+            if (applied != 0) {
+                Log.i(TAG, "opaque-forward-applied rc=" + applied);
+            } else {
+                Log.i(TAG, "opaque-forward-denied rc=0");
+            }
         } catch (Throwable ignored) {
+            Log.i(TAG, "opaque-forward-failed");
             // Fail-closed: slot write never crashes the host.
         }
         OpaqueLinkSink sink = opaqueLinkSink;
@@ -213,12 +220,21 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         // Consume-once: caller passes the taken value; slot already cleared.
     }
 
-    /** Drain the cold-start stash into the router once ready (unparsed). */
+    /** Drain the cold-start stash into the router once ready (unparsed).
+     * Fail-closed with a distinct log per exit: empty stash drops,
+     * handle-zero defers (stash retained for the surfaceCreated/
+     * surfaceChanged retry below), ready drains verbatim. Never throws. */
     private void drainPendingOpaqueLink() {
-        if (pendingOpaqueLink == null || engineHandle == 0) {
+        if (pendingOpaqueLink == null || pendingOpaqueLink.isEmpty()) {
+            Log.i(TAG, "opaque-drain-dropped-empty");
+            return;
+        }
+        if (engineHandle == 0) {
+            Log.i(TAG, "opaque-drain-deferred-no-handle");
             return;
         }
         String link = consumePendingOpaqueLink();
+        Log.i(TAG, "opaque-drain-drained-ok link=" + link);
         forwardOpaqueToRouter(link);
     }
 
@@ -336,6 +352,9 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             nativeAttachSurface(engineHandle, holder.getSurface());
         } catch (Throwable ignored) {
         }
+        // Retry hook: earliest valid-handle point after onCreate. A stash
+        // deferred for handle-zero drains here once the handle is valid.
+        drainPendingOpaqueLink();
         startRenderLoop();
     }
 
@@ -345,6 +364,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             nativeAttachSurface(engineHandle, holder.getSurface());
         } catch (Throwable ignored) {
         }
+        // Same retry hook for re-attachment (no new lifecycle introduced).
+        drainPendingOpaqueLink();
         startRenderLoop();
     }
 
