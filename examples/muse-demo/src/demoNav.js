@@ -23,17 +23,29 @@ const NAVIGATE_ACTION = 'muse.native.NAVIGATE';
 const TAB_LINK_PREFIX = 'muse-demo://tab/';
 const DEMO_TABS = ['lens', 'field', 'list'];
 
-// T3 (fallback-kinds, AC-SAMPLE-023): demo-kind emission seam. Every demo
-// descriptor kind emitted toward the engine gate resolves through
-// `mapDemoKind` — gate-known generic out, or a named
-// `unknown demo kind '<kind>'` throw at build/dev time (never silent
-// substitution, never an unmapped demo kind at runtime).
-const { mapDemoKind } = require('./demoKindMap');
+// T3b (fallback-kinds, AC-SAMPLE-023): demo-kind emission seam. Every demo
+// descriptor comp is a gate-known generic literal applied by hand at author
+// time (lens→Image, field→TextInput, list→Card, ErrorSnackbar→SnackbarHost).
+// No runtime mapper runs on glass: the bundler serializes without executing,
+// so the baked tree must CONTAIN the literals. Unknown kinds fail closed
+// with a named `unknown demo kind '<kind>'` throw at build/dev time (never
+// silent substitution, never an unmapped demo kind at runtime).
 
 // demoCompFor(demoKind) — the single demo→gate comp seam for this module.
-// Passthrough to `mapDemoKind` so unknown kinds fail closed NAMED here.
+// Author-time literal table (mirrors the descriptor comps below); unknown
+// kinds fail closed NAMED here.
+const DEMO_COMP_FOR_TAB = {
+  lens: 'Image',
+  field: 'TextInput',
+  list: 'Card',
+  home: 'Image',
+  ErrorSnackbar: 'SnackbarHost',
+};
 function demoCompFor(demoKind) {
-  return mapDemoKind(demoKind);
+  if (typeof demoKind === 'string' && Object.hasOwn(DEMO_COMP_FOR_TAB, demoKind)) {
+    return DEMO_COMP_FOR_TAB[demoKind];
+  }
+  throw new Error(`unknown demo kind '${String(demoKind)}'`);
 }
 
 function isArbitraryRouteEnabled(env) {
@@ -157,10 +169,10 @@ const { createRoutes, createRouter } = require('../../../packages/router/src/ind
 const DEMO_HOME = 'lens';
 
 const demoDescriptors = [
-  { id: 'home', link: 'muse-demo://tab/home', params: {} },
-  { id: 'lens', link: 'muse-demo://tab/lens', params: {} },
-  { id: 'field', link: 'muse-demo://tab/field', params: {} },
-  { id: 'list', link: 'muse-demo://tab/list', params: {} },
+  { id: 'home', link: 'muse-demo://tab/home', params: {}, comp: 'Image' },
+  { id: 'lens', link: 'muse-demo://tab/lens', params: {}, comp: 'Image' },
+  { id: 'field', link: 'muse-demo://tab/field', params: {}, comp: 'TextInput' },
+  { id: 'list', link: 'muse-demo://tab/list', params: {}, comp: 'Card' },
 ];
 
 // Build/dev-time gate: every demo tab kind in the descriptor table must
