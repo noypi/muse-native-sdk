@@ -206,6 +206,14 @@ constexpr float kM3ElevationDp = 1.0f;
 constexpr float kM3ShapeDp = 12.0f;
 static_assert(kM3ElevationDp > 0.0f, "M3 elevation must resolve nonzero");
 static_assert(kM3ShapeDp > 0.0f, "M3 shape must resolve nonzero");
+// BUG-RUNTIME-015 (FR-RUNTIME-014 / AC-RUNTIME-043, TC-RUNTIME-052): the
+// flat-gray 0x808080 sentinel (opaque wire order 0xFF808080) is an error,
+// never a silent pass — no resolvable theme may ever produce it. The
+// runtime leg (ResolveThemeParams/setTheme below) already fails closed on
+// unknown themes; this pins the resolved constants at compile time.
+static_assert(kM3LightPrimary != 0xFF808080u &&
+                  kM3DarkPrimary != 0xFF808080u,
+              "flat-gray sentinel must never be a resolvable theme fill");
 
 struct ResolvedThemeParams {
   std::uint32_t primary_rgba = 0;

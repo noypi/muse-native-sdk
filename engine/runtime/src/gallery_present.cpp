@@ -809,11 +809,11 @@ inline SurfaceThemeParams ResolveSurfaceTheme(bool dark) {
 
 // ---- Raster helpers ----
 //
-// The 5x7 bitmap text below survives solely as the fail-closed
-// diagnostic-screen path (RasterGalleryPage's empty-rows branch names the
-// failure in plain text via DrawText). No gallery page painter calls it:
-// gallery copy rides the retained ShapedText path (FR-TEXT-016 AC-TEXT-045,
-// "no bitmap fallback on gallery pages").
+// The 5x7 bitmap text below is retained for non-gallery diagnostic use.
+// BUG-RUNTIME-015: RasterGalleryPage's empty-rows branch no longer paints
+// (AC-RUNTIME-044: buffer left untouched, failure named in *error). No
+// gallery page painter calls it: gallery copy rides the retained ShapedText
+// path (FR-TEXT-016 AC-TEXT-045, "no bitmap fallback on gallery pages").
 
 void FillRect(std::uint32_t* px, int stride, int w, int h, int x, int y, int rw,
               int rh, std::uint32_t color) {
@@ -1964,17 +1964,14 @@ int RasterGalleryPage(const std::vector<GalleryRow>& rows, int page,
     // Geometry constants (kPad/kGap/kHeaderH/kFooterH/kScale) are the
     // file-scope M3 metrics above; rows size themselves via RowHeight.
 
+    // BUG-RUNTIME-015 (FR-RUNTIME-014 / AC-RUNTIME-044, TC-RUNTIME-053):
+    // empty rows fail closed WITHOUT painting: the pixel buffer is left
+    // untouched (no fallback screen, no substitute pixels); the failure is
+    // named in *error and the caller already returns false with zero cmds.
     if (rows.empty()) {
-      // Diagnostic screen, never blank: names the failure in plain text.
-      FillRect(pixels, stridePx, width, height, 0, 0, width, height, kErrorBg);
-      std::string msg = "M3 GALLERY: NO ROWS";
-      if (error != nullptr && !error->empty()) msg += " - " + *error;
-      for (std::size_t i = 0; i < msg.size(); ++i) {
-        if (msg[i] == '\n') msg[i] = ' ';
+      if (error != nullptr && error->empty()) {
+        *error = "M3 GALLERY: NO ROWS (proofGate=fail: no fallback screen)";
       }
-      if (msg.size() > 40) msg.resize(40);
-      DrawText(pixels, stridePx, width, height, msg.c_str(), kPad,
-               height / 2, kScale, kLightOnPrimary);
       return 0;
     }
 
@@ -2080,7 +2077,12 @@ constexpr std::uint32_t kShadowBlack = RGBA(0x00, 0x00, 0x00, 0xFF);
 
 // Content-kind assignment per component family. Every family maps to a
 // distinct retained kind so the per-page goldens exercise the whole T2-T8
-// vocabulary; unknown components fall back to a tonal Rect (never blank).
+// vocabulary.
+//
+// BUG-RUNTIME-015 (FR-RUNTIME-014 / AC-RUNTIME-042): the fallthrough below
+// is NOT a silent substitution — PresentGallery rejects unknown kinds
+// through IsKnownGalleryComponent before any cmd is emitted (proofGate=fail,
+// zero DrawCmds, no re-baseline). Unknown components never reach FamilyKind.
 PrimitiveKind FamilyKind(const std::string& comp) {
   if (comp == "Button" || comp == "ExtendedFab" || comp == "Chip" ||
       comp == "Checkbox" || comp == "Switch" || comp == "Slider" ||
@@ -2128,6 +2130,43 @@ PrimitiveKind FamilyKind(const std::string& comp) {
   }
   if (comp == "Ripple") return PrimitiveKind::Ripple;
   return PrimitiveKind::ShapedText;
+}
+
+// BUG-RUNTIME-015 (FR-RUNTIME-014 / AC-RUNTIME-042): closed known-kind
+// inventory for the local gallery path. True for every component the
+// retained path can present: the union of the FamilyKind branches above
+// plus TopAppBar (documented M3 chrome pinned by committed fixtures and
+// success-path tests; it rides the FamilyKind fallthrough shape but is a
+// known kind, not an unknown probe). Anything else (e.g. the
+// QuantumFluxCapacitor probe) is unknown and PresentGallery fails closed.
+// ASSUMPTION (T3.A1 ruling): TopAppBar is known; re-point here if the
+// planner rules it out of the retained vocabulary.
+bool IsKnownGalleryComponent(const std::string& comp) {
+  return comp == "Button" || comp == "ExtendedFab" || comp == "Chip" ||
+         comp == "Checkbox" || comp == "Switch" || comp == "Slider" ||
+         comp == "LinearProgress" || comp == "IconButton" ||
+         comp == "Fab" || comp == "Dialog" || comp == "Menu" ||
+         comp == "Tooltip" || comp == "Icon" || comp == "Avatar" ||
+         comp == "Image" || comp == "CircularProgress" || comp == "Radio" ||
+         comp == "Badge" || comp == "TextFieldEditCore" ||
+         comp == "TextInput" || comp == "SearchBar" || comp == "Carousel" ||
+         comp == "Card" || comp == "Divider" || comp == "BottomSheet" ||
+         comp == "NavigationBar" || comp == "SegmentedButton" ||
+         comp == "ButtonGroup" || comp == "SplitButton" ||
+         comp == "NavigationRail" || comp == "NavigationDrawer" ||
+         comp == "BottomAppBar" || comp == "SnackbarHost" ||
+         comp == "GalleryRow" || comp == "Surface" || comp == "Ripple" ||
+         comp == "TopAppBar";
+}
+
+// BUG-RUNTIME-015 (FR-RUNTIME-014 / AC-RUNTIME-043): a row-carried theme
+// literal resolves only to a known M3 section theme. Absent means light
+// (historical default); "dark"/"light" are the only known tokens. Any
+// other value (e.g. the NoSuchTheme probe) is unresolvable and
+// PresentGallery fails closed — the 0x808080 flat-gray sentinel is never
+// emitted as a fill, it is an error, never a silent pass.
+bool IsResolvedGalleryTheme(const std::string& theme) {
+  return theme.empty() || theme == "dark" || theme == "light";
 }
 
 // T2 (BUG-M3-FIDELITY-014 / FR-M3-005): uniform-fill source query.
@@ -2427,6 +2466,31 @@ bool PresentGallery(const void* mui1Data, std::size_t len, Renderer& renderer,
                      : parseError;
       }
       return false;
+    }
+    // BUG-RUNTIME-015 fail-closed proof gate (FR-RUNTIME-014 / AC-042-044,
+    // TC-051-053): runs before shaping and before any cmd is emitted, so a
+    // red proof records zero DrawCmds (re-baseline blocked, no
+    // substitution, no fallback screen).
+    // AC-042: unknown component kind fails the gate, naming the kind.
+    // AC-043: unresolvable theme token fails the gate, naming the token;
+    // the 0x808080 flat-gray sentinel is never emitted as a fill.
+    for (const GalleryRow& row : rows) {
+      if (!row.comp.empty() && !IsKnownGalleryComponent(row.comp)) {
+        if (error != nullptr) {
+          *error = "unknown gallery component kind '" + row.comp +
+                   "' (proofGate=fail: no substitution, no re-baseline)";
+        }
+        return false;
+      }
+      const std::string theme = PropValue(row.desc, "theme");
+      if (!IsResolvedGalleryTheme(theme)) {
+        if (error != nullptr) {
+          *error = "unresolved gallery theme token '" + theme +
+                   "' (proofGate=fail: no 0x808080 sentinel fill, no "
+                   "re-baseline)";
+        }
+        return false;
+      }
     }
     // Fail-closed shaping gate (RULE-RUNTIME-001 / FR-TEXT-016): every
     // non-empty label must resolve to a nonzero engine-stack run handle

@@ -11,6 +11,7 @@
 #include <string>
 #include <vector>
 
+#include "muse/text/font_discovery.h"
 #include "runtime/gallery_present.h"
 #include "runtime/renderer.h"
 #include "runtime/vulkan_baseline.h"
@@ -267,19 +268,30 @@ static bool check_page_raster_paints() {
   return last > 0;
 }
 
-// Named case: an empty row set never blanks — the diagnostic screen paints
-// the error background instead.
+// Named case: an empty row set fails closed with NO fallback screen
+// (FR-RUNTIME-014 / AC-RUNTIME-044, TC-RUNTIME-053): RasterGalleryPage
+// returns 0, leaves the pixel buffer untouched, and names the failure in
+// *error. Spec-driven update (BUG-RUNTIME-015): the pre-FR-RUNTIME-014
+// expectation — the 0xFF1A1ABA error-red diagnostic paint — legalized the
+// exact fallback AC-044 abolishes (fail-closed: false + diagnostic, zero
+// cmds, no paint), so it is replaced, not weakened.
 static bool check_empty_rows_draw_diagnostic() {
   const int w = 64;
   const int h = 64;
   std::vector<std::uint32_t> px(static_cast<std::size_t>(w) * h, 0u);
   std::vector<runtime::GalleryRow> rows;
-  std::string rerr("no asset");
+  std::string rerr;
   int drawn =
       runtime::RasterGalleryPage(rows, 0, px.data(), w, w, h, &rerr);
   if (drawn != 0) return false;
-  // Error red #BA1A1A as an RGBA_8888 word.
-  return px[0] == 0xFF1A1ABAu;
+  // Fail-closed signal: the failure is named, never blank.
+  if (rerr.empty()) return false;
+  // No fallback screen: every pixel untouched.
+  for (std::uint32_t v : px) {
+    if (v != 0u) return false;
+  }
+  // The abolished fallback paint must never appear.
+  return px[0] != 0xFF1A1ABAu;
 }
 
 // Named case: source-comment leakage from the structural lowerer is
@@ -1203,6 +1215,17 @@ static bool check_fence_painters_not_dynamically_exported() {
 }
 
 int main() {
+  // Hermetic shaping lane (BUG-RUNTIME-015 Gap 1, option (a)): same
+  // environment fault as the Batch-2 TUs — no host font, and the default
+  // embedded test face covers A/B only, so the PresentGallery success legs
+  // fail closed without it. Unopenable in-memory bytes route shaping
+  // through the deterministic salted-fallback stub (committed
+  // s_spine_test.cpp convention; test-only, no downloads, no system fonts,
+  // no device). Fail-closed legs (bad envelope, empty rows, unsupported
+  // baseline) fail before shaping and are unaffected.
+  const std::uint8_t kNoFont[] = {0x4E, 0x4F, 0x54, 0x41, 0x46,
+                                  0x4F, 0x4E, 0x54, 0x00, 0xFF};
+  muse::text::RegisterTestOnlyMemoryFont(kNoFont, sizeof(kNoFont));
   int failures = 0;
   RUN_CASE(check_showcase_rows_parsed);
   RUN_CASE(check_bad_envelope_fails_closed);
