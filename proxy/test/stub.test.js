@@ -87,3 +87,23 @@ describe('stub serves recorded fixtures with no network/key', () => {
     assert.equal(err.code || err.reason, 'unknown-route');
   });
 });
+
+describe('T7 — stub turnId echo (FR-MUSE-002 turn correlation)', () => {
+  // ASSUMPTION (T7-turn): "the proxy passes it through opaquely and never
+  // invents one" (FR-MUSE-002 Notes). Most defensible shape: a caller-supplied
+  // `req.turnId` is echoed verbatim on the recorded body; when the caller
+  // supplies none, the stub invents none.
+  it('echoes a caller-supplied turnId on the recorded body', () => {
+    const stub = loadImpl();
+    const res = stub.handle({ route: 'reason', params: {}, turnId: 'turn-3-stub' });
+    assert.equal(res.status, 200);
+    assert.equal(res.body && res.body.turnId, 'turn-3-stub');
+  });
+
+  it('invents no turnId when the caller supplies none', () => {
+    const stub = loadImpl();
+    const res = stub.handle({ route: 'reason', params: {} });
+    assert.equal(res.status, 200);
+    assert.ok(!('turnId' in Object(res.body)), 'stub must never invent a turnId');
+  });
+});
