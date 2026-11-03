@@ -809,33 +809,17 @@ bool OpenDeviceFace(std::uint64_t face_id, FT_Face* out) {
   const auto hit = cache.find(face_id);
   if (hit != cache.end() && hit->second.valid()) {
     *out = hit->second.face;
-    // TEMPORARY BUG-TEXT-007 leg-11 diagnostic (remove-or-gate before merge):
-    // the miss-path `ok` line fires once per process and is evicted from the
-    // logcat ring while per-frame Blit lines survive (leg-9 absence). Logging
-    // the hit proves every blit resolved the true render face on every frame.
-    __android_log_print(ANDROID_LOG_INFO, "MuseText007",
-                        "OpenDeviceFace face=0x%llx cached-hit ok",
-                        static_cast<unsigned long long>(face_id));
     return true;
   }
   muse::text::StatusOr<std::string> path =
       muse::text::FontPathForFace(muse::text::FontHandle(face_id));
   if (!path.ok() || path->empty()) {
-    // TEMPORARY BUG-TEXT-007 leg-8 diagnostic (remove-or-gate before merge).
-    __android_log_print(ANDROID_LOG_INFO, "MuseText007",
-                        "OpenDeviceFace face=0x%llx NO-PATH",
-                        static_cast<unsigned long long>(face_id));
     return false;
   }
   FT_Library lib = nullptr;
   if (FT_Init_FreeType(&lib) != 0) return false;
   FT_Face face = nullptr;
   if (FT_New_Face(lib, path->c_str(), 0, &face) != 0) {
-    // TEMPORARY BUG-TEXT-007 leg-8 diagnostic (remove-or-gate before merge).
-    __android_log_print(ANDROID_LOG_INFO, "MuseText007",
-                        "OpenDeviceFace face=0x%llx path='%s' NEW_FACE-FAIL",
-                        static_cast<unsigned long long>(face_id),
-                        path->c_str());
     FT_Done_FreeType(lib);
     return false;
   }
@@ -844,12 +828,6 @@ bool OpenDeviceFace(std::uint64_t face_id, FT_Face* out) {
   entry.face = face;
   cache[face_id] = entry;
   *out = face;
-  // TEMPORARY BUG-TEXT-007 leg-8 diagnostic (remove-or-gate before merge):
-  // proves which font file the blit actually opens on device.
-  __android_log_print(ANDROID_LOG_INFO, "MuseText007",
-                      "OpenDeviceFace face=0x%llx path='%s' ok",
-                      static_cast<unsigned long long>(face_id),
-                      path->c_str());
   return true;
 }
 
@@ -973,14 +951,6 @@ bool BlitFontRunCoverage(const std::vector<std::uint32_t>& glyphs,
       pen += static_cast<double>(adv) * static_cast<double>(pen_scale);
     }
   }
-  // TEMPORARY BUG-TEXT-007 leg-8 diagnostic (remove-or-gate before merge):
-  // proves the bound file serves the run; rebound>0 with legible text
-  // confirms the stale-id skew and its repair.
-  __android_log_print(ANDROID_LOG_INFO, "MuseText007",
-                      "BlitFontRunCoverage face=0x%llx n=%u rebound=%u load_fail=%u any=%d",
-                      static_cast<unsigned long long>(face_id),
-                      static_cast<unsigned>(glyphs.size()), rebound, load_fail,
-                      any ? 1 : 0);
   return any;
 }
 #endif  // defined(__ANDROID__) && !defined(MUSE_TEXT_HERMETIC_FALLBACK)

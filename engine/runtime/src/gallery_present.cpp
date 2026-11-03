@@ -393,13 +393,6 @@ muse::text::FontHandle GalleryChainFace() {
   muse::text::StatusOr<muse::text::FontHandle> chained =
       muse::text::resolveFallbackChain(kGalleryLatnScript, nullptr, nullptr);
   if (chained.ok()) {
-    // TEMPORARY BUG-TEXT-007 leg-8 diagnostic (remove-or-gate before merge):
-    // proves which chain face id the seam binds on device.
-#ifdef __ANDROID__
-    __android_log_print(ANDROID_LOG_INFO, "MuseText007",
-                        "GalleryChainFace latn=0x%llx",
-                        static_cast<unsigned long long>(chained->id));
-#endif
     return *chained;
   }
   // kNoFaceAvailable analogue: the bundled terminus is always present, so
@@ -468,28 +461,6 @@ bool ShapeLabelThroughEngine(const std::string& label,
     }
     *run = *shaped;
     if (face != nullptr) *face = GalleryChainFace();
-    // TEMPORARY BUG-TEXT-007 leg-8 diagnostic (remove-or-gate before merge):
-    // proves the bound face id, the file it resolves to, and the glyph ids
-    // the shaper emitted for this label.
-#ifdef __ANDROID__
-    {
-      muse::text::FontHandle bound = (face != nullptr) ? *face : muse::text::FontHandle{};
-      muse::text::StatusOr<std::string> diag_path =
-          muse::text::FontPathForFace(bound);
-      const char* diag_cstr = (diag_path.ok() && !diag_path->empty())
-                                  ? diag_path->c_str()
-                                  : "<no-face-available>";
-      std::uint32_t diag_first = shaped->glyph_ids.empty() ? 0u : shaped->glyph_ids[0];
-      std::uint32_t diag_second =
-          shaped->glyph_ids.size() > 1 ? shaped->glyph_ids[1] : 0u;
-      __android_log_print(ANDROID_LOG_INFO, "MuseText007",
-                          "ShapeLabel label='%s' face=0x%llx path='%s' n=%u gid0=%u gid1=%u",
-                          label.c_str(),
-                          static_cast<unsigned long long>(bound.id), diag_cstr,
-                          static_cast<unsigned>(shaped->glyph_ids.size()),
-                          diag_first, diag_second);
-    }
-#endif
     return true;
   } catch (...) {
     return false;
