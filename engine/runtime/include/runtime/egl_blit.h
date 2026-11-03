@@ -36,9 +36,13 @@ bool EglBlitInit(void* opaque_window, BlitError* error);
 bool EglBlitPresent(const uint32_t* rgba, int w, int h, BlitError* error);
 void EglBlitShutdown();
 
-// Test-only fault-injection seam (host stub-EGL; device lane may no-op it).
-// nullptr clears all faults. Minimal surface for the plan's "stub EGL
-// (swap-fail injection -> kSwapFailed)" requirement.
+// Fault-injection seam for hermetic tests, admitted ONLY behind the canonical
+// opt-in macro (AC-RUNTIME-040 S1.2 / AC-RUNTIME-041): with
+// `-DMUSE_TEST_SEAM=1` the declarations below are visible and injectable from
+// tests; on every other lane (macro undefined or not 1) they are undeclared
+// and no hook state exists on production paths (limbs a-c). Single mechanism:
+// `MUSE_TEST_SEAM` only (limb d).
+#if defined(MUSE_TEST_SEAM) && (MUSE_TEST_SEAM == 1)
 namespace egl_blit_test {
 struct FaultHooks {
   bool fail_init = false;       // EGL init path reports failure
@@ -48,6 +52,7 @@ struct FaultHooks {
 };
 void SetFaultHooks(const FaultHooks* hooks);  // nullptr clears
 }  // namespace egl_blit_test
+#endif
 
 // --- inline stub-EGL implementation ----------------------------------------
 // Single presenter state: at most one live window at a time.
@@ -55,7 +60,9 @@ namespace egl_blit_detail {
 struct State {
   bool initialized = false;
   void* window = nullptr;
+#if defined(MUSE_TEST_SEAM) && (MUSE_TEST_SEAM == 1)
   egl_blit_test::FaultHooks hooks;
+#endif
 };
 inline State& BlitState() {
   static State s;
@@ -67,23 +74,25 @@ inline void SetError(BlitError* error, BlitCode code, const char* trigger) {
     error->trigger = trigger != nullptr ? trigger : "";
   }
 }
-// --- host stub-EGL scaffold (T7 bug-runtime-008) ---------------------------
-// Host-only stub-EGL scaffold for hermetic tests. Compiled only behind
-// `#ifdef HOST_SCAFFOLD`; the device lane (Android EGL) provides the real
-// calls behind the same boundary.
+// --- host EGL lane (bug-runtime-013 S1.2 gate) --------------------------------
+// Hermetic host lane for tests. Compiled with hook-reading bodies ONLY behind
+// the canonical `-DMUSE_TEST_SEAM=1`; every other lane is fail-closed (no
+// host call may answer `true`; every EGL failure falls to the proven
+// in-process CPU push via PresentFrameWithFallback). The device lane
+// (Android EGL) provides the real calls behind the same boundary.
 // ASSUMPTION: decided context (CLI where available per FR-WORKFLOW-008
 // default `skia` + device probing where decided per Q-GRAPHICS-006) is
 // owner-approved; tests pin the fence shape.
-#ifdef HOST_SCAFFOLD
-// Stub EGL calls: each names the real EGL entry it stands in for so fault
+#if defined(MUSE_TEST_SEAM) && (MUSE_TEST_SEAM == 1)
+// Host EGL calls: each names the real EGL entry it stands in for so fault
 // triggers carry the failing call name.
-inline bool StubCreateSurface() {
+inline bool HostEglCreateSurface() {
   return !BlitState().hooks.no_surface;
 }
-inline bool StubMakeCurrent() {
+inline bool HostEglMakeCurrent() {
   return !BlitState().hooks.lose_context;
 }
-inline bool StubSwapOnce() {
+inline bool HostEglSwapOnce() {
   // Exactly one eglSwapBuffers per presented frame; one-shot fault.
   if (BlitState().hooks.fail_next_swap) {
     BlitState().hooks.fail_next_swap = false;
@@ -92,15 +101,16 @@ inline bool StubSwapOnce() {
   return true;
 }
 #else
-// Unfenced shape is fail-closed: without the host scaffold no stub may
-// answer `true`; every EGL failure falls to the proven in-process CPU push
-// (never blank) via PresentFrameWithFallback.
-inline bool StubCreateSurface() { return false; }
-inline bool StubMakeCurrent() { return false; }
-inline bool StubSwapOnce() { return false; }
+// Fail-closed shape: without the seam macro no host call may answer `true`;
+// every EGL failure falls to the proven in-process CPU push (never blank)
+// via PresentFrameWithFallback.
+inline bool HostEglCreateSurface() { return false; }
+inline bool HostEglMakeCurrent() { return false; }
+inline bool HostEglSwapOnce() { return false; }
 #endif
 }  // namespace egl_blit_detail
 
+#if defined(MUSE_TEST_SEAM) && (MUSE_TEST_SEAM == 1)
 inline void egl_blit_test::SetFaultHooks(const FaultHooks* hooks) {
   if (hooks == nullptr) {
     egl_blit_detail::BlitState().hooks = FaultHooks{};
@@ -108,6 +118,7 @@ inline void egl_blit_test::SetFaultHooks(const FaultHooks* hooks) {
     egl_blit_detail::BlitState().hooks = *hooks;
   }
 }
+#endif
 
 inline bool EglBlitInit(void* opaque_window, BlitError* error) {
   egl_blit_detail::State& s = egl_blit_detail::BlitState();
@@ -117,12 +128,14 @@ inline bool EglBlitInit(void* opaque_window, BlitError* error) {
                               "eglCreateWindowSurface: null window");
     return false;
   }
+#if defined(MUSE_TEST_SEAM) && (MUSE_TEST_SEAM == 1)
   if (s.hooks.fail_init) {
     egl_blit_detail::SetError(error, BlitCode::kInitFailed,
                               "eglInitialize: injected failure");
     return false;
   }
-  if (!egl_blit_detail::StubCreateSurface()) {
+#endif
+  if (!egl_blit_detail::HostEglCreateSurface()) {
     egl_blit_detail::SetError(error, BlitCode::kNoSurface,
                               "eglCreateWindowSurface: no surface");
     return false;
@@ -161,12 +174,14 @@ inline bool EglBlitPresent(const uint32_t* rgba, int w, int h,
                               "eglTexImage2D: invalid dimensions");
     return false;
   }
+#if defined(MUSE_TEST_SEAM) && (MUSE_TEST_SEAM == 1)
   if (s.hooks.no_surface) {
     egl_blit_detail::SetError(error, BlitCode::kNoSurface,
                               "eglCreateWindowSurface: no surface");
     return false;
   }
-  if (!egl_blit_detail::StubMakeCurrent()) {
+#endif
+  if (!egl_blit_detail::HostEglMakeCurrent()) {
     egl_blit_detail::SetError(error, BlitCode::kContextLost,
                               "eglMakeCurrent: context lost");
     return false;
@@ -177,7 +192,7 @@ inline bool EglBlitPresent(const uint32_t* rgba, int w, int h,
   (void)w;
   (void)h;
   // Exactly one swap per frame.
-  if (!egl_blit_detail::StubSwapOnce()) {
+  if (!egl_blit_detail::HostEglSwapOnce()) {
     egl_blit_detail::SetError(error, BlitCode::kSwapFailed,
                               "eglSwapBuffers: injected swap failure");
     return false;

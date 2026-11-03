@@ -4,7 +4,7 @@
 
 namespace runtime {
 
-// Fake platform surface behind the A2 seam (plan A2): default-constructible,
+// Placeholder platform surface behind the A2 seam (plan A2): default-constructible,
 // in-process only; no JNI, no device, no I/O. The parameter exists so the
 // host call site binds to a surface without platform linkage.
 struct Surface {

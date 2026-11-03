@@ -397,7 +397,7 @@ void BuildGlyphOutline(TileSegs& segs, std::uint32_t codepoint, double x0,
     if (cp == 'h') vbar(xl, xl + sw, top, xtop);  // Tall stem.
     return;
   }
-  // Stub letterforms: 'g' bowl + tail loop, 'B'/'M'/'P'/'R' branches.
+  // Glyph outlines: 'g' bowl + tail loop, 'B'/'M'/'P'/'R' branches.
   // Previously these codepoints fell through to the bare-stem default,
   // making 'g' indistinguishable from 'I'.
   if (cp == 'g' || cp == 'B' || cp == 'M' || cp == 'P' || cp == 'R') {

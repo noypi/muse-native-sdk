@@ -81,21 +81,25 @@ bool PresentFrameWithFallback(const uint32_t* rgba, int w, int h,
 #endif
   }
 
-  // Swap-fault persistence: the stub seam's `fail_next_swap` is one-shot, but
-  // the contract requires the fallback to stay live across frames while the
-  // fault is injected. Snapshot before the (consuming) present attempt and
-  // re-arm afterwards; the seam is test-only (the device lane no-ops it), so
-  // production recovery semantics are unchanged.
+  // Swap-fault persistence: the seam's `fail_next_swap` is one-shot, but the
+  // contract requires the fallback to stay live across frames while the fault
+  // is injected. Snapshot before the (consuming) present attempt and re-arm
+  // afterwards. Seam-gated (MUSE_TEST_SEAM only): the OFF lane carries no hook
+  // state, so production recovery semantics are unchanged there.
+#if defined(MUSE_TEST_SEAM) && (MUSE_TEST_SEAM == 1)
   const bool swapArmed = egl_blit_detail::BlitState().hooks.fail_next_swap;
+#endif
   BlitError err{BlitCode::kOk, ""};
   if (EglBlitPresent(rgba, w, h, &err)) {
     return succeed(std::string());
   }
+#if defined(MUSE_TEST_SEAM) && (MUSE_TEST_SEAM == 1)
   if (swapArmed && err.code == BlitCode::kSwapFailed) {
     egl_blit_test::FaultHooks rearmed = egl_blit_detail::BlitState().hooks;
     rearmed.fail_next_swap = true;
     egl_blit_test::SetFaultHooks(&rearmed);
   }
+#endif
   const std::string trigger =
       err.trigger.empty() ? "eglSwapBuffers: present failed" : err.trigger;
   return fallBack(trigger);
