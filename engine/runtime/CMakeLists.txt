@@ -388,12 +388,61 @@ if(DEFINED ANDROID_ABI AND NOT TARGET Runtime)
       ${MUSE_RUNTIME_D3_STATIC_LIBS}
       "-Wl,--no-whole-archive,--pop-state")
   else()
-    # vendor-d3 review follow-up (MINOR): message-only note so a lane with
-    # no D3 archives (misconfigured MUSE_TEXT_D3_ROOT mirror) is
-    # distinguishable from the no-D3 lane at configure time. No behavior
-    # change: the reference backend in shaper.cpp still applies.
-    message(STATUS "MUSE D3: no vendored static archives under '${MUSE_TEXT_D3_ROOT}' (MUSE_RUNTIME_D3_STATIC_LIBS empty); linking reference backend")
+    # BUG-TEXT-007 T15-leg3 link fix: the engine-android lane configures this
+    # project standalone (no MUSE_TEXT_D3_ROOT passed), so the archive block
+    # above is empty and the Runtime shared link fails with undefined
+    # FT_Init_FreeType/hb_* (shaper.cpp T9 ResolveRealFont/ShapeWithHarfBuzz).
+    # Fallback: in-tree vendored sub-builds (same mechanism/flags as
+    # engine/text/CMakeLists.txt T3, hermetic via $MUSE_NATIVE_THIRD_PARTY_DIR,
+    # no downloads) providing the `freetype` + `harfbuzz` targets for this
+    # lane only. ICU intentionally not sub-built here: the leg3 undefined
+    # set is FT/HB only. Guarded: missing env/sources or pre-existing
+    # targets keep the reference-backend behavior; configure never fails.
+    if(DEFINED ENV{MUSE_NATIVE_THIRD_PARTY_DIR} AND NOT "$ENV{MUSE_NATIVE_THIRD_PARTY_DIR}" STREQUAL "")
+      set(_muse_rt_ft_src "$ENV{MUSE_NATIVE_THIRD_PARTY_DIR}/freetype-2.15.0")
+      set(_muse_rt_hb_src "$ENV{MUSE_NATIVE_THIRD_PARTY_DIR}/harfbuzz-15.0.0")
+      if(IS_DIRECTORY "${_muse_rt_ft_src}" AND IS_DIRECTORY "${_muse_rt_hb_src}")
+        if(NOT TARGET freetype)
+          set(FT_DISABLE_HARFBUZZ ON CACHE BOOL "runtime lane: FreeType without HarfBuzz helper" FORCE)
+          set(FT_DISABLE_ZLIB ON CACHE BOOL "runtime lane: no system zlib" FORCE)
+          set(FT_DISABLE_BZIP2 ON CACHE BOOL "runtime lane: no system bzip2" FORCE)
+          set(FT_DISABLE_PNG ON CACHE BOOL "runtime lane: no system libpng" FORCE)
+          set(FT_DISABLE_BROTLI ON CACHE BOOL "runtime lane: no system brotli" FORCE)
+          add_subdirectory("${_muse_rt_ft_src}" "${CMAKE_BINARY_DIR}/d3-runtime/freetype")
+        endif()
+        if(NOT TARGET harfbuzz)
+          set(HB_HAVE_ICU OFF CACHE BOOL "runtime lane: HarfBuzz without ICU" FORCE)
+          set(HB_BUILD_UTILS OFF CACHE BOOL "runtime lane: no hb utils" FORCE)
+          set(HB_BUILD_SUBSET OFF CACHE BOOL "runtime lane: no hb-subset" FORCE)
+          set(HB_BUILD_RASTER OFF CACHE BOOL "runtime lane: no hb-raster" FORCE)
+          set(HB_BUILD_VECTOR OFF CACHE BOOL "runtime lane: no hb-vector" FORCE)
+          set(HB_BUILD_GPU OFF CACHE BOOL "runtime lane: no hb-gpu" FORCE)
+          set(HB_BUILD_GPU_DEMO OFF CACHE STRING "runtime lane: no hb-gpu demo" FORCE)
+          add_subdirectory("${_muse_rt_hb_src}" "${CMAKE_BINARY_DIR}/d3-runtime/harfbuzz")
+        endif()
+        if(TARGET freetype AND TARGET harfbuzz)
+          target_link_libraries(Runtime PRIVATE freetype harfbuzz)
+          message(STATUS "MUSE D3: vendored in-tree freetype+harfbuzz sub-builds linked into Runtime (no MUSE_TEXT_D3_ROOT archives)")
+        else()
+          message(STATUS "MUSE D3: no vendored static archives under '${MUSE_TEXT_D3_ROOT}' (MUSE_RUNTIME_D3_STATIC_LIBS empty); linking reference backend")
+        endif()
+      else()
+        message(STATUS "MUSE D3: no vendored static archives under '${MUSE_TEXT_D3_ROOT}' (MUSE_RUNTIME_D3_STATIC_LIBS empty); linking reference backend")
+      endif()
+    else()
+      message(STATUS "MUSE D3: no vendored static archives under '${MUSE_TEXT_D3_ROOT}' (MUSE_RUNTIME_D3_STATIC_LIBS empty); linking reference backend")
+    endif()
   endif()
+endif()
+# BUG-TEXT-007 T15-leg4 link fix (static lane): every test executable links
+# the static `runtime` whose shaper.o (T9) strongly references
+# FT_Init_FreeType/hb_* — propagate the same vendored targets there once so
+# all test links resolve (render_smoke_test, gallery_registry_lifetime_test,
+# jni_boundary_test, ...). Static-PRIVATE deps propagate to the final test
+# links; host lanes and the shared Runtime lane above are untouched.
+# Guarded: a lane without the in-tree sub-builds links exactly as before.
+if(ANDROID AND TARGET freetype AND TARGET harfbuzz)
+  target_link_libraries(runtime PRIVATE freetype harfbuzz)
 endif()
 
 add_executable(instantiate_test tests/instantiate_test.cpp)

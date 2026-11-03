@@ -352,6 +352,11 @@ struct GalleryShaper {
   // T11 coverage seam: shaped glyph data per assigned handle, so
   // RasterizeShapedText resolves real runs (no synthesis, no second shape).
   std::map<std::uint32_t, muse::text::ShapedRun> runData;
+  // BUG-TEXT-007 T15-leg4: chain face id per assigned handle, so the
+  // rasterizer opens the same bound face the shaper used (font outlines,
+  // never re-resolved or synthesized). Set on the miss path only, alongside
+  // runData/runCodepoints; cache hits reuse the stored id.
+  std::map<std::uint32_t, std::uint64_t> runFaces;
   // BUG-TEXT-007 T4: per-glyph source codepoints per assigned handle,
   // decoded once at shape time from the label bytes via the run's
   // cluster_map. The rasterizer classifies outlines by codepoint — never by
@@ -372,17 +377,31 @@ GalleryShaper& GalleryShaperState() {
   return state;
 }
 
-// The shaping face for gallery labels: the script-agnostic gallery request
-// normalizes to the Latn face in resolveFallbackChain (BUG-TEXT-007 T14),
-// so the chain binds the per-script Roboto face resolvable to a real
-// /system/fonts file instead of terminating at the file-less bundled
-// last-resort face. Resolved here for the atlas key; shapeRunWithFallback
-// resolves the same chain internally on the shaping leg, so the key face
-// and the shaping face agree.
+// OTMA 'Latn' script tag (matches kLatn in engine/text/src/font_discovery.cpp
+// and font_discovery_android.cpp, kept local: no public constant exists and
+// the seam must not depend on engine internals beyond the public chain API).
+constexpr std::uint32_t kGalleryLatnScript = 0x4C61746Eu;  // 'Latn'
+
+// The shaping face for gallery labels: the seam requests the Latn script
+// explicitly (BUG-TEXT-007 T13/T14), so the chain binds the per-script
+// Roboto face resolvable to a real /system/fonts file instead of
+// terminating at the file-less bundled last-resort face. Resolved here for
+// the atlas key; shapeRunWithFallback resolves the same chain internally
+// on the shaping leg (same script tag), so the key face and the shaping
+// face agree.
 muse::text::FontHandle GalleryChainFace() {
   muse::text::StatusOr<muse::text::FontHandle> chained =
-      muse::text::resolveFallbackChain(0, nullptr, nullptr);
-  if (chained.ok()) return *chained;
+      muse::text::resolveFallbackChain(kGalleryLatnScript, nullptr, nullptr);
+  if (chained.ok()) {
+    // TEMPORARY BUG-TEXT-007 leg-8 diagnostic (remove-or-gate before merge):
+    // proves which chain face id the seam binds on device.
+#ifdef __ANDROID__
+    __android_log_print(ANDROID_LOG_INFO, "MuseText007",
+                        "GalleryChainFace latn=0x%llx",
+                        static_cast<unsigned long long>(chained->id));
+#endif
+    return *chained;
+  }
   // kNoFaceAvailable analogue: the bundled terminus is always present, so
   // this is belt-and-braces; callers still fail closed on a zero id.
   return muse::text::SystemFontEnumerator().LastResortFace(0);
@@ -430,10 +449,14 @@ bool ShapeLabelThroughEngine(const std::string& label,
     muse::text::TextStyle style;
     style.size_px = kGalleryTextSizePx;
     // Script-agnostic gallery request: no variations, no downloadable font.
-    // The seam normalizes the agnostic script to Latn (BUG-TEXT-007 T14),
+    // The seam requests the Latn script explicitly (BUG-TEXT-007 T13/T14),
     // so the run shapes over the per-script Roboto chain bound to a real
     // face. Only malformed UTF-8 is an error.
     muse::text::FontRequest req;
+    // BUG-TEXT-007 T13/T14: Latin gallery labels shape over the per-script
+    // Latn Roboto chain bound to a real face (same face GalleryChainFace
+    // records for the rasterizer). Only malformed UTF-8 is an error.
+    req.script_tag = kGalleryLatnScript;
     muse::text::StatusOr<muse::text::ShapedRun> shaped =
         muse::text::shapeRunWithFallback(
             reinterpret_cast<const std::uint8_t*>(text.data()), text.size(),
@@ -445,6 +468,28 @@ bool ShapeLabelThroughEngine(const std::string& label,
     }
     *run = *shaped;
     if (face != nullptr) *face = GalleryChainFace();
+    // TEMPORARY BUG-TEXT-007 leg-8 diagnostic (remove-or-gate before merge):
+    // proves the bound face id, the file it resolves to, and the glyph ids
+    // the shaper emitted for this label.
+#ifdef __ANDROID__
+    {
+      muse::text::FontHandle bound = (face != nullptr) ? *face : muse::text::FontHandle{};
+      muse::text::StatusOr<std::string> diag_path =
+          muse::text::FontPathForFace(bound);
+      const char* diag_cstr = (diag_path.ok() && !diag_path->empty())
+                                  ? diag_path->c_str()
+                                  : "<no-face-available>";
+      std::uint32_t diag_first = shaped->glyph_ids.empty() ? 0u : shaped->glyph_ids[0];
+      std::uint32_t diag_second =
+          shaped->glyph_ids.size() > 1 ? shaped->glyph_ids[1] : 0u;
+      __android_log_print(ANDROID_LOG_INFO, "MuseText007",
+                          "ShapeLabel label='%s' face=0x%llx path='%s' n=%u gid0=%u gid1=%u",
+                          label.c_str(),
+                          static_cast<unsigned long long>(bound.id), diag_cstr,
+                          static_cast<unsigned>(shaped->glyph_ids.size()),
+                          diag_first, diag_second);
+    }
+#endif
     return true;
   } catch (...) {
     return false;
@@ -473,6 +518,9 @@ int MeasureGalleryLabelWidth(const std::string& label, int scale) {
     muse::text::TextStyle style;
     style.size_px = size_px;
     muse::text::FontRequest req;
+    // BUG-TEXT-007 T13/T14: measure over the same Latn Roboto chain as the
+    // shaping leg, so layout widths track the bound face's advances.
+    req.script_tag = kGalleryLatnScript;
     muse::text::StatusOr<muse::text::ShapedRun> shaped =
         muse::text::shapeRunWithFallback(
             reinterpret_cast<const std::uint8_t*>(text.data()), text.size(),
@@ -634,6 +682,7 @@ std::uint32_t ShapeGalleryLabel(const std::string& label) {
   // hits, whose id already maps to the same codepoints stored at first miss
   // (same key implies the same shaped run).
   shaper.runCodepoints[id] = CodepointsForRun(label, run);
+  shaper.runFaces[id] = face.id;
   return id;
 }
 
@@ -3019,6 +3068,23 @@ bool ResolveGalleryShapedRun(std::uint32_t handle,
       }
       *codepoints = cit->second;
     }
+    return true;
+  } catch (...) {
+    return false;
+  }
+}
+
+// BUG-TEXT-007 T15-leg4 (FR-TEXT-016 / AC-TEXT-045): face-id half of the T11
+// coverage seam. Resolves the chain face recorded at ShapeGalleryLabel
+// assignment; 0/unknown handles, unrecorded faces, and null outputs fail
+// closed with false. Never throws.
+bool ResolveGalleryShapedFace(std::uint32_t handle, std::uint64_t* face_id) {
+  if (handle == 0u || face_id == nullptr) return false;
+  try {
+    GalleryShaper& shaper = GalleryShaperState();
+    const auto it = shaper.runFaces.find(handle);
+    if (it == shaper.runFaces.end() || it->second == 0u) return false;
+    *face_id = it->second;
     return true;
   } catch (...) {
     return false;

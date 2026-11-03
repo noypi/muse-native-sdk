@@ -175,6 +175,14 @@ bool ResolveGalleryShapedRun(std::uint32_t handle,
                              std::vector<float>* advances,
                              std::vector<std::uint32_t>* codepoints = nullptr);
 
+// BUG-TEXT-007 T15-leg4 (FR-TEXT-016 / AC-TEXT-045): resolve a
+// ShapeGalleryLabel handle to the chain face bound at assignment (the T5
+// atlas-key face id). The rasterizer opens that face via FontPathForFace to
+// source outlines from the font; false on 0/unknown handles, unrecorded
+// faces, or null output (fail-closed, never synthesized). Never throws.
+bool ResolveGalleryShapedFace(std::uint32_t handle,
+                              std::uint64_t* face_id);
+
 // ---- Layering page (L2: BUG-M3-FIDELITY-008 / FR-M3-010 / AC-M3-022) ----
 //
 // Hermetic layering scene for RULE-M3-006: dimmed content plus the five
