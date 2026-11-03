@@ -142,6 +142,17 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     }
 
     /**
+     * Injected delivery seam for the taken opaque string. Production wires
+     * this to the JS router channel (the same {@code forwardIntent} path
+     * {@code App.tsx} uses); unset means log-only. Never parses.
+     */
+    interface OpaqueLinkSink {
+        void accept(String opaqueLink);
+    }
+
+    static volatile OpaqueLinkSink opaqueLinkSink = null;
+
+    /**
      * Handoff into the JS routing layer. Host never parses; the stashed
      * opaque string stays available for the JS drain above. Same channel
      * serves cold-start (onCreate) and warm (onNewIntent) arrivals.
@@ -149,6 +160,14 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     void forwardOpaqueToRouter(String opaqueLink) {
         if (opaqueLink == null || opaqueLink.isEmpty()) {
             return;
+        }
+        OpaqueLinkSink sink = opaqueLinkSink;
+        if (sink != null) {
+            try {
+                sink.accept(opaqueLink);
+            } catch (Throwable ignored) {
+                // Fail-closed: a bad sink never crashes the host.
+            }
         }
         Log.i(TAG, "opaque-intent-ready engineHosted=true");
         // Consume-once: caller passes the taken value; slot already cleared.

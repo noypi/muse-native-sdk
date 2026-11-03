@@ -246,6 +246,25 @@ function createDemoRouter({ transport } = {}) {
   };
 }
 
+// Cold-start drain helper (AC-NAV-044 stash rule, AC-NAV-041 transport).
+// Pulls the taken opaque string via `consume` exactly once and delivers it
+// through `forwardIntent` (same RouterBridge.invoke channel as warm intents).
+// Never parses here; unknown/invalid input fails closed via forwardIntent.
+// Returns null when nothing was stashed; never throws.
+async function drainStashedOpaqueLink(router, consume) {
+  let opaque;
+  try {
+    opaque = typeof consume === 'function' ? consume() : undefined;
+  } catch (err) {
+    void err;
+    return { ok: false, code: 'unknown-route' };
+  }
+  if (opaque === null || opaque === undefined || opaque === '') {
+    return null;
+  }
+  return router.forwardIntent(opaque);
+}
+
 module.exports = {
   createDemoNavigator,
   push: shared.push,
@@ -257,4 +276,5 @@ module.exports = {
   DEMO_TABS,
   demoDescriptors,
   createDemoRouter,
+  drainStashedOpaqueLink,
 };

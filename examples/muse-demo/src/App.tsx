@@ -22,7 +22,7 @@ import { startRound, guess, reveal } from './guessMask';
 // link shapes through the single RouterBridge navigate path (createDemoRouter
 // push/replace facade), never a direct setTab bypass.
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-const { createDemoRouter } = require('./demoNav') as {
+const { createDemoRouter, drainStashedOpaqueLink } = require('./demoNav') as {
   createDemoRouter: (opts?: { transport?: { invoke: (method: string, payload: unknown) => Promise<unknown> } }) => {
     current: string | null;
     push: (to: unknown, params?: object) => Promise<{ ok: boolean; code?: string }>;
@@ -31,6 +31,7 @@ const { createDemoRouter } = require('./demoNav') as {
     tapAdvance: () => Promise<{ ok: boolean; code?: string }>;
     onFallbackRecover: () => Promise<{ ok: boolean; code?: string }>;
   };
+  drainStashedOpaqueLink: (router: { current: string | null; forwardIntent: (opaque: unknown) => Promise<{ ok: boolean; code?: string }> }, consume: () => unknown) => Promise<{ ok: boolean; code?: string } | null>;
 };
 function demoTransport(): { invoke: (method: string, payload: unknown) => Promise<unknown> } | undefined {
   const bridge = (globalThis as unknown as { RouterBridge?: { invoke: (m: string, p: unknown) => Promise<unknown> } }).RouterBridge;
@@ -223,6 +224,16 @@ export default function App() {
   // Mount-only animation kick: never re-fires on state updates.
   useEffect(() => {
     heroMotion.animateTo(1, { velocity: 0.5 });
+  }, []);
+  // Cold-start drain: consume the host's stashed opaque link (take-and-clear,
+  // unparsed) exactly once at boot and deliver it through forwardIntent —
+  // the same RouterBridge.invoke channel as warm intents. Fail-closed.
+  useEffect(() => {
+    const consume = (globalThis as unknown as { __museConsumeOpaqueLink?: () => unknown }).__museConsumeOpaqueLink;
+    if (typeof consume !== 'function') return;
+    void drainStashedOpaqueLink(demoRouter, consume).then((result) => {
+      if (result && result.ok) setTab(demoRouter.current as Tab);
+    });
   }, []);
   const [renderMode, setRenderMode] = useState<RenderMode>('by_object');
   const photos = galleryManifest as Photo[];
