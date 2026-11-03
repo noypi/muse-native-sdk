@@ -672,6 +672,17 @@ target_link_libraries(proof_gate_blocks_rebaseline_test PRIVATE runtime)
 target_compile_options(proof_gate_blocks_rebaseline_test PRIVATE -Wall -Wextra -Wpedantic)
 add_test(NAME proof_gate_blocks_rebaseline_test COMMAND proof_gate_blocks_rebaseline_test)
 
+# demo-fallback-boot Batch 1 RED pins (GR-08 T1.1): T1 gate-kind coverage,
+# T3 lib-freshness recipe gate. Test wiring only; no production change.
+add_executable(fallback_gate_kinds_test tests/fallback_gate_kinds_test.cpp)
+target_link_libraries(fallback_gate_kinds_test PRIVATE runtime)
+target_compile_options(fallback_gate_kinds_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME fallback_gate_kinds_test COMMAND fallback_gate_kinds_test)
+add_executable(lib_freshness_test tests/lib_freshness_test.cpp)
+target_link_libraries(lib_freshness_test PRIVATE runtime)
+target_compile_options(lib_freshness_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME lib_freshness_test COMMAND lib_freshness_test)
+
 # BUG-M3-FIDELITY-005 T5: gallery emission wiring (shape -> cache -> real
 # ShapedText{glyphRunId}, measureLine sizing, UTF-8 row admission).
 add_executable(gallery_text_emission_test tests/gallery_text_emission_test.cpp)
