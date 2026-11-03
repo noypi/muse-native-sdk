@@ -21,7 +21,24 @@
 
 #include "runtime/flappy_content.h"
 #include "runtime/gallery_present.h"
+#include "runtime/content_registry.h"
 #include "runtime/renderer.h"
+
+// Real device-lane hit-test type (consume-only, relative include per
+// flappy_tap_tree_test.cpp convention — runtime/input_chain.h is not
+// directly includable from tests: it pulls gesture_arena.h/hit_test.h
+// which are PRIVATE to the runtime lib).
+#include "../../input/include/hit_test.h"
+
+// Generic tap-tree seams (defined in src/input_chain.cpp, linked via the
+// runtime lib); forward-declared here per the sibling-test convention.
+void PopulateTapTreeFromLayout(HitTestTree& tree, float viewportW,
+                               float viewportH);
+void PopulateTapTreeFromLayout(HitTestTree& tree);
+bool RefreshTapTreeFromPresentedScene(HitTestTree& tree, const void* data,
+                                      std::size_t len, float viewportW,
+                                      float viewportH);
+std::int32_t ResolveTapTarget(const HitTestTree& tree, float x, float y);
 
 namespace {
 
@@ -152,6 +169,222 @@ static bool check_real_tree_presents_content_scene_and_drains() {
 
 }  // namespace
 
+// Security pin F1 (AC-RUNTIME-032): paired-tag gate — the scene presents
+// ONLY when the full anchor combination holds. Positive: synthetic pair and
+// real pair both present with the diagnostic untouched. Negative: any single
+// anchor, gallery bytes, empty, or null never reroute and leave the error
+// untouched so the caller keeps the gallery fallback.
+static bool check_paired_tag_gate_single_anchor_never_reroutes() {
+  (void)runtime::RegisterFlappyContent();
+  {
+    const char both[] = "FlappyBird FlappyPipe";
+    std::string error;
+    if (!runtime::TryPresentContentScene(both, sizeof(both) - 1, &error)) {
+      std::printf("  detail: synthetic pair did not present\n");
+      return false;
+    }
+    if (!error.empty()) {
+      std::printf("  detail: synthetic-pair success left diagnostic: %s\n",
+                  error.c_str());
+      return false;
+    }
+  }
+  {
+    const char real[] = "TopAppBar flappy-hero HUD";
+    std::string error;
+    if (!runtime::TryPresentContentScene(real, sizeof(real) - 1, &error)) {
+      std::printf("  detail: real pair did not present\n");
+      return false;
+    }
+    if (!error.empty()) {
+      std::printf("  detail: real-pair success left diagnostic: %s\n",
+                  error.c_str());
+      return false;
+    }
+  }
+  const char* singles[] = {
+      "FlappyBird",
+      "FlappyPipe",
+      "TopAppBar",
+      "flappy-hero",
+      "GalleryPage gallery-rows=41",
+      "",
+  };
+  for (const char* s : singles) {
+    std::string error = "SENTINEL";
+    std::size_t len = 0;
+    while (s[len] != '\0') ++len;
+    if (runtime::TryPresentContentScene(s, len, &error)) {
+      std::printf("  detail: single anchor presented: %.40s\n", s);
+      return false;
+    }
+    if (error != "SENTINEL") {
+      std::printf("  detail: non-content touched error: %.40s -> %s\n", s,
+                  error.c_str());
+      return false;
+    }
+  }
+  {
+    std::string error = "SENTINEL";
+    if (runtime::TryPresentContentScene(nullptr, 0, &error)) {
+      std::printf("  detail: null presented\n");
+      return false;
+    }
+    if (error != "SENTINEL") {
+      std::printf("  detail: null touched error: %s\n", error.c_str());
+      return false;
+    }
+  }
+  return true;
+}
+
+// Security pin F2 (FR-RUNTIME-013): broken-scene fail-closed — recognized
+// but undrawable bytes fail with the named error, so the frame path skips
+// the gallery fallback (non-empty error) instead of silently gallery-mapping.
+static bool check_broken_scene_fail_closed_named_error_no_fallback() {
+  (void)runtime::RegisterFlappyContent();
+  const char broken[] = "FlappyBird FlappyPipe FlappyQuantumBlorb";
+  std::string error;
+  if (runtime::TryPresentContentScene(broken, sizeof(broken) - 1, &error)) {
+    std::printf("  detail: recognized-but-broken scene presented\n");
+    return false;
+  }
+  if (error.empty()) {
+    std::printf("  detail: broken scene left no error (fallback taken)\n");
+    return false;
+  }
+  if (error.find("FlappyQuantumBlorb") == std::string::npos) {
+    std::printf("  detail: broken-scene error names no kind: %s\n",
+                error.c_str());
+    return false;
+  }
+  return true;
+}
+
+// Security pin F3a (AC-INPUT-020 / AC-RUNTIME-038/039): gallery bytes keep
+// the gallery fallback tap tree — refresh declines and node 20 still fires.
+static bool check_gallery_bytes_keep_fallback_tree() {
+  HitTestTree tree;
+  PopulateTapTreeFromLayout(tree);
+  if (ResolveTapTarget(tree, 540.0f, 930.0f) != 20) {
+    std::printf("  detail: fallback tree missing gallery scrim node 20\n");
+    return false;
+  }
+  const char gallery[] = "GalleryPage gallery-rows=41 TopAppBar-less";
+  if (RefreshTapTreeFromPresentedScene(tree, gallery, sizeof(gallery) - 1,
+                                       0.0f, 0.0f)) {
+    std::printf("  detail: gallery bytes rebuilt the tap tree\n");
+    return false;
+  }
+  if (ResolveTapTarget(tree, 540.0f, 930.0f) != 20) {
+    std::printf("  detail: declined refresh lost the fallback tree\n");
+    return false;
+  }
+  return true;
+}
+
+// Security pin F3b (AC-INPUT-020 / AC-RUNTIME-038/039): real bytes rebuild
+// the tap tree to scene nodes — every laid-out touchable resolves to its
+// own scene id and gallery node 20 is gone.
+static bool check_real_bytes_rebuild_scene_taps_no_gallery_node() {
+  const std::vector<char> bytes = LoadRealTree();
+  if (bytes.empty()) return false;
+  (void)runtime::RegisterFlappyContent();
+  HitTestTree tree;
+  PopulateTapTreeFromLayout(tree);
+  if (!RefreshTapTreeFromPresentedScene(tree, bytes.data(), bytes.size(),
+                                        0.0f, 0.0f)) {
+    std::printf("  detail: real bytes did not rebuild the tap tree\n");
+    return false;
+  }
+  PresentedSceneTap taps[8];
+  const int count = runtime::QueryPresentedSceneTaps(
+      bytes.data(), bytes.size(), taps, 8);
+  if (count <= 0) {
+    std::printf("  detail: real bytes query 0 taps\n");
+    return false;
+  }
+  for (int i = 0; i < count; ++i) {
+    if (taps[i].nodeId == 20) {
+      std::printf("  detail: gallery node 20 leaked into scene taps\n");
+      return false;
+    }
+    const float cx = taps[i].x + taps[i].w * 0.5f;
+    const float cy = taps[i].y + taps[i].h * 0.5f;
+    const std::int32_t hit = ResolveTapTarget(tree, cx, cy);
+    if (hit == 20 || hit == -1) {
+      std::printf("  detail: scene tap %d center resolves to %d\n",
+                  taps[i].nodeId, hit);
+      return false;
+    }
+    bool known = false;
+    for (int j = 0; j < count; ++j) {
+      if (hit == taps[j].nodeId) {
+        known = true;
+        break;
+      }
+    }
+    if (!known) {
+      std::printf("  detail: scene tap %d center hit phantom %d\n",
+                  taps[i].nodeId, hit);
+      return false;
+    }
+  }
+  return true;
+}
+
+// Security pin F4 (failure-only logging convention): the gate log half of
+// the contract — success stays silent (error untouched), failure emits a
+// bounded named diagnostic with lengths/presence/error literal only.
+// ASSUMPTION: the __ANDROID__ F3DIAG logcat emission itself is device proof;
+// this pins the host-observable gate-error contract behind it. Inert payload
+// bytes must never appear in the diagnostic (no tree-content leak).
+static bool check_gate_log_failure_only_bounded_no_leak() {
+  (void)runtime::RegisterFlappyContent();
+  {
+    const std::vector<char> bytes = LoadRealTree();
+    if (bytes.empty()) return false;
+    std::string error = "SENTINEL";
+    if (!runtime::TryPresentContentScene(bytes.data(), bytes.size(),
+                                         &error)) {
+      std::printf("  detail: real tree failed: %s\n", error.c_str());
+      return false;
+    }
+    if (error != "SENTINEL") {
+      std::printf("  detail: healthy frame not silent: %s\n", error.c_str());
+      return false;
+    }
+  }
+  {
+    const char broken[] =
+        "FlappyBird FlappyPipe FlappyQuantumBlorb SECRET_MARKER_XYZ_123";
+    std::string error;
+    if (runtime::TryPresentContentScene(broken, sizeof(broken) - 1, &error)) {
+      std::printf("  detail: broken scene presented\n");
+      return false;
+    }
+    if (error.empty()) {
+      std::printf("  detail: failure emitted nothing\n");
+      return false;
+    }
+    if (error.size() >= 320) {
+      std::printf("  detail: diagnostic unbounded: %zu bytes\n", error.size());
+      return false;
+    }
+    if (error.find("flappy scene failed closed") == std::string::npos) {
+      std::printf("  detail: diagnostic missing error literal: %s\n",
+                  error.c_str());
+      return false;
+    }
+    if (error.find("SECRET_MARKER_XYZ_123") != std::string::npos) {
+      std::printf("  detail: diagnostic leaks tree content: %s\n",
+                  error.c_str());
+      return false;
+    }
+  }
+  return true;
+}
+
 #define RUN_CASE(name)                                  \
   do {                                                  \
     if (!(name)()) {                                    \
@@ -167,6 +400,11 @@ int main() {
   RUN_CASE(check_real_tree_registers_scene);
   RUN_CASE(check_real_tree_renders_game_scene_no_gallery_fallback);
   RUN_CASE(check_real_tree_presents_content_scene_and_drains);
+  RUN_CASE(check_paired_tag_gate_single_anchor_never_reroutes);
+  RUN_CASE(check_broken_scene_fail_closed_named_error_no_fallback);
+  RUN_CASE(check_gallery_bytes_keep_fallback_tree);
+  RUN_CASE(check_real_bytes_rebuild_scene_taps_no_gallery_node);
+  RUN_CASE(check_gate_log_failure_only_bounded_no_leak);
   if (failures > 0) {
     std::printf("flappy_real_tree_acceptance_test: %d failing\n", failures);
     return 1;
