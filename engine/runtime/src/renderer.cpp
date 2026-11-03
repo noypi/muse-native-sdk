@@ -858,7 +858,7 @@ bool OpenDeviceFace(std::uint64_t face_id, FT_Face* out) {
 // shaped advances under a uniform pen scale (layout authority stays with the
 // shaper). Coverage merges with max() so overlapping glyphs never dim each
 // other. Returns false when no font coverage could be produced — the caller
-// falls back to the procedural composer, never to blank.
+// returns the (possibly blank) mask fail-closed, never procedural glyphs.
 //
 // BUG-TEXT-007 leg-8 index binding: the stored glyph id is trusted only when
 // it agrees with the face actually opened here. For ASCII scalars the opened
@@ -879,11 +879,33 @@ bool BlitFontRunCoverage(const std::vector<std::uint32_t>& glyphs,
   if (mask.width <= 0 || mask.height <= 0) return false;
   FT_Face face = nullptr;
   if (!OpenDeviceFace(face_id, &face)) return false;
-  if (FT_Set_Pixel_Sizes(face, 0, static_cast<FT_UInt>(mask.height)) != 0) {
+  // BUG-TEXT-007 leg-15 (FR-TEXT-016 / AC-TEXT-045): the mask is a line box,
+  // not an em square. Sizing the em at mask.height overflows the full
+  // vertical extent (ascender through descender), so the row loop below
+  // skips every descender row while non-descender rows still paint — any=1
+  // with 'g' clipped to 'q'/'a' and 'y' clipped to 'v'. Shrink the pixel
+  // size until the face's own extent fits the line box instead.
+  FT_UInt px = static_cast<FT_UInt>(mask.height);
+  if (px < 1u) px = 1u;
+  if (FT_Set_Pixel_Sizes(face, 0, px) != 0) {
     return false;
   }
+  {
+    const int asc = static_cast<int>(face->size->metrics.ascender >> 6);
+    const int desc = static_cast<int>(face->size->metrics.descender >> 6);
+    const int extent = asc - desc;
+    if (extent > mask.height && extent > 0) {
+      const unsigned fit_px =
+          (static_cast<unsigned>(mask.height) * static_cast<unsigned>(px)) /
+          static_cast<unsigned>(extent);
+      px = static_cast<FT_UInt>(fit_px < 1u ? 1u : fit_px);
+      if (FT_Set_Pixel_Sizes(face, 0, px) != 0) {
+        return false;
+      }
+    }
+  }
   const float pen_scale =
-      static_cast<float>(mask.height) / kShapedEmPx;
+      static_cast<float>(px) / kShapedEmPx;
   if (!(pen_scale > 0.0f) || !std::isfinite(pen_scale)) return false;
   int baseline =
       static_cast<int>(face->size->metrics.ascender >> 6);
@@ -1029,15 +1051,18 @@ muse::text::StatusOr<CoverageMask> RasterizeShapedText(
   mask.height = maskH < 1 ? 1 : (maskH > kMaxMaskSide ? kMaxMaskSide : maskH);
   mask.alpha.assign(static_cast<std::size_t>(mask.width) * mask.height, 0.0f);
 #if defined(__ANDROID__) && !defined(MUSE_TEXT_HERMETIC_FALLBACK)
-  // BUG-TEXT-007 T15-leg4 (FR-TEXT-016 / AC-TEXT-045): font-outline leg.
-  // When the run's bound face opens on this lane, mask texels come from the
-  // font's rendered outlines (true letterforms). Otherwise fall through to
-  // the procedural composer below — legibility degrades, nothing blanks.
+  // BUG-TEXT-007 leg-11 (FR-TEXT-016 / AC-TEXT-045): font-agreed routing.
+  // When the run's bound face resolves, mask texels come from the font's
+  // rendered outlines (true letterforms) — the run NEVER falls through to
+  // the procedural composer below. When the font leg genuinely cannot
+  // serve, the blank mask returns fail-closed: wrong glyphs are worse than
+  // no glyphs. Only faceless runs reach the procedural composer (hermetic/
+  // test lane and pre-seam handles).
   {
     std::uint64_t face_id = 0u;
-    if (ResolveGalleryShapedFace(run, &face_id) &&
-        BlitFontRunCoverage(shaped.glyphIds, shaped.advances,
-                            shaped.codepoints, face_id, mask)) {
+    if (ResolveGalleryShapedFace(run, &face_id)) {
+      BlitFontRunCoverage(shaped.glyphIds, shaped.advances,
+                          shaped.codepoints, face_id, mask);
       return mask;
     }
   }
