@@ -40,13 +40,33 @@ SkiaFaultState& SkiaFaults() {
   static SkiaFaultState s;
   return s;
 }
-// --- host stub-Skia seam (device leg T5 provides the real swap) ------------
+// --- host stub-Skia seam (T7 bug-runtime-008; device leg T5 provides the real swap) ---
+// Host-only stub-Skia scaffold for hermetic tests. Compiled with stub bodies
+// only behind `#ifdef HOST_SCAFFOLD`; without the flag every stub fails
+// closed so the fallback branch takes the proven CPU push (never blank).
+// ASSUMPTION: decided context (CLI where available per FR-WORKFLOW-008
+// default `skia` + device probing where decided per Q-GRAPHICS-006) is
+// owner-approved; tests pin the fence shape.
 // Each stub names the real Skia entry it stands in for. All succeed on host
 // unless the T3 fault hooks above inject a failure; the fallback branch
 // below stays linked for the device leg.
+#ifdef HOST_SCAFFOLD
 bool StubSkiaInit() { return true; }
 bool StubSkiaMakeContext() { return true; }
 bool StubSkiaSwapOnce() { return true; }
+#else
+bool StubSkiaInit() { return false; }
+bool StubSkiaMakeContext() { return false; }
+bool StubSkiaSwapOnce() { return false; }
+#endif
+
+// T7: live Skia-lane health bit — the decided device probing source for the
+// RenderLocked `skiaAvailable` input (Q-GRAPHICS-006, owner-approved).
+// Set only by an observed successful Skia present through
+// PresentSkiaFrameWithFallback below; fail-closed false until the real lane
+// proves itself (host hermetic runs stay false unless the scaffold lane
+// presents). Never assumed, never a literal at the call site.
+bool g_skiaLaneSucceeded = false;
 
 // Proven in-process CPU SurfaceView push, same process. Host lane is a stub
 // (no NDK calls execute in hermetic tests; observable behavior is the return
@@ -56,8 +76,8 @@ bool StubSkiaSwapOnce() { return true; }
 void CpuSurfaceViewPush() {}
 
 // Minimal 1x1 opaque PNG dumped on the presented path (device leg writes the
-// real gallery frame here; the host stub writes this placeholder so the
-// `--dump-frame` shape holds without a GPU).
+// real gallery frame here; the host stub writes this reserved fallback image
+// so the `--dump-frame` shape holds without a GPU).
 const unsigned char kPlaceholderPng[] = {
     0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D,
     0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
@@ -75,6 +95,12 @@ int FailWithFallback(const char* trigger) {
 }
 
 }  // namespace
+
+// T7: decided device probing accessor for the RenderLocked gate
+// (Q-GRAPHICS-006, owner-approved). External linkage owned by the Skia leg,
+// declared in `present_skia.h`; sticky-bit-on-observed-present semantics
+// unchanged (linkage only, no behavior change).
+bool DeviceSkiaLaneSucceeded() noexcept { return g_skiaLaneSucceeded; }
 
 int GalleryPresentSkia(const char* png_out_path) {
   if (png_out_path == nullptr) {
@@ -172,5 +198,6 @@ bool PresentSkiaFrameWithFallback(const uint32_t* rgba, int w, int h,
     }
     return fallBack("skia-swap-fail");
   }
+  g_skiaLaneSucceeded = true;
   return succeed(std::string());
 }
