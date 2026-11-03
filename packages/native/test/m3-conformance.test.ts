@@ -216,3 +216,113 @@ test('literal detector trips on a smuggled literal (AC-M3-019 gate is live)', ()
     'the literal detector must flag a smuggled hex colour — otherwise the gate is blind',
   );
 });
+
+// ---------------------------------------------------------------------------
+// T1 (bug-m3-fidelity-014): per-family fill-assertion pins (TC-M3-021/022).
+// Plan Interface (verbatim):
+//   `assertPreviewFill(family: string, sampledArgb: u32): boolean`
+// sampled vs token-resolved expected; mismatch returns false.
+//
+// ASSUMPTION T1-u32: `u32` maps to a JS number in [0, 0xFFFFFFFF]; out-of-
+// range / non-integer / non-number sampled values must fail closed (false,
+// never throw).
+// ASSUMPTION T1-home: the function is required through the package public
+// entry (`../index.js`), like `driveState`. The plan names the test file +
+// the CLI bin but no home module — planner/coder to confirm (T1.3, T1.md).
+// ASSUMPTION T1-tokens: per-family token-resolved expected ARGB values are
+// named by T2; these pins assert properties (single-acceptance,
+// differentiation, fail-closed) and never invent token values. The only
+// pinned ARGB is the observed uniform baseline quoted from support.md.
+// ---------------------------------------------------------------------------
+
+const { assertPreviewFill } = require('../index.js');
+
+// Observed uniform fill on the CPU present path (support.md Reproduction):
+// 4/4 card interiors sampled identical #E7E0EC (231,224,236).
+const UNIFORM_BASELINE_ARGB = 0xffe7e0ec;
+// kCardBg literal (gallery_present.cpp:1300), refuted-as-stated by
+// support.md (observed fill is #E7E0EC, not 0xF7F2FA) — used only as a
+// distinct-sample candidate, never as an expectation.
+const CARD_BG_CANDIDATE_ARGB = 0xfff7f2fa;
+
+// Probe families spanning distinct FamilyKind groups
+// (gallery_present.cpp FamilyKind ~:2084): StateLayer, Ripple,
+// OverlayScrim, VectorIcon, CircleArc, Image/ShapedText, Rect.
+const FILL_PROBE_FAMILIES = [
+  'Button',
+  'IconButton',
+  'Dialog',
+  'Icon',
+  'CircularProgress',
+  'TextInput',
+  'Card',
+];
+
+test('assertPreviewFill is exported from the package public entry (T1 Interface)', () => {
+  assert.equal(
+    typeof assertPreviewFill,
+    'function',
+    'public entry must export assertPreviewFill(family, sampledArgb)',
+  );
+});
+
+test('assertPreviewFill returns a boolean for a known family (T1 Interface)', () => {
+  const out = assertPreviewFill('Button', UNIFORM_BASELINE_ARGB);
+  assert.equal(typeof out, 'boolean');
+});
+
+test('assertPreviewFill accepts at most one fill per family — single token-resolved expected (TC-M3-021)', () => {
+  // One family has exactly one expected fill: distinct samples cannot all
+  // be accepted. Pinned without inventing any token value.
+  const candidates = [
+    UNIFORM_BASELINE_ARGB,
+    CARD_BG_CANDIDATE_ARGB,
+    0xff000000,
+    0xffffffff,
+  ];
+  for (const family of FILL_PROBE_FAMILIES) {
+    const accepted = candidates.filter((s) => assertPreviewFill(family, s));
+    assert.ok(
+      accepted.length <= 1,
+      `${family}: at most one sampled fill may match the token-resolved expected, got ${accepted.length}`,
+    );
+  }
+});
+
+test('uniform #E7E0EC across families fails the gate — regression pin for today (TC-M3-021/AC-M3-009)', () => {
+  // Plan acceptance: uniform #E7E0EC across families fails the gate.
+  const allPass = FILL_PROBE_FAMILIES.every((f) =>
+    assertPreviewFill(f, UNIFORM_BASELINE_ARGB),
+  );
+  assert.equal(
+    allPass,
+    false,
+    'all-uniform #E7E0EC must NOT pass every probe family — that is the bug being fixed',
+  );
+});
+
+test('assertPreviewFill fails closed on unknown/empty families (T1 boundary)', () => {
+  for (const family of ['NotAComponent', '', 'button']) {
+    assert.equal(
+      assertPreviewFill(family, UNIFORM_BASELINE_ARGB),
+      false,
+      `unknown family '${family}' must return false, never throw or pass`,
+    );
+  }
+});
+
+test('assertPreviewFill fails closed on non-u32 samples (T1 boundary, ASSUMPTION T1-u32)', () => {
+  for (const sample of [-1, 0x100000000, 1.5, NaN, '0xffe7e0ec', undefined, null]) {
+    assert.equal(
+      assertPreviewFill('Button', sample),
+      false,
+      `sample ${String(sample)} is not a u32 and must return false, never throw`,
+    );
+  }
+});
+
+test('assertPreviewFill is deterministic for identical inputs (T1)', () => {
+  const a = assertPreviewFill('Card', UNIFORM_BASELINE_ARGB);
+  const b = assertPreviewFill('Card', UNIFORM_BASELINE_ARGB);
+  assert.equal(a, b);
+});
