@@ -645,3 +645,163 @@ test('TC-M3-008: an entry with no story fails the coverage test', () => {
   );
 });
 
+// ---------------------------------------------------------------------------
+// TC-M3-033 (Batch 1 RED pin) — every interactive component declares its
+// explicit event prop(s) in the manifest schema, the generated types, and the
+// descriptor factory (FR-M3-013, AC-M3-032). No handler invented outside the
+// schema; no swallow-fake ships.
+//
+// Hermetic: node:test + node:assert/strict only. Reads
+// muse.manifest.json + index.d.ts from disk, imports the factories through
+// the package public entry (index.js, CJS, no side effects). No network, no
+// secrets, no services, no device.
+//
+// Batch-1 scope (plan T1 Detail): Button/IconButton entries carry event
+// props; manifest == Variant unions == factory echo parity; unknown-key
+// negative. The wider interactive set (Fab/ExtendedFab, Chip, Checkbox,
+// Radio, Switch, Slider, pressable Card, SegmentedButton/ButtonGroup/
+// SplitButton members — FR-M3-013 Notes) is pinned here as a rollout
+// watchlist: today none of them declares an event prop, so the watchlist
+// test FAILS until the Batch-2 rollout (T5) declares them.
+//
+// ASSUMPTION E1 (event schema shape): AC-M3-036 fixes the additive shape
+// `onPress:{type:'event'}`. 'event' is therefore a legal single-source
+// schema type alongside the VALID_PROP_TYPES set above (which Batch 2
+// extends; that edit routes via code-unit-tester, not the coder).
+// ASSUMPTION E2 (factory echo): Button/IconButton factories pass props
+// through untouched (`props: next`), so a descriptor built with an onPress
+// function carries it — the RED half of the echo tests is the manifest /
+// types declaration, which is missing today.
+// ---------------------------------------------------------------------------
+
+const EVENT_PROP = 'onPress';
+
+function manifestEntry(name) {
+  const manifest = JSON.parse(readFileSync(MANIFEST_PATH, 'utf8'));
+  const entry = manifest.components.find((c) => c.name === name);
+  assert.ok(entry, `manifest must contain a ${name} entry`);
+  return entry;
+}
+
+test('TC-M3-033: Button manifest entry declares onPress:{type:\'event\'}', () => {
+  const entry = manifestEntry('Button');
+  assert.deepEqual(
+    entry.props[EVENT_PROP],
+    { type: 'event' },
+    'Button schema must declare onPress:{type:\'event\'} (additive, AC-M3-032)',
+  );
+});
+
+test('TC-M3-033: IconButton manifest entry declares onPress:{type:\'event\'}', () => {
+  const entry = manifestEntry('IconButton');
+  assert.deepEqual(
+    entry.props[EVENT_PROP],
+    { type: 'event' },
+    'IconButton schema must declare onPress:{type:\'event\'} (additive, AC-M3-032)',
+  );
+});
+
+test('TC-M3-033: index.d.ts declares onPress on ButtonProps/IconButtonProps', () => {
+  const dts = readDts();
+  for (const propsType of ['ButtonProps', 'IconButtonProps']) {
+    const body = dts.slice(dts.indexOf(propsType));
+    const closed = body.slice(0, body.indexOf('};'));
+    assert.ok(
+      new RegExp(`\\bonPress\\??:`).test(closed),
+      `index.d.ts ${propsType} must declare onPress (types parity, AC-M3-032)`,
+    );
+  }
+});
+
+test('TC-M3-033: Button factory echoes the declared onPress prop', () => {
+  const entry = manifestEntry('Button');
+  assert.ok(
+    entry.props[EVENT_PROP] && entry.props[EVENT_PROP].type === 'event',
+    'manifest must declare Button.onPress before the factory echo is meaningful',
+  );
+  const { components } = galleryRequire(join(NATIVE_DIR, 'index.js'));
+  const handler = () => {};
+  const desc = components.Button({ variant: 'filled', label: 'x', onPress: handler });
+  assert.equal(desc.type, 'Button');
+  assert.equal(
+    desc.props[EVENT_PROP],
+    handler,
+    'Button descriptor must echo the declared onPress prop (no swallow)',
+  );
+});
+
+test('TC-M3-033: unknown event keys stay absent from every schema (negative)', () => {
+  const manifest = JSON.parse(readFileSync(MANIFEST_PATH, 'utf8'));
+  const banned = ['onTap', 'onClick', 'onTouch', 'onFire'];
+  for (const entry of manifest.components) {
+    for (const key of banned) {
+      assert.ok(
+        entry.props?.[key] === undefined,
+        `${entry.name} must not invent the undeclared event key ${key} outside the schema`,
+      );
+    }
+  }
+});
+
+test('TC-M3-033: every on* schema prop uses an event/function type (no invented shape)', () => {
+  const manifest = JSON.parse(readFileSync(MANIFEST_PATH, 'utf8'));
+  let sawHandler = false;
+  for (const entry of manifest.components) {
+    for (const [prop, schema] of Object.entries(entry.props ?? {})) {
+      if (!prop.startsWith('on')) continue;
+      sawHandler = true;
+      assert.ok(
+        schema && (schema.type === 'event' || schema.type === 'function'),
+        `${entry.name}.${prop} must use type 'event' or 'function', got ${JSON.stringify(schema)}`,
+      );
+    }
+  }
+  assert.ok(sawHandler, 'control: the manifest must declare at least one on* handler prop');
+});
+
+test('TC-M3-033: interactive rollout watchlist — every interactive component declares its explicit event prop', () => {
+  const manifest = JSON.parse(readFileSync(MANIFEST_PATH, 'utf8'));
+  const byName = new Map(manifest.components.map((c) => [c.name, c]));
+  const watchlist = [
+    'Button',
+    'IconButton',
+    'Fab',
+    'ExtendedFab',
+    'Chip',
+    'Checkbox',
+    'Radio',
+    'Switch',
+    'Slider',
+    'Card',
+    'SegmentedButton',
+    'ButtonGroup',
+    'SplitButton',
+  ];
+  // Non-pressable interactive components declare their own explicit event
+  // prop (e.g. Checkbox onCheckedChange) rather than onPress — AC-M3-032
+  // requires *an* explicit event prop per interactive component, with
+  // onPress for the pressable family.
+  const pressable = new Set([
+    'Button',
+    'IconButton',
+    'Fab',
+    'ExtendedFab',
+    'Chip',
+    'Card',
+    'SegmentedButton',
+    'ButtonGroup',
+    'SplitButton',
+  ]);
+  const missing = watchlist.filter((name) => {
+    const props = byName.has(name) ? byName.get(name).props ?? {} : {};
+    const onKeys = Object.keys(props).filter((k) => k.startsWith('on'));
+    if (pressable.has(name)) return props[EVENT_PROP]?.type !== 'event';
+    return onKeys.length === 0;
+  });
+  assert.deepEqual(
+    missing,
+    [],
+    `interactive components missing a declared event prop: ${missing.join(', ')}`,
+  );
+});
+
