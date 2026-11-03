@@ -432,6 +432,62 @@ static bool check_startup_store_has_no_preseeded_handles() {
   return true;
 }
 
+// Named case (security — bug-runtime-014 review pin): hostile contentErr
+// inputs to FormatContentDiagLine stay a single bounded log line — no
+// format interpretation, no unbounded growth, fail-closed naming intact.
+// Hermetic, in-process only (C++17, no device/logcat/env/filesystem).
+static bool check_format_content_diag_line_hostile_err_stays_bounded() {
+  try {
+    const std::string nullLine =
+        runtime::FormatContentDiagLine(nullptr, 0, false, nullptr, 0);
+    const std::string emptyLine =
+        runtime::FormatContentDiagLine(nullptr, 0, false, "", 0);
+    for (const auto& line : {nullLine, emptyLine}) {
+      if (line.rfind("F3DIAG ", 0) != 0 ||
+          line.find("contentErr=-") == std::string::npos ||
+          line.find('\n') != std::string::npos || line.size() >= 320) {
+        std::printf("  detail: null/empty err not fail-closed single line\n");
+        return false;
+      }
+    }
+    // Format-specifier-looking payload must ride verbatim, never interpreted.
+    const char* fmtPayload = "%s %n %x %d %i contentErr=%s";
+    const std::string fmtLine =
+        runtime::FormatContentDiagLine(nullptr, 0, false, fmtPayload, 3);
+    if (fmtLine.rfind("F3DIAG ", 0) != 0 ||
+        fmtLine.find(fmtPayload) == std::string::npos ||
+        fmtLine.find('\n') != std::string::npos || fmtLine.size() >= 320) {
+      std::printf("  detail: format-looking err not verbatim/bounded\n");
+      return false;
+    }
+    // Overlong payload (5000B) must truncate to the 320B diag bound.
+    const std::string overlong(5000, 'E');
+    const std::string longLine =
+        runtime::FormatContentDiagLine(nullptr, 0, true, overlong.c_str(), 7);
+    if (longLine.rfind("F3DIAG ", 0) != 0 ||
+        longLine.find('\n') != std::string::npos || longLine.size() >= 320) {
+      std::printf("  detail: overlong err grew past the diag bound\n");
+      return false;
+    }
+    // Newline injection: bounded + prefix + verbatim (no format
+    // interpretation). NOTE: embedded newlines currently pass through
+    // (pre-existing residual per security-review; identical pre/post move),
+    // so this leg pins boundedness/naming, not sanitization.
+    const char* nlPayload = "boom\nINJECTED_TAG contentErr=hacked";
+    const std::string nlLine =
+        runtime::FormatContentDiagLine(nullptr, 0, false, nlPayload, 1);
+    if (nlLine.rfind("F3DIAG ", 0) != 0 || nlLine.size() >= 320 ||
+        nlLine.find("boom") == std::string::npos) {
+      std::printf("  detail: newline err broke bound/prefix/verbatim\n");
+      return false;
+    }
+  } catch (...) {
+    std::printf("  detail: FormatContentDiagLine must never throw\n");
+    return false;
+  }
+  return true;
+}
+
 #define RUN_CASE(name)                                  \
   do {                                                  \
     if (!(name)()) {                                    \
@@ -460,6 +516,7 @@ int main() {
   RUN_CASE(check_record_seam_denies_forged_node_and_handler);
   RUN_CASE(check_tap_record_evidence_is_log_literal_safe);
   RUN_CASE(check_t1_registration_seam_callable);
+  RUN_CASE(check_format_content_diag_line_hostile_err_stays_bounded);
   RUN_CASE(check_non31_touchable_dispatches_via_jsruntime);
   RUN_CASE(check_every_touchable_names_handler_via_registration);
   RUN_CASE(check_startup_store_has_no_preseeded_handles);
