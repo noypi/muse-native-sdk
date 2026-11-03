@@ -199,10 +199,10 @@ describe('T2 — turnId-stamped bridge with stale-id rule (AC-MUSE-040)', () => 
   });
 });
 
-// ---- T3 — tools() snapshot (FR-MUSE-012, FR-MUSE-013) ----
-// Shared file assigned to T1 per GR-08 T1.8; T3 contract maps to this file.
+// ---- T2 — tools() snapshot (FR-MUSE-012; feeds T3 connector tools) ----
+// Shared file assigned to T1 per GR-08 T1.8; T2 contract maps to this file.
 
-describe('T3 — registry exposes tools() as a function', () => {
+describe('T2 — registry exposes tools() as a function', () => {
   it('registry exposes a tools function', () => {
     const registry = abilities.createRegistry({ capabilities: ['gallery.read'] });
     assert.equal(typeof registry.tools, 'function');
@@ -214,7 +214,7 @@ describe('T3 — registry exposes tools() as a function', () => {
   });
 });
 
-describe('T3 — tools() snapshot derived from registered abilities', () => {
+describe('T2 — tools() snapshot derived from registered abilities', () => {
   it('after registering two abilities tools() returns both with matching arg maps', () => {
     const registry = abilities.createRegistry({
       capabilities: ['gallery.read', 'notes.write'],

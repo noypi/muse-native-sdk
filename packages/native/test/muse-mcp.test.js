@@ -1,6 +1,6 @@
 'use strict';
-// Batch 2 — T4 createMuseMcp() connector (FR-MUSE-013, AC-MUSE-041, TC-MUSE-040).
-// Owned by T4 per GR-08 T1.8. Public entry only: require('../muse-mcp.js')
+// Batch 1 — T3 createMuseMcp() connector (FR-MUSE-013, AC-MUSE-041, TC-MUSE-040).
+// Owned by T3 per GR-08 T1.8; T4 contract maps to this file.
 // plus the ../index.js re-export. Hermetic: node:test + node:assert/strict
 // + node:fs/path (own-file source scan) only. No network, no secrets,
 // no config, no live services, no server/socket.
@@ -35,7 +35,7 @@ async function callCode(promiseOrValue, syncFn) {
   return undefined;
 }
 
-describe('T4 — createMuseMcp is exposed (AC-MUSE-041)', () => {
+describe('T3 — createMuseMcp is exposed (AC-MUSE-041)', () => {
   it('muse-mcp.js exposes createMuseMcp as a function', () => {
     assert.equal(typeof createMuseMcp, 'function');
   });
@@ -49,7 +49,7 @@ describe('T4 — createMuseMcp is exposed (AC-MUSE-041)', () => {
   });
 });
 
-describe('T4 — one call registers + binds turn + serves call/tools (AC-MUSE-041)', () => {
+describe('T3 — one call registers + binds turn + serves call/tools (AC-MUSE-041)', () => {
   it('call(name, args) invokes the ability with the control getTurn() turn id', async () => {
     const seen = [];
     const control = { getTurn: () => ({ id: 'turn-3-control-turn' }) };
@@ -147,7 +147,7 @@ describe('T4 — one call registers + binds turn + serves call/tools (AC-MUSE-04
   });
 });
 
-describe('T4 — dispose() unbinds the turn so later call() fails stale-id (AC-MUSE-041)', () => {
+describe('T3 — dispose() unbinds the turn so later call() fails stale-id (AC-MUSE-041)', () => {
   it('call() after dispose() fails closed with { code: stale-id }', async () => {
     const handle = createMuseMcp({
       abilities: [ability()],
@@ -175,7 +175,7 @@ describe('T4 — dispose() unbinds the turn so later call() fails stale-id (AC-M
   });
 });
 
-describe('T5 — smart-component handle-only boundary (AC-MUSE-042, TC-MUSE-041)', () => {
+describe('T4 — smart-component handle-only boundary (AC-MUSE-042, TC-MUSE-041)', () => {
   it('handle carries exactly registry, tools, call and dispose (no transport/provider fields)', () => {
     const handle = createMuseMcp({
       abilities: [ability()],
@@ -222,7 +222,7 @@ describe('T5 — smart-component handle-only boundary (AC-MUSE-042, TC-MUSE-041)
     );
   });
 });
-describe('T4 — one-way dep: no transport/provider fields (TC-MUSE-040)', () => {
+describe('T3 — one-way dep: no transport/provider fields (TC-MUSE-040)', () => {
   it('muse-mcp.js source mentions no providerUrl and no apiKey', () => {
     const src = fs.readFileSync(path.join(__dirname, '..', 'muse-mcp.js'), 'utf8');
     assert.ok(!/providerUrl/.test(src), 'muse-mcp.js must not mention providerUrl');
