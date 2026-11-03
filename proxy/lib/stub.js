@@ -196,7 +196,19 @@ function handle(req) {
     const spec = ERROR_SPECS[forced];
     throw new ProxyError(spec.code, route, spec.retryable);
   }
-  return { status: 200, body: clone(FIXTURES[route]) };
+  const body = clone(FIXTURES[route]);
+  // T7 — echo a caller-supplied turnId opaquely on the recorded body; invent
+  // none when the caller supplies none (FR-MUSE-002 turn correlation).
+  if (
+    req &&
+    typeof req === 'object' &&
+    Object.prototype.hasOwnProperty.call(req, 'turnId') &&
+    body &&
+    typeof body === 'object'
+  ) {
+    body.turnId = req.turnId;
+  }
+  return { status: 200, body };
 }
 
 module.exports = { handle };
