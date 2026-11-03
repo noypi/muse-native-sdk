@@ -2319,21 +2319,26 @@ void EmitFamilyCmd(const GalleryRow& row, PrimitiveKind kind, int bx,
       cmd.bounds = {static_cast<float>(x0), static_cast<float>(y0),
                     static_cast<float>(cw), static_cast<float>(ch)};
       cmd.radius = 16.0f;
-      // BUG-M3-FIDELITY-014 follow-up: the accent fill rides the same
-      // resolvePresentFill choke point as the card, or the CPU InkFor
-      // (payload-0 -> uniform surface-variant default) paints a uniform
-      // rect over the differentiated card. Image resolves to kWhite.
-      cmd.payload.stateColor = resolvePresentFill(
-          static_cast<std::uint32_t>(PrimitiveKind::Image), 0);
+      // BUG-M3-FIDELITY-015 T4a: the interior must contrast with its card.
+      // The Image-family card resolves to kWhite, so the FIDELITY-014
+      // choke-point fill (kWhite-on-kWhite) painted pixel-identical and
+      // invisible on device (T4b: staged Image=1, 0 JNI skips, yet blank).
+      // Surface-variant container tone: real M3 role token, never a mock
+      // painter (RULE-M3-007); payload stays nonzero so InkFor keeps the
+      // fail-closed payload-0 default untouched.
+      cmd.payload.stateColor = kLightSurfaceVariant;
       break;
     case PrimitiveKind::Rect:
       cmd.bounds = {static_cast<float>(bx + 32), static_cast<float>(y0 + 8),
                     static_cast<float>(bw - 64),
                     static_cast<float>(ch - 16)};
-      // Same choke point as above; Rect resolves to the surface-variant
-      // default (pixel-identical, fail-closed for payload-0 preserved).
-      cmd.payload.stateColor = resolvePresentFill(
-          static_cast<std::uint32_t>(PrimitiveKind::Rect), 0);
+      // BUG-M3-FIDELITY-015 T4a: the interior must contrast with its card.
+      // The Rect-family card resolves to kLightSurfaceVariant, so the
+      // FIDELITY-014 choke-point fill (variant-on-variant) painted
+      // pixel-identical and invisible against its card. Surface token: real M3
+      // role token, never a mock painter (RULE-M3-007); payload stays
+      // nonzero so InkFor keeps the fail-closed payload-0 default.
+      cmd.payload.stateColor = kWhite;
       break;
     case PrimitiveKind::ShapedText:
     default:
