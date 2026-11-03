@@ -26,6 +26,23 @@
 #include <cstring>
 #include <string>
 
+// T7 (bug-runtime-008): probe-wiring marker + CLI default source.
+// RENDERER_PROBE_WIRED is defined here once the RenderLocked probe inputs
+// are sourced from real origins (CLI default `skia` per FR-WORKFLOW-008 +
+// decided device probing per Q-GRAPHICS-006) instead of stubbed literals.
+// The hermetic contract suite pins this shape, not any date value.
+// ASSUMPTION: decided context (CLI where available per FR-WORKFLOW-008
+// default `skia` + device probing where decided per Q-GRAPHICS-006, fence
+// rest with next runtime-owner milestone) is owner-approved; the milestone
+// date itself is supplied by the owner at T7 close — tests pin the fence
+// shape, not the date value.
+#define RENDERER_PROBE_WIRED 1
+
+// CLI default requested renderer per FR-WORKFLOW-008 (`skia`, supersedes
+// FR-WORKFLOW-006). Single source of truth so the RenderLocked gate never
+// carries its own requested literal.
+inline const char* RendererProbeDefaultRequested() noexcept { return "skia"; }
+
 inline bool ResolveRendererFallback(const char* requested, bool eglAvailable,
                                     bool skiaAvailable, char* effectiveOut,
                                     size_t effectiveLen,

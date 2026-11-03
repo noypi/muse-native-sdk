@@ -67,6 +67,14 @@ inline void SetError(BlitError* error, BlitCode code, const char* trigger) {
     error->trigger = trigger != nullptr ? trigger : "";
   }
 }
+// --- host stub-EGL scaffold (T7 bug-runtime-008) ---------------------------
+// Host-only stub-EGL scaffold for hermetic tests. Compiled only behind
+// `#ifdef HOST_SCAFFOLD`; the device lane (Android EGL) provides the real
+// calls behind the same boundary.
+// ASSUMPTION: decided context (CLI where available per FR-WORKFLOW-008
+// default `skia` + device probing where decided per Q-GRAPHICS-006) is
+// owner-approved; tests pin the fence shape.
+#ifdef HOST_SCAFFOLD
 // Stub EGL calls: each names the real EGL entry it stands in for so fault
 // triggers carry the failing call name.
 inline bool StubCreateSurface() {
@@ -83,6 +91,14 @@ inline bool StubSwapOnce() {
   }
   return true;
 }
+#else
+// Unfenced shape is fail-closed: without the host scaffold no stub may
+// answer `true`; every EGL failure falls to the proven in-process CPU push
+// (never blank) via PresentFrameWithFallback.
+inline bool StubCreateSurface() { return false; }
+inline bool StubMakeCurrent() { return false; }
+inline bool StubSwapOnce() { return false; }
+#endif
 }  // namespace egl_blit_detail
 
 inline void egl_blit_test::SetFaultHooks(const FaultHooks* hooks) {

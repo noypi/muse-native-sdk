@@ -72,6 +72,13 @@
 // entry points resolved by name lookup must opt back into default visibility.
 #define MUSE_JNI_EXPORT __attribute__((visibility("default")))
 
+// T7 (bug-runtime-008): decided device probing accessor for the RenderLocked
+// resolve gate (Q-GRAPHICS-006, owner-approved). Declared in the Skia-leg
+// shared header `engine/graphics/skia/present_skia.h` (included above) so
+// both TUs bind one external-linkage entity; defined by the Skia present
+// leg: true only after an observed successful Skia present, fail-closed
+// false otherwise.
+
 namespace runtime {
 // BUG-INPUT-001 T3: layering-page predicate + pager owned by the present path
 // (defined in gallery_present.cpp, deliberately no header change). Forward-
@@ -1004,24 +1011,27 @@ void RenderLocked(GalleryHandle* g) {
   // staged->locked copy); no EGL/Skia failure can blank or crash the frame
   // per AC-GRAPHICS-034, and every downgrade is logged with requested vs
   // effective reported separately.
-  // Stub scope (adjudicated MAJOR 1): `requestedRenderer`, `eglAvailable`,
-  // and `skiaAvailable` below are stubbed defaults — no native preference
-  // source exists in-tree (CLI-side per FR-WORKFLOW-006; device probing per
-  // Q-GRAPHICS-006 is unsettled, and plumbing it in is out-of-scope new
-  // interface work, so no preference source is invented here). The egl/skia
-  // dispatch below is therefore armed-but-unreached until preference
-  // plumbing lands (follow-up: wire the requested renderer + availability
-  // probes into this gate); until then every frame takes the proven CPU
-  // push with the observational EGL attempt preserved.
+  // T7 (bug-runtime-008): probe inputs wired to real sources — requested from
+  // the CLI default (`skia` per FR-WORKFLOW-008 via
+  // RendererProbeDefaultRequested), availability from decided device probing
+  // per Q-GRAPHICS-006 (live EGL presenter init state + observed Skia-lane
+  // health via DeviceSkiaLaneSucceeded; both fail-closed false until the
+  // device lanes prove themselves). The egl/skia dispatch below stays
+  // armed-but-unreached until a device lane proves itself; until then every
+  // frame takes the proven CPU push with the observational EGL attempt
+  // preserved.
+  // ASSUMPTION: decided context (CLI where available per FR-WORKFLOW-008
+  // default `skia` + device probing where decided per Q-GRAPHICS-006) is
+  // owner-approved.
   // FR-GRAPHICS-012 T3: EGL blit-present attempt with automatic in-process
   // CPU fallback. Observational until T4 proves EGL pixels: the proven CPU
   // copy below always posts, so a failed (or dormant — EGL never initialized
   // yet) EGL lane can never blank the device frame. Every EGL failure is
   // logged inside as `GFX-BLIT-FALLBACK: <trigger>`; lock/unlockAndPost below
   // are reused unchanged.
-  const char* requestedRenderer = "skia";
-  const bool eglAvailable = false;
-  const bool skiaAvailable = false;
+  const char* requestedRenderer = ::RendererProbeDefaultRequested();
+  const bool eglAvailable = egl_blit_detail::BlitState().initialized;
+  const bool skiaAvailable = DeviceSkiaLaneSucceeded();
   char effectiveRenderer[16] = {};
   std::string rendererTrigger;
   ResolveRendererFallback(requestedRenderer, eglAvailable, skiaAvailable,

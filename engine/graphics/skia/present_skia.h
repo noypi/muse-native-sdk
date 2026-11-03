@@ -44,4 +44,11 @@ struct FaultHooks {
 void SetFaultHooks(const FaultHooks* hooks);  // nullptr clears
 }  // namespace skia_test
 
+// T7 (bug-runtime-008): decided device probing accessor for the RenderLocked
+// gate (Q-GRAPHICS-006, owner-approved). Defined by the Skia present leg in
+// `present_skia.cpp`: true only after an observed successful Skia present,
+// fail-closed false otherwise. Declared here so the Skia leg owns one
+// external-linkage entity included by both TUs.
+bool DeviceSkiaLaneSucceeded() noexcept;
+
 #endif  // GRAPHICS_SKIA_PRESENT_SKIA_H_
