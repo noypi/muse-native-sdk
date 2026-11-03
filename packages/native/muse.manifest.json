@@ -101,7 +101,8 @@
         "variant": { "type": "string", "values": ["filled", "tonal", "outlined", "text", "elevated"] },
         "label": { "type": "string", "required": true },
         "enabled": { "type": "boolean" },
-        "icon": { "type": "string" }
+        "icon": { "type": "string" },
+        "onPress": { "type": "event" }
       }
     },
     {
@@ -112,7 +113,8 @@
         "variant": { "type": "string", "values": ["standard", "filled", "tonal", "outlined"] },
         "icon": { "type": "string", "required": true },
         "enabled": { "type": "boolean" },
-        "selected": { "type": "boolean" }
+        "selected": { "type": "boolean" },
+        "onPress": { "type": "event" }
       }
     },
     {
@@ -122,7 +124,8 @@
       "props": {
         "size": { "type": "string", "values": ["small", "medium", "large"] },
         "icon": { "type": "string", "required": true },
-        "enabled": { "type": "boolean" }
+        "enabled": { "type": "boolean" },
+        "onPress": { "type": "event" }
       }
     },
     {
@@ -132,7 +135,8 @@
       "props": {
         "label": { "type": "string", "required": true },
         "icon": { "type": "string" },
-        "enabled": { "type": "boolean" }
+        "enabled": { "type": "boolean" },
+        "onPress": { "type": "event" }
       }
     },
     {
@@ -142,7 +146,8 @@
       "props": {
         "variant": { "type": "string", "values": ["elevated", "filled", "outlined"] },
         "content": { "type": "slot" },
-        "enabled": { "type": "boolean" }
+        "enabled": { "type": "boolean" },
+        "onPress": { "type": "event" }
       }
     },
     {
@@ -153,7 +158,8 @@
         "variant": { "type": "string", "values": ["assist", "filter", "input", "suggestion"] },
         "label": { "type": "string", "required": true },
         "selected": { "type": "boolean" },
-        "enabled": { "type": "boolean" }
+        "enabled": { "type": "boolean" },
+        "onPress": { "type": "event" }
       }
     },
     {
@@ -163,7 +169,8 @@
       "props": {
         "checked": { "type": "boolean" },
         "enabled": { "type": "boolean" },
-        "error": { "type": "boolean" }
+        "error": { "type": "boolean" },
+        "onCheckedChange": { "type": "function" }
       }
     },
     {
@@ -173,7 +180,8 @@
       "props": {
         "selected": { "type": "boolean" },
         "enabled": { "type": "boolean" },
-        "error": { "type": "boolean" }
+        "error": { "type": "boolean" },
+        "onSelectedChange": { "type": "function" }
       }
     },
     {
@@ -183,7 +191,8 @@
       "props": {
         "checked": { "type": "boolean" },
         "enabled": { "type": "boolean" },
-        "icon": { "type": "string" }
+        "icon": { "type": "string" },
+        "onCheckedChange": { "type": "function" }
       }
     },
     {
@@ -192,7 +201,8 @@
       "native": "MuseSlider",
       "props": {
         "value": { "type": "number", "required": true },
-        "enabled": { "type": "boolean" }
+        "enabled": { "type": "boolean" },
+        "onValueChange": { "type": "function" }
       }
     },
     {
@@ -311,7 +321,8 @@
       "base": "Button",
       "props": {
         "selected": { "type": "string", "required": true },
-        "enabled": { "type": "boolean" }
+        "enabled": { "type": "boolean" },
+        "onPress": { "type": "event" }
       }
     },
     {
@@ -389,7 +400,8 @@
       "props": {
         "selected": { "type": "string", "required": true },
         "enabled": { "type": "boolean" },
-        "content": { "type": "slot" }
+        "content": { "type": "slot" },
+        "onPress": { "type": "event" }
       }
     },
     {
@@ -399,7 +411,8 @@
       "props": {
         "label": { "type": "string", "required": true },
         "enabled": { "type": "boolean" },
-        "icon": { "type": "string" }
+        "icon": { "type": "string" },
+        "onPress": { "type": "event" }
       }
     }
   ]

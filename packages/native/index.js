@@ -651,6 +651,14 @@ function assertPreviewFill(family, sampledArgb) {
 }
 
 module.exports = { primitives, components, manifest, driveState, createTextInput, TextInput, onSelectTap, onSliderScrub, assertPreviewFill };
+// FR-M3-013 — Button event-handle surface (T4, real adapter wiring).
+// The canonical delivery-lane copy lives in ./button.js beside the
+// selection.js handles; it is wired here so the package public entry
+// exposes the same fail-closed `createButton` graph the tests import.
+const { createButton, foldButtonFrames, onButtonPress } = require('./button.js');
+module.exports.createButton = createButton;
+module.exports.foldButtonFrames = foldButtonFrames;
+module.exports.onButtonPress = onButtonPress;
 // FR-MUSE-013 — connector re-export (T4, additive; existing surface untouched).
 // MuseMcpHandle is `{ registry, tools, call, dispose }` from ./muse-mcp.js.
 const { createMuseMcp } = require('./muse-mcp.js');

@@ -80,7 +80,7 @@ const EXPECTED: ReadonlyMap<string, 1 | 2 | 3> = new Map([
   ...TIER_3.map((n): [string, 1 | 2 | 3] => [n, 3]),
 ]);
 
-const VALID_PROP_TYPES = new Set(['string', 'boolean', 'number', 'token', 'slot', 'object', 'function']);
+const VALID_PROP_TYPES = new Set(['string', 'boolean', 'number', 'token', 'slot', 'object', 'function', 'event']);
 
 function loadManifest(): any {
   const raw = readFileSync(MANIFEST_URL, 'utf8');
