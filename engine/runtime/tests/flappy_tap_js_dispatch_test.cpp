@@ -16,6 +16,46 @@
 
 #include "runtime/flappy_content.h"
 #include "runtime/presenter.h"
+#include "runtime/content_registry.h"
+
+// ---- T1 (bug-runtime-014) absence + relocation-contract pins ----
+// (1) ABSENCE (audited by TC-RUNTIME-039 grep, RED today): generic
+// engine/runtime/src/jni_bridge.cpp must carry zero per-app tokens from
+// this table; the six sibling dispatch files
+// (presenter.h, input_chain.cpp, js_runtime.cpp, layout.cpp,
+// presenter.cpp, renderer.cpp) are already clean (TC-038/040..044).
+// The table below pins the exact relocation set so T2 cannot shrink it;
+// the grep audit (not C++ execution) is the enforcement leg.
+// Forbidden set (support.md classification, verified in-tree 2026-11-03):
+//   FlappyBird / FlappyPipe (TC-039 case-sensitive trip, jni_bridge
+//   lines ~1052-1053) | flappy-hero / Recognized flappy comment (~1003,
+//   ~1051, same app-knowledge class, evades case-sensitive grep) |
+//   F3DIAG tag + hasTag("...") kind probe (~1038-1053, content-kind
+//   knowledge in the generic file).
+// (2) PRESENCE (callable, GREEN today): the registration call stays —
+// TryPresentContentScene (content_registry.h) + RefreshTapTreeFromPresentedScene
+// + ContentTouchHandlerName/FireContentTapToJs seam. The cases below
+// reference the seam so removing the call breaks the link; source
+// presence is additionally audited by grep (lines ~1010, ~1020/~1313,
+// ~1824-1828 byte-kept per plan D1).
+static bool check_t1_registration_seam_callable() {
+  // RegisterFlappyContent links the content-module owner; the generic
+  // seam resolves through it — removing the registration call breaks this.
+  if (!runtime::RegisterFlappyContent()) {
+    std::printf("  detail: RegisterFlappyContent failed\n");
+    return false;
+  }
+  // Content seam callable: steer node names its handler; scrim/forged do not.
+  if (runtime::ContentTouchHandlerName(31) == nullptr) {
+    std::printf("  detail: T1 presence pin: steer node 31 names no handler\n");
+    return false;
+  }
+  if (!runtime::FireContentTapToJs(31, "onTouchStart")) {
+    std::printf("  detail: T1 presence pin: steer tap did not record\n");
+    return false;
+  }
+  return true;
+}
 
 // --- T11 `Interface:` line (retyped honest tap-record per Batch 5 halt) ---
 // `dispatchTouch(nodeId: int, action: TouchAction, x: float, y: float) ->
@@ -419,6 +459,7 @@ int main() {
   RUN_CASE(check_nonfinite_coordinates_rejected);
   RUN_CASE(check_record_seam_denies_forged_node_and_handler);
   RUN_CASE(check_tap_record_evidence_is_log_literal_safe);
+  RUN_CASE(check_t1_registration_seam_callable);
   RUN_CASE(check_non31_touchable_dispatches_via_jsruntime);
   RUN_CASE(check_every_touchable_names_handler_via_registration);
   RUN_CASE(check_startup_store_has_no_preseeded_handles);
