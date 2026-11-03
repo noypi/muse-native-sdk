@@ -1,9 +1,17 @@
 #include "runtime/renderer.h"
 
 #include <cmath>
+#include <cstdint>
+#include <map>
+#include <string>
+#include <vector>
+
+#include <ft2build.h>
+#include FT_FREETYPE_H
 
 #include "engine/graphics/vector/slug_msdf.h"
 #include "engine/graphics/vector/tile_raster.h"
+#include "muse/text/font_discovery.h"
 #include "runtime/content_registry.h"
 #include "runtime/gallery_present.h"
 // BUG-TEXT-008 t5r5 seam binding: this TU is the raster half of the executed
@@ -12,6 +20,10 @@
 // muse/text/raster_blend_orientation.h (Real adapter:
 // engine/text/src/raster_blend_orientation.cpp). Pixel-dead atlas-upload
 // path untouched.
+
+#if defined(__ANDROID__)
+#include <android/log.h>
+#endif
 
 namespace runtime {
 namespace {
@@ -767,6 +779,181 @@ void RasterizeOutlineBlock(const TileSegs& segs, CoverageMask& mask) {
   }
 }
 
+#if defined(__ANDROID__) && !defined(MUSE_TEXT_HERMETIC_FALLBACK)
+// BUG-TEXT-007 T15-leg4 (FR-TEXT-016 / AC-TEXT-045): production font-outline
+// raster path. The hermetic/test lanes keep the procedural BuildGlyphOutline
+// composer below (the hermetic tree carries no font binary); this lane opens
+// the run's bound face through the T8 NDK path and blits real font bitmaps.
+// Process-lifetime face cache keyed by chain face id: the gallery binds one
+// face per script, so this stays at a handful of entries and faces are never
+// evicted (FT_Done runs at process teardown implicitly).
+struct CachedDeviceFace {
+  FT_Library lib = nullptr;
+  FT_Face face = nullptr;
+  bool valid() const { return lib != nullptr && face != nullptr; }
+};
+
+std::map<std::uint64_t, CachedDeviceFace>& DeviceFaceCache() {
+  static std::map<std::uint64_t, CachedDeviceFace> cache;
+  return cache;
+}
+
+// The gallery shaping size (kGalleryTextSizePx): shaped advances read in px
+// at this em, so the pen scale below tracks it.
+constexpr float kShapedEmPx = 16.0f;
+
+bool OpenDeviceFace(std::uint64_t face_id, FT_Face* out) {
+  if (out == nullptr || face_id == 0u) return false;
+  std::map<std::uint64_t, CachedDeviceFace>& cache = DeviceFaceCache();
+  const auto hit = cache.find(face_id);
+  if (hit != cache.end() && hit->second.valid()) {
+    *out = hit->second.face;
+    return true;
+  }
+  muse::text::StatusOr<std::string> path =
+      muse::text::FontPathForFace(muse::text::FontHandle(face_id));
+  if (!path.ok() || path->empty()) {
+    return false;
+  }
+  FT_Library lib = nullptr;
+  if (FT_Init_FreeType(&lib) != 0) return false;
+  FT_Face face = nullptr;
+  if (FT_New_Face(lib, path->c_str(), 0, &face) != 0) {
+    FT_Done_FreeType(lib);
+    return false;
+  }
+  CachedDeviceFace entry;
+  entry.lib = lib;
+  entry.face = face;
+  cache[face_id] = entry;
+  *out = face;
+  return true;
+}
+
+// Blit one run's font-outline coverage into mask: each font glyph id renders
+// through FT_Load_Glyph + FT_Render_Glyph at the mask height, stepped by the
+// shaped advances under a uniform pen scale (layout authority stays with the
+// shaper). Coverage merges with max() so overlapping glyphs never dim each
+// other. Returns false when no font coverage could be produced — the caller
+// returns the (possibly blank) mask fail-closed, never procedural glyphs.
+//
+// BUG-TEXT-007 leg-8 index binding: the stored glyph id is trusted only when
+// it agrees with the face actually opened here. For ASCII scalars the opened
+// face's own cmap is authoritative (a 1:1 scalar owns exactly one glyph, so
+// no ligature/mark ambiguity): when the stored id disagrees with
+// FT_Get_Char_Index on the opened face, the face-truth id wins and the skew
+// is counted. Non-ASCII scalars keep the stored HarfBuzz id (complex shaping
+// authority). Codepoints ride the T4 seam alongside the run for exactly this
+// classification; a length mismatch fails closed.
+bool BlitFontRunCoverage(const std::vector<std::uint32_t>& glyphs,
+                         const std::vector<float>& advances,
+                         const std::vector<std::uint32_t>& codepoints,
+                         std::uint64_t face_id, CoverageMask& mask) {
+  if (glyphs.empty() || glyphs.size() != advances.size() ||
+      codepoints.size() != glyphs.size()) {
+    return false;
+  }
+  if (mask.width <= 0 || mask.height <= 0) return false;
+  FT_Face face = nullptr;
+  if (!OpenDeviceFace(face_id, &face)) return false;
+  // BUG-TEXT-007 leg-15 (FR-TEXT-016 / AC-TEXT-045): the mask is a line box,
+  // not an em square. Sizing the em at mask.height overflows the full
+  // vertical extent (ascender through descender), so the row loop below
+  // skips every descender row while non-descender rows still paint — any=1
+  // with 'g' clipped to 'q'/'a' and 'y' clipped to 'v'. Shrink the pixel
+  // size until the face's own extent fits the line box instead.
+  FT_UInt px = static_cast<FT_UInt>(mask.height);
+  if (px < 1u) px = 1u;
+  if (FT_Set_Pixel_Sizes(face, 0, px) != 0) {
+    return false;
+  }
+  {
+    const int asc = static_cast<int>(face->size->metrics.ascender >> 6);
+    const int desc = static_cast<int>(face->size->metrics.descender >> 6);
+    const int extent = asc - desc;
+    if (extent > mask.height && extent > 0) {
+      const unsigned fit_px =
+          (static_cast<unsigned>(mask.height) * static_cast<unsigned>(px)) /
+          static_cast<unsigned>(extent);
+      px = static_cast<FT_UInt>(fit_px < 1u ? 1u : fit_px);
+      if (FT_Set_Pixel_Sizes(face, 0, px) != 0) {
+        return false;
+      }
+    }
+  }
+  const float pen_scale =
+      static_cast<float>(px) / kShapedEmPx;
+  if (!(pen_scale > 0.0f) || !std::isfinite(pen_scale)) return false;
+  int baseline =
+      static_cast<int>(face->size->metrics.ascender >> 6);
+  if (baseline < 0) baseline = 0;
+  if (baseline >= mask.height) baseline = mask.height - 1;
+  double pen = 0.0;
+  bool any = false;
+  unsigned load_fail = 0;
+  unsigned rebound = 0;
+  for (std::size_t i = 0; i < glyphs.size(); ++i) {
+    const float adv = advances[i];
+    // BUG-TEXT-007 leg-8: bind the loaded index to the opened face. ASCII
+    // scalars are 1:1 by construction, so a stored id that disagrees with
+    // the face's cmap is stale (shaped against a different face object)
+    // and the face-truth id wins. 0xFFFD (unresolved marker) and non-ASCII
+    // keep the stored HarfBuzz id.
+    std::uint32_t gid = glyphs[i];
+    const std::uint32_t cp = codepoints[i];
+    if (cp < 0x80u && cp != 0xFFFDu) {
+      const std::uint32_t face_gid =
+          static_cast<std::uint32_t>(FT_Get_Char_Index(face, cp));
+      if (face_gid != 0u && face_gid != gid) {
+        gid = face_gid;
+        ++rebound;
+      }
+    }
+    if (FT_Load_Glyph(face, static_cast<FT_UInt>(gid),
+                       FT_LOAD_DEFAULT) == 0 &&
+        FT_Render_Glyph(face->glyph, FT_RENDER_MODE_NORMAL) == 0) {
+      const FT_Bitmap& bmp = face->glyph->bitmap;
+      // FT_RENDER_MODE_NORMAL yields a positive-pitch 8-bit graymap; any
+      // other layout skips the glyph bitmap (pen still advances).
+      if (bmp.buffer != nullptr && bmp.width > 0 && bmp.rows > 0 &&
+          bmp.pitch > 0) {
+        const int dst_x = static_cast<int>(std::lround(pen)) +
+                          face->glyph->bitmap_left;
+        const int dst_y =
+            baseline - face->glyph->bitmap_top;
+        const int pitch = bmp.pitch;
+        for (unsigned r = 0; r < bmp.rows; ++r) {
+          const int y = dst_y + static_cast<int>(r);
+          if (y < 0 || y >= mask.height) continue;
+          for (unsigned c = 0; c < bmp.width; ++c) {
+            const int x = dst_x + static_cast<int>(c);
+            if (x < 0 || x >= mask.width) continue;
+            const unsigned char v =
+                bmp.buffer[static_cast<std::size_t>(r) *
+                               static_cast<std::size_t>(pitch) +
+                           c];
+            if (v == 0) continue;
+            float& dst = mask.alpha[static_cast<std::size_t>(y) *
+                                        static_cast<std::size_t>(mask.width) +
+                                    static_cast<std::size_t>(x)];
+            const float a = static_cast<float>(v) / 255.0f;
+            if (a > dst) dst = a;
+          }
+        }
+        any = true;
+      }
+    } else {
+      ++load_fail;
+    }
+    // Degenerate/non-finite advances hold the pen (never walk backwards).
+    if (std::isfinite(adv) && adv > 0.0f) {
+      pen += static_cast<double>(adv) * static_cast<double>(pen_scale);
+    }
+  }
+  return any;
+}
+#endif  // defined(__ANDROID__) && !defined(MUSE_TEXT_HERMETIC_FALLBACK)
+
 muse::text::StatusOr<CoverageMask> RasterizeShapedText(
     std::uint32_t run, const Rect& bounds, std::uint32_t color) {
   (void)color;
@@ -832,6 +1019,23 @@ muse::text::StatusOr<CoverageMask> RasterizeShapedText(
   mask.width = maskW < 1 ? 1 : (maskW > kMaxMaskSide ? kMaxMaskSide : maskW);
   mask.height = maskH < 1 ? 1 : (maskH > kMaxMaskSide ? kMaxMaskSide : maskH);
   mask.alpha.assign(static_cast<std::size_t>(mask.width) * mask.height, 0.0f);
+#if defined(__ANDROID__) && !defined(MUSE_TEXT_HERMETIC_FALLBACK)
+  // BUG-TEXT-007 leg-11 (FR-TEXT-016 / AC-TEXT-045): font-agreed routing.
+  // When the run's bound face resolves, mask texels come from the font's
+  // rendered outlines (true letterforms) — the run NEVER falls through to
+  // the procedural composer below. When the font leg genuinely cannot
+  // serve, the blank mask returns fail-closed: wrong glyphs are worse than
+  // no glyphs. Only faceless runs reach the procedural composer (hermetic/
+  // test lane and pre-seam handles).
+  {
+    std::uint64_t face_id = 0u;
+    if (ResolveGalleryShapedFace(run, &face_id)) {
+      BlitFontRunCoverage(shaped.glyphIds, shaped.advances,
+                          shaped.codepoints, face_id, mask);
+      return mask;
+    }
+  }
+#endif
   for (std::size_t i = 0; i < placed.glyphs.size(); ++i) {
     double adv = 8.0;
     if (i < shaped.advances.size() && std::isfinite(shaped.advances[i]) &&

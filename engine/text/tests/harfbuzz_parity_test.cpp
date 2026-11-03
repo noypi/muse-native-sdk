@@ -997,6 +997,154 @@ static bool check_face_swap_never_serves_stale_ids() {
   }
 }
 
+// --- Tail T13 (BUG-TEXT-007): gallery-seam regression pin ---
+// Refined root cause (support.md + 2026-11-03 file-presence probe):
+// GalleryChainFace() resolves resolveFallbackChain(0, nullptr, nullptr);
+// script 0 is unsupported, so the chain always terminates at the bundled
+// last-resort face, which has no file mapping (FontPathForFace ->
+// kNoFaceAvailable). On device ResolveRealFont therefore binds nothing and
+// the production lane fails closed (kMissingGlyph blanks) or serves
+// procedural outlines — while /system/fonts/*.ttf exist and are readable.
+// These cases pin the seam through the settled engine/text public interface
+// only (GalleryChainFace itself lives in gallery_present.cpp, which this TU
+// does not link): the gallery request's resolution must be a script-covered,
+// non-last-resort face — the per-script Latn face the device NDK maps to
+// system Roboto — never the file-less last-resort terminus.
+// ASSUMPTION (interface mapping): the plan T13 line names
+//   shapeRunWithFallback(utf8, style, chain: FontFace[]);
+// no such overload exists; the settled signature is
+//   shapeRunWithFallback(bytes, len, style, FontRequest)  (shaper.h:82-85)
+// where FontRequest.script_tag selects the fallback chain. Tests drive the
+// settled signature; "chain" below means the resolveFallbackChain resolution
+// for the request's script_tag.
+
+static constexpr std::uint32_t kT13Latn = 0x4C61746Eu;  // 'Latn'
+
+static bool check_gallery_script_zero_chain_must_not_terminate_at_last_resort() {
+  // RED pre-fix: the current gallery seam (script 0) terminates at the
+  // file-less bundled face. Desired: a script-covered, non-zero face.
+  try {
+    muse::text::StatusOr<muse::text::FontHandle> chained =
+        muse::text::resolveFallbackChain(0, nullptr, nullptr);
+    if (!chained.ok()) return false;
+    muse::text::FontHandle last =
+        muse::text::SystemFontEnumerator().LastResortFace(0);
+    if (*chained == last) return false;  // <-- fails pre-fix
+    if (*chained == muse::text::FontHandle{}) return false;
+    return true;
+  } catch (...) {
+    return false;
+  }
+}
+
+static bool check_gallery_seam_chain_must_match_latn_resolution() {
+  // RED pre-fix: the gallery Latin-label resolution must equal the
+  // per-script Latn resolution (the face the device NDK maps to system
+  // Roboto), not the last-resort terminus.
+  try {
+    muse::text::StatusOr<muse::text::FontHandle> zero =
+        muse::text::resolveFallbackChain(0, nullptr, nullptr);
+    muse::text::StatusOr<muse::text::FontHandle> latn =
+        muse::text::resolveFallbackChain(kT13Latn, nullptr, nullptr);
+    if (!zero.ok() || !latn.ok()) return false;
+    return *zero == *latn;  // <-- fails pre-fix
+  } catch (...) {
+    return false;
+  }
+}
+
+static bool check_latn_chain_is_stable_script_covered_face() {
+  // Guard (reconciled post-convergence: main #257 + run T14 centralize
+  // 0→Latn via EffectiveScript, so script 0 IS Latn-routed and
+  // SupportsScript(0) is true — the old 0-unsupported asymmetry is gone).
+  try {
+    if (!muse::text::SystemFontEnumerator().SupportsScript(kT13Latn)) {
+      return false;
+    }
+    if (!muse::text::SystemFontEnumerator().SupportsScript(0)) return false;
+    muse::text::StatusOr<muse::text::FontHandle> a =
+        muse::text::resolveFallbackChain(kT13Latn, nullptr, nullptr);
+    muse::text::StatusOr<muse::text::FontHandle> b =
+        muse::text::resolveFallbackChain(kT13Latn, nullptr, nullptr);
+    if (!a.ok() || !b.ok()) return false;
+    if (!(*a == *b)) return false;
+    muse::text::FontHandle last =
+        muse::text::SystemFontEnumerator().LastResortFace(kT13Latn);
+    if (*a == last) return false;
+    if (*a == muse::text::FontHandle{}) return false;
+    return true;
+  } catch (...) {
+    return false;
+  }
+}
+
+static bool check_unmapped_script_discover_fails_closed_while_chain_is_silent() {
+  // Boundary (reconciled post-convergence: main #257 + run T14 centralize
+  // 0→Latn via EffectiveScript, so script 0 is Latn-routed and discoverable;
+  // the fail-closed half now uses a genuinely unmapped non-zero tag 'Xxxx').
+  // discoverFonts on 'Xxxx' fails closed (kNoFaceAvailable), while
+  // resolveFallbackChain on the same tag silently succeeds with the bundled
+  // terminus. kNoFaceAvailable must mean "genuinely unmapped", never a quiet
+  // file-less face.
+  static constexpr std::uint32_t kUnmapped = 0x58787878u;  // 'Xxxx'
+  try {
+    muse::text::FontQuery q;
+    q.family = "Roboto";
+    q.scriptTag = kUnmapped;
+    muse::text::StatusOr<std::vector<muse::text::FontHandle>> chain =
+        muse::text::discoverFonts(q);
+    if (chain.ok()) return false;
+    if (chain.status() != muse::text::Status::kNoFaceAvailable) return false;
+    muse::text::StatusOr<muse::text::FontHandle> silent =
+        muse::text::resolveFallbackChain(kUnmapped, nullptr, nullptr);
+    if (!silent.ok()) return false;  // silent success is the defect surface
+    muse::text::StatusOr<std::string> path =
+        muse::text::FontPathForFace(*silent);
+    if (path.ok()) return false;
+    if (path.status() != muse::text::Status::kNoFaceAvailable) return false;
+    // Converged seam: script 0 now routes to the Latn face (0→Latn), and on
+    // the hermetic host every face stays file-less per the T8 contract.
+    muse::text::StatusOr<muse::text::FontHandle> zero =
+        muse::text::resolveFallbackChain(0, nullptr, nullptr);
+    muse::text::StatusOr<muse::text::FontHandle> latn =
+        muse::text::resolveFallbackChain(kT13Latn, nullptr, nullptr);
+    if (!zero.ok() || !latn.ok()) return false;
+    if (!(*zero == *latn)) return false;
+    return true;
+  } catch (...) {
+    return false;
+  }
+}
+
+static bool check_host_shaping_masks_the_seam_divergence() {
+  // Guard (green pre/post): on the hermetic host both the script-0 seam
+  // request and the Latn request bind the in-TU memory font, so shaping
+  // cannot discriminate the seam bug here — the face-identity cases above
+  // are the hermetic pin; the file/run halves are device-EXTERNAL (T15).
+  try {
+    const std::uint8_t kAb[] = {0x41, 0x42};
+    muse::text::TextStyle style;
+    style.size_px = 16.0f;
+    muse::text::FontRequest reqZero;
+    reqZero.script_tag = 0;
+    muse::text::FontRequest reqLatn;
+    reqLatn.script_tag = kT13Latn;
+    muse::text::StatusOr<muse::text::ShapedRun> zero =
+        muse::text::shapeRunWithFallback(kAb, sizeof(kAb), style, reqZero);
+    muse::text::StatusOr<muse::text::ShapedRun> latn =
+        muse::text::shapeRunWithFallback(kAb, sizeof(kAb), style, reqLatn);
+    if (!zero.ok() || !latn.ok()) return false;
+    if ((*zero).glyph_ids.size() != 2 || (*latn).glyph_ids.size() != 2) {
+      return false;
+    }
+    if ((*zero).glyph_ids[0] != 1u || (*zero).glyph_ids[1] != 2u) return false;
+    return (*zero).glyph_ids == (*latn).glyph_ids &&
+           (*zero).advances == (*latn).advances;
+  } catch (...) {
+    return false;
+  }
+}
+
 #define RUN_CASE(name)                           \
   do {                                           \
     if (!(name)()) {                             \
@@ -1006,6 +1154,128 @@ static bool check_face_swap_never_serves_stale_ids() {
       std::printf("PASS %s\n", #name);           \
     }                                            \
   } while (0)
+
+// --- GR-08 T1.1 fork-closing pin (BUG-TEXT-007 support trace) ---
+// gallery_present.cpp:449-455 resolves the shaping face and the rasterizer
+// face in two independent steps (shapeRunWithFallback over the Latn request,
+// then GalleryChainFace() re-resolving the same Latn chain); agreement is
+// currently assumed. ShapedRun carries no face id, so this pin rebounds the
+// stored ASCII ids against the chain face's bound font: any rebound>0, any
+// load failure, any fallback-served id, or any chain disagreement = FAIL.
+// Hermetic lane: ResolveRealFont binds TestOnlyMemoryFont bytes on host, so
+// the bound font below is FT_New_Memory_Face over kTestFontBytes — the exact
+// bytes the shaping lane binds. Device file/run halves are EXTERNAL (T15).
+// ASSUMPTION: the in-TU font covers only U+0041/U+0042, so the Latn label
+// exercised here is "AB" (same seam, same script_tag the gallery seam sends
+// for Latin labels); broader-Latin coverage is device-EXTERNAL (T15).
+
+static bool check_fork_gallery_chain_face_equals_shaping_face() {
+  // Face-agreement: the key-face resolution (GalleryChainFace equivalent)
+  // must equal the face the shaping leg bound (ShapeLabelThroughEngine
+  // shaping-leg equivalent: shapeRunWithFallback over the Latn request).
+  try {
+    muse::text::StatusOr<muse::text::FontHandle> keyFace =
+        muse::text::resolveFallbackChain(kT13Latn, nullptr, nullptr);
+    if (!keyFace.ok()) return false;
+    muse::text::FontRequest req;
+    req.script_tag = kT13Latn;
+    muse::text::TextStyle style;
+    style.size_px = 16.0f;
+    const std::uint8_t kAb[] = {0x41, 0x42};
+    muse::text::StatusOr<muse::text::ShapedRun> shaped =
+        muse::text::shapeRunWithFallback(kAb, sizeof(kAb), style, req);
+    if (!shaped.ok()) return false;
+    if ((*shaped).glyph_ids.size() != 2) return false;
+    // Agreement half 1: the shaping lane must have bound the key face's
+    // font — rebound stored ids against FT_Get_Char_Index on the bound font.
+    FT_Library lib = nullptr;
+    if (FT_Init_FreeType(&lib) != 0) return false;
+    bool bound_ok = false;
+    FT_Face bound = nullptr;
+    if (FT_New_Memory_Face(lib, kTestFontBytes,
+                            static_cast<FT_Long>(sizeof(kTestFontBytes)), 0,
+                            &bound) == 0) {
+      unsigned rebound = 0;
+      for (std::size_t i = 0; i < 2; ++i) {
+        const std::uint32_t face_gid =
+            static_cast<std::uint32_t>(FT_Get_Char_Index(bound, kAb[i]));
+        if (face_gid == 0u || face_gid != (*shaped).glyph_ids[i]) ++rebound;
+      }
+      bound_ok = (rebound == 0);
+      FT_Done_Face(bound);
+    }
+    FT_Done_FreeType(lib);
+    if (!bound_ok) return false;
+    // Agreement half 2: the second independent resolution (GalleryChainFace
+    // at :455, after shaping at :449-452) must equal the shaping-leg chain.
+    muse::text::StatusOr<muse::text::FontHandle> rasterFace =
+        muse::text::resolveFallbackChain(kT13Latn, nullptr, nullptr);
+    if (!rasterFace.ok()) return false;
+    return *rasterFace == *keyFace;
+  } catch (...) {
+    return false;
+  }
+}
+
+static bool check_fork_ascii_roundtrip_no_rebound_no_fallback() {
+  // ShapeGalleryLabel->ResolveGalleryShapedRun->BlitFontRunCoverage hermetic
+  // analogue for ASCII: stored gid must equal FT_Get_Char_Index(boundFace,
+  // cp) (rebound==0), each stored gid must load (load_fail==0), and the ids
+  // must be the direct-HB font ids (no procedural/salted fallback executed).
+  try {
+    muse::text::FontRequest req;
+    req.script_tag = kT13Latn;
+    muse::text::TextStyle style;
+    style.size_px = 16.0f;
+    const std::uint8_t kAb[] = {0x41, 0x42};
+    muse::text::StatusOr<muse::text::ShapedRun> shaped =
+        muse::text::shapeRunWithFallback(kAb, sizeof(kAb), style, req);
+    if (!shaped.ok()) return false;
+    if ((*shaped).glyph_ids.size() != 2) return false;
+    // No-fallback half: direct-HB reference ids for the same bytes.
+    float ref_a = 0.0f;
+    float ref_b = 0.0f;
+    unsigned ref_gid_a = 0u;
+    unsigned ref_gid_b = 0u;
+    if (!shapeAbWithTestFont(&ref_a, &ref_b, &ref_gid_a, &ref_gid_b)) {
+      return false;
+    }
+    if ((*shaped).glyph_ids[0] != ref_gid_a ||
+        (*shaped).glyph_ids[1] != ref_gid_b) {
+      return false;  // procedural/salted fallback served: FAIL
+    }
+    FT_Library lib = nullptr;
+    if (FT_Init_FreeType(&lib) != 0) return false;
+    bool roundtrip_ok = false;
+    FT_Face bound = nullptr;
+    if (FT_New_Memory_Face(lib, kTestFontBytes,
+                            static_cast<FT_Long>(sizeof(kTestFontBytes)), 0,
+                            &bound) == 0) {
+      if (FT_Set_Pixel_Sizes(bound, 0, 16) == 0) {
+        unsigned rebound = 0;
+        unsigned load_fail = 0;
+        for (std::size_t i = 0; i < 2; ++i) {
+          const std::uint32_t face_gid =
+              static_cast<std::uint32_t>(FT_Get_Char_Index(bound, kAb[i]));
+          if (face_gid == 0u || face_gid != (*shaped).glyph_ids[i]) {
+            ++rebound;
+            continue;
+          }
+          if (FT_Load_Glyph(bound, static_cast<FT_UInt>(face_gid),
+                             FT_LOAD_DEFAULT) != 0) {
+            ++load_fail;
+          }
+        }
+        roundtrip_ok = (rebound == 0 && load_fail == 0);
+      }
+      FT_Done_Face(bound);
+    }
+    FT_Done_FreeType(lib);
+    return roundtrip_ok;
+  } catch (...) {
+    return false;
+  }
+}
 
 int main() {
   int failures = 0;
@@ -1043,6 +1313,13 @@ int main() {
   RUN_CASE(check_extreme_len_and_size_capped_or_deterministic);
   RUN_CASE(check_corrupt_memory_font_fail_closed);
   RUN_CASE(check_face_swap_never_serves_stale_ids);
+  RUN_CASE(check_gallery_script_zero_chain_must_not_terminate_at_last_resort);
+  RUN_CASE(check_gallery_seam_chain_must_match_latn_resolution);
+  RUN_CASE(check_latn_chain_is_stable_script_covered_face);
+  RUN_CASE(check_unmapped_script_discover_fails_closed_while_chain_is_silent);
+  RUN_CASE(check_host_shaping_masks_the_seam_divergence);
+  RUN_CASE(check_fork_gallery_chain_face_equals_shaping_face);
+  RUN_CASE(check_fork_ascii_roundtrip_no_rebound_no_fallback);
   if (failures > 0) {
     std::printf("harfbuzz_parity_test: %d failing\n", failures);
     return 1;
