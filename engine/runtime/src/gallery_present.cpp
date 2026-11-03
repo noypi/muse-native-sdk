@@ -372,9 +372,11 @@ GalleryShaper& GalleryShaperState() {
   return state;
 }
 
-// The shaping face for gallery labels: the T2 fallback chain terminus for
-// the gallery request (script-agnostic request, bundled last-resort
-// fallback). Resolved here for the atlas key; shapeRunWithFallback
+// The shaping face for gallery labels: the script-agnostic gallery request
+// normalizes to the Latn face in resolveFallbackChain (BUG-TEXT-007 T14),
+// so the chain binds the per-script Roboto face resolvable to a real
+// /system/fonts file instead of terminating at the file-less bundled
+// last-resort face. Resolved here for the atlas key; shapeRunWithFallback
 // resolves the same chain internally on the shaping leg, so the key face
 // and the shaping face agree.
 muse::text::FontHandle GalleryChainFace() {
@@ -427,9 +429,10 @@ bool ShapeLabelThroughEngine(const std::string& label,
     if (text.empty()) return false;
     muse::text::TextStyle style;
     style.size_px = kGalleryTextSizePx;
-    // Script-agnostic gallery request: no variations, no downloadable font,
-    // so the run shapes over the T2 SystemFontEnumerator chain ending at
-    // the bundled last-resort face. Only malformed UTF-8 is an error.
+    // Script-agnostic gallery request: no variations, no downloadable font.
+    // The seam normalizes the agnostic script to Latn (BUG-TEXT-007 T14),
+    // so the run shapes over the per-script Roboto chain bound to a real
+    // face. Only malformed UTF-8 is an error.
     muse::text::FontRequest req;
     muse::text::StatusOr<muse::text::ShapedRun> shaped =
         muse::text::shapeRunWithFallback(

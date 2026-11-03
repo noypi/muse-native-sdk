@@ -316,9 +316,20 @@ StatusOr<FontHandle> resolveFallbackForScript(
 // the bundled face is present. Allocation-free and noexcept-safe: no
 // std::string/vector construction on the nullable inputs (manual ASCII
 // compares only), so null/empty locale/family can only resolve, never throw.
+// BUG-TEXT-007 T14: the script-agnostic sentinel (script_tag 0, passed by
+// the gallery/muse-demo seam for Latin labels) normalizes to Latn here, so
+// the chain binds the script-covered Latn face — resolvable to a real
+// /system/fonts file via FontPathForFace on device — instead of
+// terminating at the file-less last-resort face. Genuinely unmapped
+// non-zero scripts still terminate at the bundled face below; the
+// last-resort tail, SupportsScript, discoverFonts, and the T1 matcher are
+// unchanged, and uncovered codepoints still fail closed downstream.
 StatusOr<FontHandle> resolveFallbackChain(
     std::uint32_t script_tag, const char* bcp47_locale,
     const char* generic_family) noexcept {
+// BUG-TEXT-007 T14 (= main-side T5 EffectiveScript): script-agnostic
+  // requests (script_tag 0) shape Latin labels; bind the Latn face so
+  // FT_New_Face + hb_ft_font_create serve font curves.
   script_tag = EffectiveScript(script_tag);
   // Step 1: T1 matcher (covers every supported script; locale selects only
   // the Hani variant, unknown/null/empty locale falls back to Hans).
