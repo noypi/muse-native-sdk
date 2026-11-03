@@ -95,6 +95,7 @@ struct CpuPixel {
 
 constexpr std::uint32_t kMaxBatchInstances = 256;
 constexpr int kMaxStackDepth = 8;
+constexpr std::size_t kMaxFrameCommands = 1024;
 
 inline std::uint64_t g_committedFrames = 0;
 inline std::uint64_t g_violations = 0;
@@ -230,6 +231,19 @@ inline CommitResult commit(StagedFrame f) {
   }
   // Whole-frame-or-nothing: bytes are emitted only after every command
   // validated, so a poisoned frame commits nothing (empty bytes).
+  // Per-frame command-count cap bounds reserve(); over-cap fails closed +
+  // counted like other over-cap paths. The u32 narrows below are safe: size
+  // and depth were range-checked against caps above (cap < UINT32_MAX).
+  if (f.commands.size() > kMaxFrameCommands) {
+    ++g_violations;
+    CommitResult r;
+    r.ok = false;
+    r.status = Status::kOverCap;
+    r.log = "game_vocab: frame command count " +
+            std::to_string(f.commands.size()) + " over cap " +
+            std::to_string(kMaxFrameCommands) + " rejected";
+    return r;
+  }
   FrameBytes bytes;
   bytes.reserve(16 + f.commands.size() * 32);
   AppendLe64(bytes, f.frame);

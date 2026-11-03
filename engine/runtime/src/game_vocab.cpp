@@ -5,6 +5,8 @@
 // presenter/renderer frame path.
 #include "runtime/game_vocab.h"
 
+#include <stdexcept>
+
 #include "runtime/renderer.h"
 
 namespace game_vocab {
@@ -26,8 +28,13 @@ namespace game_vocab {
     case GameKind::kScrim: return ::runtime::PrimitiveKind::OverlayScrim;
     case GameKind::kImage: return ::runtime::PrimitiveKind::Image;
     case GameKind::kIcon: return ::runtime::PrimitiveKind::VectorIcon;
-    default: return ::runtime::PrimitiveKind::Rect;  // Unreached: staging
-                                                   // rejects these first.
+    default: {
+      ++g_violations;
+      throw std::invalid_argument(
+          "game_vocab: unknown/per-game kind " +
+          std::to_string(static_cast<std::uint32_t>(kind)) +
+          " denied at map; staging must reject first");
+    }
   }
 }
 
