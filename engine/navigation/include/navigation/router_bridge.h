@@ -11,6 +11,7 @@ enum class BridgeError {
   UNKNOWN_METHOD,
   BAD_ARGS,
   NAV_ERROR,
+  GUARD_DENIED,
 };
 
 struct BridgeResult {

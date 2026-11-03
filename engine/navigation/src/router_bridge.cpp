@@ -244,6 +244,8 @@ RouteDescriptor DescriptorFor(const std::string& route) {
   if (route == "profile") {
     d.params = {{"userId", ParamType::String, true},
                 {"tab", ParamType::Int, false}};
+  } else if (route == "lens") {
+    d.params = {{"id", ParamType::String, true}};
   }
   return d;
 }
@@ -283,6 +285,11 @@ BridgeResult RouterBridge::invoke(const std::string& method,
     ParamVerdict verdict = validateParams(DescriptorFor(route), args);
     if (!verdict.ok) {
       return {false, "", BridgeError::BAD_ARGS};
+    }
+    // FR-NAV-003 guard re-run (AC-NAV-006/042): denying guard fails closed
+    // with GUARD_DENIED and commits nothing. Null/unset hook allows.
+    if (guard_ && !guard_(route)) {
+      return {false, "", BridgeError::GUARD_DENIED};
     }
     NavOp op;
     op.type = NavOpType::Push;
