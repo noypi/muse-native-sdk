@@ -602,6 +602,27 @@ target_link_libraries(gallery_text_decode_test PRIVATE runtime)
 target_compile_options(gallery_text_decode_test PRIVATE -Wall -Wextra -Wpedantic)
 add_test(NAME gallery_text_decode_test COMMAND gallery_text_decode_test)
 
+# BUG-RUNTIME-015 batch 2 (FR-RUNTIME-014): engine fail-closed gates
+# (TC-051 unknown kind, TC-052 theme sentinel, TC-053 unreadable descriptor,
+# TC-055 red blocks re-baseline). TC-054 stays the shell negated-grep scan
+# (no C++ TU by construction).
+add_executable(unknown_kind_fail_test tests/unknown_kind_fail_test.cpp)
+target_link_libraries(unknown_kind_fail_test PRIVATE runtime)
+target_compile_options(unknown_kind_fail_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME unknown_kind_fail_test COMMAND unknown_kind_fail_test)
+add_executable(theme_sentinel_fail_test tests/theme_sentinel_fail_test.cpp)
+target_link_libraries(theme_sentinel_fail_test PRIVATE runtime)
+target_compile_options(theme_sentinel_fail_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME theme_sentinel_fail_test COMMAND theme_sentinel_fail_test)
+add_executable(unreadable_descriptor_fail_test tests/unreadable_descriptor_fail_test.cpp)
+target_link_libraries(unreadable_descriptor_fail_test PRIVATE runtime)
+target_compile_options(unreadable_descriptor_fail_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME unreadable_descriptor_fail_test COMMAND unreadable_descriptor_fail_test)
+add_executable(proof_gate_blocks_rebaseline_test tests/proof_gate_blocks_rebaseline_test.cpp)
+target_link_libraries(proof_gate_blocks_rebaseline_test PRIVATE runtime)
+target_compile_options(proof_gate_blocks_rebaseline_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME proof_gate_blocks_rebaseline_test COMMAND proof_gate_blocks_rebaseline_test)
+
 # BUG-M3-FIDELITY-005 T5: gallery emission wiring (shape -> cache -> real
 # ShapedText{glyphRunId}, measureLine sizing, UTF-8 row admission).
 add_executable(gallery_text_emission_test tests/gallery_text_emission_test.cpp)
