@@ -22,7 +22,7 @@ import { startRound, guess, reveal } from './guessMask';
 // link shapes through the single RouterBridge navigate path (createDemoRouter
 // push/replace facade), never a direct setTab bypass.
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-const { createDemoRouter, drainStashedOpaqueLink } = require('./demoNav') as {
+const { createDemoRouter, drainStashedOpaqueLink, getOpaqueLinkConsumer } = require('./demoNav') as {
   createDemoRouter: (opts?: { transport?: { invoke: (method: string, payload: unknown) => Promise<unknown> } }) => {
     current: string | null;
     push: (to: unknown, params?: object) => Promise<{ ok: boolean; code?: string }>;
@@ -32,6 +32,7 @@ const { createDemoRouter, drainStashedOpaqueLink } = require('./demoNav') as {
     onFallbackRecover: () => Promise<{ ok: boolean; code?: string }>;
   };
   drainStashedOpaqueLink: (router: { current: string | null; forwardIntent: (opaque: unknown) => Promise<{ ok: boolean; code?: string }> }, consume: () => unknown) => Promise<{ ok: boolean; code?: string } | null>;
+  getOpaqueLinkConsumer: () => (() => unknown) | undefined;
 };
 function demoTransport(): { invoke: (method: string, payload: unknown) => Promise<unknown> } | undefined {
   const bridge = (globalThis as unknown as { RouterBridge?: { invoke: (m: string, p: unknown) => Promise<unknown> } }).RouterBridge;
@@ -229,7 +230,7 @@ export default function App() {
   // unparsed) exactly once at boot and deliver it through forwardIntent —
   // the same RouterBridge.invoke channel as warm intents. Fail-closed.
   useEffect(() => {
-    const consume = (globalThis as unknown as { __museConsumeOpaqueLink?: () => unknown }).__museConsumeOpaqueLink;
+    const consume = getOpaqueLinkConsumer();
     if (typeof consume !== 'function') return;
     void drainStashedOpaqueLink(demoRouter, consume).then((result) => {
       if (result && result.ok) setTab(demoRouter.current as Tab);

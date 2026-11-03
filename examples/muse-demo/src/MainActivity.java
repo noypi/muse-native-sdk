@@ -152,6 +152,26 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
 
     static volatile OpaqueLinkSink opaqueLinkSink = null;
 
+    /** Last opaque string accepted by the sink; opaque only, never parsed. */
+    static volatile String lastForwardedOpaqueLink = null;
+
+    /**
+     * Default live sink installed at boot (first-wins: a pre-installed
+     * engine/test sink keeps priority). Retains the taken opaque string
+     * unparsed for introspection and marks delivery in logcat; never parses.
+     */
+    private static final OpaqueLinkSink DEFAULT_OPAQUE_LINK_SINK = opaqueLink -> {
+        lastForwardedOpaqueLink = opaqueLink;
+        Log.i(TAG, "opaque-sink-accept engineHosted=true");
+    };
+
+    /** Installs the default live sink unless one is already present. */
+    static void installDefaultOpaqueLinkSink() {
+        if (opaqueLinkSink == null) {
+            opaqueLinkSink = DEFAULT_OPAQUE_LINK_SINK;
+        }
+    }
+
     /**
      * Handoff into the JS routing layer. Host never parses; the stashed
      * opaque string stays available for the JS drain above. Same channel
@@ -216,8 +236,10 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         if (treeBytes != null) {
             engineHandle = nativeLoadTree(treeBytes);
         }
-        // Cold-start VIEW: stash opaque, then drain unparsed now that the
-        // handle exists (warm arrivals drain via onNewIntent below).
+        // Cold-start VIEW: install the live sink first so the drain below
+        // has an endpoint, then stash opaque and drain unparsed now that
+        // the handle exists (warm arrivals drain via onNewIntent below).
+        installDefaultOpaqueLinkSink();
         stashOpaqueIntent(getIntent());
         drainPendingOpaqueLink();
     }

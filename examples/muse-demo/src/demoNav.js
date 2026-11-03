@@ -265,6 +265,45 @@ async function drainStashedOpaqueLink(router, consume) {
   return router.forwardIntent(opaque);
 }
 
+// Opaque-link consumer seam (AC-NAV-044 stash rule, AC-NAV-041 transport).
+// The platform/engine owns the backing take-and-clear consume (bound to the
+// host stash); this adapter owns the `__museConsumeOpaqueLink` global so app
+// code never touches it directly. First-wins: an engine-installed producer
+// keeps priority; fail-closed on non-functions; never throws.
+function installOpaqueLinkConsumer(consume) {
+  try {
+    if (typeof consume !== 'function') {
+      return false;
+    }
+    if (typeof globalThis === 'undefined') {
+      return false;
+    }
+    if (typeof globalThis.__museConsumeOpaqueLink === 'function') {
+      return false;
+    }
+    globalThis.__museConsumeOpaqueLink = consume;
+    return true;
+  } catch (err) {
+    void err;
+    return false;
+  }
+}
+
+// Adapter read of the installed consumer (undefined when none installed).
+// Never throws.
+function getOpaqueLinkConsumer() {
+  try {
+    if (typeof globalThis === 'undefined') {
+      return undefined;
+    }
+    const consume = globalThis.__museConsumeOpaqueLink;
+    return typeof consume === 'function' ? consume : undefined;
+  } catch (err) {
+    void err;
+    return undefined;
+  }
+}
+
 module.exports = {
   createDemoNavigator,
   push: shared.push,
@@ -277,4 +316,6 @@ module.exports = {
   demoDescriptors,
   createDemoRouter,
   drainStashedOpaqueLink,
+  installOpaqueLinkConsumer,
+  getOpaqueLinkConsumer,
 };
