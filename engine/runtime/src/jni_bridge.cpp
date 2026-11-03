@@ -36,6 +36,7 @@
 #include <vector>
 
 #include "runtime/gallery_present.h"
+#include "runtime/content_registry.h"
 #include "runtime/input.h"
 #include "runtime/input_chain.h"
 #include "runtime/text_field.h"
@@ -1000,10 +1001,10 @@ void RenderLocked(GalleryHandle* g) {
   }
   // F2 (T8R4): route the device frame through the registered content-scene
   // gate first (FR-RUNTIME-013: generic dispatch binds only the gate in
-  // runtime/gallery_present.h, never content by name). Recognized flappy
-  // bytes present as the game scene via the draining overload; non-content
+  // runtime/gallery_present.h, never content by name). Recognized content
+  // bytes present as the registered scene via the draining overload; non-content
   // bytes leave error untouched and fall through to the gallery rows below.
-  // A recognized-but-failed scene fails closed with its named diagnostic.
+  // A recognized-but-failed scene fails closed with its diagnostic.
   std::string contentError;
   const void* contentData =
       g->tree.empty() ? nullptr : static_cast<const void*>(g->tree.data());
@@ -1031,29 +1032,14 @@ void RenderLocked(GalleryHandle* g) {
   if (!contentPresented || !contentError.empty()) {
   // F3 (T8R5 divergence probe, failure-only per RenderLocked convention):
   // logs the gate decision only when the scene path does NOT present, so a
-  // healthy frame stays silent. Anchors quoted verbatim; no behavior change.
-    const char* tdata =
-        g->tree.empty() ? nullptr : reinterpret_cast<const char*>(g->tree.data());
-    const std::size_t tlen = g->tree.size();
-    auto hasTag = [&](const char* tag) -> int {
-      if (tdata == nullptr || tag == nullptr || tlen == 0) return 0;
-      const std::size_t tl = std::strlen(tag);
-      if (tl == 0 || tl > tlen) return 0;
-      for (std::size_t i = 0; i + tl <= tlen; ++i) {
-        if (std::memcmp(tdata + i, tag, tl) == 0) return 1;
-      }
-      return 0;
-    };
-    char diag[320];
-    std::snprintf(diag, sizeof(diag),
-                  "F3DIAG contentLen=%d hero=%d topappbar=%d bird=%d pipe=%d "
-                  "presented=%d contentErr=%s fallbackRows=%d",
-                  static_cast<int>(tlen), hasTag("flappy-hero"),
-                  hasTag("TopAppBar"), hasTag("FlappyBird"),
-                  hasTag("FlappyPipe"), contentPresented ? 1 : 0,
-                  contentError.empty() ? "-" : contentError.c_str(),
-                  static_cast<int>(g->rows.size()));
-    MuseLogInfo(diag);
+  // healthy frame stays silent. The kind breakdown lives in the content
+  // module (FormatContentDiagLine); this TU logs the opaque line verbatim.
+  // Anchors quoted verbatim; no behavior change.
+    const std::string diagLine = ::runtime::FormatContentDiagLine(
+        contentData, g->tree.size(), contentPresented,
+        contentError.empty() ? nullptr : contentError.c_str(),
+        static_cast<int>(g->rows.size()));
+    MuseLogInfo(diagLine.c_str());
   }
 #endif
   // FR-GRAPHICS-014 T2: requested-vs-effective present-path selection with

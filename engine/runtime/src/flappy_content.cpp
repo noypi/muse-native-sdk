@@ -721,4 +721,32 @@ int QueryPresentedSceneTaps(const void* data, std::size_t len,
     return 0;
   }
 }
+// F3 divergence-probe diagnostic line (BUG-RUNTIME-014; declared in
+// runtime/content_registry.h). Owns every per-app literal the generic F3
+// probe used to inline (flappy-hero/TopAppBar/FlappyBird/FlappyPipe plus
+// the F3DIAG tag) so the generic TU logs the returned line verbatim.
+// Never throws.
+std::string FormatContentDiagLine(const void* data, std::size_t len,
+                                  bool presented,
+                                  const char* contentErrOrNull,
+                                  int fallbackRows) {
+  try {
+    char diag[320];
+    std::snprintf(
+        diag, sizeof(diag),
+        "F3DIAG contentLen=%d hero=%d topappbar=%d bird=%d pipe=%d "
+        "presented=%d contentErr=%s fallbackRows=%d",
+        static_cast<int>(len), HasSceneTag(data, len, "flappy-hero") ? 1 : 0,
+        HasSceneTag(data, len, "TopAppBar") ? 1 : 0,
+        HasSceneTag(data, len, "FlappyBird") ? 1 : 0,
+        HasSceneTag(data, len, "FlappyPipe") ? 1 : 0, presented ? 1 : 0,
+        (contentErrOrNull != nullptr && contentErrOrNull[0] != '\0')
+            ? contentErrOrNull
+            : "-",
+        fallbackRows);
+    return std::string(diag);
+  } catch (...) {
+    return std::string("F3DIAG contentErr=format-failed");
+  }
+}
 }  // namespace runtime
