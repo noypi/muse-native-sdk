@@ -2133,17 +2133,18 @@ PrimitiveKind FamilyKind(const std::string& comp) {
 // T2 (BUG-M3-FIDELITY-014 / FR-M3-005): uniform-fill source query.
 // Returns the token/blend ARGB the CPU present path actually submits to
 // renderer.draw for a Rect/RoundedRect/Image cmd: a nonzero payload selects
-// the emitted fill; payload-0 selects the presented-window InkFor default,
-// WindowRGBA(0xE7, 0xE0, 0xEC) (M3 surface-variant tonal) resolved by InkFor
-// in jni_bridge.cpp — the owner of the uniform #E7E0EC. familyKind is the
-// PrimitiveKind value from FamilyKind above (kept for per-kind defaults;
-// the current default is kind-independent).
+// the emitted fill; payload-0 selects the token-resolved per-family default
+// (emitFamilyFill over the FamilyKind value), which keeps the presented-window
+// InkFor default (WindowRGBA(0xE7, 0xE0, 0xEC), M3 surface-variant tonal,
+// resolved by InkFor in jni_bridge.cpp) for Rect/RoundedRect kinds and the
+// differentiated role-token fill for the other families. familyKind is the
+// PrimitiveKind value from FamilyKind above.
 // Present path only: no tree/pager/JNI/glyph change.
+std::uint32_t emitFamilyFill(std::uint32_t familyKind);
 std::uint32_t resolvePresentFill(std::uint32_t familyKind,
                                  std::uint32_t payloadBytes) {
-  (void)familyKind;
   if (payloadBytes != 0) return payloadBytes;
-  return kLightSurfaceVariant;
+  return emitFamilyFill(familyKind);
 }
 
 // T3 (BUG-M3-FIDELITY-014 / FR-M3-005/AC-M3-009, FR-M3-008/AC-M3-018):
@@ -2304,12 +2305,13 @@ void EmitComponentRowCmds(const GalleryRow& row, int bx, int by, int bw,
   card.radius = 20.0f;
   card.nodeId = node;
   // T3 (BUG-M3-FIDELITY-014): the card fill carries the token-resolved
-  // per-family fill (emitFamilyFill over FamilyKind) instead of payload-0,
+  // per-family fill (resolvePresentFill choke point over FamilyKind with
+  // payload-0, resolving to emitFamilyFill per family) instead of payload-0,
   // so families stop presenting the uniform InkFor default; the
   // ElevationShadow above carries the wash and the caption below carries
   // the vector text.
-  card.payload.stateColor = emitFamilyFill(
-      static_cast<std::uint32_t>(FamilyKind(row.comp)));
+  card.payload.stateColor = resolvePresentFill(
+      static_cast<std::uint32_t>(FamilyKind(row.comp)), 0);
   out.push_back(card);
   // T61 state-row wash (retained lane, mirrors the oracle lane 1:1):
   // GalleryRow/Surface/Ripple rows paint through the shared resolver so the
