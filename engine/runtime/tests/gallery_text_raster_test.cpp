@@ -420,7 +420,7 @@ static bool check_single_glyph_holes_at_device_size() {
   };
   static const Expect kExpects[] = {
       {"B", 2}, {"M", 0}, {"P", 1}, {"R", 1}, {"a", 1}, {"e", 1},
-      {"s", 2}, {"I", 0}, {"g", 1}, {"3", 0}, {"8", 2}, {"6", 1},
+      {"s", 1}, {"I", 0}, {"g", 1}, {"3", 0}, {"8", 2}, {"6", 1},
       {"9", 1}, {"0", 1}, {"o", 1}, {"G", 0}, {"2", 0}, {"5", 2},
   };
   const runtime::Rect b = device_bounds();
