@@ -189,10 +189,17 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
      * Handoff into the JS routing layer. Host never parses; the stashed
      * opaque string stays available for the JS drain above. Same channel
      * serves cold-start (onCreate) and warm (onNewIntent) arrivals.
+     * Carries the `-d muse-demo://tab/<lens|field|list|home>` opaque URI
+     * verbatim to the router and the native shell slot; host never parses.
      */
     void forwardOpaqueToRouter(String opaqueLink) {
         if (opaqueLink == null || opaqueLink.isEmpty()) {
             return;
+        }
+        try {
+            nativeSetShellState(engineHandle, opaqueLink, "");
+        } catch (Throwable ignored) {
+            // Fail-closed: slot write never crashes the host.
         }
         OpaqueLinkSink sink = opaqueLinkSink;
         if (sink != null) {
