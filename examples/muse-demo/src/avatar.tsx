@@ -45,7 +45,7 @@ export function generateImageRequest(profile: Profile): GenerateImageRequest {
 }
 
 // In-memory avatar cache (cache-first lookup; miss hits generate-image).
-const cache = new Map<string, Avatar>();
+const cache = new Map();
 
 export function readAvatarCache(profile: Profile): Avatar | undefined {
   return cache.get(avatarCacheKey(profile));

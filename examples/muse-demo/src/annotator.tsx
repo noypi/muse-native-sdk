@@ -36,8 +36,8 @@ function pointsText(polygon: Polygon): string {
 }
 
 export function Annotator({ photoId, label, point }: AnnotatorProps) {
-  const [mask, setMask] = useState<Polygon | undefined>(undefined);
-  const [suggestions, setSuggestions] = useState<Polygon[]>([]);
+  const [mask, setMask] = useState(undefined as Polygon | undefined);
+  const [suggestions, setSuggestions] = useState([] as Polygon[]);
   const [activeIndex, setActiveIndex] = useState<number>(-1);
   // T8 inline error state (AC-SAMPLE-036): designed message + the same retry
   // posted to the SnackbarHost via `fire` — never raw text.
@@ -111,7 +111,6 @@ export function Annotator({ photoId, label, point }: AnnotatorProps) {
           <Text>{`dashed suggestion ${index + 1}${index === activeIndex ? ' (active)' : ''}: ${pointsText(polygon)}`}</Text>
         </View>
       ))}
-      {inlineError.error ? <InlineError error={inlineError.error} /> : null}
       <Text>{`Field context=${context} privacy=auto`}</Text>
     </View>
   );

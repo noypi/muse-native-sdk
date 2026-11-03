@@ -10,6 +10,12 @@
 import { useEffect, useState } from 'react';
 import { View, Text, SnackbarHost } from '@muse/native';
 
+// T3b (fallback-kinds, AC-SAMPLE-023): ErrorSnackbar emits only the
+// gate-known `SnackbarHost` comp as an author-time literal. No runtime
+// mapper runs on glass: the bundler serializes without executing, so the
+// baked tree must CONTAIN the literal.
+const ERROR_SNACKBAR_COMP: string = 'SnackbarHost';
+
 export type ProxyErrorCode = 'auth' | 'upstream' | 'timeout' | 'schema';
 
 export type ProxyErrorSurface = {
@@ -19,22 +25,22 @@ export type ProxyErrorSurface = {
 
 // Designed messages per code — the only text ever rendered for proxy errors.
 // Raw exception text and upstream payloads are never shown (RULE-MUSE-007).
-const ERROR_MESSAGES: Record<ProxyErrorCode, string> = {
+const ERROR_MESSAGES: { auth: string; upstream: string; timeout: string; schema: string } = {
   auth: 'Sign-in needed. Check access and try again.',
   upstream: 'Service unavailable. Try again.',
   timeout: 'Request timed out. Try again.',
   schema: 'Unexpected response. Try again.',
 };
 
-const VALID_CODES: ReadonlySet<string> = new Set([
-  'auth',
-  'upstream',
-  'timeout',
-  'schema',
-]);
+const VALID_CODES: { [code: string]: true } = {
+  auth: true,
+  upstream: true,
+  timeout: true,
+  schema: true,
+};
 
 export function isProxyErrorCode(value: unknown): value is ProxyErrorCode {
-  return typeof value === 'string' && VALID_CODES.has(value);
+  return typeof value === 'string' && VALID_CODES[value] === true;
 }
 
 export function errorMessageFor(code: ProxyErrorCode): string {
@@ -90,7 +96,7 @@ function clearNotice(id: number): void {
 }
 
 // surfaceProxyError(code, retry) — post to the M3 SnackbarHost (module store
-// rendered by `<ErrorSnackbar/>`) with the same retry the owning component
+// rendered by `ErrorSnackbar`) with the same retry the owning component
 // keeps in its inline `error` state. Unknown codes are ignored (typed union
 // admits only the four codes; never surface raw text). The retry wrapper
 // keeps both surfaces on failure: a sync throw or a rejected promise leaves
@@ -112,8 +118,11 @@ export function surfaceProxyError(code: ProxyErrorCode, retry: () => void): () =
       void err;
       return;
     }
-    if (result && typeof (result as Promise<unknown>).then === 'function') {
-      (result as Promise<unknown>).then(
+    const thenable = result as { then?: unknown };
+    if (thenable && thenable.then && typeof thenable.then === 'function') {
+      const thenFn = thenable.then as (onFulfilled: () => void, onRejected: (err: unknown) => void) => void;
+      thenFn.call(
+        thenable,
         () => clearNotice(id),
         (err: unknown) => {
           // Async rejection carrying a fresh {code, retry} re-surfaces it;
@@ -143,7 +152,7 @@ export function useInlineProxyError(): {
   fire: (code: ProxyErrorCode, retry: () => void) => void;
   clear: () => void;
 } {
-  const [error, setError] = useState<ProxyErrorSurface | undefined>(undefined);
+  const [error, setError] = useState(undefined as ProxyErrorSurface | undefined);
   return {
     error,
     fire: (code: ProxyErrorCode, retry: () => void) => {

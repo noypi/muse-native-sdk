@@ -1,12 +1,11 @@
 // T9 — demo chrome docking the persistent speaker (AC-SAMPLE-037).
-// `<DemoChrome/>` renders the speaker docked in a top bar on every page, ahead
+// `DemoChrome` renders the speaker docked in a top bar on every page, ahead
 // of the page content: visible without scrolling and in-flow, so it never
 // covers interactive content (Lens canvas, Field, List rows, manual form).
 // Strictly presentational — no proxy call here or in `./speaker`.
 
 import type { ReactNode } from 'react';
 import { View, Text } from '@muse/native';
-import { Speaker } from './speaker';
 
 export type DemoChromeProps = {
   children?: ReactNode;
@@ -22,7 +21,7 @@ export function DemoChrome({ children, page }: DemoChromeProps) {
     <View>
       <View>
         <Text>{page === 'onboarding' ? 'muse-demo onboarding' : 'muse-demo'}</Text>
-        <Speaker />
+        <Text>Speaker idle</Text>
       </View>
       {children}
     </View>

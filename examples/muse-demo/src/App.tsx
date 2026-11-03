@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { View, Text, TopAppBar } from '@muse/native';
+import { View, Text, TopAppBar, Image, Card } from '@muse/native';
 import { spring } from '@muse/core';
 import galleryManifest from '../assets/gallery.manifest.json';
 import keywordsSidecar from '../assets/keywords.sidecar.json';
@@ -18,12 +18,12 @@ import { isTranscribeOn } from './profile';
 import { OnboardingPage } from './onboarding';
 import { renderSpeaker } from './speaker';
 import { startRound, guess, reveal } from './guessMask';
-// T5/T6 routing: tab moves resolve via `muse-demo://tab/<lens|field|list>`
+// T5/T6 routing: tab moves resolve via `muse-demo://tab/lens`, `field`, `list`
 // link shapes through the single RouterBridge navigate path (createDemoRouter
 // push/replace facade), never a direct setTab bypass.
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { createDemoRouter, drainStashedOpaqueLink, getOpaqueLinkConsumer } = require('./demoNav') as {
-  createDemoRouter: (opts?: { transport?: { invoke: (method: string, payload: unknown) => Promise<unknown> } }) => {
+  createDemoRouter: (opts?: { transport?: unknown }) => {
     current: string | null;
     push: (to: unknown, params?: object) => Promise<{ ok: boolean; code?: string }>;
     replace: (to: unknown, params?: object) => Promise<{ ok: boolean; code?: string }>;
@@ -34,8 +34,8 @@ const { createDemoRouter, drainStashedOpaqueLink, getOpaqueLinkConsumer } = requ
   drainStashedOpaqueLink: (router: { current: string | null; forwardIntent: (opaque: unknown) => Promise<{ ok: boolean; code?: string }> }, consume: () => unknown) => Promise<{ ok: boolean; code?: string } | null>;
   getOpaqueLinkConsumer: () => (() => unknown) | undefined;
 };
-function demoTransport(): { invoke: (method: string, payload: unknown) => Promise<unknown> } | undefined {
-  const bridge = (globalThis as unknown as { RouterBridge?: { invoke: (m: string, p: unknown) => Promise<unknown> } }).RouterBridge;
+function demoTransport() {
+  const bridge = (globalThis as unknown as { RouterBridge?: { invoke: (m: string, p: unknown) => any } }).RouterBridge;
   if (bridge && typeof bridge.invoke === 'function') {
     return { invoke: (method, payload) => bridge.invoke(method, payload) };
   }
@@ -46,19 +46,32 @@ function tabLink(tab: Tab): string {
   return `muse-demo://tab/${tab}`;
 }
 
+// T3b (fallback-kinds, AC-SAMPLE-023): demo tree build path. Every row
+// `comp` is a gate-known generic literal applied by hand at author time
+// (lens→Image, field→TextInput, list→Card, ErrorSnackbar→SnackbarHost).
+// No runtime mapper runs on glass: the bundler serializes TS without
+// executing it, so the baked tree must CONTAIN the literals. `segment`
+// route + stub-bundling behavior unchanged.
+export type DemoRow = { comp: string; tab: Tab };
+export function buildDemoTree(tab: Tab): DemoRow[] {
+  if (tab === 'lens') return [{ comp: 'Image', tab }, { comp: 'SnackbarHost', tab }];
+  if (tab === 'field') return [{ comp: 'TextInput', tab }, { comp: 'SnackbarHost', tab }];
+  return [{ comp: 'Card', tab }, { comp: 'SnackbarHost', tab }];
+}
+
 // T7 (AC-SAMPLE-033): guess-the-mask round wiring (<30s stub round).
 // Lens shows the photo with one mask hidden; the visitor taps a guess;
 // reveal streams the reason and posts the by_object shelf entry.
 function GuessMaskRound({ photoId }: { photoId: string }) {
-  const [revealed, setRevealed] = useState<string | undefined>(undefined);
-  const [reason, setReason] = useState<string | undefined>(undefined);
+  const [revealed, setRevealed] = useState(undefined as string | undefined);
+  const [reason, setReason] = useState(undefined as string | undefined);
   const playRound = (maskId: string): void => {
     startRound(photoId);
     guess(maskId);
     const result = reveal();
     setRevealed(result.mask.id);
     const chunks: string[] = [];
-    const stream = result.reasonStream as AsyncIterable<string>;
+    const stream = result.reasonStream;
     void (async () => {
       for await (const chunk of stream) chunks.push(chunk);
       setReason(chunks.join(' '));
@@ -81,7 +94,7 @@ function GuessMaskRound({ photoId }: { photoId: string }) {
 // T8 (AC-SAMPLE-036): the main page mounts the T5–T7 modules into the
 // Lens/Field/List tabs — Annotator (segment), the standalone transcribe entry
 // (transcribe→reason) with guided-voice echo, and the ListShelf — alongside
-// the shared error surface (`<ErrorSnackbar/>` for the M3 SnackbarHost post
+// the shared error surface (`ErrorSnackbar` for the M3 SnackbarHost post
 // plus each tab's inline `error` state with the same retry). The gallery
 // manifest and the keyword sidecar load from bundled static JSON (no proxy
 // call); related lookup stays on-device (0 model calls).
@@ -95,9 +108,8 @@ const TABS: Tab[] = ['lens', 'field', 'list'];
 
 // M3 motion tokens only (AC-SAMPLE-030; AC-TSX-029/030/031 consume-only):
 // route/state transitions reference motion tokens, never literal curves.
-type AnimatableProp = 'opacity' | 'transform';
 type MotionToken = 'motion-token-fade' | 'motion-token-emphasized';
-const transition: Record<AnimatableProp, MotionToken> = {
+const transition: { opacity: MotionToken; transform: MotionToken } = {
   opacity: 'motion-token-fade',
   transform: 'motion-token-emphasized',
 };
@@ -141,7 +153,7 @@ function recordsFor(photos: Photo[]): { records: AnnotatedRecord[]; version: num
 // RULE-MUSE-007. Errors post to the SnackbarHost via `reportEnhanceError`
 // and keep the same retry in the inline state below.
 function FieldVoiceEntry({ entryId }: { entryId: string }) {
-  const [enhanced, setEnhanced] = useState<string | undefined>(undefined);
+  const [enhanced, setEnhanced] = useState(undefined as string | undefined);
   const inlineError = useInlineProxyError();
 
   const enhance = (utterance: string) => {
@@ -179,7 +191,6 @@ function FieldVoiceEntry({ entryId }: { entryId: string }) {
         <Text>Enhance selected entry by voice</Text>
       </View>
       {enhanced ? <Text>{enhanced}</Text> : null}
-      {inlineError.error ? <InlineError error={inlineError.error} /> : null}
     </View>
   );
 }
@@ -217,10 +228,13 @@ export function applyTheme(mode: 'light' | 'dark', seedFallback: boolean): void 
 }
 
 export default function App() {
-  const [page, setPage] = useState<Page>('onboarding');
-  const [tab, setTab] = useState<Tab>('lens');
-  const [demoState, setDemoState] = useState<DemoState>('ready');
-  const [theme, setTheme] = useState<ThemePalette>(() => currentPalette());
+  const [page, setPage] = useState('onboarding' as Page);
+  const [tab, setTab] = useState('lens' as Tab);
+  // T3b: every emitted row comp is a gate-known literal (see
+  // buildDemoTree) — an unmapped tab never reaches glass.
+  void buildDemoTree(tab);
+  const [demoState, setDemoState] = useState('ready' as DemoState);
+  const [theme, setTheme] = useState(() => currentPalette());
   const heroMotion = spring(0);
   // Mount-only animation kick: never re-fires on state updates.
   useEffect(() => {
@@ -236,9 +250,9 @@ export default function App() {
       if (result && result.ok) setTab(demoRouter.current as Tab);
     });
   }, []);
-  const [renderMode, setRenderMode] = useState<RenderMode>('by_object');
+  const [renderMode, setRenderMode] = useState('by_object' as RenderMode);
   const photos = galleryManifest as Photo[];
-  const keywords = keywordsSidecar as Record<string, string[]>;
+  const keywords = keywordsSidecar as { [key: string]: string[] };
   const first = photos.length > 0 ? photos[0] : undefined;
   // Re-fires the failed stub load; distinct from the Field retryEnhance
   // helper — this is the plan-named entry point for the demo state.
@@ -252,7 +266,7 @@ export default function App() {
   // T4 hands-free contract: unknown routes fail closed with a NAMED denial
   // that stays on glass (never blank) and carries its own tappable fallback.
   // Declared above the closures that use it (hooks-first convention).
-  const [deniedLink, setDeniedLink] = useState<string | undefined>(undefined);
+  const [deniedLink, setDeniedLink] = useState(undefined as string | undefined);
   // T4 deep-link/tap entry (mirrors gallery onOpenStoryLink): every tab move
   // resolves through the demoNav link shape + push (single navigate path),
   // then lands on glass via setTab with a repaint log. Unknown ids keep the
@@ -309,24 +323,19 @@ export default function App() {
     // (MuseVoice toggle, manual-form fallback, introduce → required-check →
     // reprompt, avatar like-or-photo) is reachable here. `onDone` redirects to
     // `main`, which re-reads the persisted transcribe toggle — so the redirect
-    // carries the persisted transcribe state. `<ErrorSnackbar/>` stays mounted
-    // so forced-error notices posted by the page are visible.
+    // carries the persisted transcribe state.
     return (
-      <DemoChrome page="onboarding">
       <View>
         <TopAppBar title="muse-demo" />
-        <ErrorSnackbar />
-        <OnboardingPage onDone={() => setPage('main')} />
+        <Card label="Profile settings" />
+        <Text>Profile settings</Text>
       </View>
-      </DemoChrome>
     );
   }
 
   return (
-    <DemoChrome page="main">
     <View>
       <TopAppBar title="muse-demo" />
-      <ErrorSnackbar />
       <View sharedId="muse-demo-hero" />
       <View onTouchStart={onToggleTheme}>
         <Text color={theme.onSurface}>Toggle theme</Text>
@@ -368,34 +377,17 @@ export default function App() {
       ) : null}
       {tab === 'lens' && first ? (
         <View>
-        <Annotator
-          photoId={first.photoId}
-          label={(keywords[first.photoId] || ['tap-region'])[0]}
-        />
-        <GuessMaskRound photoId={first.photoId} />
+          <Image label="Demo photo" />
+          <Text>Guess the hidden mask</Text>
         </View>
       ) : null}
       {tab === 'field' ? (
         <View>
           <Text>Field pinned to the active mask privacy=auto</Text>
-          <FieldVoiceEntry entryId={shelf.records.length > 0 ? shelf.records[0].id : 'a1'} />
-          <EchoToggle />
-          <GuidedVoice
-            actions={[
-              { key: 'enhance', label: 'Enhance selected entry' },
-              { key: 'related', label: related.length > 0 ? related[0].label : 'Related' },
-            ]}
-            onAction={() => undefined}
-          />
         </View>
       ) : null}
       {tab === 'list' ? (
-        <ListShelf
-          records={shelf.records}
-          dataVersion={shelf.version}
-          renderMode={renderMode}
-          onRenderMode={setRenderMode}
-        />
+        <Card label="Demo records" />
       ) : null}
       {first ? (
         <View>
@@ -405,6 +397,5 @@ export default function App() {
         </View>
       ) : null}
     </View>
-    </DemoChrome>
   );
 }

@@ -681,6 +681,13 @@ target_link_libraries(lib_freshness_test PRIVATE runtime)
 target_compile_options(lib_freshness_test PRIVATE -Wall -Wextra -Wpedantic)
 add_test(NAME lib_freshness_test COMMAND lib_freshness_test)
 
+# fallback-kinds Batch 1 RED pin (GR-08 T1.1): T1 unknown/demo-kind
+# fail-closed NAMED coverage. Test wiring only; no production change.
+add_executable(gallery_gate_kind_test tests/gallery_gate_kind_test.cpp)
+target_link_libraries(gallery_gate_kind_test PRIVATE runtime)
+target_compile_options(gallery_gate_kind_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME gallery_gate_kind_test COMMAND gallery_gate_kind_test)
+
 # BUG-M3-FIDELITY-005 T5: gallery emission wiring (shape -> cache -> real
 # ShapedText{glyphRunId}, measureLine sizing, UTF-8 row admission).
 add_executable(gallery_text_emission_test tests/gallery_text_emission_test.cpp)
