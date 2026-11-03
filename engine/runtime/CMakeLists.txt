@@ -615,6 +615,12 @@ target_link_libraries(gallery_text_raster_test PRIVATE runtime)
 target_compile_options(gallery_text_raster_test PRIVATE -Wall -Wextra -Wpedantic)
 add_test(NAME gallery_text_raster_test COMMAND gallery_text_raster_test)
 
+# BUG-TEXT-008 T7d: S-spine host pin (FR-TEXT-016 / AC-TEXT-045).
+add_executable(s_spine_test tests/s_spine_test.cpp)
+target_link_libraries(s_spine_test PRIVATE runtime)
+target_compile_options(s_spine_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME s_spine_test COMMAND s_spine_test)
+
 # BUG-M3-FIDELITY-005 T10: presented-window sink for vector text (F1 fix).
 add_executable(present_window_text_test tests/present_window_text_test.cpp)
 target_link_libraries(present_window_text_test PRIVATE runtime)
