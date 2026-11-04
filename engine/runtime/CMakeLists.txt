@@ -762,6 +762,21 @@ target_link_libraries(present_window_text_pixels_test PRIVATE runtime)
 target_compile_options(present_window_text_pixels_test PRIVATE -Wall -Wextra -Wpedantic)
 add_test(NAME present_window_text_pixels_test COMMAND present_window_text_pixels_test)
 
+# BUG-LAYOUT-005 (FR-LAYOUT-016 AC-LAYOUT-052/053): per-component shape
+# tokens — Button full / Card medium / TopAppBar none paint distinct radii
+# through the per-component resolver (TC-LAYOUT-055).
+add_executable(shape_token_test tests/shape_token_test.cpp)
+target_link_libraries(shape_token_test PRIVATE runtime)
+target_compile_options(shape_token_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME shape_token_test COMMAND shape_token_test)
+
+# BUG-LAYOUT-005 (FR-LAYOUT-008 AC-LAYOUT-017): border-radius / box-shadow
+# bind to the same per-component resolver (TC-LAYOUT-056).
+add_executable(css_runtime_effect_test tests/css_runtime_effect_test.cpp)
+target_link_libraries(css_runtime_effect_test PRIVATE runtime)
+target_compile_options(css_runtime_effect_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME css_runtime_effect_test COMMAND css_runtime_effect_test)
+
 # BUG-M3-FIDELITY-007 batch 2: JNI touch-entry shape (T3) + native
 # hit-test/arena wiring (T4). The input consume-lib compiles exactly the
 # engine/input TUs T4 consumes (consume-only: hit-test, gesture arena, event

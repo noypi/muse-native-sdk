@@ -2445,14 +2445,42 @@ void EmitCaptionCmd(int bx, int by, int bw, int bh, std::uint32_t node,
   out.push_back(cmd);
 }
 
+// BUG-LAYOUT-005 / FR-LAYOUT-016 AC-LAYOUT-052/053 + FR-LAYOUT-008
+// AC-LAYOUT-017 — per-component shape resolver. Entry point mirrors
+// getComponentTokenTable in engine/layout/m3_registry.js: each component
+// resolves through its OWN tabled shape role in
+// engine/layout/m3_matrix.json (md.comp.<name>.shape), never a shared
+// generic. Role baselines (committed M3): Button full (pill) -> 28dp,
+// Card medium -> 12dp, TopAppBar none -> 0. Zero JNI, no filesystem at
+// Emit time: the table roles are baked here as the C++ mirror of the
+// registry (parser stays build-time). border-radius (card) and box-shadow
+// (shadow) legs both bind to this one resolver. Transform leg: DrawCmd
+// carries no transform channel today, so transform-to-resolver binding is
+// not unit-observable; when the channel lands it must read this same
+// entry point (ResolveComponentShapeDp), never a new literal.
+constexpr float kShapeButtonFullDp = 28.0f;  // md.comp.button.shape -> full; staged assumption (no committed M3 baseline in-repo; locked by shape_token_test check_button_full_is_28, deliberate-change only)
+constexpr float kShapeCardMediumDp = 12.0f;  // md.comp.card.shape -> medium
+static_assert(kShapeButtonFullDp > 0.0f, "Button shape must resolve nonzero");
+static_assert(kShapeCardMediumDp > 0.0f, "Card shape must resolve nonzero");
+// TopAppBar none -> 0.0f: intentionally no nonzero assert (table is zero).
+inline float ResolveComponentShapeDp(const std::string& comp) {
+  if (comp == "Button") return kShapeButtonFullDp;
+  if (comp == "Card") return kShapeCardMediumDp;
+  if (comp == "TopAppBar") return 0.0f;
+  return kSurfaceShapeDp;  // ASSUMPTION: unpinned components keep the
+                           // generic medium fallback until their table
+                           // roles land in this lane.
+}
+
 void EmitComponentRowCmds(const GalleryRow& row, int bx, int by, int bw,
                           int bh, std::uint32_t node,
                           std::vector<DrawCmd>& out) {
+  const float shape_dp = ResolveComponentShapeDp(row.comp);
   DrawCmd shadow;
   shadow.kind = PrimitiveKind::ElevationShadow;
   shadow.bounds = {static_cast<float>(bx), static_cast<float>(by),
                    static_cast<float>(bw), static_cast<float>(bh)};
-  shadow.radius = 20.0f;
+  shadow.radius = shape_dp;  // box-shadow leg: same resolver as radius.
   shadow.nodeId = node;
   shadow.payload.elevationDp = 2.0f;
   shadow.payload.shadowBlur = 4.0f;
@@ -2461,7 +2489,7 @@ void EmitComponentRowCmds(const GalleryRow& row, int bx, int by, int bw,
   DrawCmd card;
   card.kind = PrimitiveKind::RoundedRect;
   card.bounds = shadow.bounds;
-  card.radius = 20.0f;
+  card.radius = shape_dp;  // border-radius leg: per-component table role.
   card.nodeId = node;
   // T3 (BUG-M3-FIDELITY-014): the card fill carries the token-resolved
   // per-family fill (resolvePresentFill choke point over FamilyKind with
@@ -2539,7 +2567,12 @@ void EmitTextRowCmds(const GalleryRow& row, int bx, int by, int bw, int bh,
   band.kind = PrimitiveKind::RoundedRect;
   band.bounds = {static_cast<float>(bx), static_cast<float>(by),
                  static_cast<float>(bw), static_cast<float>(bh)};
-  band.radius = 18.0f;
+  // BUG-LAYOUT-005: text rows carry no component shape role, so the band
+  // paints sharp (0) — the hardcoded 18.0f literal is deleted with the
+  // other producer literals (card/shadow 20s now resolve per-component
+  // above). Keeps TopAppBar-nothing pages max-0 and Card-medium pages
+  // max-12 under the shared max-radius contract.
+  band.radius = 0.0f;
   band.nodeId = node;
   // T11: the band fill stays payload-0 (the default tonal fill in the
   // presented-window InkFor); the caption below carries the vector text.
@@ -3830,7 +3863,7 @@ void paintLayeringPage(const LayeringScene& scene, Renderer& renderer,
       float y = 240.0f + static_cast<float>(i) * 160.0f;
       if (i == 1) y = scene.sheetY;
       content.bounds = {64.0f, y, static_cast<float>(kPresentW - 128), 120.0f};
-      if (content.kind == PrimitiveKind::RoundedRect) content.radius = 20.0f;
+      if (content.kind == PrimitiveKind::RoundedRect) content.radius = 20.0f;  // live-overlay diagnostic value, not a component-shape leg (cf. deleted card/shadow literals)
       content.nodeId = 2 + i;
       content.opacity = 1.0f;
       // L8b per-overlay identity: five contents ride no text channel (Rect /
