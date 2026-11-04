@@ -257,6 +257,22 @@ int GalleryResolvePressedRow(float yDevicePx,
                               const std::vector<GalleryRow>& rows, int page,
                               int viewportH) noexcept;
 
+// BUG-MUSE-004 TAP-4 (FR-MUSE-014 / AC-MUSE-044/045) ListItem tap target:
+// maps a DOWN point (device/window px) geometrically against the row layout
+// of `page` under `viewportW` x `viewportH` to the tapped ListItem row's
+// 1-based id (i + 1, the same numbering GalleryResolvePressedRow uses).
+// Only "ListItem" rows can hit; each is confirmed point-in-card through the
+// ListItemTapHit box test against its solved card frame. Returns -1 with
+// *error set to the named "unknown-row" error (fail closed, never a silent
+// drop) when the point maps to no ListItem row. The native DOWN path calls
+// this to confirm ListItem rows before engaging; the UP fire then reaches
+// the row's onPress handler, where Select dispatch rides. Never throws;
+// error == nullptr is tolerated (the -1 still fails closed).
+int GalleryResolveListItemTap(float xDevicePx, float yDevicePx,
+                              const std::vector<GalleryRow>& rows, int page,
+                              int viewportW, int viewportH,
+                              const char** error) noexcept;
+
 // Plan T62 `Interface:` line (verbatim): maps a state token to its numeric
 // M3 state-layer opacity (0.08 hover / 0.12 focus / 0.16 pressed / 0.38
 // disabled baseline per D1). Unknown/empty input returns the 0.0f no-wash

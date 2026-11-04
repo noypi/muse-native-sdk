@@ -99,9 +99,10 @@ export type ListShelfProps = {
   dataVersion: number;
   renderMode: RenderMode;
   onRenderMode?: (mode: RenderMode) => void;
+  onSelectRow?: (rowId: string) => void;
 };
 
-export function ListShelf({ records, dataVersion, renderMode, onRenderMode }: ListShelfProps) {
+export function ListShelf({ records, dataVersion, renderMode, onRenderMode, onSelectRow }: ListShelfProps) {
   const view = useMemo(
     () => groupAnnotatedRecords(records, renderMode),
     // Memoized by (dataVersion + renderMode): the annotated records array is
@@ -123,7 +124,13 @@ export function ListShelf({ records, dataVersion, renderMode, onRenderMode }: Li
         <View key={group.key}>
           <Text>{group.title}</Text>
           {group.records.map((record) => (
-            <Text key={record.id}>{`${record.label} ${record.photoId} ${record.insight}`}</Text>
+            // PRIMITIVE-1 (confirmed): record rows use onTouchStart, matching
+            // the demo switcher rows (RENDER_MODES above, App.tsx goTab); the
+            // tap contract accepts onTouchStart or onPress — the pin is that
+            // each row carries a handler delivering record.id.
+            <View key={record.id} onTouchStart={() => onSelectRow && onSelectRow(record.id)}>
+              <Text>{`${record.label} ${record.photoId} ${record.insight}`}</Text>
+            </View>
           ))}
         </View>
       ))}

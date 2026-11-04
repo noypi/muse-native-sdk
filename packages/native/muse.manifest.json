@@ -243,7 +243,8 @@
         "headline": { "type": "string", "required": true },
         "supporting": { "type": "string" },
         "icon": { "type": "string" },
-        "enabled": { "type": "boolean" }
+        "enabled": { "type": "boolean" },
+        "onPress": { "type": "event" }
       }
     },
     {
