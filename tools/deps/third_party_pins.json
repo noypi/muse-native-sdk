@@ -1,5 +1,5 @@
 {
-  "hermes": { "file": "hermes.tar.gz", "sha256": "8cfde6efdfc4ed5ab1f6acbbd1ba49bf31932f84d0a4c090eb41c7d151e8b180" },
+  "hermes": { "file": "hermes-2024-04-29-RNv0.73.8-644c8be78af1eae7c138fa4093fb87f0f4f8db85.tar.gz", "version": "0.73.8", "tag": "hermes-2024-04-29-RNv0.73.8-644c8be78af1eae7c138fa4093fb87f0f4f8db85", "commit": "644c8be78af1eae7c138fa4093fb87f0f4f8db85", "sha256": "f49f3e1115fcf96399b673bfbf05a4fb07334def9ffe6ae7eb692ad9ba27a3a8", "bytes": 10485080, "url": "https://github.com/facebook/hermes/archive/refs/tags/hermes-2024-04-29-RNv0.73.8-644c8be78af1eae7c138fa4093fb87f0f4f8db85.tar.gz", "licence": "MIT", "owner": "core", "seam": "JsRuntime" },
   "quickjs": { "file": "quickjs.tar.gz", "sha256": "79eca99fd1265c8356108a97287295dac1eeea361ede6077b93e6cc15c06469a" },
   "yoga": { "file": "yoga-v3.2.1.tar.gz", "version": "3.2.1", "tag": "v3.2.1", "commit": "042f5013152eb81c1552dec945b88f7b95ca350f", "sha256": "86b399ac31fd820d8ffa823c3fae31bb690b6fc45301b2a8a966c09b5a088b55", "bytes": 2172950, "url": "https://github.com/facebook/yoga/archive/refs/tags/v3.2.1.tar.gz", "licence": "MIT", "owner": "layout", "seam": "LayoutEngine" },
   "cassowary": { "file": "cassowary.tar.gz", "sha256": "1f71511371129511321c45be058c60e23cf9ba898d8a3f3309555985b5027490" },
