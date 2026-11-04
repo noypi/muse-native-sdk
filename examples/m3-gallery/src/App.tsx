@@ -8,7 +8,7 @@ import { View, Text, Button, manifest, components, TopAppBar, BottomAppBar, Navi
 import { spring } from '@muse/core';
 import ButtonScreen from "./screens/ButtonScreen";
 import { LayeringPage } from "./Showcase";
-import { buildStories, galleryStories } from "./stories";
+import { buildStories } from "./stories";
 import { getGalleryMode, reportStaticFallback } from "./galleryMode";
 import { shuffleRemix, encodeRemix, decodeRemix } from "./remix";
 import { parseStoryLink, storyIdOf, isPagingGesture, requestShellAdvance } from "./galleryNav";
@@ -177,20 +177,16 @@ export default function App() {
   const onRetry = (): void => {
     setDemoState('loading');
     try {
-      const stories = galleryStories(manifest);
+      const stories = buildStories(manifest);
       setDemoState(stories.length > 0 ? 'ready' : 'empty');
     } catch {
       setDemoState('error');
     }
     setAttempt((n) => n + 1);
   };
-  const stories = galleryStories(manifest);
-  // Gallery shell Prev/Next navigation (FR-SAMPLE-014, AC-SAMPLE-039,
-  // FR-MUSE-008 AC-MUSE-032/033): a single selected-story index over
-  // galleryStories(manifest) — the manifest stories plus the 33 voice
-  // speaker entries, so the voice rows are shell/key/deep-link reachable.
-  // buildStories(manifest) stays the pure manifest source (repaint probe
-  // above); the navigable list here is galleryStories(manifest). Shell buttons,
+  const stories = buildStories(manifest);
+  // Gallery shell Prev/Next navigation (FR-SAMPLE-014, AC-SAMPLE-039): a
+  // single selected-story index over buildStories(manifest). Shell buttons,
   // ArrowLeft/ArrowRight, and gallery://story/<id> deep links all move
   // through the same index path; paging changes only the index, never story
   // state. Boundary/unknown-id denials keep the current story (never blank).
@@ -336,12 +332,12 @@ export default function App() {
     <View>
       <TopAppBar title="m3-gallery" />
       <View>
-        <View onTouchStart={prevDisabled ? undefined : () => onPrev(SHELL_ORIGIN)}>
-          <Button variant="tonal" label="" enabled={!prevDisabled} />
+        <View>
+          <Button variant="tonal" label="" enabled={!prevDisabled} onPress={prevDisabled ? undefined : () => onPrev(SHELL_ORIGIN)} />
         </View>
         <Text color={theme.onSurface}>{`${clampedIndex + 1} of ${stories.length}`}</Text>
-        <View onTouchStart={nextDisabled ? undefined : () => onNext(SHELL_ORIGIN)}>
-          <Button variant="tonal" label="" enabled={!nextDisabled} />
+        <View>
+          <Button variant="tonal" label="" enabled={!nextDisabled} onPress={nextDisabled ? undefined : () => onNext(SHELL_ORIGIN)} />
         </View>
       </View>
       <NavigationRail selected="home" />

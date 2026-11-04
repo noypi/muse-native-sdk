@@ -120,51 +120,6 @@ class EngineRuntimeHost : public RuntimeHost {
 
 }  // namespace
 
-// FR-INPUT-012 / AC-INPUT-024 + AC-INPUT-024a — JNI tap-bridge state (T6
-// follow-up). The gesture chain mints one bridge tapId integer per fired
-// tap and delivers it through input::dispatchTapToOwner (per-button pending
-// registry, consume-before-notify, exactly-once per tapId) before the
-// existing FireTapHandler tap-record path runs. JNI carries only the tapId
-// integer identity (never a raw pointer); the component-side JS handle
-// admits it verbatim via adoptBridgeTap(tapId) (packages/native/button.js,
-// ingress accepts string|number per AC-INPUT-024a). Fail-closed: unknown /
-// unmounted / replayed / forged tickets deliver 0 and throw nothing
-// through the tap path. CANCEL mints nothing (no wash to spend) — the
-// device-verified-only inspection path is unchanged.
-namespace tap_bridge {
-input::PendingRegistry& Registry() {
-  static input::PendingRegistry registry;
-  return registry;
-}
-// Seeded tap-tree node ids mounted into the bridge registry. Source of truth
-// is the seeder in src/input_chain.cpp (AppendSeededNodes): root 10 +
-// full-bleed layering scrim 20 + representative Button node 21. Mounted when
-// the tap tree becomes ownable (load + frame reseed, both under the same
-// g->mu discipline as the fire path), unmounted on handle teardown so the
-// entries are per-owning-handle (created on mount, deleted on unmount) and
-// the fire path itself never mounts (fail-closed: unmounted stays silent).
-// mount()/unmount() are idempotent, so per-frame reseeds are safe.
-constexpr int kSeededTapNodes[] = {10, 20, 21};
-inline void MountSeededNodes() {
-  for (int nodeId : kSeededTapNodes) {
-    Registry().mount(nodeId);
-  }
-}
-inline void UnmountSeededNodes() {
-  for (int nodeId : kSeededTapNodes) {
-    Registry().unmount(nodeId);
-  }
-}
-std::atomic<int>& NextTapId() {
-  static std::atomic<int> next{1};
-  return next;
-}
-std::atomic<int>& LastTapId() {
-  static std::atomic<int> last{0};
-  return last;
-}
-}  // namespace tap_bridge
-
 void* Runtime_create() {
   // Nothrow allocate: a null return reports failure without an exception
   // crossing the boundary.
@@ -352,6 +307,17 @@ constexpr std::uint32_t ThemePx(unsigned r, unsigned g, unsigned b) {
 
 std::atomic<int> g_nightMode{0};
 
+// BUG-M3-NATIVE-006 T1 (FR-M3-013 / AC-M3-033 / AC-M3-036 / AC-INPUT-024a):
+// bridge tapId mint. Monotonic per-process integer identity minted at
+// UP-resolve; JNI carries only this integer (never a raw pointer).
+// Delivery consumes via dispatchTapToOwner (consume-on-delivery, enforced
+// consume-before-notify inside the callee); drag/CANCEL/unmount paths never
+// mint, so no stale ticket can fire a later tap.
+std::atomic<int> g_bridgeTapId{1};
+int MintBridgeTapId() noexcept {
+  return g_bridgeTapId.fetch_add(1, std::memory_order_relaxed);
+}
+
 std::uint32_t ThemeInk(std::uint32_t c) {
   if (g_nightMode.load(std::memory_order_relaxed) == 0) return c;
   const unsigned a = (c >> 24) & 0xFFu;
@@ -434,6 +400,11 @@ struct GalleryHandle {
   // page. Guarded by mu like the rest of the handle.
   int layeringOverlayCount = 5;
   int lastViewportH = 0;
+  // BUG-MUSE-004 TAP-4: last viewport width RenderLocked presented with, so
+  // the ACTION_DOWN slice can confirm ListItem taps point-in-card via
+  // GalleryResolveListItemTap (device-x needs the width scale). Guarded by
+  // mu like the rest of the handle.
+  int lastViewportW = 0;
   // BUG-INPUT-001 T4: last page RenderLocked presented; a page change resets
   // layeringOverlayCount to the full stack (5) so away/back re-entry restarts
   // full. Guarded by mu like the rest of the handle.
@@ -1020,17 +991,16 @@ void RenderLocked(GalleryHandle* g) {
   // BUG-INPUT-001 T3: remember the presented viewport height (mu is held by
   // the caller) so the ACTION_UP slice can window the layering predicate.
   g->lastViewportH = h;
+  // BUG-MUSE-004 TAP-4: remember the presented viewport width alongside the
+  // height so the ACTION_DOWN slice can confirm ListItem taps point-in-card.
+  g->lastViewportW = w;
   // BUG-INPUT-002 T2: reseed the tap tree from the presented viewport (mu
   // is held here and on the dispatch path, so no entry observes a partial
   // tree). Invalid/empty geometry keeps the prior tree; an already-covering
   // tree is left untouched — the load-time fallback seed above only runs
   // until the first real frame lands.
-  // T6 mount-lifecycle follow-up (AC-INPUT-024/024a): the reseeded nodes are
-  // ownable from here, so (re)mount them into the bridge registry
-  // (idempotent; mu is held). The fire path itself never mounts.
   PopulateTapTreeFromLayout(g->tapTree, static_cast<float>(w),
                             static_cast<float>(h));
-  ::runtime::tap_bridge::MountSeededNodes();
   int pages = ::runtime::GalleryPageCount(g->rows, h);
   if (pages > 0) {
     g->page %= pages;
@@ -1346,11 +1316,6 @@ extern "C" MUSE_JNI_EXPORT jlong Java_com_muse_host_MainActivity_nativeLoadTree(
                                           g->tree.size(), 0.0f, 0.0f)) {
       PopulateTapTreeFromLayout(g->tapTree);
     }
-    // T6 mount-lifecycle follow-up (AC-INPUT-024/024a): the populated nodes
-    // become ownable here (component mount), so mount them into the bridge
-    // registry before registration. Runs before registration (single-threaded
-    // here: no entry can observe the handle yet, so no lock is needed).
-    ::runtime::tap_bridge::MountSeededNodes();
     RegisterHandle(g);
 #ifdef __ANDROID__
     char msg[192];
@@ -2067,7 +2032,6 @@ extern "C" MUSE_JNI_EXPORT jint Java_com_muse_host_MainActivity_nativeDispatchTo
     int firedTarget = -1;
     bool firedPosted = false;
     bool enqueueAfter = false;
-    int firedTapId = 0;
     {
       std::lock_guard<std::mutex> lock(g->mu);
       if (action == kActionDown) {
@@ -2104,7 +2068,30 @@ extern "C" MUSE_JNI_EXPORT jint Java_com_muse_host_MainActivity_nativeDispatchTo
         if (downTarget >= 0) {
           const int pressedRow = ::runtime::GalleryResolvePressedRow(
               y, g->rows, g->page, g->lastViewportH);
-          if (pressedRow > 0) {
+          if (pressedRow > 0 &&
+              static_cast<std::size_t>(pressedRow - 1) < g->rows.size() &&
+              g->rows[static_cast<std::size_t>(pressedRow - 1)].comp ==
+                  "ListItem") {
+            // BUG-MUSE-004 TAP-4: a ListItem band hit is only provisional —
+            // confirm the DOWN point is inside the card via
+            // GalleryResolveListItemTap (ListItemTapHit per row). A miss
+            // surfaces kUnknownRow and clears instead of engaging (fail
+            // closed); a hit engages the confirmed row so the UP fire can
+            // reach its onPress handler, where Select dispatch rides. The
+            // DOWN path carries no error channel, so the named error is
+            // observed here only as the -1 miss (callers needing the name
+            // call GalleryResolveListItemTap directly).
+            const char* listTapError = nullptr;
+            const int listRow = ::runtime::GalleryResolveListItemTap(
+                x, y, g->rows, g->page, g->lastViewportW, g->lastViewportH,
+                &listTapError);
+            (void)listTapError;
+            if (listRow > 0) {
+              ::runtime::GallerySetPressedNode(listRow);
+            } else {
+              ::runtime::GalleryClearPressedNode();
+            }
+          } else if (pressedRow > 0) {
             ::runtime::GallerySetPressedNode(pressedRow);
           } else {
             ::runtime::GalleryClearPressedNode();
@@ -2124,32 +2111,7 @@ extern "C" MUSE_JNI_EXPORT jint Java_com_muse_host_MainActivity_nativeDispatchTo
         const int32_t target = ResolveTapTarget(g->tapTree, x, y);
         if (target >= 0) {
           const ArenaAction claim = ClaimTap(g->tapArena, pointerId, target);
-          // T6 follow-up (AC-INPUT-024/024a): bridge-minted integer identity.
-          // Canonical mint-then-dispatch: mint one tapId for this fired tap
-          // into the owning handle's per-button pending entry via
-          // Registry().mint, then deliver exactly once via
-          // dispatchTapToOwner (consume-before-notify) BEFORE the tap-record
-          // path below. A 0 delivery (unknown/unmounted/replay/forged —
-          // fail-closed) fires nothing; the fire path never mounts (mount
-          // rides the real component-mount lifecycle only), so unmounted
-          // targets stay silent. Drags never reach here (past-slop claims
-          // stay unclaimed) and CANCEL mints nothing.
-          bool bridgeDelivered = false;
-          int bridgeTapId = 0;
-          if (claim.claimed) {
-            bridgeTapId = ::runtime::tap_bridge::NextTapId().fetch_add(
-                1, std::memory_order_relaxed);
-            const input::LeaseTicket ticket =
-                ::runtime::tap_bridge::Registry().mint(
-                    static_cast<int>(target), bridgeTapId);
-            bridgeDelivered = (input::dispatchTapToOwner(
-                                   static_cast<int>(target), ticket) == 1);
-            if (bridgeDelivered) {
-              ::runtime::tap_bridge::LastTapId().store(bridgeTapId,
-                                            std::memory_order_relaxed);
-            }
-          }
-          if (bridgeDelivered && FireTapHandler(target)) {
+          if (claim.claimed && FireTapHandler(target)) {
         // BUG-INPUT-001 T3 (AC-M3-022 scrim clause): layering-page scrim-tap
         // routing. scrimHit rides the T2 scrim hit-target (node 20, child of
         // root 10 with content 21 above it, so button taps never read as
@@ -2185,8 +2147,7 @@ extern "C" MUSE_JNI_EXPORT jint Java_com_muse_host_MainActivity_nativeDispatchTo
         const bool posted = RepaintWithinOneFrame(target);
         firedTarget = static_cast<int>(target);
         firedPosted = posted;
-        firedTapId = bridgeTapId;
-          }  // if (bridgeDelivered && FireTapHandler(target))
+          }  // if (claim.claimed && FireTapHandler(target))
         }  // if (target >= 0)
         if (firedTarget < 0) {
           enqueueAfter = (upPressedBefore >= 0);
@@ -2231,6 +2192,16 @@ extern "C" MUSE_JNI_EXPORT jint Java_com_muse_host_MainActivity_nativeDispatchTo
       // never reach here; the seam itself is noexcept).
       ::runtime::ime_commit::SetFocusedEngineRow(
           static_cast<::runtime::NodeId>(firedTarget));
+      // BUG-M3-NATIVE-006 T1 (AC-M3-033/036, AC-INPUT-024a): bridge delivery
+      // BESIDE (never inside) FireContentTapToJs below — the record-only
+      // contract is load-bearing. dispatchTapToOwner is fail-closed,
+      // consume-before-notify: unknown targets, replays, and forged tickets
+      // deliver 0 and throw nothing.
+      {
+        const int tapId = MintBridgeTapId();
+        (void)::input::dispatchTapToOwner(firedTarget,
+                                          ::input::LeaseTicket{tapId});
+      }
       // Batch 2 / T3 (AC-INPUT-021, AC-RUNTIME-018/033): content-agnostic
       // tap-record with node identity. The fired tap is recorded (NOT
       // JS-invoked — App.tsx onTouchStart → loop.ts stays device/player
@@ -2257,10 +2228,10 @@ extern "C" MUSE_JNI_EXPORT jint Java_com_muse_host_MainActivity_nativeDispatchTo
       // Same single-owner queue as nativeRenderFrame (coalesce, not backlog).
       EnqueueFrame(g);
       {
-        char msg[160];
+        char msg[128];
         std::snprintf(msg, sizeof(msg),
-                      "nativeDispatchTouch: tap fired node=%d tapId=%d repaint=%d",
-                      firedTarget, firedTapId, firedPosted ? 1 : 0);
+                      "nativeDispatchTouch: tap fired node=%d repaint=%d",
+                      firedTarget, firedPosted ? 1 : 0);
         MuseLogInfo(msg);
       }
 #endif
@@ -2279,71 +2250,6 @@ extern "C" MUSE_JNI_EXPORT jint Java_com_muse_host_MainActivity_nativeDispatchTo
       env->ExceptionClear();
     }
     return -1;
-  }
-}
-
-// T6 follow-up (AC-INPUT-024/024a): Java-callable bridge dispatch.
-// Java: com.muse.host.MainActivity.nativeDispatchBridgeTap(long, int, int).
-// Delivers a bridge-minted tapId integer to the owning handle's per-button
-// pending entry via input::dispatchTapToOwner (consume-before-notify,
-// exactly-once per tapId; returns 1 on delivery, 0 on fail-closed denial).
-// Never mounts: unknown/unmounted targets stay silent (mounting rides the
-// real component-mount lifecycle only, never any dispatch path). Serialized
-// under g->mu — the same lock the UP fire path holds across its
-// mint-then-dispatch — so concurrent bridge calls cannot interleave a
-// delivery with a tap fire. Fail-closed mirror of the sibling entries: null
-// env, pending exception, or an unregistered handle yields 0 with no
-// exception crossing into the VM. Never throws.
-extern "C" MUSE_JNI_EXPORT jint Java_com_muse_host_MainActivity_nativeDispatchBridgeTap(
-    JNIEnv* env, jobject thiz, jlong handle, jint nodeId, jint tapId) {
-  (void)thiz;
-  if (env == nullptr || env->ExceptionCheck() == JNI_TRUE) {
-    return 0;
-  }
-  std::shared_ptr<GalleryHandle> g = ToGallery(handle);
-  if (g == nullptr) {
-    return 0;
-  }
-  try {
-    if (nodeId < 0 || tapId <= 0) {
-      return 0;
-    }
-    std::lock_guard<std::mutex> lock(g->mu);
-    const input::LeaseTicket ticket{tapId};
-    return static_cast<jint>(
-        input::dispatchTapToOwner(static_cast<int>(nodeId), ticket));
-  } catch (...) {
-    if (env->ExceptionCheck() == JNI_TRUE) {
-      env->ExceptionClear();
-    }
-    return 0;
-  }
-}
-
-// T6 follow-up (AC-INPUT-024a): tapId-integer identity getter.
-// Java: com.muse.host.MainActivity.nativeLastBridgeTapId(long). Returns the
-// tapId minted by the most recent bridge-delivered tap on this process (0
-// when none has fired yet). The JS handle admits it verbatim via
-// adoptBridgeTap(tapId). Fail-closed: null env, pending exception, or an
-// unregistered handle yields 0. Never throws.
-extern "C" MUSE_JNI_EXPORT jint Java_com_muse_host_MainActivity_nativeLastBridgeTapId(
-    JNIEnv* env, jobject thiz, jlong handle) {
-  (void)thiz;
-  if (env == nullptr || env->ExceptionCheck() == JNI_TRUE) {
-    return 0;
-  }
-  std::shared_ptr<GalleryHandle> g = ToGallery(handle);
-  if (g == nullptr) {
-    return 0;
-  }
-  try {
-    return static_cast<jint>(
-        ::runtime::tap_bridge::LastTapId().load(std::memory_order_relaxed));
-  } catch (...) {
-    if (env->ExceptionCheck() == JNI_TRUE) {
-      env->ExceptionClear();
-    }
-    return 0;
   }
 }
 
@@ -2489,18 +2395,6 @@ extern "C" MUSE_JNI_EXPORT void Java_com_muse_host_MainActivity_nativeDestroy(
       ANativeWindow_release(claimed->window);
       claimed->window = nullptr;
     }
-    // T6 mount-lifecycle follow-up (AC-INPUT-024 entry-deleted-on-unmount):
-    // component teardown releases the ownable nodes, so unmount them under
-    // g->mu (same lock the fire path holds across mint-then-dispatch).
-    // Unmount spends pending leases: stale tickets for this handle can never
-    // fire a remounted handle.
-    ::runtime::tap_bridge::UnmountSeededNodes();
-#else
-    // T6 mount-lifecycle follow-up (portable teardown): same unmount as the
-    // Android leg above, so host/hermetic handles also release their entries.
-    // Takes g->mu for the same reason (in-flight dispatch drains first).
-    std::lock_guard<std::mutex> lock(claimed->mu);
-    ::runtime::tap_bridge::UnmountSeededNodes();
 #endif
   } catch (...) {
   }
