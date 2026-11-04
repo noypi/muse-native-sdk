@@ -15,6 +15,7 @@ set(MUSE_INPUT_SOURCES
   ../input/src/event_model.cpp
   ../input/src/hit_test.cpp
   ../input/src/gesture_arena.cpp
+  ../input/src/tap_dispatch.cpp
 )
 
 add_library(runtime

@@ -45,6 +45,7 @@
 #include "gesture_arena.h"
 #include "hit_test.h"
 #include "input/event_model.h"
+#include "input/tap_dispatch.h"
 // BUG-NAV-005: live RouterBridge commit gate behind the generic invoke
 // entry below (`nativeRouterInvoke`/`nativeRouterSetRoutes`). Consume-only:
 // engine/navigation itself is untouched — this TU plus the TUs named in
@@ -118,6 +119,32 @@ class EngineRuntimeHost : public RuntimeHost {
 };
 
 }  // namespace
+
+// FR-INPUT-012 / AC-INPUT-024 + AC-INPUT-024a — JNI tap-bridge state (T6
+// follow-up). The gesture chain mints one bridge tapId integer per fired
+// tap and delivers it through input::dispatchTapToOwner (per-button pending
+// registry, consume-before-notify, exactly-once per tapId) before the
+// existing FireTapHandler tap-record path runs. JNI carries only the tapId
+// integer identity (never a raw pointer); the component-side JS handle
+// admits it verbatim via adoptBridgeTap(tapId) (packages/native/button.js,
+// ingress accepts string|number per AC-INPUT-024a). Fail-closed: unknown /
+// unmounted / replayed / forged tickets deliver 0 and throw nothing
+// through the tap path. CANCEL mints nothing (no wash to spend) — the
+// device-verified-only inspection path is unchanged.
+namespace tap_bridge {
+input::PendingRegistry& Registry() {
+  static input::PendingRegistry registry;
+  return registry;
+}
+std::atomic<int>& NextTapId() {
+  static std::atomic<int> next{1};
+  return next;
+}
+std::atomic<int>& LastTapId() {
+  static std::atomic<int> last{0};
+  return last;
+}
+}  // namespace tap_bridge
 
 void* Runtime_create() {
   // Nothrow allocate: a null return reports failure without an exception
@@ -2012,6 +2039,7 @@ extern "C" MUSE_JNI_EXPORT jint Java_com_muse_host_MainActivity_nativeDispatchTo
     int firedTarget = -1;
     bool firedPosted = false;
     bool enqueueAfter = false;
+    int firedTapId = 0;
     {
       std::lock_guard<std::mutex> lock(g->mu);
       if (action == kActionDown) {
@@ -2068,7 +2096,28 @@ extern "C" MUSE_JNI_EXPORT jint Java_com_muse_host_MainActivity_nativeDispatchTo
         const int32_t target = ResolveTapTarget(g->tapTree, x, y);
         if (target >= 0) {
           const ArenaAction claim = ClaimTap(g->tapArena, pointerId, target);
-          if (claim.claimed && FireTapHandler(target)) {
+          // T6 follow-up (AC-INPUT-024/024a): bridge-minted integer identity.
+          // Mint one tapId for this fired tap, admit it to the owning
+          // handle's per-button pending entry, and deliver exactly once via
+          // dispatchTapToOwner (consume-before-notify) BEFORE the tap-record
+          // path below. A 0 delivery (replay/forged — fail-closed) fires
+          // nothing; drags never reach here (past-slop claims stay
+          // unclaimed) and CANCEL mints nothing.
+          bool bridgeDelivered = false;
+          int bridgeTapId = 0;
+          if (claim.claimed) {
+            ::runtime::tap_bridge::Registry().mount(static_cast<int>(target));
+            bridgeTapId =
+                ::runtime::tap_bridge::NextTapId().fetch_add(1, std::memory_order_relaxed);
+            const input::LeaseTicket ticket{bridgeTapId};
+            bridgeDelivered = (input::dispatchTapToOwner(
+                                   static_cast<int>(target), ticket) == 1);
+            if (bridgeDelivered) {
+              ::runtime::tap_bridge::LastTapId().store(bridgeTapId,
+                                            std::memory_order_relaxed);
+            }
+          }
+          if (bridgeDelivered && FireTapHandler(target)) {
         // BUG-INPUT-001 T3 (AC-M3-022 scrim clause): layering-page scrim-tap
         // routing. scrimHit rides the T2 scrim hit-target (node 20, child of
         // root 10 with content 21 above it, so button taps never read as
@@ -2104,7 +2153,8 @@ extern "C" MUSE_JNI_EXPORT jint Java_com_muse_host_MainActivity_nativeDispatchTo
         const bool posted = RepaintWithinOneFrame(target);
         firedTarget = static_cast<int>(target);
         firedPosted = posted;
-          }  // if (claim.claimed && FireTapHandler(target))
+        firedTapId = bridgeTapId;
+          }  // if (bridgeDelivered && FireTapHandler(target))
         }  // if (target >= 0)
         if (firedTarget < 0) {
           enqueueAfter = (upPressedBefore >= 0);
@@ -2175,10 +2225,10 @@ extern "C" MUSE_JNI_EXPORT jint Java_com_muse_host_MainActivity_nativeDispatchTo
       // Same single-owner queue as nativeRenderFrame (coalesce, not backlog).
       EnqueueFrame(g);
       {
-        char msg[128];
+        char msg[160];
         std::snprintf(msg, sizeof(msg),
-                      "nativeDispatchTouch: tap fired node=%d repaint=%d",
-                      firedTarget, firedPosted ? 1 : 0);
+                      "nativeDispatchTouch: tap fired node=%d tapId=%d repaint=%d",
+                      firedTarget, firedTapId, firedPosted ? 1 : 0);
         MuseLogInfo(msg);
       }
 #endif
@@ -2197,6 +2247,67 @@ extern "C" MUSE_JNI_EXPORT jint Java_com_muse_host_MainActivity_nativeDispatchTo
       env->ExceptionClear();
     }
     return -1;
+  }
+}
+
+// T6 follow-up (AC-INPUT-024/024a): Java-callable bridge dispatch.
+// Java: com.muse.host.MainActivity.nativeDispatchBridgeTap(long, int, int).
+// Delivers a bridge-minted tapId integer to the owning handle's per-button
+// pending entry via input::dispatchTapToOwner (consume-before-notify,
+// exactly-once per tapId; returns 1 on delivery, 0 on fail-closed denial).
+// No mounting here: unknown/unmounted targets stay silent (mounting rides
+// the UP fire path above). Fail-closed mirror of the sibling entries: null
+// env, pending exception, or an unregistered handle yields 0 with no
+// exception crossing into the VM. Never throws.
+extern "C" MUSE_JNI_EXPORT jint Java_com_muse_host_MainActivity_nativeDispatchBridgeTap(
+    JNIEnv* env, jobject thiz, jlong handle, jint nodeId, jint tapId) {
+  (void)thiz;
+  if (env == nullptr || env->ExceptionCheck() == JNI_TRUE) {
+    return 0;
+  }
+  std::shared_ptr<GalleryHandle> g = ToGallery(handle);
+  if (g == nullptr) {
+    return 0;
+  }
+  try {
+    if (nodeId < 0 || tapId <= 0) {
+      return 0;
+    }
+    const input::LeaseTicket ticket{tapId};
+    return static_cast<jint>(
+        input::dispatchTapToOwner(static_cast<int>(nodeId), ticket));
+  } catch (...) {
+    if (env->ExceptionCheck() == JNI_TRUE) {
+      env->ExceptionClear();
+    }
+    return 0;
+  }
+}
+
+// T6 follow-up (AC-INPUT-024a): tapId-integer identity getter.
+// Java: com.muse.host.MainActivity.nativeLastBridgeTapId(long). Returns the
+// tapId minted by the most recent bridge-delivered tap on this process (0
+// when none has fired yet). The JS handle admits it verbatim via
+// adoptBridgeTap(tapId). Fail-closed: null env, pending exception, or an
+// unregistered handle yields 0. Never throws.
+extern "C" MUSE_JNI_EXPORT jint Java_com_muse_host_MainActivity_nativeLastBridgeTapId(
+    JNIEnv* env, jobject thiz, jlong handle) {
+  (void)thiz;
+  if (env == nullptr || env->ExceptionCheck() == JNI_TRUE) {
+    return 0;
+  }
+  std::shared_ptr<GalleryHandle> g = ToGallery(handle);
+  if (g == nullptr) {
+    return 0;
+  }
+  try {
+    return static_cast<jint>(
+        ::runtime::tap_bridge::LastTapId().load(std::memory_order_relaxed));
+  } catch (...) {
+    if (env->ExceptionCheck() == JNI_TRUE) {
+      env->ExceptionClear();
+    }
+    return 0;
   }
 }
 
