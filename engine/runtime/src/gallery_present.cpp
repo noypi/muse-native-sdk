@@ -873,9 +873,18 @@ inline float ComponentShapeDp(const std::string& comp, float boxHeightDp) {
 // values fall back to the Stage 1 resolver/defaults (never blank, never
 // throws), so rows without bound props paint exactly as Stage 1.
 
-// Forward declaration: defined with the descriptor helpers below; needed by
-// the Stage 2 bound-value resolvers above (zero-JNI, header-unchanged).
-std::string PropValue(const std::string& desc, const char* key);
+// Literal-prop lookup over the stored "Type k=v k=v" description. Single
+// definition placed ahead of the Stage 2 bound-value resolvers below
+// (zero-JNI, header-unchanged); no separate forward declaration.
+std::string PropValue(const std::string& desc, const char* key) {
+  std::string needle = std::string(" ") + key + "=";
+  std::size_t at = desc.find(needle);
+  if (at == std::string::npos) return "";
+  at += needle.size();
+  std::size_t end = desc.find(' ', at);
+  if (end == std::string::npos) return desc.substr(at);
+  return desc.substr(at, end - at);
+}
 
 // Strict dp token: `<number>[px|dp]` (trailing spaces tolerated), finite and
 // non-negative. False on missing/empty/malformed input; never throws.
@@ -1542,16 +1551,6 @@ int RowHeight(const GalleryRow& row) {
 bool PropIs(const std::string& desc, const char* key, const char* val) {
   std::string needle = std::string(" ") + key + "=" + val;
   return desc.find(needle) != std::string::npos;
-}
-
-std::string PropValue(const std::string& desc, const char* key) {
-  std::string needle = std::string(" ") + key + "=";
-  std::size_t at = desc.find(needle);
-  if (at == std::string::npos) return "";
-  at += needle.size();
-  std::size_t end = desc.find(' ', at);
-  if (end == std::string::npos) return desc.substr(at);
-  return desc.substr(at, end - at);
 }
 
 double PropDouble(const std::string& desc, const char* key, double fallback) {
