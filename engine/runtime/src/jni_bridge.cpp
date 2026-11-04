@@ -308,18 +308,6 @@ constexpr std::uint32_t ThemePx(unsigned r, unsigned g, unsigned b) {
 
 std::atomic<int> g_nightMode{0};
 
-// BUG-M3-NATIVE-006 T1 (FR-M3-013 / AC-M3-033 / AC-M3-036 / AC-INPUT-024a):
-// bridge tapId mint. Monotonic per-process integer identity minted at
-// UP-resolve; JNI carries only this integer (never a raw pointer).
-// Shared counter (runtime/bridge_tap_id.h); this TU-local entry keeps its
-// signature and forwards so both lanes mint from one sequence.
-// Delivery consumes via dispatchTapToOwner (consume-on-delivery, enforced
-// consume-before-notify inside the callee); drag/CANCEL/unmount paths never
-// mint, so no stale ticket can fire a later tap.
-int MintBridgeTapId() noexcept {
-  return ::runtime::MintTapId();
-}
-
 std::uint32_t ThemeInk(std::uint32_t c) {
   if (g_nightMode.load(std::memory_order_relaxed) == 0) return c;
   const unsigned a = (c >> 24) & 0xFFu;
@@ -972,6 +960,20 @@ bool EnsureFrameResourcesLocked(GalleryHandle* g, int stride, int h) noexcept {
   }
 }
 
+}  // namespace
+
+// BUG-M3-NATIVE-006 T1 (FR-M3-013 / AC-M3-033 / AC-M3-036 / AC-INPUT-024a):
+// bridge tapId mint. Monotonic per-process integer identity minted at
+// UP-resolve; JNI carries only this integer (never a raw pointer).
+// Shared counter (runtime/bridge_tap_id.h); this TU-local entry keeps its
+// signature and forwards so both lanes mint from one sequence.
+// Delivery consumes via dispatchTapToOwner (consume-on-delivery, enforced
+// consume-before-notify inside the callee); drag/CANCEL/unmount paths never
+// mint, so no stale ticket can fire a later tap.
+static int MintBridgeTapId() noexcept {
+  return ::runtime::MintTapId();
+}
+
 // BUG-M3-NATIVE-006 mount+mint proof (FR-INPUT-012 / AC-INPUT-024):
 // lease-owner node mounted at JNI lifecycle points. The seeded tap tree
 // (input_chain.cpp seeder) carries root 10 + full-bleed scrim 20 + the
@@ -979,7 +981,7 @@ bool EnsureFrameResourcesLocked(GalleryHandle* g, int stride, int h) noexcept {
 // the dispatch target a real DOWN->UP tap resolves. Root/scrim stay
 // unmounted by design: their taps ride the scrim/record-only paths, and an
 // unmounted target mints nothing and dispatches silent (fail-closed).
-constexpr std::int32_t kTapLeaseOwnerNode = 21;
+static constexpr std::int32_t kTapLeaseOwnerNode = 21;
 
 // Mount-only-at-lifecycle sync: creates the owner entry on the handle's
 // registry. Idempotent (mount re-asserts the routing entry), so it is safe
@@ -989,10 +991,12 @@ constexpr std::int32_t kTapLeaseOwnerNode = 21;
 // (destroy-unmount pairs with unmount, which spends every pending lease so
 // no stale ticket can fire a remounted handle). NEVER called in the fire
 // path: the UP slice mints + dispatches only.
-inline void SyncTapLeaseMounts(GalleryHandle* g) {
+static inline void SyncTapLeaseMounts(GalleryHandle* g) {
   if (g == nullptr) return;
   g->tapLeases.mount(kTapLeaseOwnerNode);
 }
+
+namespace {
 
 // Renders the current page into the attached window. Callers must hold
 // g->mu: attach state, page, and rows are all mutated under that lock.
