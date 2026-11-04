@@ -105,6 +105,24 @@ target_sources(runtime PRIVATE
 )
 target_include_directories(runtime PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../..)
 
+# BUG-NAV-005: the generic router-invoke JNI seam in jni_bridge.cpp calls the
+# live RouterBridge::invoke commit gate (engine/navigation itself is
+# untouched — consumed, never modified). Compile the minimal closure
+# (bridge + graph + snapshot + schema + typed routes + trie; std-only,
+# hermetic, no engine) into the static runtime, mirroring the engine/text
+# and engine/input consumption above. No navigation header reaches the
+# public runtime include dir; no route literals live in JNI (TC-NAV-047).
+set(MUSE_NAVIGATION_SOURCES
+  ../navigation/src/router_bridge.cpp
+  ../navigation/src/graph.cpp
+  ../navigation/src/snapshot.cpp
+  ../navigation/src/state_schema.cpp
+  ../navigation/src/typed_routes.cpp
+  ../navigation/src/trie.cpp
+)
+target_include_directories(runtime PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../navigation/include)
+target_sources(runtime PRIVATE ${MUSE_NAVIGATION_SOURCES})
+
 # BUG-TEXT-007 runtime NDK fix: the text TUs consumed above (shaper.cpp
 # T9) include <ft2build.h> + <hb.h> directly, but this project never runs
 # the engine/text in-tree D3 sub-builds, so no freetype/harfbuzz target
@@ -302,6 +320,10 @@ if(DEFINED ANDROID_ABI AND NOT TARGET Runtime)
     ${MUSE_INPUT_SOURCES}
     ../graphics/pacing/frame_rate.cc
     ../graphics/pacing/render_ahead.cc
+    # BUG-NAV-005 (shared lane): live RouterBridge commit gate behind the
+    # generic invoke JNI seam — same consume-only closure as the static
+    # runtime above (engine/navigation untouched, never modified).
+    ${MUSE_NAVIGATION_SOURCES}
   )
   set_target_properties(Runtime PROPERTIES
     OUTPUT_NAME Runtime
@@ -312,6 +334,9 @@ if(DEFINED ANDROID_ABI AND NOT TARGET Runtime)
   target_include_directories(Runtime PUBLIC include)
   target_include_directories(Runtime PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../input/include)
   target_include_directories(Runtime PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../text/include)
+  # BUG-NAV-005 (shared lane): navigation headers for the consume-only
+  # RouterBridge closure above (PRIVATE only; never public).
+  target_include_directories(Runtime PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../navigation/include)
   # T4 pacing link fix: frame_rate.cc/render_ahead.cc self-include as
   # "engine/graphics/pacing/...", so the repo root must be on the include
   # path (mirrors the T4 pinning test's `-I .`).

@@ -374,10 +374,34 @@ function getOpaqueLinkConsumer() {
 // T9 boot binding (AC-NAV-041): app-owned adapter binds the default
 // `globalThis.RouterBridge` once at module load so `demoTransport()` (App
 // boot) is non-null on device. First-wins: an engine/host-installed bridge
-// keeps priority; fail-closed on missing globalThis; never throws. The
-// default bridge resolves `invoke` in-memory (`{ok:true}`) — route validity
-// stays with the route table + guards, which run before any invoke — so a
-// bound-but-unknown route still denies, never silently succeeds.
+// keeps priority; fail-closed on missing globalThis; never throws.
+//
+// BUG-NAV-005: the default bridge resolves `invoke` in-memory (`{ok:true}`)
+// and MUST NOT self-install outside the hermetic test sink — on device it
+// froze the stub in place before `demoTransport()` captured it, so every tap
+// resolved ok:true in JS while the C++ commit gate stayed unreachable
+// (AC-NAV-041/042 violation, JS/C++ divergence). The in-memory stub now
+// installs at module load ONLY when the hermetic test sink
+// (`globalThis.__museTestBroadcasts`, the same test-only path the emission
+// seam gates on) is present; elsewhere the bridge stays unbound until the
+// platform binds the live (JNI-backed `RouterBridge.invoke`) entry, and the
+// unbound router fails closed with a named `transport-error` (never a
+// silent success, page unchanged). The explicit `ensureRouterBridge()`
+// export below keeps its first-wins install semantics for direct callers
+// (hermetic doubles pin it); only the automatic self-install is gated.
+// Route validity stays with the route table + guards (JS-side pre-invoke
+// checks) AND the C++ commit gate behind the live entry.
+function hermeticTestSinkPresent() {
+  try {
+    return (
+      typeof globalThis !== 'undefined' &&
+      Array.isArray(globalThis.__museTestBroadcasts)
+    );
+  } catch (err) {
+    void err;
+    return false;
+  }
+}
 function ensureRouterBridge() {
   try {
     if (typeof globalThis === 'undefined') {
@@ -401,7 +425,12 @@ function ensureRouterBridge() {
   }
 }
 
-ensureRouterBridge();
+// BUG-NAV-005: the automatic boot self-install fires ONLY under the
+// hermetic test sink (see above) — production module load leaves the
+// bridge unbound until the platform binds the live entry first-wins.
+if (hermeticTestSinkPresent()) {
+  ensureRouterBridge();
+}
 
 module.exports = {
   createDemoNavigator,

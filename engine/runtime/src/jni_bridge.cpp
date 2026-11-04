@@ -45,6 +45,13 @@
 #include "gesture_arena.h"
 #include "hit_test.h"
 #include "input/event_model.h"
+// BUG-NAV-005: live RouterBridge commit gate behind the generic invoke
+// entry below (`nativeRouterInvoke`/`nativeRouterSetRoutes`). Consume-only:
+// engine/navigation itself is untouched — this TU plus the TUs named in
+// engine/runtime/CMakeLists.txt compile it in, mirroring the engine/text
+// and engine/input consumption pattern above. No navigation header reaches
+// the public runtime include dir.
+#include "navigation/router_bridge.h"
 // BUG-TEXT-008 t5r5 seam binding: WindowSwapchain::BlendMask below is the
 // blend half of the executed
 // PresentDeviceGalleryPage -> ShapedText -> RasterizeShapedText -> BlendMask
@@ -395,6 +402,16 @@ struct GalleryHandle {
   // handle.
   std::string shellRoute;
   std::string shellNotice;
+  // BUG-NAV-005: live navigation commit gate (FR-NAV-011/014, AC-NAV-042).
+  // Per-handle `RouterBridge` reached ONLY through the generic invoke entry
+  // below (`nativeRouterInvoke`): method + JSON args in, JSON verdict out.
+  // The route table arrives as opaque data via `nativeRouterSetRoutes`;
+  // this TU performs no route-name comparisons and holds no route literals
+  // (TC-NAV-047). Empty until provisioned: every navigate then fails closed
+  // with a named denial instead of the old in-memory ok:true stub path.
+  // Guarded by mu like the rest of the handle; lazily created under lock by
+  // the entries (nativeLoadTree stays untouched).
+  std::unique_ptr<RouterBridge> navBridge;
   // T9 present rule (fr-nav-014-thin-host / AC-NAV-042): last opaque shell
   // marker RenderLocked surfaced. Change-triggered so a steady slot stays
   // silent; holds opaque values only, never a routing verdict. Guarded by mu
@@ -1595,6 +1612,352 @@ extern "C" MUSE_JNI_EXPORT jint Java_com_muse_host_MainActivity_nativeSetShellSt
       env->ExceptionClear();
     }
     return static_cast<jint>(0);
+  }
+}
+
+// BUG-NAV-005: generic router-invoke seam (FR-NAV-011/014, AC-NAV-038/041/042).
+// Boot-bound JNI entry into the live `RouterBridge::invoke` commit gate
+// (engine/navigation/src/router_bridge.cpp): generic method + JSON-args in,
+// JSON verdict out — no route knowledge here, never a literal route-name
+// comparison (AC-NAV-044/045, TC-NAV-047). The Java drain calls this JNI
+// entry directly; any future platform binding of `RouterBridge.invoke`
+// keeps first-wins (a pre-installed bridge keeps priority). The opaque-stash
+// drain rides this same entry instead of
+// the store-and-log `nativeSetShellState` slot (which stays the generic
+// shell-state seam, never the navigation commit path).
+//
+// Verdict vocabulary (denial shapes preserved end to end):
+//   ok:true   -> {"ok":true,"route":<bridge payload JSON verbatim>}
+//   BAD_ARGS  -> {"ok":false,"code":"bad-params"}      (arg/typed-param gate)
+//   GUARD_DENIED -> {"ok":false,"code":"guard-denied"}  (commit gate re-run)
+//   NAV_ERROR -> {"ok":false,"code":"unknown-route"}   (graph unknown-route)
+//   UNKNOWN_METHOD / entry-level misuse ->
+//               {"ok":false,"code":"transport-error"}  (JS funnel vocabulary)
+// Fail-closed: null env, pending exception, unregistered handle, null or
+// over-bound method/args, or malformed provisioning JSON all deny with no
+// exception crossing into the VM and no state mutation. Never throws.
+// Bounds: method <= 64 UTF length, args <= 8192 UTF length, routes payload
+// <= 8192 UTF length with <= 256 entries of <= 512 chars each.
+namespace {
+
+// Maps the bridge verdict to the preserved JS denial vocabulary above.
+const char* RouterCodeFor(BridgeError error) {
+  switch (error) {
+    case BridgeError::BAD_ARGS:
+      return "bad-params";
+    case BridgeError::GUARD_DENIED:
+      return "guard-denied";
+    case BridgeError::NAV_ERROR:
+      return "unknown-route";
+    case BridgeError::NONE:
+    case BridgeError::UNKNOWN_METHOD:
+      break;
+  }
+  return "transport-error";
+}
+
+// JSON string escaper for embedding opaque/error text verbatim (no parsing,
+// no interpretation): quotes, backslashes, and controls become escapes;
+// other bytes ride through (route ids are ASCII by construction).
+void AppendJsonEscaped(std::string& out, const std::string& s) {
+  static const char* kHex = "0123456789abcdef";
+  for (char c : s) {
+    const unsigned char u = static_cast<unsigned char>(c);
+    switch (c) {
+      case '"':
+        out += "\\\"";
+        break;
+      case '\\':
+        out += "\\\\";
+        break;
+      case '\b':
+        out += "\\b";
+        break;
+      case '\f':
+        out += "\\f";
+        break;
+      case '\n':
+        out += "\\n";
+        break;
+      case '\r':
+        out += "\\r";
+        break;
+      case '\t':
+        out += "\\t";
+        break;
+      default:
+        if (u < 0x20) {
+          out += "\\u00";
+          out.push_back(kHex[(u >> 4) & 0x0F]);
+          out.push_back(kHex[u & 0x0F]);
+        } else {
+          out.push_back(c);
+        }
+        break;
+    }
+  }
+}
+
+// Copies one JNI string into a std::string with the fail-closed guards used
+// by the sibling entries. Returns false (out untouched) on null env,
+// pending exception, null string, negative length, or over-bound length.
+bool CopyJniString(JNIEnv* env, jstring s, std::size_t maxLen,
+                   std::string& out) {
+  if (env == nullptr || env->ExceptionCheck() == JNI_TRUE || s == nullptr) {
+    return false;
+  }
+  const jsize ulen = env->GetStringUTFLength(s);
+  if (env->ExceptionCheck() == JNI_TRUE) {
+    env->ExceptionClear();
+    return false;
+  }
+  if (ulen < 0 || static_cast<std::size_t>(ulen) > maxLen) {
+    return false;
+  }
+  const char* chars = env->GetStringUTFChars(s, nullptr);
+  if (env->ExceptionCheck() == JNI_TRUE) {
+    env->ExceptionClear();
+    return false;
+  }
+  if (chars == nullptr) {
+    return false;
+  }
+  out.assign(chars, static_cast<std::size_t>(ulen));
+  env->ReleaseStringUTFChars(s, chars);
+  return env->ExceptionCheck() != JNI_TRUE;
+}
+
+// Generic JSON string-array parser for route-table provisioning: accepts
+// `["id", ...]` with standard escapes, arbitrary whitespace, and nothing
+// else. Opaque data only — no element is compared, matched, or interpreted
+// here (validity stays with the engine route table + descriptors). Bounds
+// above; malformed input fails closed with an empty table signal.
+// NOTE (review NIT): `\uXXXX` escapes are deliberately rejected as malformed
+// (fail-closed) — test route ids are `[A-Za-z0-9_-]+`, so no `\u` support.
+bool ParseRoutesArray(const std::string& json, std::vector<std::string>& out,
+                      bool& malformed) {
+  malformed = false;
+  std::size_t i = 0;
+  const auto skipWs = [&]() {
+    while (i < json.size() &&
+           (json[i] == ' ' || json[i] == '\t' || json[i] == '\n' ||
+            json[i] == '\r')) {
+      ++i;
+    }
+  };
+  skipWs();
+  if (i >= json.size() || json[i] != '[') {
+    malformed = true;
+    return false;
+  }
+  ++i;
+  bool first = true;
+  for (;;) {
+    skipWs();
+    if (i < json.size() && json[i] == ']') {
+      ++i;
+      skipWs();
+      if (i != json.size()) {
+        malformed = true;
+        return false;
+      }
+      return true;
+    }
+    if (!first) {
+      if (i >= json.size() || json[i] != ',') {
+        malformed = true;
+        return false;
+      }
+      ++i;
+      skipWs();
+      if (i < json.size() && json[i] == ']') {
+        malformed = true;  // No trailing comma.
+        return false;
+      }
+    }
+    if (i >= json.size() || json[i] != '"') {
+      malformed = true;
+      return false;
+    }
+    ++i;
+    std::string cur;
+    bool closed = false;
+    while (i < json.size()) {
+      const char c = json[i];
+      if (c == '"') {
+        closed = true;
+        ++i;
+        break;
+      }
+      if (c == '\\') {
+        ++i;
+        if (i >= json.size()) break;
+        const char e = json[i];
+        switch (e) {
+          case '"':
+            cur.push_back('"');
+            break;
+          case '\\':
+            cur.push_back('\\');
+            break;
+          case '/':
+            cur.push_back('/');
+            break;
+          case 'b':
+            cur.push_back('\b');
+            break;
+          case 'f':
+            cur.push_back('\f');
+            break;
+          case 'n':
+            cur.push_back('\n');
+            break;
+          case 'r':
+            cur.push_back('\r');
+            break;
+          case 't':
+            cur.push_back('\t');
+            break;
+          default:
+            malformed = true;
+            return false;
+        }
+        ++i;
+        continue;
+      }
+      if (static_cast<unsigned char>(c) < 0x20) {
+        malformed = true;
+        return false;
+      }
+      cur.push_back(c);
+      ++i;
+    }
+    if (!closed) {
+      malformed = true;
+      return false;
+    }
+    if (cur.empty() || cur.size() > 512 || out.size() >= 256) {
+      malformed = true;
+      return false;
+    }
+    out.push_back(cur);
+    first = false;
+  }
+}
+
+// Lazily creates the handle's live bridge (empty route table: every
+// navigate fails closed until `nativeRouterSetRoutes` provisions it).
+// Caller must hold g->mu.
+RouterBridge* NavBridgeLocked(const std::shared_ptr<GalleryHandle>& g) {
+  if (g->navBridge == nullptr) {
+    g->navBridge =
+        std::unique_ptr<RouterBridge>(new RouterBridge(std::vector<std::string>()));
+  }
+  return g->navBridge.get();
+}
+
+}  // namespace
+
+// BUG-NAV-005 provision entry (generic, opaque): replaces the handle
+// bridge's route table from a JSON string array of route ids. The ids ride
+// through uninterpreted (manifest-owned data; validity stays with the engine
+// gate). Returns 1 applied, 0 denied (fail-closed ints, never throws).
+extern "C" MUSE_JNI_EXPORT jint Java_com_muse_host_MainActivity_nativeRouterSetRoutes(
+    JNIEnv* env, jobject thiz, jlong handle, jstring routesJson) {
+  (void)thiz;
+  if (env == nullptr || env->ExceptionCheck() == JNI_TRUE) {
+    return static_cast<jint>(0);
+  }
+  std::shared_ptr<GalleryHandle> g = ToGallery(handle);
+  if (g == nullptr) return static_cast<jint>(0);
+  try {
+    std::string json;
+    if (!CopyJniString(env, routesJson, 8192, json)) {
+      return static_cast<jint>(0);
+    }
+    std::vector<std::string> routes;
+    bool malformed = false;
+    if (!ParseRoutesArray(json, routes, malformed) || malformed) {
+      return static_cast<jint>(0);
+    }
+    {
+      std::lock_guard<std::mutex> lock(g->mu);
+      g->navBridge =
+          std::unique_ptr<RouterBridge>(new RouterBridge(routes));
+    }
+#ifdef __ANDROID__
+    char msg[96];
+    std::snprintf(msg, sizeof(msg), "router-routes-provisioned count=%d",
+                  static_cast<int>(routes.size()));
+    MuseLogInfo(msg);
+#endif
+    return static_cast<jint>(1);
+  } catch (...) {
+    if (env->ExceptionCheck() == JNI_TRUE) {
+      env->ExceptionClear();
+    }
+    return static_cast<jint>(0);
+  }
+}
+
+// BUG-NAV-005 live invoke entry (generic): forwards (method, JSON args) to
+// the handle's live `RouterBridge::invoke` and returns the JSON verdict
+// shaped above. The tap/stash path that used to resolve ok:true in memory
+// now enters the C++ commit gate: validate + guard re-run, unknown-route
+// home-degrade, graph apply, snapshot-readable. Returns null only when no
+// verdict string can be produced (null env / bad handle); every gate
+// verdict — allow or named denial — is a JSON string.
+extern "C" MUSE_JNI_EXPORT jstring Java_com_muse_host_MainActivity_nativeRouterInvoke(
+    JNIEnv* env, jobject thiz, jlong handle, jstring method,
+    jstring jsonArgs) {
+  (void)thiz;
+  if (env == nullptr || env->ExceptionCheck() == JNI_TRUE) {
+    return nullptr;
+  }
+  std::shared_ptr<GalleryHandle> g = ToGallery(handle);
+  if (g == nullptr) return nullptr;
+  try {
+    std::string methodCopy;
+    if (!CopyJniString(env, method, 64, methodCopy) || methodCopy.empty()) {
+      return nullptr;
+    }
+    std::string argsCopy;
+    if (!CopyJniString(env, jsonArgs, 8192, argsCopy)) {
+      return nullptr;
+    }
+    BridgeResult result{false, "", BridgeError::UNKNOWN_METHOD};
+    {
+      std::lock_guard<std::mutex> lock(g->mu);
+      RouterBridge* bridge = NavBridgeLocked(g);
+      if (bridge == nullptr) {
+        return nullptr;
+      }
+      result = bridge->invoke(methodCopy, argsCopy);
+    }
+    std::string verdict;
+    if (result.ok) {
+      verdict = "{\"ok\":true,\"route\":";
+      verdict += result.json.empty() ? "{}" : result.json;
+      verdict += "}";
+    } else {
+      verdict = "{\"ok\":false,\"code\":\"";
+      verdict += RouterCodeFor(result.error);
+      verdict += "\"}";
+    }
+#ifdef __ANDROID__
+    {
+      std::string mark = "router-invoke method=" + methodCopy +
+                         (result.ok ? " ok=1" : " ok=0 code=") +
+                         (result.ok ? "" : RouterCodeFor(result.error));
+      MuseLogInfo(mark);
+    }
+#endif
+    return env->NewStringUTF(verdict.c_str());
+  } catch (...) {
+    if (env->ExceptionCheck() == JNI_TRUE) {
+      env->ExceptionClear();
+    }
+    return nullptr;
   }
 }
 
