@@ -70,6 +70,61 @@ for name in $NAMES; do
   fi
 done
 
+# M3-006 (#313) landed delivery contract: the bridge-tap polling symbols
+# `nativeDispatchBridgeTap` / `nativeLastBridgeTapId` were removed (replaced
+# by consume-on-delivery via `dispatchTapToOwner`). They must NOT be declared
+# or expected anymore — a stale declaration here is a contract-vs-engine gap
+# (UnsatisfiedLinkError on every ABI). Fail closed if they resurface.
+for stale in nativeDispatchBridgeTap nativeLastBridgeTapId; do
+  if echo "$NAMES" | grep -qx "$stale"; then
+    echo "jni_contract_test: FAIL — stale M3-006 symbol $stale still declared in $JAVA (removed; delivery is via dispatchTapToOwner) (AC-RUNTIME-027)"
+    fail=1
+    missing="$missing Java_com_muse_host_MainActivity_${stale}(stale)"
+  fi
+  if [ -f "$BRIDGE" ] && grep -q "Java_com_muse_host_MainActivity_${stale}" "$BRIDGE"; then
+    echo "jni_contract_test: FAIL — stale M3-006 export Java_com_muse_host_MainActivity_${stale} still present in $BRIDGE (removed; delivery is via dispatchTapToOwner) (AC-RUNTIME-027)"
+    fail=1
+    missing="$missing Java_com_muse_host_MainActivity_${stale}(stale-export)"
+  fi
+done
+
+# Landed delivery pin 1/2: the UP-fire path must deliver via
+# `dispatchTapToOwner` (consume-on-delivery). Internal C++ symbol, so this is
+# a source pin on jni_bridge.cpp regardless of the .so lane.
+if [ -f "$BRIDGE" ]; then
+  if grep -q "dispatchTapToOwner(" "$BRIDGE"; then
+    echo "jni_contract_test: PASS — dispatchTapToOwner delivery present in jni_bridge.cpp (M3-006 landed contract)"
+  else
+    echo "jni_contract_test: FAIL — dispatchTapToOwner delivery missing in $BRIDGE (M3-006 landed contract) (AC-RUNTIME-027)"
+    fail=1
+    missing="$missing dispatchTapToOwner(delivery)"
+  fi
+else
+  echo "jni_contract_test: FAIL — jni_bridge.cpp not found: $BRIDGE (M3-006 delivery pin) (AC-RUNTIME-027)"
+  fail=1
+  missing="$missing jni_bridge.cpp(missing)"
+fi
+
+# Landed delivery pin 2/2: RouterInvoke/SetRoutes entries must exist in
+# jni_bridge.cpp (source pin). These two are NOT `native*`-declared in
+# MainActivity.java, so AC-RUNTIME-027's binary-first rule (every *declared*
+# native resolves in the .so) does not extend to them — the generic loop
+# above remains the sole binary gate. NOTE (stale-.so observation, all ABIs):
+# the staged libs under examples/m3-gallery/build/staging currently carry
+# neither nativeRouterInvoke nor nativeRouterSetRoutes as dynamic exports
+# (only nativeSetShellState); they predate the landed source. Flagged for
+# build-ops; not a gate failure while Java declares no such natives.
+for rname in nativeRouterInvoke nativeRouterSetRoutes; do
+  rsym="Java_com_muse_host_MainActivity_${rname}"
+  if [ -f "$BRIDGE" ] && grep -q "$rsym" "$BRIDGE"; then
+    echo "jni_contract_test: PASS — $rname present in jni_bridge.cpp (M3-006 landed contract)"
+  else
+    echo "jni_contract_test: FAIL — missing $rsym in $BRIDGE (M3-006 landed contract) (AC-RUNTIME-027)"
+    fail=1
+    missing="$missing $rsym"
+  fi
+done
+
 if [ "$fail" -ne 0 ]; then
   echo "jni_contract_test: FAIL missing:${missing} (AC-RUNTIME-027: host must pass the surface through JNI as an opaque handle; stale contract = UnsatisfiedLinkError)"
   exit 1
