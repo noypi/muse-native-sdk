@@ -179,6 +179,18 @@ target_link_libraries(router_facade_gate_test PRIVATE navigation)
 target_compile_options(router_facade_gate_test PRIVATE -Wall -Wextra -Wpedantic)
 add_test(NAME router_facade_gate_test COMMAND router_facade_gate_test)
 
+# FR-NAV-007 T5 (route-descriptor codegen invocation — documentation only,
+# no new engine target added here):
+#   Generate: python3 ../../toolchain/route-codegen/codegen.py
+#               --manifest route_manifest.json
+#               --out include/navigation
+#             (emits route_descriptors.h (kRouteDescriptors, consumed by
+#             RouterBridge::invoke via DescriptorFor in src/router_bridge.cpp)
+#             + routes.ts from the single-source route manifest).
+#   Drift gate (AC-NAV-020/042, fails the build on hand-edited outputs):
+#             python3 ../../toolchain/route-codegen/codegen.py
+#               --manifest route_manifest.json --out include/navigation --check
+#             exits 0 on match, 2 on drift with a unified diff on stdout.
 # FR-NAV-006 T2 (NAV-APPLINKS codegen invocation — documentation only, no new
 # engine target added here):
 #   Generate: python3 ../../toolchain/applinks/codegen.py
