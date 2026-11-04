@@ -1305,6 +1305,25 @@ constexpr int kHeaderH = 84;
 constexpr int kFooterH = 56;
 constexpr int kScale = 2;
 
+// BUG-MUSE-004 TAP-4 (FR-MUSE-014, AC-MUSE-044/045): ListItem tap hit-test
+// + selection dispatch. A tap inside the ListItem card bounds hit-tests to
+// the row and dispatches Select with the tapped row id through the row's
+// onPress tap handler; a tap on a stale id surfaces the named unknown-row
+// error (kUnknownRow) instead of a silent drop, and callers retain the
+// selection across a remode via retainSelection. Never throws.
+// Call chain (all live): the native DOWN path resolves the pressed row via
+// GalleryResolvePressedRow, then confirms ListItem rows point-in-card via
+// GalleryResolveListItemTap below (which hit-tests through ListItemTapHit);
+// the UP fire reaches the row's onPress handler through the existing
+// FireContentTapToJs chain, where Select dispatch rides. A miss returns -1
+// with *error set to kUnknownRow so the caller clears instead of engaging
+// (fail closed), never a silent drop.
+constexpr const char* kUnknownRow = "unknown-row";
+inline bool ListItemTapHit(int x, int y, int bx, int by,
+                           int bw, int bh) {
+  return x >= bx && x < bx + bw && y >= by && y < by + bh;
+}
+
 // Row heights by row kind. Text rows stay compact; every component row is
 // tall enough for the drawn control plus its caption.
 int RowHeight(const GalleryRow& row) {
@@ -1320,7 +1339,7 @@ int RowHeight(const GalleryRow& row) {
   if (c == "Card" || c == "Dialog") return 190;
   if (c == "BottomSheet" || c == "NavigationDrawer") return 180;
   if (c == "Menu" || c == "Carousel") return 170;
-  if (c == "ListItem") return 128;
+  if (c == "ListItem") return 128;  // TAP-4 tap target: row hit-tests Taps (ListItemTapHit) and dispatches Select via onPress; stale ids surface unknown-row.
   // T2 (BUG-GRAPHICS-001) packing agreement: NavigationRail/BottomAppBar
   // miniature extents (rail dot stack + FAB disc, clamped in-card by T1)
   // need headroom above the old 124px row so the clamp rarely engages and
@@ -1760,6 +1779,12 @@ void PaintComponent(std::uint32_t* px, int stride, int w, int h, int bx,
     FillCircle(px, stride, w, h, bx + 64, y0 + 16, 20,
                kLightSecondaryContainer);
     PaintCaption(px, stride, w, h, bx, by, bw, bh, "ListItem");
+    // TAP-4: this branch owns the ListItem tap target — taps hit-test via
+    // ListItemTapHit against (bx,by,bw,bh) and dispatch Select with the
+    // tapped id (stale ids surface kUnknownRow "unknown-row"). Live call
+    // site: the native DOWN path confirms ListItem rows point-in-card via
+    // GalleryResolveListItemTap (which calls ListItemTapHit per row); the
+    // UP fire then reaches the row's onPress handler, where Select rides.
     return;
   }
 
@@ -2964,6 +2989,100 @@ int GalleryPressedNode() noexcept {
   try {
     return GalleryPressedHolder().load(std::memory_order_relaxed);
   } catch (...) {
+    return -1;
+  }
+}
+
+// BUG-MUSE-004 TAP-4 ListItem tap target: DOWN-point to tapped-row
+// translation. Maps a DOWN point (device/window px) geometrically against
+// the row layout of `page` under `viewportW` x `viewportH` to the tapped
+// ListItem row's 1-based id (i + 1, the same numbering
+// GalleryResolvePressedRow and EmitGalleryWindowCmds use). Only rows whose
+// comp is "ListItem" can hit; every ListItem row in the page slice is
+// confirmed point-in-card through ListItemTapHit against its solved card
+// box (box.x / rebased box.y + kHeaderH, mirroring the pressed-row rebase
+// below), so a DOWN y in the band but x outside the card is a miss.
+// Coordinate mapping mirrors GalleryResolvePressedRow (linear
+// device-to-canvas scale per axis). Returns -1 with *error set to
+// kUnknownRow (fail closed, unknown-row named error) when the point maps to
+// no ListItem row: bad input, empty rows, bad viewport, out-of-range page,
+// or a point outside every ListItem card; the caller clears instead of
+// engaging. Select dispatch rides the existing UP fire through the row's
+// onPress handler (FireContentTapToJs chain). Never throws;
+// error == nullptr is tolerated (the -1 still fails closed).
+int GalleryResolveListItemTap(float xDevicePx, float yDevicePx,
+                              const std::vector<GalleryRow>& rows, int page,
+                              int viewportW, int viewportH,
+                              const char** error) noexcept {
+  try {
+    if (error != nullptr) *error = nullptr;
+    if (!std::isfinite(xDevicePx) || !std::isfinite(yDevicePx) ||
+        xDevicePx < 0.0f || yDevicePx < 0.0f) {
+      if (error != nullptr) *error = kUnknownRow;
+      return -1;
+    }
+    if (rows.empty() || viewportW <= 0 || viewportH <= 0) {
+      if (error != nullptr) *error = kUnknownRow;
+      return -1;
+    }
+    const int pages = GalleryPageCount(rows, viewportH);
+    if (pages <= 0 || page < 0 || page >= pages) {
+      if (error != nullptr) *error = kUnknownRow;
+      return -1;
+    }
+    const std::vector<int> starts = PageStarts(rows, viewportH);
+    const int first = starts[static_cast<std::size_t>(page)];
+    const int last = starts[static_cast<std::size_t>(page) + 1] - 1;
+    if (last < first) {
+      if (error != nullptr) *error = kUnknownRow;
+      return -1;
+    }
+    const float scaleX =
+        static_cast<float>(viewportW) / static_cast<float>(kPresentW);
+    const float scaleY =
+        static_cast<float>(viewportH) / static_cast<float>(kPresentH);
+    if (!(scaleX > 0.0f) || !std::isfinite(scaleX) || !(scaleY > 0.0f) ||
+        !std::isfinite(scaleY)) {
+      if (error != nullptr) *error = kUnknownRow;
+      return -1;
+    }
+    const float canvasX = xDevicePx / scaleX;
+    const float canvasY = yDevicePx / scaleY;
+    if (!std::isfinite(canvasX) || !std::isfinite(canvasY) || canvasX < 0.0f ||
+        canvasY < 0.0f) {
+      if (error != nullptr) *error = kUnknownRow;
+      return -1;
+    }
+    std::vector<LayoutBox> frames;
+    if (!SolveGalleryRowFrames(rows, 0, rows.size(),
+                               static_cast<float>(kPresentW),
+                               static_cast<float>(kPresentH), &frames)) {
+      if (error != nullptr) *error = kUnknownRow;
+      return -1;
+    }
+    const float rebaseDy =
+        frames[static_cast<std::size_t>(first)].y - static_cast<float>(kPad);
+    for (int i = first; i <= last; ++i) {
+      if (rows[static_cast<std::size_t>(i)].comp != "ListItem") continue;
+      const LayoutBox& box = frames[static_cast<std::size_t>(i)];
+      const int bx = static_cast<int>(box.x);
+      const int by = static_cast<int>(box.y + static_cast<float>(kHeaderH) -
+                                      rebaseDy);
+      const int bw = static_cast<int>(box.width);
+      const int bh = static_cast<int>(box.height);
+      if (ListItemTapHit(static_cast<int>(canvasX), static_cast<int>(canvasY),
+                         bx, by, bw, bh)) {
+        return i + 1;
+      }
+    }
+    if (error != nullptr) *error = kUnknownRow;
+    return -1;
+  } catch (...) {
+    // Fail closed with the named error when it can be reported; never throws.
+    try {
+      if (error != nullptr) *error = kUnknownRow;
+    } catch (...) {
+    }
     return -1;
   }
 }

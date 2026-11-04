@@ -522,7 +522,26 @@ const primitives = manifest.components.map((entry) => entry.name);
 // is never mutated. Values agree by construction with what the existing
 // selection binding (`selection.js` handle `tap()` + `binding.set`)
 // delivers for the same input (binding parity, no re-instantiation here).
+// FR-MUSE-014 / AC-MUSE-044 — ListItem row-tap dispatch (BUG-MUSE-004 TAP-2).
+// Reuses this entry point per ASSUMPTION DISPATCH-1 (confirmed: no dedicated
+// onListItemTap — call shape stays `onSelectTap('ListItem', { rowId,
+// hierarchy, enabled? })`). A tap on a known row returns exactly what a
+// direct `selectRow({ hierarchy, rowId })` returns for the same row (parity:
+// `{rowId, route:'structure', structureCalls:0}`, zero structure calls, never
+// a silent no-op — unknown ids and empty hierarchies surface selectRow's
+// named `unknown-row` MuseError). Per ASSUMPTION DISABLED-1 (confirmed,
+// mirrors Checkbox/Radio disabled semantics): `enabled: false` fires nothing
+// — the input is never mutated and the result carries no `rowId` (no
+// selection, no throw). String-id `===` matching stays `__proto__`-safe (no
+// keyed lookup, no prototype access) via selectRow.
 function onSelectTap(control, prev) {
+  if (control === 'ListItem') {
+    const safe = prev === undefined || prev === null ? {} : prev;
+    if (safe.enabled === false) {
+      return {};
+    }
+    return selectRow({ hierarchy: safe.hierarchy, rowId: safe.rowId });
+  }
   if (control !== 'Checkbox' && control !== 'Radio') {
     throw new TypeError(`Unknown control: ${String(control)}`);
   }
@@ -538,9 +557,10 @@ function onSelectTap(control, prev) {
 
 // FR-M3-002 / AC-M3-024 — slider press-drag scrub (T6).
 // Pure transition over the FR-INPUT-011 gesture chain (AC-INPUT-020
-// drag-never-fires-tap, AC-INPUT-021 one-frame write-through — consumed, not
-// reimplemented: this function carries no coordinate/delta and performs no
-// repaint itself; it resolves synchronously). The gesture carries no
+// drag-never-fires-tap, AC-INPUT-021 one-frame write-through — same
+// consumed-not-reimplemented shape as onSelectTap above: no
+// coordinate/delta carried, no repaint performed; it resolves
+// synchronously). The gesture carries no
 // coordinate/delta, so movement is observed as claim + clamp + echo: an
 // on-axis non-tap gesture claims the control (`claimsGesture: true`) and
 // echoes `prev.value` clamped to `[min, max]` (in-range echoes exactly, so
