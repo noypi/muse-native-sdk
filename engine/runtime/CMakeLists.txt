@@ -35,6 +35,7 @@ add_library(runtime
   src/text.cpp
   src/text_field.cpp
   src/presenter.cpp
+  src/demo_route_content.cpp
 )
 target_include_directories(runtime PUBLIC include)
 target_include_directories(runtime PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../input/include)
@@ -306,6 +307,7 @@ if(DEFINED ANDROID_ABI AND NOT TARGET Runtime)
     src/text_field.cpp
     src/gallery_present.cpp
     src/presenter.cpp
+    src/demo_route_content.cpp
     ../graphics/vector/slug_msdf.cc
     ../text/src/shaper.cpp
     ../text/src/layout_cache.cpp
@@ -958,6 +960,18 @@ add_executable(content_registry_test tests/content_registry_test.cpp)
 target_link_libraries(content_registry_test PRIVATE runtime)
 target_compile_options(content_registry_test PRIVATE -Wall -Wextra -Wpedantic)
 add_test(NAME content_registry_test COMMAND content_registry_test)
+
+# engine-eval T1: native demo route-content mirror (FR-MUSE-002/004,
+# RULE-MUSE-006). Test owned by code-unit-tester; binds only to the T1
+# `Interface:` line. Definitions land in src/demo_route_content.cpp.
+# DEMO_ROUTE_STUB_PATH lets the byte-identity cases read proxy/lib/stub.js
+# as a fixture (read-only; no bytes copied into the test).
+add_executable(demo_route_content_test tests/demo_route_content_test.cpp)
+target_link_libraries(demo_route_content_test PRIVATE runtime)
+target_compile_options(demo_route_content_test PRIVATE -Wall -Wextra -Wpedantic)
+target_compile_definitions(demo_route_content_test PRIVATE
+  DEMO_ROUTE_STUB_PATH="${CMAKE_CURRENT_SOURCE_DIR}/../../proxy/lib/stub.js")
+add_test(NAME demo_route_content_test COMMAND demo_route_content_test)
 
 # FR-GRAPHICS-015 batch 2 (T3): RULE-GRAPHICS-003 oracle-painter
 # reachability gate. Hermetic shell case (grep/nm over the page-target
