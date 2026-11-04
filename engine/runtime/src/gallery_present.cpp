@@ -75,9 +75,11 @@ namespace {
 // ---- MUI1 envelope ----
 
 bool ReadEnvelope(const void* data, std::size_t len, const char*& json,
-                  std::size_t& jsonLen, std::string* error) {
+                  std::size_t& jsonLen, std::uint32_t& envelopeVersion,
+                  std::string* error) {
   json = nullptr;
   jsonLen = 0;
+  envelopeVersion = 0;
   if (data == nullptr || len < 12) {
     if (error != nullptr) *error = "envelope too short";
     return false;
@@ -87,7 +89,14 @@ bool ReadEnvelope(const void* data, std::size_t len, const char*& json,
     if (error != nullptr) *error = "bad magic (not MUI1)";
     return false;
   }
-  if (b[4] != 1) {
+  // AC-MUSE-055 v2-reader contract: the envelope version is the full u32LE
+  // word at offset 4 (never the single byte b[4]); accept {1,2}, any other
+  // value is a hard io-error (fail-closed: empty rows + diagnostic).
+  envelopeVersion = static_cast<std::uint32_t>(b[4]) |
+                    (static_cast<std::uint32_t>(b[5]) << 8) |
+                    (static_cast<std::uint32_t>(b[6]) << 16) |
+                    (static_cast<std::uint32_t>(b[7]) << 24);
+  if (envelopeVersion != 1 && envelopeVersion != 2) {
     if (error != nullptr) *error = "unsupported envelope version";
     return false;
   }
@@ -1017,6 +1026,43 @@ void DrawArc(std::uint32_t* px, int stride, int w, int h, int cx, int cy,
   }
 }
 
+// Parse the top-level `"version"` number of the tree JSON (AC-MUSE-055
+// v2-reader contract: accept {1,2}). Returns false when the key is missing
+// or is not a JSON number. String-aware: FindKey skips quoted payloads, so a
+// nested "version" string value can never be mistaken for the number here.
+bool ParseTreeVersion(const char* begin, const char* end,
+                      std::uint32_t& version) {
+  version = 0;
+  const char* valPos = nullptr;
+  if (FindKey(begin, end, "version", valPos) == nullptr || valPos >= end) {
+    return false;
+  }
+  const char* p = SkipWs(valPos, end);
+  if (p >= end || *p < '0' || *p > '9') return false;
+  std::uint32_t v = 0;
+  while (p < end && *p >= '0' && *p <= '9') {
+    v = v * 10u + static_cast<std::uint32_t>(*p - '0');
+    ++p;
+  }
+  version = v;
+  return true;
+}
+
+// v2 reader x v1 tree downgrade log (AC-MUSE-055: empty-tags denial + log).
+// Missing routeTags is already absent-equivalent for the gallery row path
+// (rows carry only literal text/props), so the downgrade is accept + log.
+void LogV1TreeDowngrade() {
+#ifdef __ANDROID__
+  __android_log_print(ANDROID_LOG_WARN, "GalleryPage",
+                      "gallery tree is IR v1 (no routeTags); "
+                      "empty-tags denial applies");
+#else
+  std::fprintf(stderr,
+               "warning: gallery tree is IR v1 (no routeTags); empty-tags "
+               "denial applies\n");
+#endif
+}
+
 }  // namespace
 
 std::vector<GalleryRow> ParseGalleryRows(const void* data, std::size_t len,
@@ -1025,9 +1071,31 @@ std::vector<GalleryRow> ParseGalleryRows(const void* data, std::size_t len,
   try {
     const char* json = nullptr;
     std::size_t jsonLen = 0;
-    if (!ReadEnvelope(data, len, json, jsonLen, error)) return rows;
+    std::uint32_t envelopeVersion = 0;
+    if (!ReadEnvelope(data, len, json, jsonLen, envelopeVersion, error)) {
+      return rows;
+    }
     const char* begin = json;
     const char* end = json + jsonLen;
+
+    // AC-MUSE-055 v2-reader contract: tree.version {1,2} accepted; any other
+    // (or missing) tree.version is a hard io-error (fail-closed). A v1
+    // envelope carrying a v2 tree is the old-reader v1x v2 direction: hard
+    // io-error, never a silent tag-drop. A v2 reader over a v1 tree degrades
+    // to empty tags (absent routeTags = [] per RULE-RUNTIME-001) + a log.
+    std::uint32_t treeVersion = 0;
+    if (!ParseTreeVersion(begin, end, treeVersion) || (treeVersion != 1 &&
+                                                       treeVersion != 2)) {
+      if (error != nullptr) *error = "unsupported tree.version";
+      return rows;
+    }
+    if (envelopeVersion == 1 && treeVersion == 2) {
+      if (error != nullptr) *error = "v1 envelope cannot carry a v2 tree";
+      return rows;
+    }
+    if (treeVersion == 1) {
+      LogV1TreeDowngrade();
+    }
 
     // Locate the roots array, then split its top-level root objects.
     const char* rootsVal = nullptr;
