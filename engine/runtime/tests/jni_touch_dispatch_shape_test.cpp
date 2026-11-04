@@ -1,10 +1,16 @@
 // Batch 2 / T3 contract tests — FR-INPUT-011 / AC-INPUT-020 (device tap
 // chain, JNI entry half).
 // Binds ONLY to the T3 `Interface:` line; never to implementation.
-// M3-006 (#313) landed contract: `nativeDispatchBridgeTap` /
-// `nativeLastBridgeTapId` were REMOVED (replaced by consume-on-delivery via
-// `dispatchTapToOwner` in jni_bridge.cpp). This file must NOT declare or
-// reference those symbols — a stale extern would fail the link on every ABI.
+// M3-006 (#313) landed contract, updated by the M3-006 re-completion
+// (coder 1d205741, code READY 0eed8fe4): `nativeDispatchBridgeTap` stays
+// REMOVED (replaced by consume-on-delivery via `dispatchTapToOwner` in
+// jni_bridge.cpp). This file must NOT declare or reference that symbol — a
+// stale extern would fail the link on every ABI. `nativeLastBridgeTapId`
+// was likewise removed by M3-006 but has been RESTORED as the last-minted
+// bridge tapId getter (observes the shared per-process counter, never
+// mints/mounts/dispatches), so this file pins its hermetic half below
+// (null env fails closed with -1). `nativeDispatchBridgeTap` remains the
+// only genuinely-stale BridgeTap dispatch entry and stays removed.
 // Delivery pin lives in tests/jni_contract_test.sh (source pin on
 // `dispatchTapToOwner(`); this file pins the hermetic half below.
 // Hermetic: C++17 only; no JVM is started, no device, no network, no env/
@@ -32,6 +38,12 @@ using jfloat = float;
 extern "C" jint Java_com_muse_host_MainActivity_nativeDispatchTouch(
     JNIEnv* env, jobject thiz, jlong handle, jint action, jfloat x, jfloat y,
     jint pointerId, jlong timestampMs);
+
+// Restored-getter pin (M3-006 re-completion): the production definition in
+// jni_bridge.cpp is `extern "C"`, so this binds to the same unmangled
+// symbol. Takes no handle — it only observes the last-minted counter.
+extern "C" jint Java_com_muse_host_MainActivity_nativeLastBridgeTapId(
+    JNIEnv* env, jobject thiz);
 
 namespace {
 
@@ -134,6 +146,21 @@ bool check_null_env_negative_coords_returns_minus_one() {
   return true;
 }
 
+// Restored-getter pin (M3-006 re-completion, coder 1d205741): null env fails
+// closed with -1. The getter takes no handle and only observes the shared
+// per-process last-minted counter — with no VM it must return the invalid
+// LeaseTicket sentinel (-1, never a minted id) without crashing, never
+// minting, mounting, or dispatching.
+bool check_null_env_last_bridge_tap_id_returns_minus_one() {
+  const jint got =
+      Java_com_muse_host_MainActivity_nativeLastBridgeTapId(nullptr, nullptr);
+  if (got != -1) {
+    std::printf("  detail: expected -1, got %d\n", static_cast<int>(got));
+    return false;
+  }
+  return true;
+}
+
 }  // namespace
 
 #define RUN_CASE(name)                           \
@@ -155,6 +182,7 @@ int main() {
   RUN_CASE(check_null_env_move_returns_minus_one);
   RUN_CASE(check_null_env_cancel_returns_minus_one);
   RUN_CASE(check_null_env_negative_coords_returns_minus_one);
+  RUN_CASE(check_null_env_last_bridge_tap_id_returns_minus_one);
   if (failures > 0) {
     std::printf("jni_touch_dispatch_shape_test: %d failing\n", failures);
     return 1;

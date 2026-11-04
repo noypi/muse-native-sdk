@@ -2149,6 +2149,18 @@ extern "C" MUSE_JNI_EXPORT jint Java_com_muse_host_MainActivity_nativeDispatchTo
         const int32_t target = ResolveTapTarget(g->tapTree, x, y);
         if (target >= 0) {
           const ArenaAction claim = ClaimTap(g->tapArena, pointerId, target);
+#ifdef __ANDROID__
+          // UP-fire verdict log: the claimed flag plus the resolved node, so
+          // a fired tap and a slop-rejected (unclaimed) UP are both visible
+          // in `adb logcat -s muse-host` without touching the verdict.
+          {
+            char claimMsg[128];
+            std::snprintf(claimMsg, sizeof(claimMsg),
+                          "nativeDispatchTouch: UP claim node=%d claimed=%d",
+                          static_cast<int>(target), claim.claimed ? 1 : 0);
+            MuseLogInfo(claimMsg);
+          }
+#endif
           if (claim.claimed && FireTapHandler(target)) {
         // BUG-INPUT-001 T3 (AC-M3-022 scrim clause): layering-page scrim-tap
         // routing. scrimHit rides the T2 scrim hit-target (node 20, child of
@@ -2292,6 +2304,31 @@ extern "C" MUSE_JNI_EXPORT jint Java_com_muse_host_MainActivity_nativeDispatchTo
 #endif
     }
     return -1;
+  } catch (...) {
+    if (env->ExceptionCheck() == JNI_TRUE) {
+      env->ExceptionClear();
+    }
+    return -1;
+  }
+}
+
+// M3 getter lane (BUG-M3-NATIVE-006 re-completion / AC-INPUT-024a):
+// tapId-integer identity getter.
+// Java: com.muse.host.MainActivity.nativeLastBridgeTapId(). Observe-only:
+// returns the tapId minted by the most recent UP-resolved bridge tap (-1
+// when none has fired yet); never mints, never mounts, never dispatches.
+// Takes no handle — it observes only the shared per-process last-minted
+// counter (runtime/bridge_tap_id.h). Fail-closed mirror of the sibling
+// entries: null env or a pending exception yields -1 with no exception
+// crossing into the VM. Never throws.
+extern "C" MUSE_JNI_EXPORT jint Java_com_muse_host_MainActivity_nativeLastBridgeTapId(
+    JNIEnv* env, jobject thiz) {
+  (void)thiz;
+  if (env == nullptr || env->ExceptionCheck() == JNI_TRUE) {
+    return -1;
+  }
+  try {
+    return static_cast<jint>(::runtime::LastMintedTapId());
   } catch (...) {
     if (env->ExceptionCheck() == JNI_TRUE) {
       env->ExceptionClear();
