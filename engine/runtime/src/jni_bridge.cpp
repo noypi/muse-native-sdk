@@ -5,6 +5,7 @@
 
 #include "runtime/jni_bridge.h"
 #include "runtime/presenter.h"
+#include "runtime/bridge_tap_id.h"
 #include "runtime/egl_blit.h"
 #include "runtime/renderer_preference.h"
 // FR-GRAPHICS-014 T2 (review MAJOR 2): shared Skia-leg declaration. The
@@ -310,12 +311,13 @@ std::atomic<int> g_nightMode{0};
 // BUG-M3-NATIVE-006 T1 (FR-M3-013 / AC-M3-033 / AC-M3-036 / AC-INPUT-024a):
 // bridge tapId mint. Monotonic per-process integer identity minted at
 // UP-resolve; JNI carries only this integer (never a raw pointer).
+// Shared counter (runtime/bridge_tap_id.h); this TU-local entry keeps its
+// signature and forwards so both lanes mint from one sequence.
 // Delivery consumes via dispatchTapToOwner (consume-on-delivery, enforced
 // consume-before-notify inside the callee); drag/CANCEL/unmount paths never
 // mint, so no stale ticket can fire a later tap.
-std::atomic<int> g_bridgeTapId{1};
 int MintBridgeTapId() noexcept {
-  return g_bridgeTapId.fetch_add(1, std::memory_order_relaxed);
+  return ::runtime::MintTapId();
 }
 
 std::uint32_t ThemeInk(std::uint32_t c) {

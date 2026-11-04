@@ -14,6 +14,8 @@
 
 #include "runtime/presenter.h"
 
+#include "runtime/bridge_tap_id.h"
+
 #include "input/tap_dispatch.h"
 #include "runtime/content_registry.h"
 #include "runtime/gallery_present.h"
@@ -954,11 +956,12 @@ std::int32_t g_lastDownNode = -1;  // latest Down node id; -1 when none.
 // BUG-M3-NATIVE-006 T1 (AC-INPUT-024a): tapId minted at Down-arm time and
 // carried to the Up fire as the verbatim integer identity (never a raw
 // pointer). Monotonic per-process; drag/CANCEL/mismatch paths drop it
-// without delivery, so no stale ticket can fire.
-std::atomic<int> g_bridgeTapId{1};
+// without delivery, so no stale ticket can fire. Shared counter
+// (runtime/bridge_tap_id.h); this TU-local entry keeps its signature and
+// forwards so both lanes mint from one sequence.
 std::int32_t g_lastDownTapId = -1;  // tapId armed with g_lastDownNode.
 int MintBridgeTapId() noexcept {
-  return g_bridgeTapId.fetch_add(1, std::memory_order_relaxed);
+  return ::runtime::MintTapId();
 }
 void ClearPendingTapLocked() {
   g_lastDownNode = -1;
