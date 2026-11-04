@@ -48,7 +48,173 @@ import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
 // RED today: the canonical delivery-lane copy does not exist yet (plan T7).
-const { createButton, foldButtonFrames } = require('../button.js');
+const { createButton, foldButtonFrames, resetButtonTapState } = require('../button.js');
+
+// ---------------------------------------------------------------------------
+// TC-M3-038 (AC-M3-037) — endorsement conformance gate, Batch 3 / T8.
+//
+// These verts run ONLY when the runner passes `--conformance-gate`
+// (`npm run test:button-press -w @muse/native -- --conformance-gate`).
+// Without the flag they are reported as skipped, so the flag is
+// load-bearing: flag-off => 11 pass + gate skipped; flag-on =>
+// 11 + GATE verts pass. Full Button endorsement (AC-M3-037) completes only
+// when this gate section is green on the canonical `../button.js`.
+//
+// Every vert below is derived from an AC-M3-037 conformance item, never
+// from the implementation: replay fire-once, forgery-reject,
+// disabled-throughout, false-at-delivery, drag/slop/CANCEL-no-fire,
+// arbitration single-winner, fold<=>press parity, throwing-listener
+// honesty, `pressed` stripped. Each resets the tap-idempotency boundary
+// first so verts stay independent of each other and of the TC-M3-037 pins.
+// ---------------------------------------------------------------------------
+
+const GATE = process.argv.includes('--conformance-gate')
+  || /^1|true$/i.test(process.env.CONFORMANCE_GATE || '')
+  || /^1|true$/i.test(process.env.npm_config_conformance_gate || '');
+const gateOpts = { skip: !GATE };
+
+test('TC-M3-038: conformance gate is armed — runs only with --conformance-gate (AC-M3-037 gate proof)', gateOpts, () => {
+  assert.ok(
+    GATE,
+    'this vert executes only when --conformance-gate is passed; its pass proves the flag was honoured',
+  );
+});
+
+test('TC-M3-038 [replay]: 1000x replay of one lease fires exactly once (AC-M3-037 replay-100x fire-once)', gateOpts, () => {
+  resetButtonTapState();
+  let calls = 0;
+  const button = makeButton(() => { calls += 1; });
+  const lease = button.mint();
+  let total = 0;
+  for (let i = 0; i < 1000; i += 1) {
+    const r = button.press(lease);
+    total += r.fired;
+    if (i > 0) assert.equal(r.fired, 0, `replay #${i} must fire nothing`);
+    assert.equal(r.frames, 1);
+    assert.equal(r.reinstantiated, 0);
+  }
+  assert.equal(total, 1, 'exactly 1 fire per 1000x replay');
+  assert.equal(calls, 1);
+});
+
+test('TC-M3-038 [forgery]: every forged lease shape rejects with TypeError and notifies nothing (AC-M3-037 forgery-reject)', gateOpts, () => {
+  resetButtonTapState();
+  let calls = 0;
+  const button = makeButton(() => { calls += 1; });
+  const forgeries = [
+    { tapId: 'forged-not-real' },
+    { tapId: 'tap-999999' },
+    { tapId: 999999 },
+    null,
+    undefined,
+  ];
+  for (const fake of forgeries) {
+    assert.throws(
+      () => button.press(fake),
+      TypeError,
+      'forgery must reject with TypeError',
+    );
+  }
+  assert.equal(calls, 0, 'no forged lease may ever notify');
+});
+
+test('TC-M3-038 [disabled-throughout]: a handle disabled throughout mints nothing and fires nothing (AC-M3-037 disabled-throughout)', gateOpts, () => {
+  resetButtonTapState();
+  let calls = 0;
+  const button = createButton({ enabled: false, onPress: () => { calls += 1; } });
+  assert.equal(button.mint(), null, 'disabled handle mints no lease (first attempt)');
+  assert.equal(button.mint(), null, 'disabled handle mints no lease (second attempt)');
+  assert.equal(calls, 0);
+});
+
+test('TC-M3-038 [false-at-delivery]: disabling between mint and press vetoes the fire (AC-M3-037 false-at-delivery)', gateOpts, () => {
+  resetButtonTapState();
+  let calls = 0;
+  const button = makeButton(() => { calls += 1; });
+  const lease = button.mint();
+  button.setEnabled(false);
+  const vetoed = button.press(lease);
+  assert.equal(vetoed.fired, 0, 'a tap delivered while disabled must fire nothing');
+  assert.equal(vetoed.frames, 1);
+  assert.equal(vetoed.reinstantiated, 0);
+  assert.equal(calls, 0, 'a vetoed tap must not notify');
+});
+
+test('TC-M3-038 [drag/slop/CANCEL]: revoke()d leases press to silent 0 (AC-M3-037 drag/slop/CANCEL-no-fire)', gateOpts, () => {
+  resetButtonTapState();
+  for (const reason of ['drag', 'slop', 'cancel']) {
+    let calls = 0;
+    const button = makeButton(() => { calls += 1; });
+    const lease = button.mint();
+    const revoked = button.revoke(lease);
+    assert.equal(revoked.fired, 0, `${reason} revoke path fires nothing`);
+    const result = button.press(lease);
+    assert.equal(result.fired, 0, `a ${reason}-revoked lease must fire nothing on press`);
+    assert.equal(result.frames, 1);
+    assert.equal(result.reinstantiated, 0);
+    assert.equal(calls, 0, `a ${reason}-revoked lease must not notify`);
+  }
+});
+
+test('TC-M3-038 [arbitration]: one tapId across three handles fires exactly once (AC-M3-037 arbitration single-winner)', gateOpts, () => {
+  resetButtonTapState();
+  let total = 0;
+  const handles = [0, 1, 2].map(() => makeButton(() => { total += 1; }));
+  const lease = handles[0].mint();
+  let firedSum = 0;
+  for (const h of handles) {
+    firedSum += h.press(lease).fired;
+  }
+  assert.equal(firedSum, 1, 'three-handle arbitration yields exactly 1 winner');
+  assert.equal(total, 1);
+});
+
+test('TC-M3-038 [parity]: fold agrees with press on tap/cancel/drag streams (AC-M3-037 fold<=>press parity)', gateOpts, () => {
+  resetButtonTapState();
+  let calls = 0;
+  const button = makeButton(() => { calls += 1; });
+  assert.equal(
+    foldButtonFrames([{ tap: false, cancel: true, drag: false }, { tap: false, cancel: false, drag: true }]),
+    0,
+    'cancel/drag-only stream folds to 0',
+  );
+  assert.equal(calls, 0);
+  assert.equal(
+    foldButtonFrames([{ tap: false, cancel: false, drag: false }, { tap: true, cancel: false, drag: false }]),
+    1,
+    'a tapped stream folds to 1',
+  );
+  const r = button.press(button.mint());
+  assert.equal(r.fired, 1, 'a live press on the tapped stream fires once');
+  assert.equal(calls, 1, 'fold<=>press agree: one tap, one fire');
+});
+
+test('TC-M3-038 [throwing-listener]: the recorded error is the thrown error, replay stays silent (AC-M3-037 throwing-listener honesty)', gateOpts, () => {
+  resetButtonTapState();
+  const boom = new Error('boom-gate-not-real');
+  const button = makeButton(() => { throw boom; });
+  const lease = button.mint();
+  let result;
+  assert.doesNotThrow(() => { result = button.press(lease); });
+  assert.equal(result.fired, 1);
+  assert.ok(Array.isArray(result.errors) && result.errors.length === 1);
+  assert.equal(result.errors[0], boom, 'the recorded error must be the exact thrown error');
+  const replay = button.press(lease);
+  assert.equal(replay.fired, 0, 'replay after a throwing fire stays silent');
+});
+
+test('TC-M3-038 [no-pressed]: gate paths expose no `pressed` and keep the combined shape (AC-M3-037 pressed stripped)', gateOpts, () => {
+  resetButtonTapState();
+  const button = createButton({ enabled: true, onPress: () => {}, pressed: true });
+  assert.equal(button.pressed, undefined, 'no `pressed` prop may be exposed');
+  const ok = button.press(button.mint());
+  assert.deepEqual(
+    { fired: ok.fired, frames: ok.frames, reinstantiated: ok.reinstantiated },
+    { fired: 1, frames: 1, reinstantiated: 0 },
+  );
+  button.setEnabled(false);
+  assert.equal(button.pressed, undefined, 'disabling must not surface a `pressed` prop');
+});
 
 function makeButton(onPress, extra = {}) {
   return createButton({ enabled: true, onPress, ...extra });
