@@ -50,6 +50,14 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             long handle, int action, float x, float y, int pointerId, long timestampMs);
 
     /**
+     * T6 follow-up (AC-INPUT-024a): tapId-integer identity getter. Returns
+     * the tapId minted by the most recent bridge-delivered tap (0 when none
+     * has fired yet); the JS handle admits it verbatim via
+     * adoptBridgeTap(tapId). Never throws.
+     */
+    private static native int nativeLastBridgeTapId(long handle);
+
+    /**
      * T9 (fr-nav-014-thin-host / AC-NAV-042): generic engine shell-state
      * carriage. Stores the opaque shellRoute string plus the optional
      * shellNotice string into the native handle slot; validity is decided
@@ -461,13 +469,26 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                     // Fail-closed: non-finite touch never reaches native.
                     return true;
                 }
-                nativeDispatchTouch(
+                int claimed = nativeDispatchTouch(
                         engineHandle,
                         event.getActionMasked(),
                         x,
                         y,
                         event.getPointerId(index),
                         event.getEventTime());
+                if (event.getActionMasked() == MotionEvent.ACTION_UP && claimed >= 0) {
+                    // T6 follow-up (AC-INPUT-024a): the fired tap's
+                    // bridge-minted tapId integer crosses JNI here for the
+                    // component-side JS handle (adoptBridgeTap(tapId)
+                    // verbatim, then press() exactly once). Fail-closed:
+                    // never breaks the tap path.
+                    try {
+                        int bridgeTapId = nativeLastBridgeTapId(engineHandle);
+                        Log.d("MainActivity", "bridge tapId=" + bridgeTapId);
+                    } catch (Throwable ignored) {
+                        // Fail-closed: bridge identity never breaks taps.
+                    }
+                }
             } catch (Throwable ignored) {
                 // Fail-closed: touch never crashes the host.
             }
