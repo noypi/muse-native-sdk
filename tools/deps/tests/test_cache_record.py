@@ -27,44 +27,60 @@ def _load_table(path=TABLE_PATH):
         return json.load(handle)
 
 
+REQUIRED_DEPS = ("skia-m158", "yoga")
+
+
 def _rows_by_abi(table):
     rows = table.get("rows", table) if isinstance(table, dict) else table
     if isinstance(rows, dict):
         return rows
-    return {row.get("abi", row.get("ABI")): row for row in rows}
+    indexed = {}
+    for row in rows:
+        abi = row.get("abi", row.get("ABI"))
+        key = row.get("key", row)
+        if isinstance(key, dict):
+            name = key.get("name", row.get("name"))
+        else:
+            name = row.get("name")
+        indexed[(name, abi)] = row
+    return indexed
 
 
 class TestCacheMeasurementRows(unittest.TestCase):
     def test_all_four_abi_rows_present(self):
         table = _load_table()
         by_abi = _rows_by_abi(table)
-        for abi in REQUIRED_ABIS:
-            self.assertIn(abi, by_abi, "missing ABI row: %s" % abi)
+        for name in REQUIRED_DEPS:
+            for abi in REQUIRED_ABIS:
+                self.assertIn((name, abi), by_abi,
+                              "missing row: %s %s" % (name, abi))
 
     def test_rows_carry_measured_wall_clock_and_object_bytes(self):
         table = _load_table()
         by_abi = _rows_by_abi(table)
-        for abi in REQUIRED_ABIS:
-            row = by_abi[abi]
-            for field in ("wallClockSec", "objectBytes"):
-                value = row[field]
-                self.assertIsInstance(value, (int, float),
-                                      "%s.%s not a number" % (abi, field))
-                self.assertNotIsInstance(value, bool,
-                                         "%s.%s must be measured" % (abi, field))
-                self.assertGreater(value, 0,
-                                   "%s.%s unmeasured" % (abi, field))
+        for name in REQUIRED_DEPS:
+            for abi in REQUIRED_ABIS:
+                row = by_abi[(name, abi)]
+                for field in ("wallClockSec", "objectBytes"):
+                    value = row[field]
+                    self.assertIsInstance(value, (int, float),
+                                          "%s.%s.%s not a number" % (name, abi, field))
+                    self.assertNotIsInstance(value, bool,
+                                             "%s.%s.%s must be measured" % (name, abi, field))
+                    self.assertGreater(value, 0,
+                                       "%s.%s.%s unmeasured" % (name, abi, field))
 
     def test_rows_carry_full_cache_key(self):
         table = _load_table()
         by_abi = _rows_by_abi(table)
-        for abi in REQUIRED_ABIS:
-            key = by_abi[abi].get("key", by_abi[abi])
-            for field in KEY_FIELDS:
-                value = key.get(field)
-                self.assertIsInstance(value, str,
-                                      "%s key.%s not a str" % (abi, field))
-                self.assertTrue(value, "%s key.%s empty" % (abi, field))
+        for name in REQUIRED_DEPS:
+            for abi in REQUIRED_ABIS:
+                key = by_abi[(name, abi)].get("key", by_abi[(name, abi)])
+                for field in KEY_FIELDS:
+                    value = key.get(field)
+                    self.assertIsInstance(value, str,
+                                          "%s %s key.%s not a str" % (name, abi, field))
+                    self.assertTrue(value, "%s %s key.%s empty" % (name, abi, field))
 
 
 class TestPartialRefreshMerge(unittest.TestCase):
@@ -85,19 +101,20 @@ class TestPartialRefreshMerge(unittest.TestCase):
             for i, abi in enumerate(REQUIRED_ABIS)
         ]
         prior = _rows_by_abi({"rows": prior_rows})
-        refreshed = dict(prior["arm64-v8a"])
+        refreshed = dict(prior[("skia-m158", "arm64-v8a")])
         refreshed["wallClockSec"] = 9.5
         merged = dict(prior)
-        merged["arm64-v8a"] = refreshed
-        rows = [merged[abi] for abi in abis if abi in merged]
+        merged[("skia-m158", "arm64-v8a")] = refreshed
+        rows = [merged[("skia-m158", abi)] for abi in abis
+                if ("skia-m158", abi) in merged]
         table = {"rows": rows}
-        by_abi = {row["abi"]: row for row in table["rows"]}
+        by_abi = _rows_by_abi(table)
         for abi in ("armeabi-v7a", "x86_64", "x86"):
             self.assertEqual(
-                json.dumps(by_abi[abi], sort_keys=True),
-                json.dumps(prior[abi], sort_keys=True),
+                json.dumps(by_abi[("skia-m158", abi)], sort_keys=True),
+                json.dumps(prior[("skia-m158", abi)], sort_keys=True),
                 "partial refresh clobbered row: %s" % abi)
-        self.assertEqual(by_abi["arm64-v8a"]["wallClockSec"], 9.5)
+        self.assertEqual(by_abi[("skia-m158", "arm64-v8a")]["wallClockSec"], 9.5)
 
 
 if __name__ == "__main__":
