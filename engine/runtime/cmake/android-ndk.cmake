@@ -102,6 +102,8 @@ else()
         src/tree.cpp
         src/frame.cpp
         src/layout.cpp
+        src/yoga_layout.cpp
+        src/layout_seam.cpp
         src/js_runtime.cpp
         src/js_engine.cpp
         src/vulkan_baseline.cpp

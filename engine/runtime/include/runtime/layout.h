@@ -14,7 +14,8 @@ struct LayoutBox {
   float height = 0.0f;
 };
 
-// Minimal in-repo flexbox-subset engine (plan A2); a future Yoga adapter
+// Minimal in-repo flexbox-subset engine (plan A2); the Yoga adapter
+// (runtime/yoga_layout.h, reached via the runtime/layout_seam.h binding)
 // sits behind this seam without changing the test-expectation shape.
 class LayoutEngine {
  public:

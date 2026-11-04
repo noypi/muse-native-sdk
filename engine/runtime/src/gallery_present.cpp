@@ -32,6 +32,7 @@
 #include "muse/text/rich_buffer.h"
 #include "muse/text/shaper.h"
 #include "runtime/layout.h"
+#include "runtime/layout_seam.h"
 #include "runtime/renderer.h"
 #include "runtime/tree.h"
 
@@ -2152,11 +2153,15 @@ bool SolveGalleryRowFrames(const std::vector<GalleryRow>& rows,
     LayoutEngine engine;
     NodeId rootId = instantiate(nodes.data(), nodes.size(), tree);
     if (rootId == kInvalidNodeId) return false;
-    engine.compute(tree, rootId);
+    // FR-DEPS-013 T6: production row geometry routes through the single
+    // composition-root LayoutEngine binding (Yoga when linked, in-tree
+    // otherwise) — never around it.
+    std::vector<LayoutBox> solved;
+    ComputeLayout(tree, rootId, engine, &solved);
     boxes->clear();
     boxes->reserve(end - begin);
     for (std::size_t j = 0; j < end - begin; ++j) {
-      boxes->push_back(engine.boxOf(static_cast<NodeId>(j + 1)));
+      boxes->push_back(solved.at(static_cast<std::size_t>(j + 1)));
     }
     return true;
   } catch (...) {
