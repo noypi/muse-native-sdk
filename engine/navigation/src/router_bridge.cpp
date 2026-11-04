@@ -340,12 +340,9 @@ BridgeResult RouterBridge::invoke(const std::string& method,
     op.routeId = route;
     NavResult r = graph_.apply(op);
     if (!r.ok) {
-      // FR-NAV-004 reuse: unknown route degrades to home, never crashes.
-      // The error is reported at this call site; the graph reset is the
-      // home degrade.
-      if (r.error == NavError::UNKNOWN_ROUTE) {
-        graph_ = NavGraph(routes_);
-      }
+      // Live navigate returns NAV_ERROR with the graph unmutated: no reset
+      // here. FR-NAV-004 degrade-to-home belongs to restore
+      // (restoreFromLifeSave), not to live navigation.
       return {false, "", BridgeError::NAV_ERROR};
     }
     return {true, "{\"route\":\"" + route + "\"}", BridgeError::NONE};

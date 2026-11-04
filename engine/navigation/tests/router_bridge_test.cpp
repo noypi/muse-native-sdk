@@ -217,6 +217,46 @@ bool check_t2_profile_valid_params_still_commit() {
   return r.ok && r.error == BridgeError::NONE;
 }
 
+// ---- NAV-007 graph-preservation pins (BUG-NAV-007 / AC-NAV-040) ----
+// Live unknown-route navigate/push must return NAV_ERROR with the graph
+// unmutated (snapshotForPersist() byte-identical to pre-denial stack).
+// FR-NAV-004 degrade-to-home belongs to restoreFromLifeSave only.
+
+bool check_nav007_unknown_navigate_preserves_stack() {
+  RouterBridge b(kRoutes);
+  if (!b.invoke("push", "{\"route\":\"details\"}").ok) return false;
+  std::string before = b.snapshotForPersist();
+  BridgeResult r = b.invoke("navigate", "{\"route\":\"no_such_route\"}");
+  return !r.ok && r.error == BridgeError::NAV_ERROR &&
+         b.snapshotForPersist() == before;
+}
+
+bool check_nav007_unknown_push_preserves_stack() {
+  RouterBridge b(kRoutes);
+  if (!b.invoke("push", "{\"route\":\"details\"}").ok) return false;
+  std::string before = b.snapshotForPersist();
+  BridgeResult r = b.invoke("push", "{\"route\":\"no_such_route\"}");
+  return !r.ok && r.error == BridgeError::NAV_ERROR &&
+         b.snapshotForPersist() == before;
+}
+
+bool check_nav007_unknown_navigate_from_home_preserves() {
+  RouterBridge b(kRoutes);
+  std::string before = b.snapshotForPersist();
+  BridgeResult r = b.invoke("navigate", "{\"route\":\"no_such_route\"}");
+  return !r.ok && r.error == BridgeError::NAV_ERROR &&
+         b.snapshotForPersist() == before;
+}
+
+bool check_nav007_bridge_usable_after_unknown_denial() {
+  RouterBridge b(kRoutes);
+  if (!b.invoke("push", "{\"route\":\"details\"}").ok) return false;
+  BridgeResult denied = b.invoke("navigate", "{\"route\":\"no_such_route\"}");
+  if (denied.ok || denied.error != BridgeError::NAV_ERROR) return false;
+  BridgeResult r = b.invoke("navigate", "{\"route\":\"settings\"}");
+  return r.ok && r.error == BridgeError::NONE;
+}
+
 }  // namespace
 
 int main() {
@@ -252,6 +292,14 @@ int main() {
               "T2 wrong-typed param denied BAD_ARGS, graph unchanged");
   EXPECT_TRUE(check_t2_profile_valid_params_still_commit(),
               "T2 profile valid params still commit (A2 preserved)");
+  EXPECT_TRUE(check_nav007_unknown_navigate_preserves_stack(),
+              "NAV-007 unknown navigate returns NAV_ERROR, graph preserved");
+  EXPECT_TRUE(check_nav007_unknown_push_preserves_stack(),
+              "NAV-007 unknown push returns NAV_ERROR, graph preserved");
+  EXPECT_TRUE(check_nav007_unknown_navigate_from_home_preserves(),
+              "NAV-007 unknown navigate from home");
+  EXPECT_TRUE(check_nav007_bridge_usable_after_unknown_denial(),
+              "NAV-007 bridge usable after unknown denial");
   std::printf(failures == 0 ? "ALL PASS\n" : "FAILURES %d\n", failures);
   return failures == 0 ? 0 : 1;
 }
