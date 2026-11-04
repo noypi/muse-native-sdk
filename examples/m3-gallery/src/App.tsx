@@ -8,7 +8,7 @@ import { View, Text, Button, manifest, components, TopAppBar, BottomAppBar, Navi
 import { spring } from '@muse/core';
 import ButtonScreen from "./screens/ButtonScreen";
 import { LayeringPage } from "./Showcase";
-import { buildStories } from "./stories";
+import { buildStories, galleryStories } from "./stories";
 import { getGalleryMode, reportStaticFallback } from "./galleryMode";
 import { shuffleRemix, encodeRemix, decodeRemix } from "./remix";
 import { parseStoryLink, storyIdOf, isPagingGesture, requestShellAdvance } from "./galleryNav";
@@ -177,16 +177,20 @@ export default function App() {
   const onRetry = (): void => {
     setDemoState('loading');
     try {
-      const stories = buildStories(manifest);
+      const stories = galleryStories(manifest);
       setDemoState(stories.length > 0 ? 'ready' : 'empty');
     } catch {
       setDemoState('error');
     }
     setAttempt((n) => n + 1);
   };
-  const stories = buildStories(manifest);
-  // Gallery shell Prev/Next navigation (FR-SAMPLE-014, AC-SAMPLE-039): a
-  // single selected-story index over buildStories(manifest). Shell buttons,
+  const stories = galleryStories(manifest);
+  // Gallery shell Prev/Next navigation (FR-SAMPLE-014, AC-SAMPLE-039,
+  // FR-MUSE-008 AC-MUSE-032/033): a single selected-story index over
+  // galleryStories(manifest) — the manifest stories plus the 33 voice
+  // speaker entries, so the voice rows are shell/key/deep-link reachable.
+  // buildStories(manifest) stays the pure manifest source (repaint probe
+  // above); the navigable list here is galleryStories(manifest). Shell buttons,
   // ArrowLeft/ArrowRight, and gallery://story/<id> deep links all move
   // through the same index path; paging changes only the index, never story
   // state. Boundary/unknown-id denials keep the current story (never blank).
