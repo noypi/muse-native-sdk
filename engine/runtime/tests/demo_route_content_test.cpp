@@ -36,12 +36,16 @@
 // the stub file itself is the source of truth for the marker cases.
 
 #include <cstddef>
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
 #include <fstream>
+#include <limits>
 #include <sstream>
 #include <string>
+#include <unistd.h>
+#include <vector>
 
 #include "runtime/content_registry.h"
 #include "runtime/demo_route_content.h"
@@ -358,6 +362,302 @@ bool check_stub_file_carries_mirrored_region() {
   return true;
 }
 
+// --- engine-eval T2+T4 committed hermetic suite ---------------------------
+// Binds ONLY to the plan lines (verbatim):
+// T2 `PlayGuessRound(photoId, guessPoint): { maskId; reasonChunks[];
+//   shelfRenderMode: 'by_object' }` — throws/returns named fail-closed
+//   errors for unknown route, bad polygon, empty reason stream (mirrors
+//   `guessMask.ts` error names, not its JS).
+// T4 three logcat markers — `muse_guess: route-resolve tag=<t> ok` /
+//   `muse_guess: round mask=<id> polyHash=<h> reasonChunks=<n>` /
+//   `muse_guess: reveal shelf=by_object` — plus existing repaint-only lines
+//   unchanged. Execution proof = all three markers in order for one tap;
+//   repaint-only = none of them.
+//
+// Hermetic: stderr is captured through an in-process pipe (no filesystem,
+// no device, no network, no env reads). Marker assertions pin the exact
+// T4 contract strings in order.
+
+// Capture everything the callable writes to stderr; returns it as a string.
+template <typename F>
+std::string CaptureStderr(F&& fn) {
+  int fds[2];
+  if (pipe(fds) != 0) return std::string();
+  std::fflush(stderr);
+  const int saved = dup(STDERR_FILENO);
+  if (saved < 0) {
+    close(fds[0]);
+    close(fds[1]);
+    return std::string();
+  }
+  dup2(fds[1], STDERR_FILENO);
+  close(fds[1]);
+  fn();
+  std::fflush(stderr);
+  dup2(saved, STDERR_FILENO);
+  close(saved);
+  std::string out;
+  char buf[1024];
+  ssize_t n = 0;
+  while ((n = read(fds[0], buf, sizeof(buf))) > 0) {
+    out.append(buf, static_cast<std::size_t>(n));
+  }
+  close(fds[0]);
+  return out;
+}
+
+std::vector<std::string> SplitLines(const std::string& s) {
+  std::vector<std::string> lines;
+  std::string cur;
+  for (char c : s) {
+    if (c == '\n') {
+      lines.push_back(cur);
+      cur.clear();
+    } else {
+      cur += c;
+    }
+  }
+  if (!cur.empty()) lines.push_back(cur);
+  return lines;
+}
+
+// Named case (T2 happy): even-length photoId routes mask-1 (matches[0].mask
+// truth) with the routed label, polygon, masked stream, and by_object shelf.
+bool check_guess_round_mask1_happy() {
+  runtime::GuessRoundResult out;
+  std::string error = "sentinel";
+  if (!runtime::PlayGuessRound("ab", runtime::GuessPoint{10.0, 20.0}, &out,
+                               &error)) {
+    return false;
+  }
+  if (error != "sentinel") return false;  // *error untouched on success
+  if (out.maskId != "mask-1") return false;
+  if (out.maskLabel != "tap-region") return false;
+  if (out.shelfRenderMode != "by_object") return false;
+  if (out.reasonChunks.size() != 2) return false;
+  if (out.reasonChunks[0] != "{\"reasoning_content\":\"recorded-thinking\"}") {
+    return false;
+  }
+  if (out.reasonChunks[1] != "{\"content\":\"recorded-insight\"}") {
+    return false;
+  }
+  if (out.polygon.size() != 4) return false;
+  const double want[4][2] = {{360, 360}, {408, 360}, {408, 408}, {360, 408}};
+  for (std::size_t i = 0; i < 4; ++i) {
+    if (out.polygon[i].x != want[i][0] || out.polygon[i].y != want[i][1]) {
+      return false;
+    }
+  }
+  return true;
+}
+
+// Named case (T2 happy): odd-length photoId routes mask-2 (suggestions[0]
+// alternative); the guess point is validated finite and then only routes.
+bool check_guess_round_mask2_happy() {
+  runtime::GuessRoundResult nearOut;
+  std::string error;
+  if (!runtime::PlayGuessRound("abc", runtime::GuessPoint{0.0, 0.0}, &nearOut,
+                               &error)) {
+    return false;
+  }
+  runtime::GuessRoundResult farOut;
+  if (!runtime::PlayGuessRound("abc", runtime::GuessPoint{9999.0, -9999.0},
+                               &farOut, &error)) {
+    return false;
+  }
+  if (nearOut.maskId != "mask-2" || farOut.maskId != "mask-2") return false;
+  if (nearOut.polygon.size() != 4 || farOut.polygon.size() != 4) return false;
+  // Same photoId + different guess points => identical hidden polygon
+  // (the point never selects the mask).
+  for (std::size_t i = 0; i < 4; ++i) {
+    if (nearOut.polygon[i].x != farOut.polygon[i].x ||
+        nearOut.polygon[i].y != farOut.polygon[i].y) {
+      return false;
+    }
+  }
+  const double want[4][2] = {{330, 350}, {370, 350}, {370, 390}, {330, 390}};
+  for (std::size_t i = 0; i < 4; ++i) {
+    if (nearOut.polygon[i].x != want[i][0] ||
+        nearOut.polygon[i].y != want[i][1]) {
+      return false;
+    }
+  }
+  return nearOut.shelfRenderMode == "by_object";
+}
+
+// Named error 1/5: empty photoId fails closed with the guessMask.ts name.
+bool check_guess_round_empty_photoid_error() {
+  runtime::GuessRoundResult out;
+  out.maskId = "must-stay-untouched";
+  std::string error;
+  if (runtime::PlayGuessRound("", runtime::GuessPoint{1.0, 1.0}, &out,
+                              &error)) {
+    return false;
+  }
+  if (error != "playGuessRound requires a non-empty photoId") return false;
+  return out.maskId == "must-stay-untouched";  // out untouched on failure
+}
+
+// Named error 2/5: whitespace-only photoId is ACCEPTED (JS-truthiness
+// parity — guessMask.ts `if (!photoId)` treats "   " as truthy, and the
+// native mirror follows the error NAME, not a stricter rule).
+// ASSUMPTION: the plan pins only the named empty-photoId error; the .h
+// comment's "or all-whitespace" overstates both the JS and the code.
+bool check_guess_round_whitespace_photoid_routes() {
+  runtime::GuessRoundResult out;
+  std::string error = "sentinel";
+  if (!runtime::PlayGuessRound("   ", runtime::GuessPoint{1.0, 1.0}, &out,
+                               &error)) {
+    return false;
+  }
+  if (error != "sentinel") return false;
+  return out.maskId == "mask-2";  // len 3 -> odd -> suggestions[0]
+}
+
+// Named error 3/5: NaN guess point fails closed with the finite-point name.
+bool check_guess_round_nan_point_error() {
+  runtime::GuessRoundResult out;
+  std::string error;
+  const double nan = std::nan("");
+  if (runtime::PlayGuessRound("ab", runtime::GuessPoint{nan, 1.0}, &out,
+                              &error)) {
+    return false;
+  }
+  return error == "playGuessRound requires a finite { x, y } guess point";
+}
+
+// Named error 4/5: infinite guess point fails closed with the same name.
+bool check_guess_round_inf_point_error() {
+  runtime::GuessRoundResult out;
+  std::string error;
+  const double inf = std::numeric_limits<double>::infinity();
+  if (runtime::PlayGuessRound("ab", runtime::GuessPoint{1.0, inf}, &out,
+                              &error)) {
+    return false;
+  }
+  if (error != "playGuessRound requires a finite { x, y } guess point") {
+    return false;
+  }
+  return !runtime::PlayGuessRound("ab", runtime::GuessPoint{1.0, inf}, &out,
+                                  nullptr);
+}
+
+// Named error 5/5: null out fails closed (never throws, never writes).
+bool check_guess_round_null_out_error() {
+  std::string error;
+  if (runtime::PlayGuessRound("ab", runtime::GuessPoint{1.0, 1.0}, nullptr,
+                              &error)) {
+    return false;
+  }
+  if (error != "playGuessRound requires a non-empty photoId") return false;
+  return !runtime::PlayGuessRound("ab", runtime::GuessPoint{1.0, 1.0}, nullptr,
+                                  nullptr);
+}
+
+// Named error 5/5: error == nullptr is tolerated on both paths (fail
+// closed, never throws, never writes through null).
+bool check_guess_round_null_error_tolerated() {
+  runtime::GuessRoundResult out;
+  if (runtime::PlayGuessRound("", runtime::GuessPoint{1.0, 1.0}, &out,
+                              nullptr)) {
+    return false;
+  }
+  return runtime::PlayGuessRound("ab", runtime::GuessPoint{1.0, 1.0}, &out,
+                                 nullptr);
+}
+
+// Named case (T4 contract): one successful tap emits exactly the marker
+// triple, in order, with the routed polyHash and chunk count legs.
+bool check_guess_markers_in_order() {
+  runtime::GuessRoundResult out;
+  std::string error;
+  const std::string captured = CaptureStderr([&] {
+    if (!runtime::PlayGuessRound("ab", runtime::GuessPoint{5.0, 5.0}, &out,
+                                 &error)) {
+      std::printf("inner round failed: %s\n", error.c_str());
+    }
+  });
+  if (!error.empty()) return false;
+  const std::vector<std::string> lines = SplitLines(captured);
+  std::vector<std::string> markers;
+  for (const std::string& line : lines) {
+    if (line.rfind("muse_guess:", 0) == 0) markers.push_back(line);
+  }
+  if (markers.size() != 3) return false;
+  if (markers[0] != "muse_guess: route-resolve tag=segment ok") return false;
+  if (markers[2] != "muse_guess: reveal shelf=by_object") return false;
+  // Middle leg shape: mask id + polyHash over routed bytes + chunk count.
+  const std::string& mid = markers[1];
+  const std::string prefix = "muse_guess: round mask=mask-1 polyHash=";
+  if (mid.rfind(prefix, 0) != 0) return false;
+  const std::string tail = mid.substr(prefix.size());
+  const std::string::size_type sp = tail.find(" reasonChunks=2");
+  if (sp == std::string::npos || sp != 8) return false;
+  const std::string hash = tail.substr(0, 8);
+  // polyHash must equal FNV-1a over the hidden mask's raw routed bytes.
+  const char* segment = runtime::DemoSegmentJson();
+  const std::size_t segLen = runtime::DemoSegmentJsonSize();
+  const std::string view(segment, segLen);
+  const std::string::size_type keyPos = view.find("\"points\"");
+  if (keyPos == std::string::npos) return false;
+  const std::string::size_type arrBegin = view.find('[', keyPos);
+  if (arrBegin == std::string::npos) return false;
+  // Recompute expected hash over the first points array span.
+  int depth = 0;
+  std::string::size_type arrEnd = std::string::npos;
+  for (std::string::size_type i = arrBegin; i < segLen; ++i) {
+    if (view[i] == '[') ++depth;
+    if (view[i] == ']') {
+      --depth;
+      if (depth == 0) {
+        arrEnd = i + 1;
+        break;
+      }
+    }
+  }
+  if (arrEnd == std::string::npos) return false;
+  const std::string expected = runtime::GuessPolygonHashHex(
+      segment + arrBegin, arrEnd - arrBegin);
+  return hash == expected;
+}
+
+// Named case (T4 determinism): polyHash is pure — same bytes twice agree,
+// distinct masks differ, empty/null collapse to "00000000".
+bool check_polyhash_deterministic() {
+  const char* bytes = "[[360,360],[408,360]]";
+  const std::size_t len = std::strlen(bytes);
+  const std::string a = runtime::GuessPolygonHashHex(bytes, len);
+  const std::string b = runtime::GuessPolygonHashHex(bytes, len);
+  if (a != b || a.size() != 8 || a == "00000000") return false;
+  const std::string other =
+      runtime::GuessPolygonHashHex("[[330,350],[370,350]]", 21);
+  if (other == a) return false;
+  if (runtime::GuessPolygonHashHex(nullptr, 0) != "00000000") return false;
+  if (runtime::GuessPolygonHashHex("", 0) != "00000000") return false;
+  return runtime::GuessPolygonHashHex(nullptr, 10) == "00000000";
+}
+
+// Named case (T4 silence): an unknown-tag tap never reaches this TU —
+// Resolve returns nullptr per RULE-RUNTIME-001 and emits no muse_guess
+// marker (repaint-only legs stay marker-free by absence).
+bool check_unknown_tag_silent_no_markers() {
+  (void)runtime::RegisterDemoRouteContent();
+  const std::string captured = CaptureStderr([&] {
+    const runtime::ContentHandlers* missing =
+        GlobalContentRegistry().Resolve("demo-guess-nope");
+    if (missing != nullptr) {
+      std::printf("unexpected resolve\n");
+    }
+    const runtime::ContentHandlers* empty =
+        GlobalContentRegistry().Resolve("");
+    if (empty != nullptr) {
+      std::printf("unexpected resolve\n");
+    }
+  });
+  if (captured.find("unexpected resolve") != std::string::npos) return false;
+  return captured.find("muse_guess:") == std::string::npos;
+}
+
 #define RUN_CASE(name)                      \
   do {                                      \
     if (!(name)()) {                        \
@@ -391,6 +691,17 @@ int main() {
   RUN_CASE(check_masked_shas_match_e2);
   RUN_CASE(check_concat_sha_matches_canonical);
   RUN_CASE(check_stub_file_carries_mirrored_region);
+  RUN_CASE(check_guess_round_mask1_happy);
+  RUN_CASE(check_guess_round_mask2_happy);
+  RUN_CASE(check_guess_round_empty_photoid_error);
+  RUN_CASE(check_guess_round_whitespace_photoid_routes);
+  RUN_CASE(check_guess_round_nan_point_error);
+  RUN_CASE(check_guess_round_inf_point_error);
+  RUN_CASE(check_guess_round_null_out_error);
+  RUN_CASE(check_guess_round_null_error_tolerated);
+  RUN_CASE(check_guess_markers_in_order);
+  RUN_CASE(check_polyhash_deterministic);
+  RUN_CASE(check_unknown_tag_silent_no_markers);
   if (failures > 0) {
     std::printf("demo_route_content_test: %d failing\n", failures);
     return 1;

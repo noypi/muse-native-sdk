@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <string>
+#include <vector>
 
 // Native demo route-content provider (engine-eval T1; FR-MUSE-002,
 // FR-MUSE-004, RULE-MUSE-006).
@@ -69,5 +70,55 @@ bool ValidateDemoRouteBytes(std::string* error);
 // tolerated. Never throws.
 bool CheckDemoRouteJsonNumbers(const char* json, std::size_t len,
                                std::string* error);
+
+// Guess-round state machine (engine-eval T2; AC-SAMPLE-033, RULE-MUSE-007).
+//
+// Plan T2 `Interface:` line (verbatim):
+// `PlayGuessRound(photoId, guessPoint): { maskId; reasonChunks[];
+// shelfRenderMode: 'by_object' }` — throws/returns named fail-closed errors
+// for unknown route, bad polygon, empty reason stream (mirrors
+// `guessMask.ts` error names, not its JS).
+//
+// One-shot and stateless: each call resolves the mirrored segment bytes
+// (mask-1 = matches[0].mask truth, mask-2 = suggestions[0] alternative),
+// picks the hidden mask deterministically as
+// `masks[photoId.size() % masks.size()]` (never the visitor's guess point —
+// the point is validated finite and then only routes, exactly like the TS
+// `playGuessRound`), attaches the mirrored masked reason chunks and the
+// `by_object` shelf entry, emits the T4 `muse_guess` marker triple in
+// order, and returns. There is no retained round state, so "reveal
+// consumes round state so stale state cannot leak" holds by construction.
+// Polygons are parsed out of the mirrored bytes (not copied literals), so
+// an upstream byte-sync changes output with zero funnel change (swap
+// litmus preserved structurally). Unknown route, bad polygon, and empty
+// reason stream fail closed with the `guessMask.ts` names; `out` is
+// untouched on failure and `*error` is untouched on success.
+// `out == nullptr` fails closed. Never throws.
+struct GuessPoint {
+  double x = 0.0;
+  double y = 0.0;
+};
+
+struct GuessPolygonPoint {
+  double x = 0.0;
+  double y = 0.0;
+};
+
+struct GuessRoundResult {
+  std::string maskId;                      // "mask-1" or "mask-2"
+  std::string maskLabel;                   // routed match name
+  std::vector<GuessPolygonPoint> polygon;  // hidden mask polygon
+  std::vector<std::string> reasonChunks;   // mirrored masked stream
+  std::string shelfRenderMode;             // always "by_object"
+};
+
+bool PlayGuessRound(const std::string& photoId, GuessPoint point,
+                    GuessRoundResult* out, std::string* error);
+
+// FNV-1a (32-bit) hex of arbitrary bytes — the `polyHash=<h>` leg of the
+// T4 marker triple, hashed over the hidden mask's raw polygon bytes so the
+// marker proves the content followed the route (not a repaint). Pure and
+// deterministic; nullptr/empty input yields "00000000". Never throws.
+std::string GuessPolygonHashHex(const char* bytes, std::size_t len);
 
 }  // namespace runtime
