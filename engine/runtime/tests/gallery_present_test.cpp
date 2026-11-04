@@ -80,18 +80,19 @@ const char kIrJson[] =
     "\"small\"}}"
     "]}]}";
 
-std::vector<std::uint8_t> MakeAsset() {
-  std::string json(kIrJson);
+std::vector<std::uint8_t> MakeAssetWith(std::uint32_t envelopeVersion,
+                                        const char* irJson) {
+  std::string json(irJson);
   std::vector<std::uint8_t> out;
   out.reserve(12 + json.size());
   out.push_back('M');
   out.push_back('U');
   out.push_back('I');
   out.push_back('1');
-  out.push_back(1);
-  out.push_back(0);
-  out.push_back(0);
-  out.push_back(0);
+  out.push_back(static_cast<std::uint8_t>(envelopeVersion & 0xFFu));
+  out.push_back(static_cast<std::uint8_t>((envelopeVersion >> 8) & 0xFFu));
+  out.push_back(static_cast<std::uint8_t>((envelopeVersion >> 16) & 0xFFu));
+  out.push_back(static_cast<std::uint8_t>((envelopeVersion >> 24) & 0xFFu));
   std::uint32_t n = static_cast<std::uint32_t>(json.size());
   out.push_back(static_cast<std::uint8_t>(n & 0xFFu));
   out.push_back(static_cast<std::uint8_t>((n >> 8) & 0xFFu));
@@ -99,6 +100,32 @@ std::vector<std::uint8_t> MakeAsset() {
   out.push_back(static_cast<std::uint8_t>((n >> 24) & 0xFFu));
   for (char c : json) out.push_back(static_cast<std::uint8_t>(c));
   return out;
+}
+
+// Same shape as kIrJson with the v2 tree.version (baked trees are v2).
+const char kIrJsonV2[] =
+    "{\"version\":2,\"roots\":["
+    "{\"type\":\"Module\",\"file\":\"src/Showcase.tsx\","
+    "\"props\":{},\"slots\":[],\"children\":["
+    "{\"type\":\"#text\",\"value\":\"M3 Gallery light\"},"
+    "{\"type\":\"#text\",\"value\":\"Primary action\"},"
+    "{\"type\":\"#text\",\"value\":\"M3 Gallery dark\"},"
+    "{\"type\":\"#text\",\"value\":\"Primary action dark\"},"
+    "{\"type\":\"Button\",\"props\":{\"variant\":\"filled\",\"label\":\"Primary "
+    "action\"}},"
+    "{\"type\":\"TopAppBar\",\"props\":{\"title\":\"m3-gallery\",\"size\":"
+    "\"small\"}}"
+    "]}]}";
+
+// Same shape as kIrJson with an unsupported tree.version.
+const char kIrJsonV3[] =
+    "{\"version\":3,\"roots\":["
+    "{\"type\":\"Module\",\"file\":\"src/Showcase.tsx\","
+    "\"props\":{},\"slots\":[],\"children\":["
+    "{\"type\":\"#text\",\"value\":\"M3 Gallery light\"}]}]}";
+
+std::vector<std::uint8_t> MakeAsset() {
+  return MakeAssetWith(1, kIrJson);
 }
 
 }  // namespace
@@ -229,6 +256,88 @@ static bool check_showcase_rows_parsed() {
   if (!rows[4].header || rows[4].label != "M3 Gallery dark") return false;
   if (!rows[5].dark || rows[5].label != "Primary action dark") return false;
   return true;
+}
+
+// AC-MUSE-055: envelope v2 + tree v2 (the baked shape) parses to rows.
+static bool check_envelope_v2_tree_v2_accepted() {
+  std::vector<std::uint8_t> asset = MakeAssetWith(2, kIrJsonV2);
+  std::string error;
+  std::vector<runtime::GalleryRow> rows = runtime::ParseGalleryRows(
+      asset.data(), asset.size(), &error);
+  if (rows.size() != 6) {
+    std::printf("  rows=%d err=%s\n", static_cast<int>(rows.size()),
+                error.c_str());
+    return false;
+  }
+  if (!error.empty()) return false;
+  return rows[0].comp == "Button" && rows[2].label == "M3 Gallery light";
+}
+
+// AC-MUSE-055 v2 reader x v1 tree: accept with empty-tags downgrade + log.
+// The downgrade log goes to stderr/logcat (unassertable hermetically); the
+// contract asserts the accept leg: same rows, no error.
+static bool check_v1_tree_accepted_with_downgrade() {
+  std::vector<std::uint8_t> asset = MakeAsset();
+  std::string error;
+  std::vector<runtime::GalleryRow> rows = runtime::ParseGalleryRows(
+      asset.data(), asset.size(), &error);
+  if (rows.size() != 6) {
+    std::printf("  rows=%d err=%s\n", static_cast<int>(rows.size()),
+                error.c_str());
+    return false;
+  }
+  return error.empty();
+}
+
+// AC-MUSE-055: envelope v2 carrying a v1 tree also accepts (downgrade leg).
+static bool check_v2_envelope_v1_tree_accepted() {
+  std::vector<std::uint8_t> asset = MakeAssetWith(2, kIrJson);
+  std::string error;
+  std::vector<runtime::GalleryRow> rows = runtime::ParseGalleryRows(
+      asset.data(), asset.size(), &error);
+  if (rows.size() != 6) {
+    std::printf("  rows=%d err=%s\n", static_cast<int>(rows.size()),
+                error.c_str());
+    return false;
+  }
+  return error.empty();
+}
+
+// AC-MUSE-055: envelope versions outside {1,2} are hard io-errors.
+static bool check_envelope_v0_v3_rejected() {
+  for (std::uint32_t v : {0u, 3u}) {
+    std::vector<std::uint8_t> asset = MakeAssetWith(v, kIrJsonV2);
+    std::string error;
+    std::vector<runtime::GalleryRow> rows = runtime::ParseGalleryRows(
+        asset.data(), asset.size(), &error);
+    if (!rows.empty()) return false;
+    if (error != "unsupported envelope version") {
+      std::printf("  env=%u err=%s\n", v, error.c_str());
+      return false;
+    }
+  }
+  return true;
+}
+
+// Old-reader matrix, v1 x v2 direction: a v1 envelope carrying a v2 tree is
+// a hard io-error, never a silent tag-drop.
+static bool check_v1_envelope_v2_tree_rejected() {
+  std::vector<std::uint8_t> asset = MakeAssetWith(1, kIrJsonV2);
+  std::string error;
+  std::vector<runtime::GalleryRow> rows = runtime::ParseGalleryRows(
+      asset.data(), asset.size(), &error);
+  if (!rows.empty()) return false;
+  return !error.empty();
+}
+
+// AC-MUSE-055: tree.version outside {1,2} is a hard io-error.
+static bool check_unsupported_tree_version_rejected() {
+  std::vector<std::uint8_t> asset = MakeAssetWith(2, kIrJsonV3);
+  std::string error;
+  std::vector<runtime::GalleryRow> rows = runtime::ParseGalleryRows(
+      asset.data(), asset.size(), &error);
+  if (!rows.empty()) return false;
+  return error == "unsupported tree.version";
 }
 
 // Named case: a bad envelope fails closed with an empty row set.
@@ -1234,6 +1343,12 @@ int main() {
   int failures = 0;
   RUN_CASE(check_showcase_rows_parsed);
   RUN_CASE(check_bad_envelope_fails_closed);
+  RUN_CASE(check_envelope_v2_tree_v2_accepted);
+  RUN_CASE(check_v1_tree_accepted_with_downgrade);
+  RUN_CASE(check_v2_envelope_v1_tree_accepted);
+  RUN_CASE(check_envelope_v0_v3_rejected);
+  RUN_CASE(check_v1_envelope_v2_tree_rejected);
+  RUN_CASE(check_unsupported_tree_version_rejected);
   RUN_CASE(check_page_raster_paints);
   RUN_CASE(check_empty_rows_draw_diagnostic);
   RUN_CASE(check_comment_lines_skipped);
