@@ -7,8 +7,10 @@ Command-line interface for muse-native (`muse-native`, with supported
 
 Builds the TSX app in `<appDir>` into two artefacts under `<appDir>/dist/`:
 
-- `dist/ir.json` — syntax-neutral UI IR: `{ version: 1, roots: [...] }`
-  with static-schema nodes (`{ type, props, slots, children }`) plus
+- `dist/ir.json` — syntax-neutral UI IR: `{ version: 2, roots: [...] }`
+  with static-schema nodes (`{ type, props, slots, routeTags, children }`;
+  `routeTags: string[]` is static-only tag carriage per AC-MUSE-055,
+  absent ≡ `[]`) plus
   dynamic value slots (`{ kind: 'value' | 'prop', expression, ... }`).
 - `dist/tree.mui.bin` — length-prefixed binary encoding of the same tree.
 
@@ -25,7 +27,7 @@ All integers are unsigned 32-bit little-endian (u32LE):
 | Offset | Size | Field |
 | ------ | ---- | ----- |
 | 0 | 4 | Magic header `MUI1` (ascii) |
-| 4 | 4 | IR version (currently `1`) |
+| 4 | 4 | IR version (currently `2`) |
 | 8 | 4 | Length-prefix `N`: payload length in bytes |
 | 12 | N | Payload: utf8 JSON of the same `{ version, roots }` IR object |
 

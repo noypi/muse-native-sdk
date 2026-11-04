@@ -101,24 +101,58 @@ function treePageCount(rows, height) {
 // Decode the MUI1 envelope (magic + u32LE version + u32LE length + JSON IR)
 // carried by dist/tree.mui.bin into the parsed IR object. Throws io-error on
 // any malformed input (never a silent empty tree).
+//
+// Old-reader matrix (AC-MUSE-055, verbatim): a v1 reader × a v2 tree is an
+// `io-error` hard fail (never a silent tag-drop); this v2 reader × a v1 tree
+// degrades to empty tags — every node missing `routeTags` is normalised to
+// `[]` (absent ≡ `[]` → `nullptr` denial per RULE-RUNTIME-001) and the
+// downgrade is logged. Any other envelope/`tree.version` is `io-error`.
 function decodeTreeIR(input) {
   const buf = Buffer.isBuffer(input) ? input : Buffer.from(input || []);
   if (buf.length < 12 || buf.subarray(0, 4).toString('ascii') !== 'MUI1') {
     failWith('io-error', 'gallery tree has a bad MUI1 envelope (not MUI1)');
   }
-  if (buf.readUInt32LE(4) !== 1) {
+  const envelopeVersion = buf.readUInt32LE(4);
+  if (envelopeVersion !== 2 && envelopeVersion !== 1) {
     failWith('io-error', 'gallery tree has an unsupported envelope version');
   }
   const declared = buf.readUInt32LE(8);
   if (declared === 0 || 12 + declared > buf.length) {
     failWith('io-error', 'gallery tree envelope length out of range');
   }
+  let tree;
   try {
-    return JSON.parse(buf.subarray(12, 12 + declared).toString('utf8'));
+    tree = JSON.parse(buf.subarray(12, 12 + declared).toString('utf8'));
   } catch (_) {
     failWith('io-error', 'gallery tree payload is not valid JSON IR');
   }
-  return null;
+  if (!tree || (tree.version !== 2 && tree.version !== 1)) {
+    failWith('io-error', 'gallery tree has an unsupported tree.version');
+  }
+  if (tree.version === 1) {
+    normaliseRouteTags(tree);
+    try {
+      process.stderr.write('warning: gallery tree is IR v1 (no routeTags); empty-tags denial applies\n');
+    } catch (_) {
+      // Logging must never turn a usable v1 tree into a failure.
+    }
+  }
+  return tree;
+}
+
+// Normalise a v1 tree to the v2 tag-carriage shape (AC-MUSE-055): every node
+// missing `routeTags` (or carrying a non-array) becomes `[]`, so absent ≡
+// `[]` holds for every consumer without a silent tag-drop.
+function normaliseRouteTags(tree) {
+  const visit = (nodes) => {
+    for (const node of nodes || []) {
+      if (!node || typeof node !== 'object') continue;
+      if (!Array.isArray(node.routeTags)) node.routeTags = [];
+      if (Array.isArray(node.children)) visit(node.children);
+    }
+  };
+  if (tree && typeof tree === 'object') visit(tree.roots);
+  return tree;
 }
 
 // Row-filter mirror of gallery_present.cpp ParseGalleryRows: literal text

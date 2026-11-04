@@ -6,7 +6,42 @@
 const fs = require('node:fs');
 const path = require('node:path');
 
-const IR_VERSION = 1;
+const IR_VERSION = 2;
+
+// Parse a static-only `routeTags` attribute value (AC-MUSE-055) into a
+// `string[]`: comma/whitespace-separated, trimmed, empties dropped,
+// de-duplicated in first-seen order. Absent or empty ≡ `[]` (unregistered →
+// `ContentRegistry.Resolve` returns `nullptr` → repaint-only denial per
+// RULE-RUNTIME-001). Static-only: only the quoted `routeTags="a,b"` form is
+// read here; a dynamic `routeTags={...}` expression is never admitted as a
+// slot (skipped in the dynamic-prop scan below).
+function parseRouteTags(attrs) {
+  const m = /\brouteTags\s*=\s*"([^"]*)"/.exec(attrs || '');
+  if (!m) return [];
+  const seen = new Set();
+  for (const part of m[1].split(/[,\s]+/)) {
+    const tag = part.trim();
+    if (tag && !seen.has(tag)) seen.add(tag);
+  }
+  return [...seen];
+}
+
+// Collect the passthrough union of every descendant node's `routeTags`
+// (first-seen order) for the owning `roots[]` Module entry (AC-MUSE-055).
+function collectSubtreeTags(children) {
+  const seen = new Set();
+  const visit = (nodes) => {
+    for (const node of nodes || []) {
+      if (!node || typeof node !== 'object') continue;
+      for (const tag of node.routeTags || []) {
+        if (!seen.has(tag)) seen.add(tag);
+      }
+      if (Array.isArray(node.children)) visit(node.children);
+    }
+  };
+  visit(children);
+  return [...seen];
+}
 
 function collectTsxFiles(dir, out) {
   const entries = fs.readdirSync(dir, { withFileTypes: true });
@@ -50,16 +85,26 @@ function lowerSource(source) {
     const attrs = match[2] || '';
     const props = {};
     const slots = [];
+    const routeTags = parseRouteTags(attrs);
     const staticPropRe = /([A-Za-z_][\w:.-]*)\s*=\s*"([^"]*)"/g;
     let propMatch;
-    while ((propMatch = staticPropRe.exec(attrs)) !== null) {
+    while ((propMatch = staticPropRe.exec(attrs || '')) !== null) {
       props[propMatch[1]] = propMatch[2];
     }
     const dynPropRe = /([A-Za-z_][\w:.-]*)\s*=\s*\{([^}]+)\}/g;
-    while ((propMatch = dynPropRe.exec(attrs)) !== null) {
+    while ((propMatch = dynPropRe.exec(attrs || '')) !== null) {
+      // Static-only tag carriage (AC-MUSE-055): a dynamic
+      // `routeTags={...}` expression is never admitted as a slot.
+      if (propMatch[1] === 'routeTags') continue;
       slots.push({ kind: 'prop', name: propMatch[1], expression: propMatch[2].trim() });
     }
-    children.push({ type, props, slots, children: [] });
+    // The raw `routeTags="..."` string stays out of `props`: the parsed
+    // `routeTags: string[]` array beside it is the single carrier, so one
+    // node never carries two shapes under one name.
+    if (Object.prototype.hasOwnProperty.call(props, 'routeTags')) {
+      delete props.routeTags;
+    }
+    children.push({ type, props, slots, routeTags, children: [] });
   }
   // Dynamic value slots from JSX expression children: `{expr}`.
   const exprRe = /\{([^}]+)\}/g;
@@ -76,19 +121,23 @@ function lowerSource(source) {
     if (!value || value.startsWith('import ') || value.startsWith('export ')) continue;
     if (/^(const|let|var|return|function)\b/.test(value)) continue;
     if (/^[\w$.]+\s*\(.*\)\s*;?$/.test(value)) continue;
-    textNodes.push({ type: '#text', value });
+    textNodes.push({ type: '#text', value, routeTags: [] });
   }
+  const roots = children.concat(textNodes);
   return {
     type: 'Module',
     file,
     props: {},
     slots: valueSlots,
-    children: children.concat(textNodes),
+    // Root passthrough copy (AC-MUSE-055): the union of every descendant
+    // node's `routeTags` on the owning `roots[]` entry; absent ≡ `[]`.
+    routeTags: collectSubtreeTags(roots),
+    children: roots,
   };
 }
 
 // Lower loaded sources to the syntax-neutral IR:
-// `{ version: 1, roots: [...] }`. Every well-formed input lowers
+// `{ version: 2, roots: [...] }`. Every well-formed input lowers
 // structurally; legality checks belong to later lanes.
 function lowerToIR(sources) {
   return {
@@ -99,7 +148,7 @@ function lowerToIR(sources) {
 
 // Length-prefixed binary encoding of the same tree:
 // offset 0: 4 bytes magic `MUI1` (ascii)
-// offset 4: u32LE IR version (1)
+// offset 4: u32LE IR version (2)
 // offset 8: u32LE payload length N (bytes)
 // offset 12: N bytes utf8 JSON of the IR object
 function encodeTree(ir) {
