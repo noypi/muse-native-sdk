@@ -23,6 +23,8 @@ add_library(runtime
   src/content_registry.cpp
   src/frame.cpp
   src/layout.cpp
+  src/yoga_layout.cpp
+  src/layout_seam.cpp
   src/js_runtime.cpp
   src/js_engine.cpp
   src/vulkan_baseline.cpp
@@ -200,6 +202,21 @@ if(MUSE_TEXT_D3_LIBS AND NOT ANDROID)
     "-Wl,--pop-state")
 endif()
 
+# FR-DEPS-013 T6: Yoga headers behind the LayoutEngine seam. Resolves the
+# vendored snapshot via $MUSE_NATIVE_THIRD_PARTY_DIR (never a hardcoded
+# absolute path) and exposes it only to the seam adapter TU
+# (src/yoga_layout.cpp — the single production TU that may name Yoga
+# headers, per TC-DEPS-049). Guarded: a lane without the snapshot builds
+# exactly as before (in-tree interim, YogaAvailable()==false); configure
+# never fails here.
+if(DEFINED ENV{MUSE_NATIVE_THIRD_PARTY_DIR} AND NOT "$ENV{MUSE_NATIVE_THIRD_PARTY_DIR}" STREQUAL "")
+  set(_muse_yoga_src "$ENV{MUSE_NATIVE_THIRD_PARTY_DIR}/yoga-3.2.1")
+  if(IS_DIRECTORY "${_muse_yoga_src}/yoga")
+    set_source_files_properties(src/yoga_layout.cpp PROPERTIES
+      INCLUDE_DIRECTORIES "${_muse_yoga_src}")
+  endif()
+endif()
+
 # BUG-TEXT-007 NDK link fix (static lane): test executables link
 # libruntime.a whose shaper.o (T9) strongly references FT_Init_FreeType /
 # hb_ft_font_create / hb_buffer_* etc., but nothing linked the vendored
@@ -298,6 +315,8 @@ if(DEFINED ANDROID_ABI AND NOT TARGET Runtime)
     src/content_registry.cpp
     src/frame.cpp
     src/layout.cpp
+    src/yoga_layout.cpp
+    src/layout_seam.cpp
     src/js_runtime.cpp
     src/js_engine.cpp
     src/vulkan_baseline.cpp
