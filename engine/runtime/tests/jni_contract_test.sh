@@ -70,12 +70,16 @@ for name in $NAMES; do
   fi
 done
 
-# M3-006 (#313) landed delivery contract: the bridge-tap polling symbols
-# `nativeDispatchBridgeTap` / `nativeLastBridgeTapId` were removed (replaced
-# by consume-on-delivery via `dispatchTapToOwner`). They must NOT be declared
-# or expected anymore — a stale declaration here is a contract-vs-engine gap
-# (UnsatisfiedLinkError on every ABI). Fail closed if they resurface.
-for stale in nativeDispatchBridgeTap nativeLastBridgeTapId; do
+# M3-006 (#313) delivery contract, updated by the M3-006 re-completion
+# (coder 1d205741, code READY 0eed8fe4): `nativeDispatchBridgeTap` stays
+# REMOVED (replaced by consume-on-delivery via `dispatchTapToOwner`) and must
+# NOT be declared or expected anymore — a stale declaration here is a
+# contract-vs-engine gap (UnsatisfiedLinkError on every ABI). Fail closed if
+# it resurfaces. `nativeLastBridgeTapId` was likewise removed by M3-006 but
+# has been RESTORED as the last-minted bridge tapId getter (it observes the
+# shared per-process counter, never mints/mounts/dispatches), so it is
+# blessed below — NOT stale.
+for stale in nativeDispatchBridgeTap; do
   if echo "$NAMES" | grep -qx "$stale"; then
     echo "jni_contract_test: FAIL — stale M3-006 symbol $stale still declared in $JAVA (removed; delivery is via dispatchTapToOwner) (AC-RUNTIME-027)"
     fail=1
@@ -87,6 +91,27 @@ for stale in nativeDispatchBridgeTap nativeLastBridgeTapId; do
     missing="$missing Java_com_muse_host_MainActivity_${stale}(stale-export)"
   fi
 done
+
+# M3-006 re-completion pin (coder 1d205741, code READY 0eed8fe4): the
+# restored `nativeLastBridgeTapId` getter MUST be exported from jni_bridge.cpp
+# with fail-closed -1 semantics (null env / pending exception / nothing minted
+# yet / internal failure -> -1, which never aliases a live lease id). A
+# missing export is a contract-vs-engine gap (UnsatisfiedLinkError at the
+# host call site).
+if [ -f "$BRIDGE" ] && grep -q "Java_com_muse_host_MainActivity_nativeLastBridgeTapId" "$BRIDGE"; then
+  echo "jni_contract_test: PASS — nativeLastBridgeTapId export present in jni_bridge.cpp (M3-006 re-completion)"
+  if grep -q "return -1" "$BRIDGE"; then
+    echo "jni_contract_test: PASS — nativeLastBridgeTapId fail-closed -1 semantics present in jni_bridge.cpp"
+  else
+    echo "jni_contract_test: FAIL — nativeLastBridgeTapId fail-closed -1 semantics missing in $BRIDGE (M3-006 re-completion) (AC-RUNTIME-027)"
+    fail=1
+    missing="$missing Java_com_muse_host_MainActivity_nativeLastBridgeTapId(fail-closed)"
+  fi
+else
+  echo "jni_contract_test: FAIL — missing JNI export Java_com_muse_host_MainActivity_nativeLastBridgeTapId in $BRIDGE (M3-006 re-completion restores this getter) (AC-RUNTIME-027)"
+  fail=1
+  missing="$missing Java_com_muse_host_MainActivity_nativeLastBridgeTapId"
+fi
 
 # Landed delivery pin 1/2: the UP-fire path must deliver via
 # `dispatchTapToOwner` (consume-on-delivery). Internal C++ symbol, so this is
