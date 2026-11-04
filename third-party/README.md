@@ -44,8 +44,9 @@ repo-relative path to it — resolve it exclusively via `MUSE_NATIVE_THIRD_PARTY
 | FreeType | 2.15.0 | download.savannah.gnu.org | freetype-2.15.0.tar.gz | 4.3M | 918662…a8ba8d | FTL | static (current per 2026-11-02 owner approval) |
 | ICU4C | 79.1 | unicode-org/icu | icu4c-79.1-sources.tgz | 28M | 06fa63ec…bc94902b | Unicode-DFS-2016 | static (vendored 2026-11-02 for text-engine link; replaces deferred pin) |
 | HarfBuzz | 15.0.0 | harfbuzz/harfbuzz | harfbuzz-15.0.0.tar.xz | 20M | 968536e9…221ec42d2a3be4a44df | MIT | static |
+| Skia | chrome/m158 @ 232c4710 (2026-11-03) | google/skia | skia-chrome-m158.tar.gz | 76M | 24af102e…32f5a1e3a | BSD-3-Clause | static |
 
-Total: ~72MB (was ~40MB before ICU 79.1 + FreeType 2.15.0, added 2026-11-02 for the text-engine link). Versions were resolved against upstream metadata at fetch time (GitHub
+Total: ~148MB (was ~72MB before the Skia m158 snapshot, added 2026-11-04 for the Ganesh+GLES quick-landing bridge; ~40MB before ICU 79.1 + FreeType 2.15.0, added 2026-11-02 for the text-engine link). Versions were resolved against upstream metadata at fetch time (GitHub
 releases API, `git ls-remote` where the API had no release object, bellard.org index,
 Savannah mirror probe) — not from memory. Corrections found that way: VMA lives at
 GPUOpen-LibrariesAndSDKs (the old GPUOpen/VulkanMemoryAllocator path is gone), QuickJS
