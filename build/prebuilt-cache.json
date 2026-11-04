@@ -51,6 +51,58 @@
       },
       "objectBytes": 55282004,
       "wallClockSec": 175.5349803880017
+    },
+    {
+      "abi": "arm64-v8a",
+      "key": {
+        "abi": "arm64-v8a",
+        "gn_args_hash": "4a2fc40f3a9c4dba5fcabe85dd12e965788eb030e7560d05a99c01c232db9792",
+        "name": "yoga",
+        "ndk_rev": "27.2.12479018",
+        "snapshot_sha256": "86b399ac31fd820d8ffa823c3fae31bb690b6fc45301b2a8a966c09b5a088b55",
+        "version": "3.2.1"
+      },
+      "objectBytes": 4747962,
+      "wallClockSec": 3.866414910
+    },
+    {
+      "abi": "armeabi-v7a",
+      "key": {
+        "abi": "armeabi-v7a",
+        "gn_args_hash": "4a2fc40f3a9c4dba5fcabe85dd12e965788eb030e7560d05a99c01c232db9792",
+        "name": "yoga",
+        "ndk_rev": "27.2.12479018",
+        "snapshot_sha256": "86b399ac31fd820d8ffa823c3fae31bb690b6fc45301b2a8a966c09b5a088b55",
+        "version": "3.2.1"
+      },
+      "objectBytes": 3376176,
+      "wallClockSec": 3.906509687
+    },
+    {
+      "abi": "x86_64",
+      "key": {
+        "abi": "x86_64",
+        "gn_args_hash": "4a2fc40f3a9c4dba5fcabe85dd12e965788eb030e7560d05a99c01c232db9792",
+        "name": "yoga",
+        "ndk_rev": "27.2.12479018",
+        "snapshot_sha256": "86b399ac31fd820d8ffa823c3fae31bb690b6fc45301b2a8a966c09b5a088b55",
+        "version": "3.2.1"
+      },
+      "objectBytes": 4714022,
+      "wallClockSec": 3.879468772
+    },
+    {
+      "abi": "x86",
+      "key": {
+        "abi": "x86",
+        "gn_args_hash": "4a2fc40f3a9c4dba5fcabe85dd12e965788eb030e7560d05a99c01c232db9792",
+        "name": "yoga",
+        "ndk_rev": "27.2.12479018",
+        "snapshot_sha256": "86b399ac31fd820d8ffa823c3fae31bb690b6fc45301b2a8a966c09b5a088b55",
+        "version": "3.2.1"
+      },
+      "objectBytes": 3271320,
+      "wallClockSec": 3.891345684
     }
   ]
 }
