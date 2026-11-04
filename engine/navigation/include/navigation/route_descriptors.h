@@ -21,4 +21,22 @@ static const std::vector<RouteDescriptor> kRouteDescriptors = {
       ParamDecl{"id", ParamType::String, true},
     },
   },
+  RouteDescriptor{
+    "home",
+    {},
+  },
+  RouteDescriptor{
+    "field",
+    {},
+  },
+  RouteDescriptor{
+    "list",
+    {},
+  },
+  RouteDescriptor{
+    "story",
+    {
+      ParamDecl{"seed", ParamType::Double, false},
+    },
+  },
 };
