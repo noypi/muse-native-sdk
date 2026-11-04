@@ -860,6 +860,162 @@ inline float ComponentShapeDp(const std::string& comp, float boxHeightDp) {
   }
 }
 
+// BUG-LAYOUT-005 Stage 2 — bind build-time-parsed border-radius / box-shadow
+// / transform (FR-LAYOUT-008, AC-LAYOUT-017/018/019) to the per-component
+// resolver above. The CSS subset parser stays build-time only
+// (packages/compiler/lib/css-subset.js + css-tokens.js resolveStylesheet over
+// engine/layout/css-subset.json): the TSX lowerer normalizes the resolved
+// property set to space-free single-token literal props carried in `desc`
+// (`borderRadius="8"` / `"8px"`, `boxShadow="<elevation>[,<blur>]"`,
+// `transform="scale(s)"` / `"translate(tx,ty)"` with no spaces), and the
+// emit path below reads those numbers only — zero JNI, no file reads, no CSS
+// parsing on device. Every entry is fail-closed: absent or unparseable bound
+// values fall back to the Stage 1 resolver/defaults (never blank, never
+// throws), so rows without bound props paint exactly as Stage 1.
+
+// Forward declaration: defined with the descriptor helpers below; needed by
+// the Stage 2 bound-value resolvers above (zero-JNI, header-unchanged).
+std::string PropValue(const std::string& desc, const char* key);
+
+// Strict dp token: `<number>[px|dp]` (trailing spaces tolerated), finite and
+// non-negative. False on missing/empty/malformed input; never throws.
+inline bool ParseDpToken(const std::string& v, float* out) {
+  try {
+    if (v.empty() || out == nullptr) return false;
+    std::size_t pos = 0;
+    const double d = std::stod(v, &pos);
+    while (pos < v.size() && v[pos] == ' ') ++pos;
+    std::string unit = v.substr(pos);
+    if (!unit.empty() && unit != "px" && unit != "dp") return false;
+    if (!std::isfinite(d) || d < 0.0) return false;
+    *out = static_cast<float>(d);
+    return true;
+  } catch (...) {
+    return false;
+  }
+}
+
+// Per-component bound radius: the parsed `borderRadius` value wins per
+// component (painted radius follows the bound value); unparseable/absent
+// falls back to ComponentShapeDp. Clamped to [0, boxHeightDp] so the bound
+// never exceeds the emitted box; never throws.
+inline float BoundRadiusDp(const std::string& desc, const std::string& comp,
+                           float boxHeightDp) {
+  try {
+    float bound = 0.0f;
+    if (ParseDpToken(PropValue(desc, "borderRadius"), &bound)) {
+      if (boxHeightDp > 0.0f && bound > boxHeightDp) bound = boxHeightDp;
+      return bound;
+    }
+  } catch (...) {
+  }
+  return ComponentShapeDp(comp, boxHeightDp);
+}
+
+// Per-component bound shadow: `boxShadow="<elevation>[,<blur>]"` overrides
+// the emit defaults in place; each channel falls closed independently, so a
+// half-parseable token still binds the good channel. Never throws.
+inline void BoundShadowDp(const std::string& desc, float* elevationDp,
+                          float* shadowBlur) {
+  try {
+    if (elevationDp == nullptr || shadowBlur == nullptr) return;
+    const std::string v = PropValue(desc, "boxShadow");
+    if (v.empty()) return;
+    const std::size_t comma = v.find(',');
+    if (comma == std::string::npos) {
+      float e = 0.0f;
+      if (ParseDpToken(v, &e)) *elevationDp = e;
+      return;
+    }
+    float e = 0.0f, b = 0.0f;
+    if (ParseDpToken(v.substr(0, comma), &e)) *elevationDp = e;
+    if (ParseDpToken(v.substr(comma + 1), &b)) *shadowBlur = b;
+  } catch (...) {
+  }
+}
+
+// Per-component bound transform: `scale(s)` scales about the bounds center
+// (s clamped to [0.5, 2.0]); `translate(tx,ty)` offsets in dp (each axis
+// clamped to [+/-boxH/2] so a bound row cannot leave its row band).
+// Unsupported functions (rotate/skew/matrix/...) and malformed tokens bind
+// to identity — fail-closed, never throws. DrawCmd carries no rotation
+// channel, so rotation-class transforms intentionally have no painted effect.
+inline Rect ApplyBoundTransform(Rect bounds, const std::string& desc,
+                                float boxH) {
+  try {
+    const std::string v = PropValue(desc, "transform");
+    if (v.empty()) return bounds;
+    if (v.compare(0, 6, "scale(") == 0 && !v.empty() && v.back() == ')') {
+      const std::string inner = v.substr(6, v.size() - 7);
+      if (inner.find(' ') != std::string::npos ||
+          inner.find(',') != std::string::npos) {
+        return bounds;
+      }
+      float s = 0.0f;
+      try {
+        std::size_t pos = 0;
+        const double d = std::stod(inner, &pos);
+        if (pos != inner.size() || !std::isfinite(d) || d <= 0.0) {
+          return bounds;
+        }
+        s = static_cast<float>(d);
+      } catch (...) {
+        return bounds;
+      }
+      if (s < 0.5f) s = 0.5f;
+      if (s > 2.0f) s = 2.0f;
+      const float cx = bounds.x + bounds.w * 0.5f;
+      const float cy = bounds.y + bounds.h * 0.5f;
+      Rect out = bounds;
+      out.w = bounds.w * s;
+      out.h = bounds.h * s;
+      out.x = cx - out.w * 0.5f;
+      out.y = cy - out.h * 0.5f;
+      return out;
+    }
+    if (v.compare(0, 10, "translate(") == 0 && !v.empty() &&
+        v.back() == ')') {
+      const std::string inner = v.substr(10, v.size() - 11);
+      const std::size_t comma = inner.find(',');
+      if (comma == std::string::npos) return bounds;
+      // Signed dp/px offsets (ParseDpToken rejects negatives, so a local
+      // signed parse is used here; still no spaces, still finite).
+      auto parseSigned = [](const std::string& tok, float* out) {
+        try {
+          if (tok.empty() || out == nullptr) return false;
+          std::size_t pos = 0;
+          const double d = std::stod(tok, &pos);
+          while (pos < tok.size() && tok[pos] == ' ') ++pos;
+          std::string unit = tok.substr(pos);
+          if (!unit.empty() && unit != "px" && unit != "dp") return false;
+          if (!std::isfinite(d)) return false;
+          *out = static_cast<float>(d);
+          return true;
+        } catch (...) {
+          return false;
+        }
+      };
+      float tx = 0.0f, ty = 0.0f;
+      if (!parseSigned(inner.substr(0, comma), &tx) ||
+          !parseSigned(inner.substr(comma + 1), &ty)) {
+        return bounds;
+      }
+      const float lim = boxH > 0.0f ? boxH * 0.5f : 0.0f;
+      if (tx < -lim) tx = -lim;
+      if (tx > lim) tx = lim;
+      if (ty < -lim) ty = -lim;
+      if (ty > lim) ty = lim;
+      Rect out = bounds;
+      out.x = bounds.x + tx;
+      out.y = bounds.y + ty;
+      return out;
+    }
+    return bounds;
+  } catch (...) {
+    return bounds;
+  }
+}
+
 inline SurfaceThemeParams ResolveSurfaceTheme(bool dark) {
   SurfaceThemeParams params;
   params.primary = dark ? kDarkPrimary : kLightPrimary;
@@ -1224,7 +1380,8 @@ std::vector<GalleryRow> ParseGalleryRows(const void* data, std::size_t len,
                                   "tone",    "elevation", "orientation",
                                   "direction", "spacing", "open",
                                   "contentFit", "source", "state",
-                                  "progress", "theme"};
+                                  "progress", "theme", "borderRadius",
+                                  "boxShadow", "transform"};
         const char* propsVal = nullptr;
         const char* propsEnd = nullptr;
         if (FindKey(span.first, span.second, "props", propsVal) != nullptr &&
@@ -2581,27 +2738,38 @@ void EmitComponentRowCmds(const GalleryRow& row, int bx, int by, int bw,
                           std::vector<DrawCmd>& out) {
   DrawCmd shadow;
   shadow.kind = PrimitiveKind::ElevationShadow;
-  shadow.bounds = {static_cast<float>(bx), static_cast<float>(by),
-                   static_cast<float>(bw), static_cast<float>(bh)};
-  // BUG-LAYOUT-005 Stage 1: card + shadow radii resolve per-component from
-  // the generated matrix shape-role table (ComponentShapeDp above, via
-  // shape_roles.h); the shadow binds the SAME resolver as the card
-  // (Stage 2 owns parsed box-shadow bind, not here).
-  shadow.radius =
-      ComponentShapeDp(row.comp, static_cast<float>(bh));
+  // BUG-LAYOUT-005 Stage 2: the bound box is the parsed per-component
+  // transform applied to the solved frame (identity when absent/unparseable);
+  // card + shadow share it so the silhouette and its shadow stay registered.
+  Rect styled = ApplyBoundTransform(
+      {static_cast<float>(bx), static_cast<float>(by),
+       static_cast<float>(bw), static_cast<float>(bh)},
+      row.desc, static_cast<float>(bh));
+  shadow.bounds = styled;
+  // BUG-LAYOUT-005 Stage 2: card + shadow radii resolve per-component from
+  // the bound `borderRadius` value when the build-time parser supplied one
+  // (painted radius follows the bound value per component), else the Stage 1
+  // matrix shape-role resolver (ComponentShapeDp) above. The shadow binds
+  // the SAME radius resolver as the card; its elevation/blur bind the parsed
+  // `boxShadow` value (defaults 2.0/4.0 when absent/unparseable).
+  const float boundRadius =
+      BoundRadiusDp(row.desc, row.comp, static_cast<float>(bh));
+  shadow.radius = boundRadius;
   shadow.nodeId = node;
   shadow.payload.elevationDp = 2.0f;
   shadow.payload.shadowBlur = 4.0f;
+  BoundShadowDp(row.desc, &shadow.payload.elevationDp,
+                &shadow.payload.shadowBlur);
   shadow.payload.shadowColor = kShadowBlack;
   out.push_back(shadow);
   DrawCmd card;
   card.kind = PrimitiveKind::RoundedRect;
-  card.bounds = shadow.bounds;
-  // BUG-LAYOUT-005 Stage 1: per-component matrix shape role (Button
-  // full→pill, Card medium, TopAppBar none→0); fallback paints medium, never
-  // blank. Family Image (16.0f) / band (18.0f) / wash literals elsewhere
-  // stay until Stage 2/3.
-  card.radius = ComponentShapeDp(row.comp, static_cast<float>(bh));
+  card.bounds = styled;
+  // BUG-LAYOUT-005 Stage 2: bound radius per component (Button full→pill,
+  // Card medium, TopAppBar none→0 unless a bound value overrides); fallback
+  // paints the Stage 1 medium baseline, never blank. Family Image (16.0f) /
+  // band (18.0f) / wash literals elsewhere stay until Stage 3.
+  card.radius = boundRadius;
   card.nodeId = node;
   // T3 (BUG-M3-FIDELITY-014): the card fill carries the token-resolved
   // per-family fill (resolvePresentFill choke point over FamilyKind with
