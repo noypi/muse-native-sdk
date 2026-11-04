@@ -386,6 +386,14 @@ struct GalleryHandle {
   // node). Guarded by mu like the rest of the handle.
   HitTestTree tapTree;
   GestureArena tapArena;
+  // BUG-M3-NATIVE-006 mount+mint proof (FR-INPUT-012 / AC-INPUT-024): the
+  // owner PendingRegistry for the JNI lane. Entries are mounted ONLY at JNI
+  // lifecycle points (load/seed, frame reseed, destroy-unmount via
+  // SyncTapLeaseMounts below) — never in the fire path — mirroring the T6
+  // per-button lifecycle (created on mount, deleted on unmount). The UP fire
+  // path mints the winner lease here, then dispatches beside (never inside)
+  // the FireContentTapToJs record-only call.
+  ::input::PendingRegistry tapLeases;
   // FR-GRAPHICS-015 T5 (P2 pressed-state wiring): last ACTION_DOWN origin
   // for the MOVE slop verdict (slop is measured against the DOWN origin,
   // not the last MOVE position). Guarded by mu like the rest of the handle.
@@ -962,6 +970,28 @@ bool EnsureFrameResourcesLocked(GalleryHandle* g, int stride, int h) noexcept {
   }
 }
 
+// BUG-M3-NATIVE-006 mount+mint proof (FR-INPUT-012 / AC-INPUT-024):
+// lease-owner node mounted at JNI lifecycle points. The seeded tap tree
+// (input_chain.cpp seeder) carries root 10 + full-bleed scrim 20 + the
+// Button-filled content node 21; the lease owner is the content node 21 —
+// the dispatch target a real DOWN->UP tap resolves. Root/scrim stay
+// unmounted by design: their taps ride the scrim/record-only paths, and an
+// unmounted target mints nothing and dispatches silent (fail-closed).
+constexpr std::int32_t kTapLeaseOwnerNode = 21;
+
+// Mount-only-at-lifecycle sync: creates the owner entry on the handle's
+// registry. Idempotent (mount re-asserts the routing entry), so it is safe
+// to call at every lifecycle point. Callers: nativeLoadTree (load/seed,
+// single-threaded — no entry observes the handle yet, no lock needed),
+// RenderLocked (frame reseed, caller holds g->mu), nativeDestroy
+// (destroy-unmount pairs with unmount, which spends every pending lease so
+// no stale ticket can fire a remounted handle). NEVER called in the fire
+// path: the UP slice mints + dispatches only.
+inline void SyncTapLeaseMounts(GalleryHandle* g) {
+  if (g == nullptr) return;
+  g->tapLeases.mount(kTapLeaseOwnerNode);
+}
+
 // Renders the current page into the attached window. Callers must hold
 // g->mu: attach state, page, and rows are all mutated under that lock.
 // FR-STARTUP-003 T3 (AC-STARTUP-006, RULE-STARTUP-001/002) drop-beats-tear:
@@ -1001,6 +1031,9 @@ void RenderLocked(GalleryHandle* g) {
   // until the first real frame lands.
   PopulateTapTreeFromLayout(g->tapTree, static_cast<float>(w),
                             static_cast<float>(h));
+  // BUG-M3-NATIVE-006 mount+mint proof: frame reseed re-asserts the lease
+  // owner mount (mu is held by the caller; idempotent, never a fire).
+  SyncTapLeaseMounts(g);
   int pages = ::runtime::GalleryPageCount(g->rows, h);
   if (pages > 0) {
     g->page %= pages;
@@ -1316,6 +1349,9 @@ extern "C" MUSE_JNI_EXPORT jlong Java_com_muse_host_MainActivity_nativeLoadTree(
                                           g->tree.size(), 0.0f, 0.0f)) {
       PopulateTapTreeFromLayout(g->tapTree);
     }
+    // BUG-M3-NATIVE-006 mount+mint proof: load/seed mounts the lease owner
+    // (single-threaded here: no entry observes the handle yet, no lock).
+    SyncTapLeaseMounts(g.get());
     RegisterHandle(g);
 #ifdef __ANDROID__
     char msg[192];
@@ -2192,15 +2228,24 @@ extern "C" MUSE_JNI_EXPORT jint Java_com_muse_host_MainActivity_nativeDispatchTo
       // never reach here; the seam itself is noexcept).
       ::runtime::ime_commit::SetFocusedEngineRow(
           static_cast<::runtime::NodeId>(firedTarget));
-      // BUG-M3-NATIVE-006 T1 (AC-M3-033/036, AC-INPUT-024a): bridge delivery
-      // BESIDE (never inside) FireContentTapToJs below — the record-only
-      // contract is load-bearing. dispatchTapToOwner is fail-closed,
-      // consume-before-notify: unknown targets, replays, and forged tickets
-      // deliver 0 and throw nothing.
+      // BUG-M3-NATIVE-006 mount+mint proof (AC-M3-033/036, AC-INPUT-024a):
+      // bridge delivery BESIDE (never inside) FireContentTapToJs below — the
+      // record-only contract is load-bearing. The winner lease is minted on
+      // the mounted owner registry first (mount-only-at-lifecycle: this path
+      // never mounts — an unmounted/stale target mints the invalid shape),
+      // then dispatchTapToOwner delivers fail-closed, consume-before-notify:
+      // unknown targets, replays, and forged tickets deliver 0 and throw
+      // nothing. A real DOWN->UP tap on the mounted owner mints once and
+      // delivers 1; the JNI-carried integer is the identity adoptBridgeTap
+      // admits on the JS lane for the exactly-once press.
       {
         const int tapId = MintBridgeTapId();
-        (void)::input::dispatchTapToOwner(firedTarget,
-                                          ::input::LeaseTicket{tapId});
+        // Mint + deliver under the handle lock: mounts mutate under the same
+        // mu (load/frame-reseed above), so the winner-resolve mint observes a
+        // stable mount and no entry sees a half-mounted owner.
+        std::lock_guard<std::mutex> lock(g->mu);
+        const ::input::LeaseTicket ticket = g->tapLeases.mint(firedTarget, tapId);
+        (void)::input::dispatchTapToOwner(firedTarget, ticket);
       }
       // Batch 2 / T3 (AC-INPUT-021, AC-RUNTIME-018/033): content-agnostic
       // tap-record with node identity. The fired tap is recorded (NOT
@@ -2383,6 +2428,18 @@ extern "C" MUSE_JNI_EXPORT void Java_com_muse_host_MainActivity_nativeDestroy(
   // slot after this call (engineHandle = 0).
   std::shared_ptr<GalleryHandle> claimed = ClaimForDestroy(handle);
   if (claimed == nullptr) return;
+  // BUG-M3-NATIVE-006 mount+mint proof: destroy-unmount mirrors the T6
+  // lifecycle (entry deleted on unmount). Spending every pending lease of
+  // the handle means no stale ticket can fire a remounted handle, and later
+  // dispatches for the node stay silent (unmounted target rule). Under the
+  // handle lock like every other mount/mint touch, so no in-flight fire
+  // observes a half-torn owner; runs before the window teardown below so no
+  // in-flight frame observes a live mount past destroy.
+  try {
+    std::lock_guard<std::mutex> lock(claimed->mu);
+    claimed->tapLeases.unmount(kTapLeaseOwnerNode);
+  } catch (...) {
+  }
   try {
 #ifdef __ANDROID__
     // FR-STARTUP-003 T2 exclusive teardown (RULE-RUNTIME-004): stop the single
