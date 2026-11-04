@@ -101,6 +101,42 @@ void SkipWs(const std::string& s, std::string::size_type& i) {
   }
 }
 
+// Parses the top-level integer "delta" field for the "go" method
+// (`{"delta":-1}`). Returns false when absent or malformed; fractional,
+// exponent, or non-numeric values are rejected so fractional go() deltas
+// fail closed with BAD_ARGS.
+bool ParseDeltaArg(const std::string& jsonArgs, int& out) {
+  std::string::size_type keyPos = std::string::npos;
+  if (!FindTopLevelKey(jsonArgs, "delta", keyPos)) return false;
+  std::string::size_type colon = jsonArgs.find(':', keyPos + 7);
+  if (colon == std::string::npos) return false;
+  std::string::size_type i = colon + 1;
+  SkipWs(jsonArgs, i);
+  if (i >= jsonArgs.size()) return false;
+  bool neg = false;
+  if (jsonArgs[i] == '-' || jsonArgs[i] == '+') {
+    neg = (jsonArgs[i] == '-');
+    ++i;
+  }
+  if (i >= jsonArgs.size() ||
+      !std::isdigit(static_cast<unsigned char>(jsonArgs[i]))) {
+    return false;
+  }
+  long value = 0;
+  while (i < jsonArgs.size() &&
+         std::isdigit(static_cast<unsigned char>(jsonArgs[i]))) {
+    value = value * 10 + (jsonArgs[i] - '0');
+    ++i;
+  }
+  SkipWs(jsonArgs, i);
+  if (i != jsonArgs.size() && jsonArgs[i] != '}' && jsonArgs[i] != ',') {
+    // Trailing garbage (e.g. ".5", "e3") is not an integer delta.
+    return false;
+  }
+  out = neg ? static_cast<int>(-value) : static_cast<int>(value);
+  return true;
+}
+
 // Locates the `"params"` value. Returns true when the key is absent
 // (caller treats as empty args). When present, `isObject` reports whether
 // the value is a `{...}` object and `body` holds its inner text.
@@ -261,7 +297,7 @@ RouterBridge::RouterBridge(std::vector<std::string> routes)
 
 BridgeResult RouterBridge::invoke(const std::string& method,
                                   const std::string& jsonArgs) {
-  if (method == "navigate" || method == "push") {
+  if (method == "navigate" || method == "push" || method == "replace") {
     std::string route;
     if (!ParseRouteArg(jsonArgs, route)) {
       return {false, "", BridgeError::BAD_ARGS};
@@ -296,7 +332,11 @@ BridgeResult RouterBridge::invoke(const std::string& method,
       return {false, "", BridgeError::GUARD_DENIED};
     }
     NavOp op;
-    op.type = NavOpType::Push;
+    if (method == "replace") {
+      op.type = NavOpType::Replace;
+    } else {
+      op.type = NavOpType::Push;
+    }
     op.routeId = route;
     NavResult r = graph_.apply(op);
     if (!r.ok) {
@@ -314,6 +354,20 @@ BridgeResult RouterBridge::invoke(const std::string& method,
     NavOp op;
     op.type = NavOpType::Pop;
     graph_.apply(op);
+    return {true, "{}", BridgeError::NONE};
+  }
+  if (method == "go") {
+    int delta = 0;
+    if (!ParseDeltaArg(jsonArgs, delta)) {
+      return {false, "", BridgeError::BAD_ARGS};
+    }
+    NavOp op;
+    op.type = NavOpType::GoTo;
+    op.tabIndex = delta;
+    NavResult r = graph_.apply(op);
+    if (!r.ok) {
+      return {false, "", BridgeError::NAV_ERROR};
+    }
     return {true, "{}", BridgeError::NONE};
   }
   if (method == "snapshot") {
