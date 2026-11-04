@@ -1,6 +1,7 @@
 // Batch 1 tests — FR-NAV-011 / AC-NAV-033, AC-NAV-034 (TC-NAV-033).
-// Reused (not altered): FR-NAV-007 / AC-NAV-017 (param validation),
-// FR-NAV-004 / AC-NAV-007 (unknown route -> home degrade).
+// Reused (not altered): FR-NAV-007 / AC-NAV-017 (param validation).
+// NAV-007 / AC-NAV-040: unknown route on live navigate preserves graph
+// (FR-NAV-004 home-degrade is restore-path only).
 // Hermetic: C++17 + navigation headers only; no network, no env/config
 // reads, no filesystem, no live services. Derived from specs/ACs above,
 // never from the implementation.
@@ -17,10 +18,10 @@
 // ASSUMPTION (params envelope): method == "navigate" accepts
 // `{"route":"<id>","params":{...}}`; a non-object "params" value is
 // malformed and must yield BAD_ARGS.
-// ASSUMPTION (unknown-route degrade): invoke returns
-// {ok:false, error:NAV_ERROR} AND the graph degrades to home (snapshot
-// equals a fresh home snapshot), never a crash — per FR-NAV-004 reuse
-// decided at the call site contract quoted in the plan.
+// ASSUMPTION (unknown-route preserve, NAV-007): invoke returns
+// {ok:false, error:NAV_ERROR} AND the graph is preserved (snapshot equals
+// the pre-denial snapshot), never a crash and never a home degrade on
+// live navigate — per AC-NAV-040. Decided at the call site contract.
 #include <cstdio>
 #include <string>
 #include <vector>
@@ -105,17 +106,20 @@ bool check_non_object_params_denied() {
   return !r.ok && r.error == BridgeError::BAD_ARGS;
 }
 
-// (c) AC-NAV-007 reuse: unknown route -> NAV_ERROR and home degrade,
-// never a crash. Push off home first so a no-op would NOT equal home.
+// (c) AC-NAV-007 reuse + NAV-007 (AC-NAV-040): unknown route -> NAV_ERROR
+// with the graph preserved (snapshot byte-identical to pre-denial stack),
+// never a crash and never a home degrade on live navigate. FR-NAV-004
+// degrade-to-home belongs to the restore path only. Push off home first
+// so a home reset would NOT equal the preserved stack.
 bool check_unknown_route_nav_error_and_home_degrade() {
   RouterBridge b(kRoutes);
   if (!b.invoke("navigate", "{\"route\":\"details\",\"params\":{}}").ok)
     return false;
+  std::string before = b.snapshotForPersist();
   BridgeResult r =
       b.invoke("navigate", "{\"route\":\"no_such_route\",\"params\":{}}");
   if (r.ok || r.error != BridgeError::NAV_ERROR) return false;
-  RouterBridge fresh(kRoutes);
-  return b.snapshotForPersist() == fresh.snapshotForPersist();
+  return b.snapshotForPersist() == before;
 }
 
 // (e) AC-NAV-033 envelope robustness (security-reviewer): an aliasing
@@ -187,7 +191,7 @@ int main() {
   EXPECT_TRUE(check_non_object_params_denied(),
               "non-object params denied BAD_ARGS");
   EXPECT_TRUE(check_unknown_route_nav_error_and_home_degrade(),
-              "unknown route NAV_ERROR and home degrade");
+              "unknown route NAV_ERROR and graph preserved (no home degrade)");
   EXPECT_TRUE(check_aliasing_envelope_never_commits_smuggled_route(),
               "aliasing envelope never commits smuggled route");
   EXPECT_TRUE(check_array_literal_params_denied(),
