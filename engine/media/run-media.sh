@@ -25,7 +25,8 @@ BIN_MEDIA_DOWNLOAD_RESUME=$(mktemp /tmp/media-download_resume_test.XXXXXX)
 BIN_MEDIA_PLAYBACK_PIPELINE=$(mktemp /tmp/media-playback_pipeline_test.XXXXXX)
 BIN_PHASED_MEDIA3=$(mktemp /tmp/media-phased_media3_test.XXXXXX)
 BIN_PHASED_CODECS=$(mktemp /tmp/media-phased_codecs_test.XXXXXX)
-trap 'rm -f "$BIN_MEDIA_WORKER_POOL" "$BIN_MEDIA_DECODE_METADATA" "$BIN_MEDIA_IMAGE_CACHE" "$BIN_MEDIA_COLOR_SPACE_UPLOAD" "$BIN_MEDIA_ANIMATED_DECODE" "$BIN_MEDIA_ANIMATED_HDR" "$BIN_FETCH_BRIDGE" "$BIN_CAPS" "$BIN_MEDIA_LIFECYCLE_AUDIO_FOCUS" "$BIN_MEDIA_AUDIO_ENGINE" "$BIN_MEDIA_ZERO_COPY_FRAME" "$BIN_MEDIA_DRM_SESSION" "$BIN_MEDIA_DOWNLOAD_RESUME" "$BIN_MEDIA_PLAYBACK_PIPELINE" "$BIN_PHASED_MEDIA3" "$BIN_PHASED_CODECS"' EXIT
+BIN_MEDIA_LANE_REGISTRY=$(mktemp /tmp/media-lane_registry_test.XXXXXX)
+trap 'rm -f "$BIN_MEDIA_WORKER_POOL" "$BIN_MEDIA_DECODE_METADATA" "$BIN_MEDIA_IMAGE_CACHE" "$BIN_MEDIA_COLOR_SPACE_UPLOAD" "$BIN_MEDIA_ANIMATED_DECODE" "$BIN_MEDIA_ANIMATED_HDR" "$BIN_FETCH_BRIDGE" "$BIN_CAPS" "$BIN_MEDIA_LIFECYCLE_AUDIO_FOCUS" "$BIN_MEDIA_AUDIO_ENGINE" "$BIN_MEDIA_ZERO_COPY_FRAME" "$BIN_MEDIA_DRM_SESSION" "$BIN_MEDIA_DOWNLOAD_RESUME" "$BIN_MEDIA_PLAYBACK_PIPELINE" "$BIN_PHASED_MEDIA3" "$BIN_PHASED_CODECS" "$BIN_MEDIA_LANE_REGISTRY"' EXIT
 
 # T9 (FR-MEDIA-013/AC-MEDIA-020): Media3-first phase gate.
 # `sh engine/media/run-media.sh phased_media3` exits 0 iff the FR-MEDIA-010
@@ -130,6 +131,19 @@ if [ "${1:-all}" = "phased_codecs" ]; then
   sh engine/media/run-media.sh phased_media3
 
   echo "ALL GREEN phased_codecs gate (FFmpeg LGPL-dynamic + WebRTC dynamic-feature gates green; phased_media3 unregressed)"
+  exit 0
+fi
+
+# FR-MEDIA-014 (AC-MEDIA-022/023/024): lane-first registry-handle lane.
+# `sh engine/media/run-media.sh lane_registry` exits 0 iff the
+# lane_registry_handle contract suite is green AND the minimal production
+# `media::LaneRegistry` unit builds hermetically. Fail closed — any red
+# denies the gate. Does not alter the default `all` path or phased legs.
+if [ "${1:-all}" = "lane_registry" ]; then
+  g++ -std=c++17 -Wall -Wextra -Wpedantic -I . engine/media/tests/lane_registry_handle_test.cpp engine/media/src/lane_registry.cc -o "$BIN_MEDIA_LANE_REGISTRY"
+  "$BIN_MEDIA_LANE_REGISTRY"
+
+  echo "ALL GREEN lane_registry gate (FR-MEDIA-014 carriage-to-handle green; production LaneRegistry links)"
   exit 0
 fi
 
