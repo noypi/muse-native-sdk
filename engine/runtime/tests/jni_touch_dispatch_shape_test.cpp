@@ -1,6 +1,12 @@
 // Batch 2 / T3 contract tests — FR-INPUT-011 / AC-INPUT-020 (device tap
 // chain, JNI entry half).
 // Binds ONLY to the T3 `Interface:` line; never to implementation.
+// M3-006 (#313) landed contract: `nativeDispatchBridgeTap` /
+// `nativeLastBridgeTapId` were REMOVED (replaced by consume-on-delivery via
+// `dispatchTapToOwner` in jni_bridge.cpp). This file must NOT declare or
+// reference those symbols — a stale extern would fail the link on every ABI.
+// Delivery pin lives in tests/jni_contract_test.sh (source pin on
+// `dispatchTapToOwner(`); this file pins the hermetic half below.
 // Hermetic: C++17 only; no JVM is started, no device, no network, no env/
 // config reads, no filesystem, no live services. Every case calls the real
 // JNI symbol with a null JNIEnv, so no VM interaction is possible and no
@@ -27,19 +33,14 @@ extern "C" jint Java_com_muse_host_MainActivity_nativeDispatchTouch(
     JNIEnv* env, jobject thiz, jlong handle, jint action, jfloat x, jfloat y,
     jint pointerId, jlong timestampMs);
 
-// T6 follow-up (AC-INPUT-024/024a): bridge-tap JNI seam. Same hermetic
-// discipline as above — real symbols, null env only.
-extern "C" jint Java_com_muse_host_MainActivity_nativeDispatchBridgeTap(
-    JNIEnv* env, jobject thiz, jlong handle, jint nodeId, jint tapId);
-extern "C" jint Java_com_muse_host_MainActivity_nativeLastBridgeTapId(
-    JNIEnv* env, jobject thiz, jlong handle);
-
 namespace {
 
 // MotionEvent action codes (platform constants, repeated here so the test
 // stays hermetic without android/view headers).
 constexpr jint kActionDown = 0;
 constexpr jint kActionUp = 1;
+constexpr jint kActionMove = 2;
+constexpr jint kActionCancel = 3;
 
 // Named case: null env + zero handle fails closed with -1 (the T3
 // `Interface:` line: "null env/pending exception/zero handle fail closed
@@ -93,45 +94,47 @@ bool check_null_env_up_outside_returns_minus_one() {
   return true;
 }
 
+// Named case: null env + ACTION_MOVE returns -1. DOWN/MOVE never fire
+// (production shape); with no VM the move must fail closed, never dispatch.
+bool check_null_env_move_returns_minus_one() {
+  const jint got = Java_com_muse_host_MainActivity_nativeDispatchTouch(
+      nullptr, nullptr, 0x1234, kActionMove, 150.0f, 140.0f, 1, 123456789);
+  if (got != -1) {
+    std::printf("  detail: expected -1, got %d\n", static_cast<int>(got));
+    return false;
+  }
+  return true;
+}
+
+// Named case: null env + ACTION_CANCEL returns -1. Cancel clears pressed
+// state on the device lane; hermetically it must fail closed with no crash.
+bool check_null_env_cancel_returns_minus_one() {
+  const jint got = Java_com_muse_host_MainActivity_nativeDispatchTouch(
+      nullptr, nullptr, 0x1234, kActionCancel, 150.0f, 140.0f, 1, 123456789);
+  if (got != -1) {
+    std::printf("  detail: expected -1, got %d\n", static_cast<int>(got));
+    return false;
+  }
+  return true;
+}
+
+// Mount-lifecycle pin (hermetic half): null env + nonzero handle returns -1
+// regardless of action/coords. The env guard precedes any handle/gallery or
+// mount use, so an unmounted/stale target can never mint or deliver here —
+// the valid-env mount-only-at-lifecycle half (mint invalid shape for
+// unmounted targets, deliver via dispatchTapToOwner) needs a VM + mounted
+// owner and is mapped to device proof, as is the pending-exception guard.
+bool check_null_env_negative_coords_returns_minus_one() {
+  const jint got = Java_com_muse_host_MainActivity_nativeDispatchTouch(
+      nullptr, nullptr, 0x1234, kActionDown, -50.0f, -50.0f, 0, 0);
+  if (got != -1) {
+    std::printf("  detail: expected -1, got %d\n", static_cast<int>(got));
+    return false;
+  }
+  return true;
+}
+
 }  // namespace
-
-// T6 follow-up (AC-INPUT-024/024a): null env + zero handle fails closed
-// with 0 on the bridge dispatch entry (denial, never a throw through the
-// tap path). No VM exists here, so returning 0 without crashing is the
-// whole assertion.
-bool check_bridge_dispatch_null_env_zero_handle_returns_zero() {
-  const jint got = Java_com_muse_host_MainActivity_nativeDispatchBridgeTap(
-      nullptr, nullptr, 0, 21, 7);
-  if (got != 0) {
-    std::printf("  detail: expected 0, got %d\n", static_cast<int>(got));
-    return false;
-  }
-  return true;
-}
-
-// T6 follow-up: null env + nonzero handle still fails closed with 0 — the
-// env guard precedes any handle use.
-bool check_bridge_dispatch_null_env_nonzero_handle_returns_zero() {
-  const jint got = Java_com_muse_host_MainActivity_nativeDispatchBridgeTap(
-      nullptr, nullptr, 0x1234, 21, 7);
-  if (got != 0) {
-    std::printf("  detail: expected 0, got %d\n", static_cast<int>(got));
-    return false;
-  }
-  return true;
-}
-
-// T6 follow-up: null env on the tapId getter fails closed with 0 (no tap
-// has fired in this process, and no VM exists to mint one).
-bool check_last_bridge_tap_id_null_env_returns_zero() {
-  const jint got = Java_com_muse_host_MainActivity_nativeLastBridgeTapId(
-      nullptr, nullptr, 0x1234);
-  if (got != 0) {
-    std::printf("  detail: expected 0, got %d\n", static_cast<int>(got));
-    return false;
-  }
-  return true;
-}
 
 #define RUN_CASE(name)                           \
   do {                                           \
@@ -149,9 +152,9 @@ int main() {
   RUN_CASE(check_null_env_nonzero_handle_returns_minus_one);
   RUN_CASE(check_null_env_inside_tap_returns_minus_one);
   RUN_CASE(check_null_env_up_outside_returns_minus_one);
-  RUN_CASE(check_bridge_dispatch_null_env_zero_handle_returns_zero);
-  RUN_CASE(check_bridge_dispatch_null_env_nonzero_handle_returns_zero);
-  RUN_CASE(check_last_bridge_tap_id_null_env_returns_zero);
+  RUN_CASE(check_null_env_move_returns_minus_one);
+  RUN_CASE(check_null_env_cancel_returns_minus_one);
+  RUN_CASE(check_null_env_negative_coords_returns_minus_one);
   if (failures > 0) {
     std::printf("jni_touch_dispatch_shape_test: %d failing\n", failures);
     return 1;
