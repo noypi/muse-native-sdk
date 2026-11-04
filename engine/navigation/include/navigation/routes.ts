@@ -8,4 +8,10 @@ export interface RouteParams {
   lens: {
     id: string;
   };
+  home: {};
+  field: {};
+  list: {};
+  story: {
+    seed?: number;
+  };
 }
