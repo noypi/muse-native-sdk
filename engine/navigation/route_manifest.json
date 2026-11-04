@@ -1,0 +1,1 @@
+{"routes": [{"params": [{"name": "userId", "required": true, "type": "string"}, {"name": "tab", "required": false, "type": "int"}], "routeId": "profile"}, {"params": [{"name": "id", "required": true, "type": "string"}], "routeId": "lens"}]}

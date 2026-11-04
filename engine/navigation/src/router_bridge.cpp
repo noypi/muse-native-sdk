@@ -1,4 +1,5 @@
 #include "navigation/router_bridge.h"
+#include "navigation/route_descriptors.h"
 #include "navigation/snapshot.h"
 #include "navigation/typed_routes.h"
 
@@ -235,18 +236,21 @@ bool ParseParamsArgs(const std::string& body,
   return true;
 }
 
-// Route-table param schema (FR-NAV-007 descriptors, reused not redefined).
-// Only "profile" declares typed params here, mirroring
-// param_validation_test.cpp: required string userId + optional int tab.
+// Route-table param schema (FR-NAV-007 descriptors, single-sourced).
+// Consumes the codegen'd kRouteDescriptors table
+// (toolchain/route-codegen/codegen.py --manifest
+// engine/navigation/route_manifest.json --out
+// engine/navigation/include/navigation, checked in as
+// navigation/route_descriptors.h). Unknown routes fall back to an
+// empty-params descriptor so the FR-NAV-004 home-degrade flow below is
+// preserved; tightening is intended: callers relying on the old empty
+// schema for declared routes newly fail BAD_ARGS.
 RouteDescriptor DescriptorFor(const std::string& route) {
+  for (const RouteDescriptor& desc : kRouteDescriptors) {
+    if (desc.routeId == route) return desc;
+  }
   RouteDescriptor d;
   d.routeId = route;
-  if (route == "profile") {
-    d.params = {{"userId", ParamType::String, true},
-                {"tab", ParamType::Int, false}};
-  } else if (route == "lens") {
-    d.params = {{"id", ParamType::String, true}};
-  }
   return d;
 }
 
