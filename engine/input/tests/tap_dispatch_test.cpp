@@ -197,6 +197,64 @@ int main() {
     check(d == 1 && again == 0 && registry.pressCount(21) == 1,
           "TC-INPUT-024(e): tapId-integer identity delivers once, then consumed");
   }
+  {
+    // (f) mount-lifecycle: mounted target fires, then unmounted target is
+    // silent (entry deleted on unmount; AC-INPUT-024 entry-deleted-on-unmount).
+    input::PendingRegistry registry;
+    registry.mount(21);
+    const input::LeaseTicket t = registry.mint(21, /*tapId=*/107);
+    const int d = input::dispatchTapToOwner(21, t);
+    check(d == 1 && registry.pressCount(21) == 1,
+          "TC-INPUT-024(f): mounted target fires on tap");
+    registry.unmount(21);
+    const input::LeaseTicket t2 = registry.mint(21, /*tapId=*/108);
+    bool threw = false;
+    int d2 = -1;
+    try {
+      d2 = input::dispatchTapToOwner(21, t2);
+    } catch (...) {
+      threw = true;
+    }
+    check(!threw && d2 == 0 && registry.pressCount(21) == 1,
+          "TC-INPUT-024(f): unmounted target stays silent after unmount");
+  }
+  {
+    // (g) scrim lifecycle: the full-bleed layering scrim (node 20) follows
+    // the same mount -> fires / unmount -> silent lifecycle as a button.
+    input::PendingRegistry registry;
+    registry.mount(20);
+    const input::LeaseTicket t = registry.mint(20, /*tapId=*/109);
+    const int d = input::dispatchTapToOwner(20, t);
+    check(d == 1 && registry.pressCount(20) == 1,
+          "TC-INPUT-024(g): mounted scrim fires on tap");
+    registry.unmount(20);
+    const input::LeaseTicket t2 = registry.mint(20, /*tapId=*/110);
+    bool threw = false;
+    int d2 = -1;
+    try {
+      d2 = input::dispatchTapToOwner(20, t2);
+    } catch (...) {
+      threw = true;
+    }
+    check(!threw && d2 == 0 && registry.pressCount(20) == 1,
+          "TC-INPUT-024(g): unmounted scrim stays silent after unmount");
+  }
+  {
+    // (h) fire-path-never-mounts: mint + dispatch with no prior mount fires
+    // nothing. Minting records a pending lease but creates no ownability;
+    // only the component-mount lifecycle mounts, never the fire path.
+    input::PendingRegistry registry;
+    const input::LeaseTicket t = registry.mint(/*nodeId=*/42, /*tapId=*/111);
+    bool threw = false;
+    int d = -1;
+    try {
+      d = input::dispatchTapToOwner(/*nodeId=*/42, t);
+    } catch (...) {
+      threw = true;
+    }
+    check(!threw && d == 0 && registry.pressCount(42) == 0,
+          "TC-INPUT-024(h): mint+dispatch with no prior mount fires nothing");
+  }
 #else
   check(false,
         "TC-INPUT-022 RED: no winner-to-handle dispatch route "

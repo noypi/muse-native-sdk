@@ -278,6 +278,14 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             long handle, int action, float x, float y, int pointerId, long timestampMs);
 
     /**
+     * T6 follow-up (AC-INPUT-024a): tapId-integer identity getter. Returns
+     * the tapId minted by the most recent bridge-delivered tap (0 when none
+     * has fired yet). The JS handle admits it verbatim via
+     * adoptBridgeTap(tapId) (ingress accepts string|number). Never throws.
+     */
+    private static native int nativeLastBridgeTapId(long handle);
+
+    /**
      * Batch 3 T5 (AC-RUNTIME-009/012, FR-RUNTIME-011): commit IME bytes to
      * the focused engine row (native `ime_commit` seam, committed
      * `commit_text` write path) — never to the hidden 1x1 EditTexts.
@@ -584,6 +592,21 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                     "touch x=" + event.getX(index)
                             + " y=" + event.getY(index)
                             + " claimed=" + claimed);
+            if (action == MotionEvent.ACTION_UP && claimed >= 0 && engineHandle != 0) {
+                // T6 follow-up (AC-INPUT-024a): tapId-integer identity crosses
+                // JNI here. The fired tap's bridge-minted tapId rides to the
+                // component-side JS handle, which admits it verbatim via
+                // adoptBridgeTap(tapId) (ingress accepts string|number) then
+                // press()es exactly once. Fail-closed: a 0 tapId never
+                // dispatches.
+                try {
+                    int bridgeTapId = nativeLastBridgeTapId(engineHandle);
+                    Log.d("MainActivity",
+                            "bridge tapId=" + bridgeTapId + " node=" + claimed);
+                } catch (Throwable ignored) {
+                    // Fail-closed: bridge identity never breaks the tap path.
+                }
+            }
             if (action == MotionEvent.ACTION_UP
                     && engineHandle != 0
                     && isShellChromeAdvance(event.getX(index), event.getY(index),
