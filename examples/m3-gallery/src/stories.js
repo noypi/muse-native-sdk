@@ -88,3 +88,67 @@ function buildStories(manifest) {
 }
 
 module.exports = { buildStories, STATE_PROPS, THEMES };
+
+// MuseVoice gallery wiring (FR-MUSE-008 AC-MUSE-032/033; TC-MUSE-031/032 glass
+// legs). buildStories(manifest) above stays the pure manifest-driven source
+// (story-coverage orphan checks bind to it only); voice speaker stories are
+// manifest-independent, so they attach here as an additive export — the
+// gallery index requires this module (direct-require, gallery-navigable),
+// never by folding voice entries into buildStories output.
+function loadVoiceSpeakerStories() {
+  // eslint-disable-next-line global-require
+  const voice = require('./voice-speaker.stories.js');
+  return voice && voice.stories ? voice.stories : {};
+}
+
+// Gallery-navigable story list: manifest stories plus voice speaker entries
+// (barsDefault + customFigure per status, plus the combined glass script)
+// in buildStories shape ({ component, variant, state, theme, render }).
+function galleryStories(manifest) {
+  const base = buildStories(manifest);
+  const voice = loadVoiceSpeakerStories();
+  const extra = [];
+  const pushVoiceGroup = (group, form) => {
+    if (!group || typeof group !== 'object') return;
+    for (const status of Object.keys(group)) {
+      const descriptor = group[status];
+      // render() returns a shallow copy per call: callers (shell repaint,
+      // theme re-resolve) must never observe a shared mutable descriptor.
+      // The tier key is omitted (not `tier: undefined`) — voice entries are
+      // manifest-independent and carry no tier.
+      extra.push({
+        component: 'MuseVoiceSpeaker',
+        variant: form,
+        state: String(status),
+        theme: 'light',
+        render: () => ({ ...descriptor }),
+      });
+      extra.push({
+        component: 'MuseVoiceSpeaker',
+        variant: form,
+        state: String(status),
+        theme: 'dark',
+        render: () => ({ ...descriptor }),
+      });
+    }
+  };
+  pushVoiceGroup(voice.barsDefault, 'barsDefault');
+  pushVoiceGroup(voice.customFigure, 'customFigure');
+  if (voice.glassTwoTurnMaskSwitch) {
+    // Deliberately light-only: the glass entry is a single theme-independent
+    // scripted procedure (not a per-theme render), so one row carries it —
+    // a dark duplicate would double-count the same script. Shallow copy per
+    // render; the nested frozen legs stay shared by design (frozen).
+    extra.push({
+      component: 'MuseVoiceSpeaker',
+      variant: 'glassTwoTurnMaskSwitch',
+      state: 'glass',
+      theme: 'light',
+      render: () => ({ ...voice.glassTwoTurnMaskSwitch }),
+    });
+  }
+  return base.concat(extra);
+}
+
+module.exports.loadVoiceSpeakerStories = loadVoiceSpeakerStories;
+module.exports.galleryStories = galleryStories;
