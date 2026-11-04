@@ -202,20 +202,55 @@ if(MUSE_TEXT_D3_LIBS AND NOT ANDROID)
     "-Wl,--pop-state")
 endif()
 
-# FR-DEPS-013 T6: Yoga headers behind the LayoutEngine seam. Resolves the
-# vendored snapshot via $MUSE_NATIVE_THIRD_PARTY_DIR (never a hardcoded
-# absolute path) and exposes it only to the seam adapter TU
-# (src/yoga_layout.cpp — the single production TU that may name Yoga
-# headers, per TC-DEPS-049). Guarded: a lane without the snapshot builds
-# exactly as before (in-tree interim, YogaAvailable()==false); configure
-# never fails here.
-if(DEFINED ENV{MUSE_NATIVE_THIRD_PARTY_DIR} AND NOT "$ENV{MUSE_NATIVE_THIRD_PARTY_DIR}" STREQUAL "")
-  set(_muse_yoga_src "$ENV{MUSE_NATIVE_THIRD_PARTY_DIR}/yoga-3.2.1")
-  if(IS_DIRECTORY "${_muse_yoga_src}/yoga")
-    set_source_files_properties(src/yoga_layout.cpp PROPERTIES
-      INCLUDE_DIRECTORIES "${_muse_yoga_src}")
+# FR-DEPS-013 (mandatory Yoga, fail-closed): Yoga is the DEFAULT and ONLY
+# prod layout backend. There is no MUSE_HAVE_YOGA option and no silent
+# in-tree fallback:
+#  (1) an explicit -DMUSE_HAVE_YOGA=OFF is a configure error;
+#  (2) a missing vendored snapshot is a configure error (never a quiet
+#      in-tree build);
+#  (3) the T5 per-ABI yogacore static lib links into the engine targets
+#      (vendored only: exact-path .a resolution, no downloads, zero JNI).
+# Resolution order for the archive: ${MUSE_YOGA_ROOT}/lib/libyogacore.a
+# (lane-passed per-ABI mirror, mirroring MUSE_TEXT_D3_ROOT), else the
+# conventional sibling mirror yoga-mirror-<ABI>/lib, else a hermetic
+# in-tree sub-build of the vendored snapshot's yogacore subdir (no tests,
+# no fetch — the top-level yoga CMake pulls googletest and is never used).
+if(DEFINED MUSE_HAVE_YOGA AND NOT MUSE_HAVE_YOGA)
+  message(FATAL_ERROR "MUSE Yoga: MUSE_HAVE_YOGA=OFF is not supported (Yoga is the mandatory prod layout backend; there is no in-tree fallback).")
+endif()
+if(NOT DEFINED ENV{MUSE_NATIVE_THIRD_PARTY_DIR} OR "$ENV{MUSE_NATIVE_THIRD_PARTY_DIR}" STREQUAL "")
+  message(FATAL_ERROR "MUSE Yoga: MUSE_NATIVE_THIRD_PARTY_DIR is not set (vendored snapshot yoga-3.2.1 is required). Example: export MUSE_NATIVE_THIRD_PARTY_DIR=<shared-workspace>/third-party")
+endif()
+set(_muse_yoga_src "$ENV{MUSE_NATIVE_THIRD_PARTY_DIR}/yoga-3.2.1")
+if(NOT IS_DIRECTORY "${_muse_yoga_src}/yoga")
+  message(FATAL_ERROR "MUSE Yoga: vendored snapshot missing: ${_muse_yoga_src}/yoga (extract yoga-v3.2.1.tar.gz from the pinned third-party dir; see tools/deps/third_party_pins.json)")
+endif()
+set(MUSE_YOGA_ROOT "" CACHE PATH "Per-ABI Yoga mirror root holding lib/libyogacore.a (T5 lane); empty selects the hermetic vendored sub-build")
+set(_muse_yogacore_lib "")
+if(NOT "${MUSE_YOGA_ROOT}" STREQUAL "")
+  set(_muse_yogacore_lib "${MUSE_YOGA_ROOT}/lib/libyogacore.a")
+  if(NOT EXISTS "${_muse_yogacore_lib}")
+    message(FATAL_ERROR "MUSE Yoga: MUSE_YOGA_ROOT is set but the T5 per-ABI archive is missing: ${_muse_yogacore_lib}")
+  endif()
+elseif(DEFINED ANDROID_ABI AND NOT "${ANDROID_ABI}" STREQUAL "")
+  set(_muse_yogacore_mirror "${CMAKE_BINARY_DIR}/../yoga-mirror-${ANDROID_ABI}/lib/libyogacore.a")
+  if(EXISTS "${_muse_yogacore_mirror}")
+    set(_muse_yogacore_lib "${_muse_yogacore_mirror}")
   endif()
 endif()
+function(_muse_apply_yoga _muse_yoga_target)
+  target_include_directories(${_muse_yoga_target} PRIVATE "${_muse_yoga_src}")
+  target_compile_definitions(${_muse_yoga_target} PRIVATE MUSE_HAVE_YOGA=1)
+  if(_muse_yogacore_lib)
+    target_link_libraries(${_muse_yoga_target} PRIVATE "${_muse_yogacore_lib}")
+  else()
+    if(NOT TARGET yogacore)
+      add_subdirectory("${_muse_yoga_src}/yoga" "${CMAKE_BINARY_DIR}/yoga-yogacore")
+    endif()
+    target_link_libraries(${_muse_yoga_target} PRIVATE yogacore)
+  endif()
+endfunction()
+_muse_apply_yoga(runtime)
 
 # BUG-TEXT-007 NDK link fix (static lane): test executables link
 # libruntime.a whose shaper.o (T9) strongly references FT_Init_FreeType /
@@ -383,6 +418,10 @@ if(DEFINED ANDROID_ABI AND NOT TARGET Runtime)
     "ENGINE_GIT_SHA=\"${MUSE_ENGINE_GIT_SHA}\""
     "GALLERY_PRESENT_SHA=\"${MUSE_GALLERY_PRESENT_SHA}\""
   )
+  # FR-DEPS-013 (mandatory Yoga): the shared target links the same T5
+  # per-ABI yogacore static lib as the static runtime above (fail-closed:
+  # configure already errored when the snapshot is missing).
+  _muse_apply_yoga(Runtime)
   # Gallery bring-up: ANativeWindow raster + logcat diagnostics live in
   # jni_bridge/gallery_present, so the shared target links the NDK android
   # and log libs (Android lane only; host lane untouched).

@@ -1,32 +1,29 @@
-// FR-DEPS-013 T6 (FR-DEPS-008 D1): Yoga adapter behind the LayoutEngine
-// seam. Sole production TU allowed to include Yoga headers (TC-DEPS-049:
-// `tools/deps/seam_check.py` fails any Yoga include outside the seam
-// files). Builds with and without the vendored snapshot: when the Yoga
-// headers are absent (interim, T5 link pending) YogaAvailable() is false
-// and YogaComputeBoxes() returns false so the in-tree engine stays live.
+// FR-DEPS-013 (mandatory Yoga, fail-closed): Yoga adapter behind the
+// LayoutEngine seam. Sole production TU allowed to include Yoga headers
+// (TC-DEPS-049: `tools/deps/seam_check.py` fails any Yoga include outside
+// the seam files). Yoga is the ONLY prod layout backend: the build always
+// defines MUSE_HAVE_YOGA (engine/runtime/CMakeLists.txt) and links the T5
+// per-ABI yogacore static lib; the vendored snapshot must be staged
+// ($MUSE_NATIVE_THIRD_PARTY_DIR/yoga-3.2.1) or configure fails. There is no
+// silent in-tree fallback: without the build definition this TU fails
+// compilation at the #error below, and YogaComputeBoxes() never reports
+// "not linked". The in-tree flexbox-subset engine in `layout.cpp` remains
+// only as the T8 parity reference (non-prod, never invoked on this path).
 
 #include "runtime/yoga_layout.h"
 
 #include <cstdint>
 
-#if defined(__has_include)
-#if __has_include("yoga/Yoga.h")
-#define MUSE_HAVE_YOGA 1
+#ifndef MUSE_HAVE_YOGA
+#error "MUSE Yoga is mandatory: MUSE_HAVE_YOGA was not defined by the build (engine/runtime/CMakeLists.txt must define it; MUSE_HAVE_YOGA=OFF is rejected at configure)."
+#endif
+
 #include "yoga/Yoga.h"
-#endif
-#endif
 
 namespace runtime {
 
-bool YogaAvailable() {
-#ifdef MUSE_HAVE_YOGA
-  return true;
-#else
-  return false;
-#endif
-}
+bool YogaAvailable() { return true; }
 
-#ifdef MUSE_HAVE_YOGA
 namespace {
 
 // Yoga C API mapping (pinned to the vendored v3.2.1 headers): fixed
@@ -97,11 +94,9 @@ void ReadBack(YGNodeRef yn, std::vector<LayoutBox>& boxes) {
 }
 
 }  // namespace
-#endif  // MUSE_HAVE_YOGA
 
 bool YogaComputeBoxes(const RuntimeTree& tree, NodeId root,
                       std::vector<LayoutBox>& boxes) {
-#ifdef MUSE_HAVE_YOGA
   // Unknown root mirrors LayoutEngine::compute (RuntimeTree::get throws).
   const Node& rootNode = tree.get(root);
   YGNodeRef yn = AttachNode(tree, root);
@@ -127,12 +122,6 @@ bool YogaComputeBoxes(const RuntimeTree& tree, NodeId root,
   YGNodeFreeRecursive(yn);
   boxes = out;
   return true;
-#else
-  (void)tree;
-  (void)root;
-  (void)boxes;
-  return false;
-#endif
 }
 
 }  // namespace runtime
