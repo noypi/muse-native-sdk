@@ -11,7 +11,8 @@
 //   engine/input/include on the path; NormalizedEvent comes from
 //   #include "input/event_model.h".
 //
-// Settled bridge signature (specs-creator, specs-input-gestures.md 3.10):
+// Settled bridge signature (AC-INPUT-024a, specs-input-gestures.md 3.10;
+// implemented in input/tap_dispatch.h, owned by FR-INPUT-012):
 //   dispatchTapToOwner(nodeId, leaseTicket) -> press(leaseTicket)
 // at most once per tapId. Per-button pending registry (one entry per mounted
 // handle, created on mount, deleted on unmount — never module-global);
@@ -23,14 +24,14 @@
 // nothing (forgery surfaces only as the honest TypeError at the press()
 // boundary per AC-M3-036, never as a throw through the tap path).
 //
-// Batch-1 RED state carries forward: the bridge is UNIMPLEMENTED —
-// input/tap_dispatch.h does not exist — so HAVE_DISPATCH == 0 today and both
-// TC pins FAIL closed ("no winner-to-handle dispatch route"). No fake
-// dispatch is substituted: a passing fake while the Real is missing would be
-// a green-on-divergent-Fake invalid suite (GR-12).
+// Batch-1 RED state resolved by T6: the bridge IS implemented —
+// input/tap_dispatch.h provides the settled route below (verified by the
+// pins in main; HAVE_DISPATCH == 1). No fake dispatch is substituted: a
+// passing fake while the Real is missing would be a green-on-divergent-Fake
+// invalid suite (GR-12).
 //
-// C++ BINDING ASSUMPTION (reconcile at green; behavior above is normative,
-// spelling is the minimal reading): input/tap_dispatch.h provides
+// C++ BINDING (reconciled at T6 green per AC-INPUT-024a; behavior above is
+// normative, spelling is the settled route): input/tap_dispatch.h provides
 //   namespace input {
 //   struct LeaseTicket { int tapId = -1; };  // opaque single-use ticket
 //   class PendingRegistry {                  // per-button scope

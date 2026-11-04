@@ -5,7 +5,7 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-add_library(input STATIC src/event_model.cpp src/hit_test.cpp src/gesture_arena.cpp src/back_gesture.cpp src/focus_tree.cpp src/focus_restore.cpp src/device_harness.cpp src/stylus_history.cpp src/haptics_settings.cpp src/haptics.cpp src/drag_drop.cpp)
+add_library(input STATIC src/event_model.cpp src/hit_test.cpp src/gesture_arena.cpp src/back_gesture.cpp src/focus_tree.cpp src/focus_restore.cpp src/device_harness.cpp src/stylus_history.cpp src/haptics_settings.cpp src/haptics.cpp src/drag_drop.cpp src/tap_dispatch.cpp)
 target_include_directories(input PUBLIC include)
 target_compile_options(input PRIVATE -Wall -Wextra -Wpedantic)
 

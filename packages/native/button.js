@@ -25,15 +25,16 @@
 // hot-reload boundary — the only operation that clears global keys, so a
 // session's key growth is bounded by taps-since-reset).
 //
-// tapId IDENTITY (ASSUMPTION BRIDGE-1 — half settled, half open):
-// AC-INPUT-024 settles that JNI carries only the `tapId` integer identity
-// across the boundary (never a raw pointer). The JS-lane ticket spelling is
-// the test-pinned opaque string (`tap-N`); ingress (`press`,
-// `foldButtonFrames`, `onButtonPress`) additionally accepts the integer
-// identity so a bridge-carried ticket is never misrejected as forged. The
-// canonical JS spelling of a bridge-minted ticket is UNSETTLED — flagged to
-// specs-creator; this file invents no second ticket truth (one opaque
-// `{ tapId }` shape throughout).
+// tapId IDENTITY (AC-INPUT-024a, settled — specs-input-gestures.md; FR-M3-013
+// Notes cross-ref): JNI carries only the `tapId` integer identity across the
+// boundary (never a raw pointer). Canonical JS spelling: JS-minted leases
+// use the opaque `tap-N` string; bridge-minted leases keep the JNI integer
+// verbatim (never coerced to a string). Ingress (`press`, `foldButtonFrames`,
+// `onButtonPress`) accepts `string|number` so a bridge-carried ticket is
+// never misrejected as forged. Bridge-minted integers enter a handle's
+// pending registry only through `adoptBridgeTap` below — one opaque
+// `{ tapId }` shape throughout, pending leases per-button, idempotency keys
+// module-global.
 //
 // Disabled-at-delivery is a veto, NOT a spend (no-consume): a tap delivered
 // while disabled fires nothing and the lease stays live, so re-enabling and
@@ -110,6 +111,36 @@ function createButton(deps) {
     return lease;
   }
 
+  // Bridge-minted lease admission (AC-INPUT-024a integer-verbatim): records
+  // a JNI-carried integer tapId verbatim as a live lease of THIS handle's
+  // pending registry and returns the opaque `{ tapId }` lease for `press()`.
+  // Trust boundary: the bridge only adopts integers it received over JNI
+  // from the chain that minted them — this method performs no chain
+  // cross-check. Non-integer tapIds reject honestly with a `TypeError`;
+  // disabled/disposed handles admit nothing (null, mirroring `mint()`); an
+  // already-consumed tapId admits nothing (null — never resurrected, so
+  // exactly-once survives duplicate JNI deliveries); re-adopting a live
+  // tapId is idempotent and returns the pending lease.
+  function adoptBridgeTap(tapId) {
+    if (!Number.isInteger(tapId)) {
+      throw new TypeError('Unknown lease: adoptBridgeTap requires the integer tapId carried over JNI');
+    }
+    if (!enabled || disposed) {
+      return null;
+    }
+    if (consumedTapIds.has(tapId)) {
+      return null;
+    }
+    const live = pending.get(tapId);
+    if (live !== undefined) {
+      return live;
+    }
+    const lease = { tapId };
+    mintedTapIds.add(tapId);
+    pending.set(tapId, lease);
+    return lease;
+  }
+
   // Delivery-time veto path (contract EN-1): `enabled` is re-checkable at
   // delivery, so disabling before press vetoes the fire.
   function setEnabled(value) {
@@ -146,9 +177,10 @@ function createButton(deps) {
 
   function press(lease) {
     const tapId = tapIdOf(lease);
-    // Forgery rejects honestly: only leases minted by a real handle carry a
-    // known tapId (string JS-lane spelling or integer bridge identity per
-    // ASSUMPTION BRIDGE-1). A forged ticket must never become a live fire.
+    // Forgery rejects honestly: only leases minted by a real handle (JS
+    // `tap-N` string) or admitted verbatim from the bridge (JNI integer per
+    // AC-INPUT-024a) carry a known tapId. A forged ticket must never become
+    // a live fire.
     if (!isKnownTapId(tapId)) {
       throw new TypeError('Unknown lease: press requires a lease minted by a Button handle');
     }
@@ -193,7 +225,7 @@ function createButton(deps) {
     return { fired: 1, frames: 1, reinstantiated: 0 };
   }
 
-  return { mint, press, setEnabled, revoke, dispose };
+  return { mint, adoptBridgeTap, press, setEnabled, revoke, dispose };
 }
 
 // Pure fold over raw frames (contract FR-1): maps any raw frame list to
