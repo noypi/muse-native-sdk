@@ -44,7 +44,7 @@ const DEFAULTS = {
   diagnostics: undefined,
   archs: ALL_ARCHS.slice(),
   packaging: 'fat',
-  renderer: 'cpu',
+  renderer: 'skia',
   keystore: path.join(__dirname, '..', 'templates', 'android', 'debug.keystore'),
   keyAlias: 'androiddebugkey',
   storepass: undefined,

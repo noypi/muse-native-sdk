@@ -1,9 +1,14 @@
 'use strict';
 // MERGED rebase resolution: keeps BOTH add-add sides (different modules).
-// HEAD side - TC-WORKFLOW-015 (AC-WORKFLOW-015, FR-WORKFLOW-006, RULE-WORKFLOW-002-007):
+// HEAD side - TC-WORKFLOW-015 (AC-WORKFLOW-015, FR-WORKFLOW-006, RULE-WORKFLOW-002-007)
+// + TC-WORKFLOW-024 (AC-WORKFLOW-021, FR-WORKFLOW-008: default `skia`) and
+// TC-WORKFLOW-025 (AC-WORKFLOW-022: requested vs effective, probe downgrade):
 // workflow-owned renderer option validation at config-load time
 // (lib config.js + lib cli.js). Hermetic: node:test + node:assert-strict +
 // stdlib only; file layer uses fs.mkdtemp dirs; env is a plain object argument.
+// NOTE (SPEC-BUILD-WORKFLOW v2.0): FR-WORKFLOW-006/AC-WORKFLOW-015 (`cpu`
+// default) are deprecated history; the active default is `skia` per
+// FR-WORKFLOW-008/AC-WORKFLOW-021. T1 below pins `skia`.
 // Ours side (b526001, AC-GRAPHICS-041, TC-GRAPHICS-043 CLI half) -
 // graphics-owned parseRendererPreference and resolveEffectivePath unit tests over
 // lib renderer-preference.js (pure parse + probe-downgrade reporting per
@@ -48,21 +53,24 @@ afterEach(() => {
   for (const [k, v] of Object.entries(savedEnv)) process.env[k] = v;
 });
 
-// ---- T1: schema + default (AC-WORKFLOW-015 default `cpu`) ----
+// ---- T1: schema + default (AC-WORKFLOW-021, FR-WORKFLOW-008) ----
+// SPEC-BUILD-WORKFLOW v2.0 product-owner override: FR-WORKFLOW-006 (`cpu`
+// default) is deprecated, superseded by FR-WORKFLOW-008 (default `skia`).
+// T1 pins the active `skia` default; the old `cpu` pins are history.
 
-describe('T1 renderer schema and default (AC-WORKFLOW-015)', () => {
+describe('T1 renderer schema and default (AC-WORKFLOW-021)', () => {
   it("SCHEMA declares renderer as 'string'", () => {
     assert.equal(config.SCHEMA.renderer, 'string');
   });
 
-  it("DEFAULTS pins renderer to 'cpu'", () => {
-    assert.equal(config.DEFAULTS.renderer, 'cpu');
+  it("DEFAULTS pins renderer to 'skia'", () => {
+    assert.equal(config.DEFAULTS.renderer, 'skia');
   });
 
-  it('resolving with no renderer in any layer yields cpu with winningLayer default', () => {
+  it('resolving with no renderer in any layer yields skia with winningLayer default', () => {
     const dir = mkTmp('muse-renderer-');
     const { config: resolved, winningLayer } = resolveConfig([], {}, dir);
-    assert.equal(resolved.renderer, 'cpu');
+    assert.equal(resolved.renderer, 'skia');
     assert.equal(winningLayer.renderer, 'default');
   });
 
@@ -105,6 +113,95 @@ describe('T1 renderer schema and default (AC-WORKFLOW-015)', () => {
       const { config: resolved } = resolveConfig(['--renderer', value], {}, dir);
       assert.equal(resolved.renderer, value);
     }
+  });
+
+  it('explicit cpu still resolves verbatim (kept as fallback, not the default)', () => {
+    const dir = mkTmp('muse-renderer-');
+    const { config: resolved, winningLayer } = resolveConfig(['--renderer', 'cpu'], {}, dir);
+    assert.equal(resolved.renderer, 'cpu');
+    assert.equal(winningLayer.renderer, 'cli');
+  });
+});
+
+// ---- TC-WORKFLOW-024: skia default (AC-WORKFLOW-021, FR-WORKFLOW-008) ----
+
+describe('TC-WORKFLOW-024 renderer defaults to skia when absent (AC-WORKFLOW-021)', () => {
+  it("getOptionSchema() renderer entry defaults to 'skia'", () => {
+    assert.equal(typeof config.getOptionSchema, 'function', 'config.js must export getOptionSchema()');
+    const entry = config.getOptionSchema().find((e) => e.name === 'renderer');
+    assert.ok(entry, 'getOptionSchema() must include a renderer entry');
+    assert.equal(entry.default, 'skia');
+  });
+
+  it('no layer sets renderer: requested/effective pair defaults to skia pre-probe', () => {
+    const dir = mkTmp('muse-renderer-');
+    const { config: resolved, renderer } = resolveConfig([], {}, dir);
+    assert.equal(resolved.renderer, 'skia');
+    assert.equal(renderer.requested, 'skia');
+    assert.equal(renderer.effective, 'skia');
+    assert.equal(renderer.downgraded, false);
+  });
+
+  it('file layer without renderer still resolves skia from the default layer', () => {
+    const dir = mkTmp('muse-renderer-');
+    fs.writeFileSync(path.join(dir, 'muse-native.yaml'), 'name: skia-app\nversion: 0.0.1\n', 'utf8');
+    const { config: resolved, winningLayer } = resolveConfig([], {}, dir);
+    assert.equal(resolved.renderer, 'skia');
+    assert.equal(winningLayer.renderer, 'default');
+  });
+
+  it('unknown renderer value fails at configure naming renderer + cpu, egl, skia', () => {
+    const dir = mkTmp('muse-renderer-');
+    assert.throws(() => resolveConfig(['--renderer', 'vulkan'], {}, dir), (err) => {
+      assert.ok(err instanceof ConfigError);
+      assert.match(String(err.message), /renderer/);
+      assert.match(String(err.message), /cpu, egl, skia/);
+      return true;
+    });
+    noDist(dir);
+  });
+});
+
+// ---- TC-WORKFLOW-025: preference-only, probe downgrade reported (AC-WORKFLOW-022) ----
+
+describe('TC-WORKFLOW-025 resolved renderer is preference-only (AC-WORKFLOW-022)', () => {
+  it('config.js exports resolveRendererPreference()', () => {
+    assert.equal(typeof config.resolveRendererPreference, 'function', 'config.js must export resolveRendererPreference()');
+  });
+
+  it('requested skia with no probe: effective skia, downgraded false', () => {
+    const out = config.resolveRendererPreference({ config: { renderer: 'skia' } });
+    assert.deepEqual(out, { requested: 'skia', effective: 'skia', downgraded: false });
+  });
+
+  it('probe downgrade skia->cpu is reported, never mutates config.renderer', () => {
+    const resolvedConfig = { config: { renderer: 'skia' } };
+    const out = config.resolveRendererPreference(resolvedConfig, { effective: 'cpu', trigger: 'skia-unavailable' });
+    assert.equal(out.requested, 'skia');
+    assert.equal(out.effective, 'cpu');
+    assert.equal(out.downgraded, true);
+    assert.equal(out.trigger, 'skia-unavailable');
+    assert.equal(resolvedConfig.config.renderer, 'skia', 'config.renderer must be unchanged');
+  });
+
+  it('probe downgrade egl->cpu is reported with requested preserved', () => {
+    const out = config.resolveRendererPreference(
+      { config: { renderer: 'egl' } },
+      { effective: 'cpu', trigger: 'egl-unavailable' },
+    );
+    assert.equal(out.requested, 'egl');
+    assert.equal(out.effective, 'cpu');
+    assert.equal(out.downgraded, true);
+  });
+
+  it('invalid probe effective falls back to requested with downgraded false', () => {
+    const out = config.resolveRendererPreference(
+      { config: { renderer: 'skia' } },
+      { effective: 'vulkan', trigger: 'bogus-probe' },
+    );
+    assert.equal(out.requested, 'skia');
+    assert.equal(out.effective, 'skia');
+    assert.equal(out.downgraded, false);
   });
 });
 
