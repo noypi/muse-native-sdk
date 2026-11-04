@@ -1976,6 +1976,57 @@ void PaintTextRow(std::uint32_t* px, int stride, int w, int h, int bx, int by,
   FillRoundedRect(px, stride, w, h, bx, by, bw, bh, 18, bg);
 }
 
+namespace {
+
+// AC-RUNTIME-047 (FR-RUNTIME-002): row frames are bound to
+// LayoutEngine::boxOf — the layout solver is the single geometry authority
+// for gallery rows; manual `cursor += rh + kGap` packing and the manual
+// `+ kHeaderH` chrome offset are forbidden. Builds the page column over the
+// row slice [begin, end): a column root (padding kPad, gap kGap, width pageW,
+// height pageH spanning the chrome-containing page) with one fixed child per
+// row sized by RowHeight, and returns each row's solved box in slice order.
+// Returns false when the slice is empty or layout fails; every caller fails
+// closed on false (never falls back to manual packing).
+bool SolveGalleryRowFrames(const std::vector<GalleryRow>& rows,
+                           std::size_t begin, std::size_t end, float pageW,
+                           float pageH, std::vector<LayoutBox>* boxes) {
+  if (boxes == nullptr || begin >= end || end > rows.size()) return false;
+  try {
+    std::vector<CompiledNode> nodes;
+    nodes.reserve((end - begin) + 1);
+    CompiledNode root;
+    root.parent = -1;
+    root.style.direction = Direction::Column;
+    root.style.padding = static_cast<float>(kPad);
+    root.style.gap = static_cast<float>(kGap);
+    root.style.width = pageW;
+    root.style.height = pageH;
+    nodes.push_back(root);
+    for (std::size_t i = begin; i < end; ++i) {
+      CompiledNode child;
+      child.parent = 0;
+      child.style.width = pageW - 2.0f * static_cast<float>(kPad);
+      child.style.height = static_cast<float>(RowHeight(rows[i]));
+      nodes.push_back(child);
+    }
+    RuntimeTree tree;
+    LayoutEngine engine;
+    NodeId rootId = instantiate(nodes.data(), nodes.size(), tree);
+    if (rootId == kInvalidNodeId) return false;
+    engine.compute(tree, rootId);
+    boxes->clear();
+    boxes->reserve(end - begin);
+    for (std::size_t j = 0; j < end - begin; ++j) {
+      boxes->push_back(engine.boxOf(static_cast<NodeId>(j + 1)));
+    }
+    return true;
+  } catch (...) {
+    return false;
+  }
+}
+
+}  // namespace
+
 int RasterGalleryPage(const std::vector<GalleryRow>& rows, int page,
                       std::uint32_t* pixels, int stridePx, int width,
                       int height, std::string* error) {
@@ -2027,53 +2078,24 @@ int RasterGalleryPage(const std::vector<GalleryRow>& rows, int page,
     int start = starts[static_cast<std::size_t>(page)];
     int count = starts[static_cast<std::size_t>(page) + 1] - start;
 
-    // Row geometry through the flexbox-subset seam: a column root with
-    // padding/gap and one fixed child per visible row.
+    // Row geometry bound to LayoutEngine::boxOf (FR-RUNTIME-002 /
+    // AC-RUNTIME-047): the page column over the visible slice owns the
+    // within-list offsets (padding + gap). No manual cursor packing and no
+    // catch-and-fall-back path — layout failure fails closed below.
+    std::vector<LayoutBox> frames;
+    if (!SolveGalleryRowFrames(rows, static_cast<std::size_t>(start),
+                               static_cast<std::size_t>(start + count),
+                               static_cast<float>(width),
+                               static_cast<float>(height), &frames)) {
+      if (error != nullptr) {
+        *error = "M3 GALLERY: layout failed (fail-closed: no cursor fallback)";
+      }
+      return 0;
+    }
     std::vector<float> rowY(static_cast<std::size_t>(count), 0.0f);
-    {
-      std::vector<CompiledNode> nodes;
-      nodes.reserve(static_cast<std::size_t>(count) + 1);
-      CompiledNode root;
-      root.parent = -1;
-      root.style.direction = Direction::Column;
-      root.style.padding = static_cast<float>(kPad);
-      root.style.gap = static_cast<float>(kGap);
-      root.style.width = static_cast<float>(width);
-      root.style.height = static_cast<float>(height);
-      nodes.push_back(root);
-      for (int i = 0; i < count; ++i) {
-        const GalleryRow& r = rows[static_cast<std::size_t>(start + i)];
-        CompiledNode child;
-        child.parent = 0;
-        child.style.width = static_cast<float>(width - 2 * kPad);
-        child.style.height = static_cast<float>(RowHeight(r));
-        nodes.push_back(child);
-      }
-      RuntimeTree tree;
-      LayoutEngine engine;
-      bool laid = false;
-      try {
-        NodeId rootId = instantiate(nodes.data(), nodes.size(), tree);
-        if (rootId != kInvalidNodeId) {
-          engine.compute(tree, rootId);
-          for (int i = 0; i < count; ++i) {
-            rowY[static_cast<std::size_t>(i)] =
-                engine.boxOf(static_cast<NodeId>(i + 1)).y;
-          }
-          laid = true;
-        }
-      } catch (...) {
-        laid = false;
-      }
-      if (!laid) {
-        float cursor = static_cast<float>(kPad);
-        for (int i = 0; i < count; ++i) {
-          rowY[static_cast<std::size_t>(i)] = cursor;
-          cursor += static_cast<float>(
-                        RowHeight(rows[static_cast<std::size_t>(start + i)])) +
-                    static_cast<float>(kGap);
-        }
-      }
+    for (int i = 0; i < count; ++i) {
+      rowY[static_cast<std::size_t>(i)] =
+          frames[static_cast<std::size_t>(i)].y;
     }
 
     // Title bar.
@@ -2082,9 +2104,9 @@ int RasterGalleryPage(const std::vector<GalleryRow>& rows, int page,
 
     for (int i = 0; i < count; ++i) {
       const GalleryRow& row = rows[static_cast<std::size_t>(start + i)];
-      // Bands sit below the title bar; the flexbox seam owns the
-      // within-list offsets (padding + gap), the chrome offset is ours.
-      int y = static_cast<int>(rowY[static_cast<std::size_t>(i)]) + kHeaderH;
+      // AC-RUNTIME-047: the solved box is the frame — no manual chrome
+      // offset; boxOf is the authority for both axes and extents.
+      int y = static_cast<int>(rowY[static_cast<std::size_t>(i)]);
       int rh = RowHeight(row);
       int bx = kPad;
       int bw = width - 2 * kPad;
@@ -2571,21 +2593,33 @@ bool PresentGallery(const void* mui1Data, std::size_t len, Renderer& renderer,
       cmds.push_back(footer);
       int start = starts[static_cast<std::size_t>(p)];
       int end = starts[static_cast<std::size_t>(p + 1)];
-      float cursor = static_cast<float>(kPad);
+      // AC-RUNTIME-047 (FR-RUNTIME-002): per-row frames bound to
+      // LayoutEngine::boxOf — the page column over this page's slice owns
+      // the geometry; no manual cursor packing, no manual chrome offset.
+      // Layout failure fails the present closed (nothing recorded).
+      std::vector<LayoutBox> frames;
+      if (!SolveGalleryRowFrames(rows, static_cast<std::size_t>(start),
+                                 static_cast<std::size_t>(end),
+                                 static_cast<float>(kPresentW),
+                                 static_cast<float>(kPresentH), &frames)) {
+        if (error != nullptr) {
+          *error = "present failed (layout failed: fail-closed)";
+        }
+        return false;
+      }
       for (int i = start; i < end; ++i) {
         const GalleryRow& row = rows[static_cast<std::size_t>(i)];
-        int rh = RowHeight(row);
-        int bx = kPad;
-        int bw = kPresentW - 2 * kPad;
-        int by = static_cast<int>(cursor) + kHeaderH +
-                 static_cast<int>(yOff);
+        const LayoutBox& box = frames[static_cast<std::size_t>(i - start)];
+        int bx = static_cast<int>(box.x);
+        int bw = static_cast<int>(box.width);
+        int rh = static_cast<int>(box.height);
+        int by = static_cast<int>(box.y) + static_cast<int>(yOff);
         std::uint32_t node = static_cast<std::uint32_t>(i + 1);
         if (row.comp.empty()) {
           EmitTextRowCmds(row, bx, by, bw, rh, node, cmds);
         } else {
           EmitComponentRowCmds(row, bx, by, bw, rh, node, cmds);
         }
-        cursor += static_cast<float>(rh + kGap);
       }
     }
     DrawError derr = renderer.draw(cmds, target);
@@ -2729,9 +2763,9 @@ int GalleryPressedNode() noexcept {
 
 // DOWN y -> pressed row id (i + 1) against the page's row layout. Geometry
 // mirrors the windowed emitter + viewport rebase in PresentDeviceGalleryPage:
-// rows of the page slice [starts[page], starts[page+1]) stack at
-// cursor + kHeaderH (cursor from kPad, rh + kGap steps), rebased to the
-// viewport origin by (cursorFirst - kPad). Device y is in window px while
+// rows of the page slice [starts[page], starts[page+1]) stack at their
+// LayoutEngine::boxOf frames (no manual chrome offset), rebased to the
+// viewport origin by (boxOf(first) - kPad). Device y is in window px while
 // the layout is in kPresentH canvas px, so the coordinate is scaled by
 // viewportH / kPresentH (the same linear map the window sink paints with).
 // A y landing in no row band, or any bad input, returns -1: the caller
@@ -2753,22 +2787,23 @@ int GalleryResolvePressedRow(float yDevicePx,
     if (!(scale > 0.0f) || !std::isfinite(scale)) return -1;
     const float canvasY = yDevicePx / scale;
     if (!std::isfinite(canvasY) || canvasY < 0.0f) return -1;
-    float cursorFirst = static_cast<float>(kPad);
-    for (int i = 0; i < first; ++i) {
-      cursorFirst += static_cast<float>(
-                         RowHeight(rows[static_cast<std::size_t>(i)])) +
-                     static_cast<float>(kGap);
+    // AC-RUNTIME-047: hit-testing binds to LayoutEngine::boxOf over the
+    // full list — the same authority the windowed emitter paints from —
+    // rebased to the viewport origin. Layout failure yields no row (-1).
+    std::vector<LayoutBox> frames;
+    if (!SolveGalleryRowFrames(rows, 0, rows.size(),
+                               static_cast<float>(kPresentW),
+                               static_cast<float>(kPresentH), &frames)) {
+      return -1;
     }
-    const float rebaseDy = cursorFirst - static_cast<float>(kPad);
-    float cursor = cursorFirst;
+    const float rebaseDy =
+        frames[static_cast<std::size_t>(first)].y - static_cast<float>(kPad);
     for (int i = first; i <= last; ++i) {
-      const int rh =
-          RowHeight(rows[static_cast<std::size_t>(i)]);
-      const float by = cursor + static_cast<float>(kHeaderH) - rebaseDy;
-      if (canvasY >= by && canvasY < by + static_cast<float>(rh)) {
+      const LayoutBox& box = frames[static_cast<std::size_t>(i)];
+      const float by = box.y - rebaseDy;
+      if (canvasY >= by && canvasY < by + box.height) {
         return i + 1;
       }
-      cursor += static_cast<float>(rh + kGap);
     }
     return -1;
   } catch (...) {
@@ -2793,26 +2828,29 @@ void EmitGalleryWindowCmds(const std::vector<GalleryRow>& rows,
     if (first < 0) first = 0;
     if (last > lastRow) last = lastRow;
     if (last < first) return;  // empty window: nothing to bind
-    // Cursor mirrors PresentGallery's per-row packing (rh + kGap) so windowed
-    // rows land at the same canvas offsets as the full-list reference.
-    float cursor = static_cast<float>(kPad);
-    for (long long i = 0; i < first; ++i) {
-      cursor += static_cast<float>(
-                    RowHeight(rows[static_cast<std::size_t>(i)])) +
-                static_cast<float>(kGap);
+    // AC-RUNTIME-047: windowed rows land at their full-list boxOf frames —
+    // the same canvas offsets as the full-list reference — with no manual
+    // chrome offset. Layout failure emits nothing (fail closed).
+    std::vector<LayoutBox> frames;
+    if (!SolveGalleryRowFrames(rows, 0, rows.size(),
+                               static_cast<float>(kPresentW),
+                               static_cast<float>(kPresentH), &frames)) {
+      return;
     }
-    int bw = kPresentW - 2 * kPad;
     // P2 snapshot: one relaxed load per present (the host engages on DOWN).
     const int pressedNode = GalleryPressedNode();
     for (long long i = first; i <= last; ++i) {
       const GalleryRow& row = rows[static_cast<std::size_t>(i)];
-      int rh = RowHeight(row);
-      int by = static_cast<int>(cursor) + kHeaderH;
+      const LayoutBox& box = frames[static_cast<std::size_t>(i)];
+      int bx = static_cast<int>(box.x);
+      int bw = static_cast<int>(box.width);
+      int rh = static_cast<int>(box.height);
+      int by = static_cast<int>(box.y);
       std::uint32_t node = static_cast<std::uint32_t>(i + 1);
       if (row.comp.empty()) {
-        EmitTextRowCmds(row, kPad, by, bw, rh, node, out);
+        EmitTextRowCmds(row, bx, by, bw, rh, node, out);
       } else {
-        EmitComponentRowCmds(row, kPad, by, bw, rh, node, out);
+        EmitComponentRowCmds(row, bx, by, bw, rh, node, out);
       }
       // P2 device-path pressed wash: the engaged row paints one pressed
       // overlay through the shared resolver (primary-role, theme-matched,
@@ -2841,7 +2879,6 @@ void EmitGalleryWindowCmds(const std::vector<GalleryRow>& rows,
       } catch (...) {
         // Fail closed: keep the window without the wash overlay.
       }
-      cursor += static_cast<float>(rh + kGap);
     }
   } catch (...) {
     // Fail closed: partial window cmds stand; never throws across.
@@ -3464,15 +3501,22 @@ bool PresentDeviceGalleryPage(const std::vector<GalleryRow>& rows, int page,
     cmds.reserve(rows.size() * 2 + 2);
     EmitGalleryWindowCmds(rows, window, cmds);
     // Rebase the slice to the viewport origin: the windowed emitter lays
-    // rows at virtual-canvas offsets, so later pages would paint outside
-    // [0, viewportH). Page 0 is unchanged (zero shift, T10-compatible).
-    float cursorFirst = static_cast<float>(kPad);
-    for (int i = 0; i < window.firstVisible; ++i) {
-      cursorFirst += static_cast<float>(
-                         RowHeight(rows[static_cast<std::size_t>(i)])) +
-                     static_cast<float>(kGap);
+    // rows at virtual-canvas boxOf offsets, so later pages would paint
+    // outside [0, viewportH). Page 0 is unchanged (zero shift,
+    // T10-compatible). The shift derives from the same boxOf authority the
+    // emitter paints from; layout failure fails closed (nothing submitted).
+    std::vector<LayoutBox> rebaseFrames;
+    if (!SolveGalleryRowFrames(rows, 0, rows.size(),
+                               static_cast<float>(kPresentW),
+                               static_cast<float>(kPresentH), &rebaseFrames) ||
+        window.firstVisible < 0 ||
+        static_cast<std::size_t>(window.firstVisible) >= rebaseFrames.size()) {
+      SetPresentError(error, "present window: layout failed (fail-closed)");
+      return false;
     }
-    const float rebaseDy = cursorFirst - static_cast<float>(kPad);
+    const float rebaseDy =
+        rebaseFrames[static_cast<std::size_t>(window.firstVisible)].y -
+        static_cast<float>(kPad);
     if (rebaseDy != 0.0f) {
       for (auto& cmd : cmds) cmd.bounds.y -= rebaseDy;
     }
@@ -3586,14 +3630,21 @@ bool PresentRealGalleryPage(const std::vector<GalleryRow>& rows, int page,
     std::vector<DrawCmd> cmds;
     cmds.reserve(rows.size() * 2 + 2);
     EmitGalleryWindowCmds(rows, window, cmds);
-    // Rebase the slice to the viewport origin (page 0 is a zero shift).
-    float cursorFirst = static_cast<float>(kPad);
-    for (int i = 0; i < window.firstVisible; ++i) {
-      cursorFirst += static_cast<float>(
-                         RowHeight(rows[static_cast<std::size_t>(i)])) +
-                     static_cast<float>(kGap);
+    // Rebase the slice to the viewport origin (page 0 is a zero shift),
+    // derived from the same boxOf authority the emitter paints from. Layout
+    // failure fails closed (nothing submitted).
+    std::vector<LayoutBox> rebaseFrames;
+    if (!SolveGalleryRowFrames(rows, 0, rows.size(),
+                               static_cast<float>(kPresentW),
+                               static_cast<float>(kPresentH), &rebaseFrames) ||
+        window.firstVisible < 0 ||
+        static_cast<std::size_t>(window.firstVisible) >= rebaseFrames.size()) {
+      SetPresentError(error, "real gallery page: layout failed (fail-closed)");
+      return false;
     }
-    const float rebaseDy = cursorFirst - static_cast<float>(kPad);
+    const float rebaseDy =
+        rebaseFrames[static_cast<std::size_t>(window.firstVisible)].y -
+        static_cast<float>(kPad);
     if (rebaseDy != 0.0f) {
       for (auto& cmd : cmds) cmd.bounds.y -= rebaseDy;
     }

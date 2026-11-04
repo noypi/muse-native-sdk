@@ -961,9 +961,14 @@ struct B2Card {
   int bottom;
 };
 
-// Anchor: first card-bg pixel at column xe below the title bar.
+// Anchor: first card-bg pixel at column xe scanning from the viewport top.
+// AC-RUNTIME-047 (TC-056 D2): row frames are LayoutEngine::boxOf frames, so
+// the first frame sits at y=kPad (16) — rows paint OVER the title bar.
+// Scanning from kB1HeaderH (84) lands mid-card and mis-anchors every card
+// below it; the scan must start at 0 so the anchored top is the boxOf y=16
+// frame. Both edge anchors below still fail loudly on packing drift.
 static int b2_first_card_top(const std::uint32_t* px, int w, int h, int xe) {
-  for (int y = kB1HeaderH; y < h - kB1FooterH; ++y) {
+  for (int y = 0; y < h - kB1FooterH; ++y) {
     if (px[static_cast<std::size_t>(y) * w + xe] == kT1CardBg) return y;
   }
   return -1;
