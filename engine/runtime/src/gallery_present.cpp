@@ -2338,9 +2338,9 @@ bool SolveGalleryRowFrames(const std::vector<GalleryRow>& rows,
     LayoutEngine engine;
     NodeId rootId = instantiate(nodes.data(), nodes.size(), tree);
     if (rootId == kInvalidNodeId) return false;
-    // FR-DEPS-013 T6: production row geometry routes through the single
-    // composition-root LayoutEngine binding (Yoga when linked, in-tree
-    // otherwise) — never around it.
+    // FR-DEPS-013 (mandatory Yoga): production row geometry routes through
+    // the single composition-root LayoutEngine binding (Yoga-only,
+    // fail-closed) — never around it.
     std::vector<LayoutBox> solved;
     ComputeLayout(tree, rootId, engine, &solved);
     boxes->clear();

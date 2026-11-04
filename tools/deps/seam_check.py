@@ -12,6 +12,14 @@ additionally verifies (a) the manifest binds Yoga to the ``LayoutEngine``
 interface and (b) no production source or build file outside the seam
 files names Yoga headers, YG* symbols, or Yoga link targets. Test doubles
 stay in ``tests/`` (never scanned). Stdlib only.
+
+Mandatory-Yoga posture (no in-tree fallback): the in-tree flexbox-subset
+solver is the T8 parity reference ONLY (non-prod). The gate fails any
+production invocation of the in-tree route (``engine.compute`` /
+``->compute`` / ``boxOf`` calls) outside the parity-reference sources
+(``engine/runtime/src/layout.cpp``,
+``engine/runtime/include/runtime/layout.h``); line comments are stripped
+before matching so prose mentions never trip it.
 """
 
 import argparse
@@ -47,6 +55,19 @@ YOGA_SEAM_FILES = frozenset(
     }
 )
 
+# Mandatory-Yoga posture: the in-tree flexbox-subset solver is the T8
+# parity reference ONLY (non-prod). The only production files permitted to
+# invoke the in-tree route (LayoutEngine::compute / boxOf calls) are the
+# reference sources themselves; every other prod file reaches layout
+# exclusively through runtime/layout_seam.h (Yoga-only, fail-closed) or
+# fails this gate. Test doubles stay in ``tests/`` (never scanned).
+IN_TREE_ROUTE_REF_FILES = frozenset(
+    {
+        "engine/runtime/src/layout.cpp",
+        "engine/runtime/include/runtime/layout.h",
+    }
+)
+
 # Directories never scanned for Yoga refs (test doubles, vendored
 # snapshots, build outputs, and lane records stay out of the gate).
 YOGA_SCAN_EXCLUDED_DIRS = frozenset(
@@ -66,6 +87,18 @@ YOGA_SCAN_EXCLUDED_DIRS = frozenset(
 _YOGA_INCLUDE_RE = re.compile(r"^\s*#\s*include\b.*yoga", re.IGNORECASE)
 _YOGA_SYMBOL_RE = re.compile(r"\bYG[A-Z]\w*|yoga::")
 _YOGA_LINK_RE = re.compile(r"yoga|yogacore", re.IGNORECASE)
+
+# In-tree route invocations: direct calls into the runtime parity-reference
+# solver through a LayoutEngine receiver. `engine/layout` owns a separate
+# Solver component (out of scope — this gate scans `engine/runtime` only).
+# Line comments are stripped before matching so prose mentions (e.g. in
+# gallery_present.cpp) never trip the gate — only real invocations fail.
+_IN_TREE_ROUTE_RES = (
+    re.compile(r"\bengine\s*\.\s*compute\s*\("),
+    re.compile(r"\bengine\s*\.\s*boxOf\s*\("),
+    re.compile(r"->\s*compute\s*\("),
+    re.compile(r"->\s*boxOf\s*\("),
+)
 
 _CPP_EXTS = frozenset({".c", ".cc", ".cpp", ".h", ".hpp"})
 _BUILD_FILE_NAMES = frozenset(
@@ -147,6 +180,11 @@ def check_seams(manifest_path):
 def _is_yoga_seam_file(relpath):
     """Return True when *relpath* (repo-relative) owns Yoga refs."""
     return relpath.replace(os.sep, "/") in YOGA_SEAM_FILES
+
+
+def _is_in_tree_route_ref_file(relpath):
+    """Return True when *relpath* may invoke the in-tree solver route."""
+    return relpath.replace(os.sep, "/") in IN_TREE_ROUTE_REF_FILES
 
 
 def _is_scanned(path):
@@ -233,6 +271,65 @@ def check_yoga_confinement(root, manifest_path):
         violations.append(
             "seam_check: deny: direct Yoga ref outside the seam: %s:%d: %s "
             "(production targets reach Yoga only via runtime/layout_seam.h)"
+            % (relpath, lineno, text)
+        )
+    return violations
+
+
+def find_in_tree_routes(root):
+    """Walk *root*; return ``[(relpath, lineno, line)]`` in-tree solver calls.
+
+    Scoped to ``engine/runtime`` (``engine/layout`` owns a separate Solver
+    component, out of scope). Line comments are stripped before matching so
+    prose mentions never trip the gate. The parity-reference files
+    (``IN_TREE_ROUTE_REF_FILES``) are skipped: they own the reference
+    solver, everything else must route through ``runtime/layout_seam.h``
+    (Yoga-only, fail-closed).
+    """
+    scope = os.path.join(root, "engine", "runtime")
+    if not os.path.isdir(scope):
+        scope = root
+    routes = []
+    for dirpath, dirnames, filenames in os.walk(scope):
+        dirnames[:] = sorted(
+            d for d in dirnames if d not in YOGA_SCAN_EXCLUDED_DIRS
+        )
+        for filename in sorted(filenames):
+            path = os.path.join(dirpath, filename)
+            if not _is_scanned(path):
+                continue
+            relpath = os.path.relpath(path, root).replace(os.sep, "/")
+            if _is_yoga_seam_file(relpath) or _is_in_tree_route_ref_file(
+                relpath
+            ):
+                continue
+            basename = os.path.basename(filename)
+            ext = os.path.splitext(basename)[1]
+            if basename in _BUILD_FILE_NAMES or ext in _BUILD_FILE_EXTS:
+                continue
+            try:
+                with open(path, "r", encoding="utf-8", errors="strict") as fh:
+                    for lineno, line in enumerate(fh, 1):
+                        code = line.split("//", 1)[0]
+                        for route_re in _IN_TREE_ROUTE_RES:
+                            if route_re.search(code):
+                                routes.append(
+                                    (relpath, lineno, line.strip())
+                                )
+                                break
+            except (OSError, UnicodeError):
+                continue
+    return routes
+
+
+def check_in_tree_route_confinement(root):
+    """Check no prod file invokes the in-tree solver route; return violations."""
+    violations = []
+    for relpath, lineno, text in find_in_tree_routes(root):
+        violations.append(
+            "seam_check: deny: prod in-tree layout route outside the parity "
+            "reference: %s:%d: %s (prod targets reach layout only via "
+            "runtime/layout_seam.h -> Yoga; no in-tree fallback)"
             % (relpath, lineno, text)
         )
     return violations
@@ -404,6 +501,45 @@ def run_self_test():
         shutil.rmtree(root, ignore_errors=True)
         os.unlink(manifest)
 
+    # Case 9 (mandatory Yoga): a prod in-tree solver call outside the
+    # parity reference fails naming the offending file.
+    root = tmp_root(
+        {
+            "engine/runtime/src/layout.cpp": "const LayoutBox& LayoutEngine::boxOf(NodeId id) const {\n",
+            "engine/runtime/src/presenter.cpp": "  auto b = engine.boxOf(0);\n",
+        }
+    )
+    try:
+        violations = check_in_tree_route_confinement(root)
+        if any("presenter.cpp" in v for v in violations):
+            print("self-test: prod in-tree route outside reference fails ok")
+        else:
+            failures.append(
+                "prod in-tree route not flagged: %r" % (violations,)
+            )
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
+    # Case 10 (mandatory Yoga): reference sources plus comment-only
+    # mentions pass.
+    root = tmp_root(
+        {
+            "engine/runtime/src/layout.cpp": "const LayoutBox& LayoutEngine::boxOf(NodeId id) const {\n",
+            "engine/runtime/include/runtime/layout.h": "  LayoutBox boxOf(NodeId id) const;\n",
+            "engine/runtime/src/gallery_present.cpp": "// Row geometry bound to LayoutEngine::boxOf\n",
+        }
+    )
+    try:
+        violations = check_in_tree_route_confinement(root)
+        if violations:
+            failures.append(
+                "parity reference pass reported violations: %r" % (violations,)
+            )
+        else:
+            print("self-test: parity reference + comments pass ok")
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
     for failure in failures:
         print("self-test failure: %s" % failure)
     return 1 if failures else 0
@@ -429,12 +565,18 @@ def main(argv=None):
     except OSError as exc:
         print("seam_check: deny: yoga confinement scan failed: %s" % exc)
         return 1
+    try:
+        violations.extend(check_in_tree_route_confinement(REPO_ROOT))
+    except OSError as exc:
+        print("seam_check: deny: in-tree route scan failed: %s" % exc)
+        return 1
     if violations:
         for violation in violations:
             print(violation)
         return 1
     print("seam_check: ok: all %s manifest entries keep their seams" % len(load_manifest(args.manifest)))
     print("seam_check: ok: Yoga bound to LayoutEngine; no direct Yoga refs outside the seam")
+    print("seam_check: ok: no prod in-tree layout route outside the parity reference")
     return 0
 
 

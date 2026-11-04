@@ -45,6 +45,14 @@ if(NOT DEFINED PROJECT_NAME)
   endif()
 else()
   # ---- post-project context (via CMAKE_PROJECT_INCLUDE or include()) ----
+  # Re-entrancy guard: a vendored sub-build below calls project(), which
+  # re-fires CMAKE_PROJECT_INCLUDE and would re-enter this file (double
+  # add_library / double add_subdirectory). Normal variables inherit into
+  # the subdir scope, so the nested entry sees the guard and returns.
+  if(_MUSE_ANDROID_NDK_POST_DONE)
+    return()
+  endif()
+  set(_MUSE_ANDROID_NDK_POST_DONE TRUE)
   if(DEFINED ANDROID_ABI)
     # Real Android build lane: pins and ABI validation were applied at
     # preload (T1). This branch stays a no-op so NDK builds are unaffected.
@@ -92,14 +100,32 @@ else()
         ../input/src/tap_dispatch.cpp
       )
     endif()
+    # FR-DEPS-013 (mandatory Yoga, fail-closed): the gate targets solve
+    # through the same Yoga seam as prod (no in-tree fallback). Wired
+    # inline here because this branch runs via CMAKE_PROJECT_INCLUDE
+    # before the CMakeLists body defines _muse_apply_yoga; the body
+    # reuses the same yogacore target (NOT TARGET guard), so exactly one
+    # sub-build exists per configure. Missing snapshot fails configure.
+    # The sub-build lives outside the ABI loop (one yogacore for both gate
+    # targets); its project() call re-fires CMAKE_PROJECT_INCLUDE, which
+    # the re-entrancy guard above absorbs.
+    if(NOT DEFINED ENV{MUSE_NATIVE_THIRD_PARTY_DIR} OR "$ENV{MUSE_NATIVE_THIRD_PARTY_DIR}" STREQUAL "")
+      message(FATAL_ERROR "MUSE Yoga: MUSE_NATIVE_THIRD_PARTY_DIR is not set (vendored snapshot yoga-3.2.1 is required). Example: export MUSE_NATIVE_THIRD_PARTY_DIR=<shared-workspace>/third-party")
+    endif()
+    set(_muse_gate_yoga_src "$ENV{MUSE_NATIVE_THIRD_PARTY_DIR}/yoga-3.2.1")
+    if(NOT IS_DIRECTORY "${_muse_gate_yoga_src}/yoga")
+      message(FATAL_ERROR "MUSE Yoga: vendored snapshot missing: ${_muse_gate_yoga_src}/yoga (extract yoga-v3.2.1.tar.gz from the pinned third-party dir; see tools/deps/third_party_pins.json)")
+    endif()
+    if(NOT TARGET yogacore)
+      add_subdirectory("${_muse_gate_yoga_src}/yoga" "${CMAKE_BINARY_DIR}/yoga-yogacore")
+    endif()
     foreach(MUSE_ABI IN ITEMS arm64-v8a x86_64)
       if(MUSE_ABI STREQUAL "arm64-v8a")
         set(_muse_tgt Runtime_android_arm64_v8a)
       else()
         set(_muse_tgt Runtime_android_x86_64)
       endif()
-      add_library(${_muse_tgt} SHARED
-        src/tree.cpp
+      add_library(${_muse_tgt} SHARED        src/tree.cpp
         src/frame.cpp
         src/layout.cpp
         src/yoga_layout.cpp
@@ -133,6 +159,22 @@ else()
       # real-Android Runtime lane in CMakeLists.txt). This file lives in
       # engine/runtime/cmake, so the repo root is three levels up.
       target_include_directories(${_muse_tgt} PRIVATE ${CMAKE_CURRENT_LIST_DIR}/../../..)
+      # FR-DEPS-013 (mandatory Yoga, fail-closed): the gate targets solve
+      # through the same Yoga seam as prod (no in-tree fallback). Wired
+      # inline here because this branch runs via CMAKE_PROJECT_INCLUDE
+      # before the CMakeLists body defines _muse_apply_yoga; the body
+      # reuses the same yogacore target (NOT TARGET guard), so exactly one
+      # sub-build exists per configure. Missing snapshot fails configure.
+      if(NOT DEFINED ENV{MUSE_NATIVE_THIRD_PARTY_DIR} OR "$ENV{MUSE_NATIVE_THIRD_PARTY_DIR}" STREQUAL "")
+        message(FATAL_ERROR "MUSE Yoga: MUSE_NATIVE_THIRD_PARTY_DIR is not set (vendored snapshot yoga-3.2.1 is required). Example: export MUSE_NATIVE_THIRD_PARTY_DIR=<shared-workspace>/third-party")
+      endif()
+      set(_muse_gate_yoga_src "$ENV{MUSE_NATIVE_THIRD_PARTY_DIR}/yoga-3.2.1")
+      if(NOT IS_DIRECTORY "${_muse_gate_yoga_src}/yoga")
+        message(FATAL_ERROR "MUSE Yoga: vendored snapshot missing: ${_muse_gate_yoga_src}/yoga (extract yoga-v3.2.1.tar.gz from the pinned third-party dir; see tools/deps/third_party_pins.json)")
+      endif()
+      target_include_directories(${_muse_tgt} PRIVATE "${_muse_gate_yoga_src}")
+      target_compile_definitions(${_muse_tgt} PRIVATE MUSE_HAVE_YOGA=1)
+      target_link_libraries(${_muse_tgt} PRIVATE yogacore)
       if(JNI_FOUND)
         target_include_directories(${_muse_tgt} PUBLIC ${JNI_INCLUDE_DIRS})
       endif()
