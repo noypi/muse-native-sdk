@@ -1127,7 +1127,7 @@ std::vector<GalleryRow> ParseGalleryRows(const void* data, std::size_t len,
                                   "tone",    "elevation", "orientation",
                                   "direction", "spacing", "open",
                                   "contentFit", "source", "state",
-                                  "theme"};
+                                  "progress", "theme"};
         const char* propsVal = nullptr;
         const char* propsEnd = nullptr;
         if (FindKey(span.first, span.second, "props", propsVal) != nullptr &&
@@ -1289,6 +1289,50 @@ double PropDouble(const std::string& desc, const char* key, double fallback) {
   } catch (...) {
     return fallback;
   }
+}
+
+// FR-RUNTIME-014 / AC-RUNTIME-049: strict numeric descriptor probe. True
+// only when `key` is present and parses fully (trailing spaces tolerated);
+// a missing key or a malformed value (stod throw, or trailing garbage such
+// as "0.7abc") is false so the proof gate can fail closed instead of the
+// silent PropDouble default standing in blind. Painters keep using
+// PropDouble (void path, no error channel); the PresentGallery gate below
+// is the enforcement point.
+bool StrictPropDouble(const std::string& desc, const char* key, double* out) {
+  const std::string v = PropValue(desc, key);
+  if (v.empty() || key == nullptr) return false;
+  try {
+    std::size_t pos = 0;
+    const double d = std::stod(v, &pos);
+    while (pos < v.size() && v[pos] == ' ') ++pos;
+    if (pos != v.size()) return false;
+    if (out != nullptr) *out = d;
+    return true;
+  } catch (...) {
+    return false;
+  }
+}
+
+// FR-RUNTIME-014 / AC-RUNTIME-048: closed handled-variant inventories for
+// the PaintComponent branches the retained path can present. An empty
+// value rides the painter's documented default (Button filled, Card
+// elevated, TopAppBar small/110) and stays valid; any other token must be
+// an explicit branch below or the proof gate fails closed naming it.
+// TopAppBar "small" is valid: the committed gallery_present_test fixture
+// carries size="small" and the painter maps it to the 110 default bar.
+bool IsHandledButtonVariant(const std::string& variant) {
+  return variant.empty() || variant == "filled" || variant == "tonal" ||
+         variant == "outlined" || variant == "text";
+}
+
+bool IsHandledCardVariant(const std::string& variant) {
+  return variant.empty() || variant == "elevated" || variant == "filled" ||
+         variant == "outlined";
+}
+
+bool IsHandledTopAppBarSize(const std::string& size) {
+  return size.empty() || size == "small" || size == "medium" ||
+         size == "large";
 }
 
 // Greedy page packing over variable row heights. Returns the start index of
@@ -2540,6 +2584,61 @@ bool PresentGallery(const void* mui1Data, std::size_t len, Renderer& renderer,
                    "re-baseline)";
         }
         return false;
+      }
+      // AC-RUNTIME-048: a known kind taking an unhandled PaintComponent
+      // branch/variant fails the proof gate naming the variant — the
+      // tonal-card-with-name fallback never substitutes. Runs before any
+      // cmd is emitted, so red records zero DrawCmds.
+      if (row.comp == "Button") {
+        const std::string variant = PropValue(row.desc, "variant");
+        if (!IsHandledButtonVariant(variant)) {
+          if (error != nullptr) {
+            *error = "unhandled Button variant '" + variant +
+                     "' (proofGate=fail: no substitution, no re-baseline)";
+          }
+          return false;
+        }
+      } else if (row.comp == "Card") {
+        const std::string variant = PropValue(row.desc, "variant");
+        if (!IsHandledCardVariant(variant)) {
+          if (error != nullptr) {
+            *error = "unhandled Card variant '" + variant +
+                     "' (proofGate=fail: no substitution, no re-baseline)";
+          }
+          return false;
+        }
+      } else if (row.comp == "TopAppBar") {
+        const std::string size = PropValue(row.desc, "size");
+        if (!IsHandledTopAppBarSize(size)) {
+          if (error != nullptr) {
+            *error = "unhandled TopAppBar size '" + size +
+                     "' (proofGate=fail: no substitution, no re-baseline)";
+          }
+          return false;
+        }
+      }
+      // AC-RUNTIME-049: a missing or malformed numeric descriptor prop
+      // fails the proof gate (fail-closed leg). The diagnostic carries the
+      // GFX-DESCRIPTOR-FALLBACK:<key> token so the gate consumes the exact
+      // key; the silent PropDouble default never stands in blind.
+      const char* numericKey = nullptr;
+      if (row.comp == "Slider") {
+        numericKey = "value";
+      } else if (row.comp == "LinearProgress" ||
+                 row.comp == "CircularProgress") {
+        numericKey = "progress";
+      }
+      if (numericKey != nullptr) {
+        double ignored = 0.0;
+        if (!StrictPropDouble(row.desc, numericKey, &ignored)) {
+          if (error != nullptr) {
+            *error = "missing or malformed numeric descriptor prop '" +
+                     std::string(numericKey) + "' for '" + row.comp +
+                     "' (proofGate=fail: no silent default, no re-baseline; "
+                     "GFX-DESCRIPTOR-FALLBACK:" + numericKey + ")";
+          }
+          return false;
+        }
       }
     }
     // Fail-closed shaping gate (RULE-RUNTIME-001 / FR-TEXT-016): every
