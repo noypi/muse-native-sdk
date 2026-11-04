@@ -693,6 +693,18 @@ target_link_libraries(gallery_gate_kind_test PRIVATE runtime)
 target_compile_options(gallery_gate_kind_test PRIVATE -Wall -Wextra -Wpedantic)
 add_test(NAME gallery_gate_kind_test COMMAND gallery_gate_kind_test)
 
+# SPEC-ENGINE-RUNTIME AC-RUNTIME-048/049 (FR-RUNTIME-014): TC-RUNTIME-057
+# known-kind/unhandled-branch fail-closed gate +
+# TC-RUNTIME-058 missing/malformed numeric descriptor gate.
+add_executable(known_branch_fallback_fail_test tests/known_branch_fallback_fail_test.cpp)
+target_link_libraries(known_branch_fallback_fail_test PRIVATE runtime)
+target_compile_options(known_branch_fallback_fail_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME known_branch_fallback_fail_test COMMAND known_branch_fallback_fail_test)
+add_executable(descriptor_number_fallback_test tests/descriptor_number_fallback_test.cpp)
+target_link_libraries(descriptor_number_fallback_test PRIVATE runtime)
+target_compile_options(descriptor_number_fallback_test PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME descriptor_number_fallback_test COMMAND descriptor_number_fallback_test)
+
 # BUG-M3-FIDELITY-005 T5: gallery emission wiring (shape -> cache -> real
 # ShapedText{glyphRunId}, measureLine sizing, UTF-8 row admission).
 add_executable(gallery_text_emission_test tests/gallery_text_emission_test.cpp)
