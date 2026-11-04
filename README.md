@@ -16,6 +16,12 @@ Build a demo with `muse-native build <target>` (e.g.
 
 ## Prerequisites
 
+Run the fail-closed setup gate first (probes JDK, Android SDK, NDK, device):
+
+```sh
+scripts/check-prerequisites.sh
+```
+
 Requires JDK 17+, Android SDK platform `platforms;android-35`,
 NDK `ndk;27.2.12479018`, CMake `3.28.0`, and `muse-native` CLI
 version `0.0.0` (see `packages/cli/package.json`).
