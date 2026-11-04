@@ -22,3 +22,47 @@ muse:
       route: segment
       params:
         mask_encoding: polygon
+# --- Full option reference (commented examples only; uncomment to activate) ---
+# Layers, highest first (winning layer): CLI `--<key> <value>` over
+# MUSE_NATIVE_<KEY> env over file (muse-native.yaml) over default.
+# name (type: string | default: gallery | allowed: any string | layer: CLI over MUSE_NATIVE_NAME env over file over default)
+# # name: gallery
+# version (type: string | default: 0.0.0 | allowed: any string | layer: CLI over MUSE_NATIVE_VERSION env over file over default)
+# # version: 0.0.0
+# withSample (type: boolean | default: false | allowed: true, false | layer: CLI over MUSE_NATIVE_WITH_SAMPLE env over file over default)
+# # withSample: false
+# abi (type: string | default: unset | allowed: any string | layer: CLI over MUSE_NATIVE_ABI env over file over default)
+# # abi: arm64-v8a
+# release (type: boolean | default: false | allowed: true, false | layer: CLI over MUSE_NATIVE_RELEASE env over file over default)
+# # release: false
+# modules (type: string | default: unset | allowed: any string | layer: CLI over MUSE_NATIVE_MODULES env over file over default)
+# # modules: core
+# output (type: string | default: unset | allowed: any string | layer: CLI over MUSE_NATIVE_OUTPUT env over file over default)
+# # output: dist
+# strict (type: boolean | default: false | allowed: true, false | layer: CLI over MUSE_NATIVE_STRICT env over file over default)
+# # strict: false
+# diagnostics (type: object | default: unset | allowed: map of CODE to error, warn, off | layer: file over default; MUSE_NATIVE_* env not used for maps)
+# # diagnostics:
+# #   CAPO0012: warn
+# # diagnostics.CAPO0012: warn
+# archs (type: object | default: arm64-v8a, armeabi-v7a, x86_64, x86 | allowed: arm64-v8a, armeabi-v7a, x86_64, x86 | layer: CLI over MUSE_NATIVE_ARCHS env over file over default)
+# # archs: arm64-v8a, armeabi-v7a, x86_64, x86
+# packaging (type: string | default: fat | allowed: fat, split, both | layer: CLI over MUSE_NATIVE_PACKAGING env over file over default)
+# # packaging: fat
+# renderer (type: string | default: skia | allowed: cpu, egl, skia | layer: CLI over MUSE_NATIVE_RENDERER env over file over default)
+# # renderer: skia
+# keystore (type: string | default: templates/android/debug.keystore | allowed: any path string | layer: CLI over MUSE_NATIVE_KEYSTORE env over file over default)
+# # keystore: templates/android/debug.keystore
+# keyAlias (type: string | default: androiddebugkey | allowed: any string | layer: CLI over MUSE_NATIVE_KEY_ALIAS env over file over default)
+# # keyAlias: androiddebugkey
+# storepass (type: string | default: unset | allowed: any string | layer: MUSE_NATIVE_STOREPASS env over file over default; prefer env)
+# # storepass: changeit
+# sdk (file-only pin, type: string | allowed: exact MAJOR.MINOR.PATCH | layer: file only, never CLI/env; validated but never merged into scalar config)
+# # sdk: 0.1.0
+# muse (structured section, not a scalar key | layer: file only; per-project block validated against the proxy allow-list before compile)
+# # muse:
+# #   models:
+# #     segment: sam-3.1
+# Secrets are placeholder-only: never commit real values. Set signing secrets
+# via MUSE_NATIVE_KEYSTORE / MUSE_NATIVE_KEY_ALIAS / MUSE_NATIVE_STOREPASS env
+# instead of activating storepass in this file.

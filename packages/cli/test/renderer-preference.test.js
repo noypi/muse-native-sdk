@@ -40,17 +40,17 @@ function runCli(args, options) {
 // Interface (plan verbatim):
 // `getOptionSchema(): Array<{ name: string, type: string, default: unknown,
 // allowed?: string[] }>` includes `{ name: 'renderer', type: 'string',
-// default: 'cpu', allowed: ['cpu', 'egl', 'skia'] }`
+// default: 'skia', allowed: ['cpu', 'egl', 'skia'] }`
 // ---------------------------------------------------------------------------
 describe('T3 getOptionSchema renderer entry exact shape (AC-WORKFLOW-015)', () => {
-  it("schema includes { name: 'renderer', type: 'string', default: 'cpu', allowed: ['cpu','egl','skia'] }", () => {
+  it("schema includes { name: 'renderer', type: 'string', default: 'skia', allowed: ['cpu','egl','skia'] }", () => {
     assert.equal(typeof config.getOptionSchema, 'function', 'config.js must export getOptionSchema()');
     const schema = config.getOptionSchema();
     const entry = schema.find((e) => e.name === 'renderer');
     assert.ok(entry, 'getOptionSchema() must include a renderer entry');
     assert.deepEqual(
       entry,
-      { name: 'renderer', type: 'string', default: 'cpu', allowed: ['cpu', 'egl', 'skia'] },
+      { name: 'renderer', type: 'string', default: 'skia', allowed: ['cpu', 'egl', 'skia'] },
       'renderer entry must match the schema exactly',
     );
   });
@@ -85,18 +85,18 @@ describe('T3 scaffold template documents renderer without changing default (AC-W
   it('templates/muse-native.yaml documents the renderer option', () => {
     const text = fs.readFileSync(path.join(CLI_DIR, 'templates', 'muse-native.yaml'), 'utf8');
     assert.ok(text.includes('renderer'), 'scaffold template must document renderer');
-    assert.ok(/cpu/.test(text), 'template renderer docs must name the cpu default');
+    assert.ok(/skia/.test(text), 'template renderer docs must name the skia default');
     assert.ok(/egl/.test(text), 'template renderer docs must name egl');
     assert.ok(/skia/.test(text), 'template renderer docs must name skia');
   });
 
-  it('scaffold default still resolves to cpu (template adds docs, not a new default)', () => {
+  it('scaffold default still resolves to skia (template adds docs, not a new default)', () => {
     const text = fs.readFileSync(path.join(CLI_DIR, 'templates', 'muse-native.yaml'), 'utf8');
     const rendererLines = text.split('\n').filter((l) => /^\s*renderer\s*:/.test(l) && !l.trim().startsWith('#'));
     for (const line of rendererLines) {
-      assert.match(line, /cpu/, 'any active renderer: line in the template must keep the cpu default');
+      assert.match(line, /skia/, 'any active renderer: line in the template must keep the skia default');
     }
-    assert.equal(config.DEFAULTS.renderer, 'cpu', 'DEFAULTS.renderer must stay cpu');
+    assert.equal(config.DEFAULTS.renderer, 'skia', 'DEFAULTS.renderer must stay skia');
   });
 });
 
@@ -190,13 +190,13 @@ describe('T4 --print-config pair shape: requested always present, effective defa
     assert.equal(parsed.renderer.downgraded, false, 'pre-probe pair must not be downgraded');
   });
 
-  it('--print-config defaults the pair to cpu when no layer sets renderer', () => {
+  it('--print-config defaults the pair to skia when no layer sets renderer', () => {
     const appDir = mkTmp('muse-renderer-pref-');
     fs.writeFileSync(path.join(appDir, 'muse-native.yaml'), 'name: pref-default\nversion: 0.0.1\n', 'utf8');
     const r = runCli(['build', appDir, '--print-config']);
     assert.equal(r.status, 0, `--print-config must exit 0, got ${r.status}: ${r.stderr}`);
     const parsed = JSON.parse(r.stdout.trim());
-    assert.equal(parsed.renderer.requested, 'cpu', 'requested must default to cpu');
-    assert.equal(parsed.renderer.effective, 'cpu', 'effective must default to requested pre-probe');
+    assert.equal(parsed.renderer.requested, 'skia', 'requested must default to skia');
+    assert.equal(parsed.renderer.effective, 'skia', 'effective must default to requested pre-probe');
   });
 });
