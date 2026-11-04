@@ -14,10 +14,12 @@
 
 #include "runtime/presenter.h"
 
+#include "input/tap_dispatch.h"
 #include "runtime/content_registry.h"
 #include "runtime/gallery_present.h"
 #include "runtime/input_chain.h"
 
+#include <atomic>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
@@ -943,7 +945,19 @@ namespace {
 // never attacker-influenced, never carrying '%' or '\n'.
 std::mutex g_tapPairMu;
 std::int32_t g_lastDownNode = -1;  // latest Down node id; -1 when none.
-void ClearPendingTapLocked() { g_lastDownNode = -1; }
+// BUG-M3-NATIVE-006 T1 (AC-INPUT-024a): tapId minted at Down-arm time and
+// carried to the Up fire as the verbatim integer identity (never a raw
+// pointer). Monotonic per-process; drag/CANCEL/mismatch paths drop it
+// without delivery, so no stale ticket can fire.
+std::atomic<int> g_bridgeTapId{1};
+std::int32_t g_lastDownTapId = -1;  // tapId armed with g_lastDownNode.
+int MintBridgeTapId() noexcept {
+  return g_bridgeTapId.fetch_add(1, std::memory_order_relaxed);
+}
+void ClearPendingTapLocked() {
+  g_lastDownNode = -1;
+  g_lastDownTapId = -1;
+}
 }  // namespace
 DispatchResult dispatchTouch(std::int32_t nodeId, TouchAction action, float x,
                              float y) {
@@ -975,6 +989,7 @@ DispatchResult dispatchTouch(std::int32_t nodeId, TouchAction action, float x,
     std::lock_guard<std::mutex> lock(g_tapPairMu);
     if (action == TouchAction::Down) {
       g_lastDownNode = nodeId;
+      g_lastDownTapId = MintBridgeTapId();
       return DispatchResult{false, nodeId, false, ""};
     }
     // Up completes the tap only for the pressed registered node: the fired
@@ -984,9 +999,17 @@ DispatchResult dispatchTouch(std::int32_t nodeId, TouchAction action, float x,
     if (g_lastDownNode != nodeId) {
       return DispatchResult{false, nodeId, false, handlerName};
     }
+    const std::int32_t armedTapId = g_lastDownTapId;
     ClearPendingTapLocked();
     const bool tapRecorded =
         runtime::FireContentTapToJs(nodeId, resolved);
+    // BUG-M3-NATIVE-006 T1 (AC-M3-033/036, AC-INPUT-024a): bridge delivery
+    // BESIDE (never inside) FireContentTapToJs — the record-only contract is
+    // load-bearing. dispatchTapToOwner is fail-closed, consume-before-notify:
+    // unknown targets, replays, and forged tickets deliver 0 and throw
+    // nothing. Delivers the Down-armed tapId verbatim.
+    (void)::input::dispatchTapToOwner(nodeId,
+                                      ::input::LeaseTicket{armedTapId});
     return DispatchResult{true, nodeId, tapRecorded, handlerName};
   } catch (...) {
     return DispatchResult{false, nodeId, false, ""};
