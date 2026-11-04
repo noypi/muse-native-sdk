@@ -156,13 +156,13 @@ describe('TC-TSX-022/023 Batch 3 — T7 build emits IR + binary tree', () => {
     assert.ok(fs.statSync(binPath).isFile(), 'dist/tree.mui.bin must be written');
   });
 
-  it('ir.json parses as { version: 1, roots: [...] } with static-schema nodes', () => {
+  it('ir.json parses as { version: 2, roots: [...] } with static-schema nodes', () => {
     const appDir = mkTmp('muse-build-');
     writeMinimalApp(appDir);
     const r = runCli(['build', appDir]);
     assert.equal(r.status, 0, `build must exit 0, got ${r.status}: ${r.stderr}`);
     const ir = JSON.parse(fs.readFileSync(path.join(appDir, 'dist', 'ir.json'), 'utf8'));
-    assert.equal(ir.version, 1, 'IR version must be 1');
+    assert.equal(ir.version, 2, 'IR version must be 2');
     assert.ok(Array.isArray(ir.roots) && ir.roots.length > 0, 'IR must carry a non-empty roots array');
   });
 
@@ -492,7 +492,7 @@ describe('TC-TSX-023 Batch 4 — T10 gallery fixture builds both artefacts', () 
     const r = runCli(['build', appDir]);
     assert.equal(r.status, 0, `build must exit 0, got ${r.status}: ${r.stderr}`);
     const ir = JSON.parse(fs.readFileSync(path.join(appDir, 'dist', 'ir.json'), 'utf8'));
-    assert.equal(ir.version, 1, 'IR version must be 1');
+    assert.equal(ir.version, 2, 'IR version must be 2');
     assert.ok(Array.isArray(ir.roots) && ir.roots.length > 0, 'IR must carry a non-empty roots array');
     const buf = fs.readFileSync(path.join(appDir, 'dist', 'tree.mui.bin'));
     assert.ok(buf.length > 4, 'binary tree must be non-empty');
@@ -504,7 +504,7 @@ describe('TC-TSX-023 Batch 4 — T10 gallery fixture builds both artefacts', () 
     const r = runCli(['build', gallery]);
     assert.equal(r.status, 0, `build examples/m3-gallery must exit 0, got ${r.status}: ${r.stderr}`);
     const ir = JSON.parse(fs.readFileSync(path.join(gallery, 'dist', 'ir.json'), 'utf8'));
-    assert.equal(ir.version, 1, 'IR version must be 1');
+    assert.equal(ir.version, 2, 'IR version must be 2');
     assert.ok(Array.isArray(ir.roots) && ir.roots.length > 0, 'IR must carry a non-empty roots array');
     const buf = fs.readFileSync(path.join(gallery, 'dist', 'tree.mui.bin'));
     assert.ok(buf.length > 4, 'binary tree must be non-empty');

@@ -52,7 +52,7 @@ function runDev(appDir) {
   }
   try {
     const tree = ir.lowerToIR(sources);
-    if (!tree || tree.version !== 1 || !Array.isArray(tree.roots) || tree.roots.length === 0) {
+    if (!tree || tree.version !== ir.IR_VERSION || !Array.isArray(tree.roots) || tree.roots.length === 0) {
       throw new Error('lowering produced an empty tree');
     }
   } catch (err) {
