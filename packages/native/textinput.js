@@ -483,8 +483,27 @@ function createTextInput(deps) {
 
 // `TextInput` TSX descriptor factory, keeping the repo's `{ type, props }`
 // shape: `type` equals the component name and `props` passes through.
+//
+// AC-MUSE-057 (FR-MUSE-004): badge-as-props composition — the `bindField`
+// verdict `{ route, reason, latencyMs }` (see `packages/intelligence/lib/field.js`)
+// rides `props.badge` on this descriptor. Edit props (`value` / `selection` /
+// `focused`) and the badge live in disjoint prop subtrees: the badge is copied
+// by value here so a later verdict mutation cannot tear a composed descriptor,
+// and the renderer diffs `badge` only — a badge-only change never recreates
+// the edit handle or drops text/caret/focus.
+function copyBadge(badge) {
+  if (badge === null || typeof badge !== 'object' || Array.isArray(badge)) {
+    return badge;
+  }
+  return { route: badge.route, reason: badge.reason, latencyMs: badge.latencyMs };
+}
+
 function TextInput(props) {
-  return { type: 'TextInput', props: props === undefined ? {} : props };
+  const next = props === undefined ? {} : props;
+  if (next === null || typeof next !== 'object' || next.badge === undefined) {
+    return { type: 'TextInput', props: props === undefined ? {} : props };
+  }
+  return { type: 'TextInput', props: { ...next, badge: copyBadge(next.badge) } };
 }
 
 module.exports = { createTextInput, TextInput };
