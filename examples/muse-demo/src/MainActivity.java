@@ -62,6 +62,32 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
      */
     private native int nativeSetShellState(long handle, String shellRoute, String shellNotice);
 
+    /**
+     * BUG-NAV-005 (FR-NAV-011/014, AC-NAV-038/041/042): generic live router
+     * invoke. Forwards a method plus JSON args to the handle's live
+     * `RouterBridge::invoke` commit gate and returns the JSON verdict
+     * (`{"ok":true,...}` allow or `{"ok":false,"code":"..."}` named denial —
+     * same vocabulary the JS facade funnels through). Generic strings only:
+     * no route parsing, no route literals, no demo knowledge here (thin-host
+     * AC-NAV-044/045). Declared {@code String} to pair with the JNI
+     * {@code Java_com_muse_host_MainActivity_nativeRouterInvoke} export;
+     * callers treat the result as opaque (a null return is a transport-level
+     * denial, fail-closed). Instance (non-static) to match the export's
+     * {@code jobject} receiver.
+     */
+    private native String nativeRouterInvoke(long handle, String method, String jsonArgs);
+
+    /**
+     * BUG-NAV-005 route-table provisioning (generic, opaque): replaces the
+     * handle bridge's route table from a JSON string array of route ids.
+     * The ids ride through uninterpreted manifest-owned data; validity stays
+     * with the engine gate. Declared {@code int} to pair with the JNI
+     * {@code Java_com_muse_host_MainActivity_nativeRouterSetRoutes} export;
+     * callers treat the result as opaque (1 applied, 0 denied). Instance
+     * (non-static) to match the export's {@code jobject} receiver.
+     */
+    private native int nativeRouterSetRoutes(long handle, String routesJson);
+
     private static final String TAG = "muse-host";
 
     /** True while the surface lives; gates the Choreographer render loop. */
@@ -189,6 +215,13 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
      * Handoff into the JS routing layer. Host never parses; the stashed
      * opaque string stays available for the JS drain above. Same channel
      * serves cold-start (onCreate) and warm (onNewIntent) arrivals.
+     *
+     * BUG-NAV-005: the taken string is additionally offered to the live
+     * router commit gate via {@link #invokeLiveRouter} — the Java drain
+     * calls that JNI entry directly, and any future platform binding of
+     * the {@code RouterBridge.invoke} transport keeps first-wins — so
+     * the opaque-stash drain rides the C++ gate instead of ending at the
+     * log-only sink. Never parses; a named gate denial only logs.
      */
     void forwardOpaqueToRouter(String opaqueLink) {
         if (opaqueLink == null || opaqueLink.isEmpty()) {
@@ -202,8 +235,144 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                 // Fail-closed: a bad sink never crashes the host.
             }
         }
+        invokeLiveRouter(opaqueLink);
         Log.i(TAG, "opaque-intent-ready engineHosted=true");
         // Consume-once: caller passes the taken value; slot already cleared.
+    }
+
+    /**
+     * BUG-NAV-005 link→id boundary normalization (single funnel helper):
+     * converts one opaque link string to the bare table id the NavGraph
+     * exact-matches, applied ONCE in {@link #invokeLiveRouter} before
+     * {@code nativeRouterInvoke}. Rule (generic, no route literals): trim;
+     * strip fragment/query; if a {@code ://} scheme is present drop scheme +
+     * host (path after the first {@code /}); take the last non-empty
+     * {@code /} segment; accept only {@code [A-Za-z0-9_-]+}. Returns null
+     * when nothing parseable remains (fail-closed: caller logs
+     * {@code unknown-route}, never throws, never invokes).
+     */
+    private static String normalizeOpaqueLinkToRouteId(String opaqueLink) {
+        if (opaqueLink == null) {
+            return null;
+        }
+        try {
+            String s = opaqueLink.trim();
+            if (s.isEmpty()) {
+                return null;
+            }
+            int hash = s.indexOf('#');
+            if (hash >= 0) {
+                s = s.substring(0, hash).trim();
+            }
+            int query = s.indexOf('?');
+            if (query >= 0) {
+                s = s.substring(0, query).trim();
+            }
+            if (s.isEmpty()) {
+                return null;
+            }
+            int scheme = s.indexOf("://");
+            if (scheme >= 0) {
+                s = s.substring(scheme + 3);
+                int slash = s.indexOf('/');
+                if (slash < 0) {
+                    // No path: the host remainder itself is the candidate id
+                    // (e.g. `scheme://field`); validated below, fail-closed.
+                } else {
+                    s = s.substring(slash + 1);
+                }
+            }
+            String[] parts = s.split("/");
+            String last = null;
+            for (String part : parts) {
+                String t = part.trim();
+                if (!t.isEmpty()) {
+                    last = t;
+                }
+            }
+            if (last == null || !last.matches("[A-Za-z0-9_-]+")) {
+                return null;
+            }
+            return last;
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
+    /**
+     * BUG-NAV-005 same-entry commit (AC-NAV-038/042): delivers the taken
+     * opaque string as the bare-id JSON {@code route} arg of a generic
+     * {@code navigate} invoke against the live handle bridge. The single
+     * {@link #normalizeOpaqueLinkToRouteId} call above is the ONLY link
+     * handling: scheme/host/prefix stripped to the table id the NavGraph
+     * exact-matches (exact-match preserved everywhere else); validity is
+     * decided ONLY by the engine gate, which returns the named allow/deny
+     * verdict. Fail-closed: zero handle, unparseable id ({@code unknown-route}
+     * log, no invoke), JNI absence, or any throwable only logs; never
+     * crashes, never mutates host state, never carries demo literals
+     * (AC-NAV-044/045).
+     */
+    private void invokeLiveRouter(String opaqueLink) {
+        if (opaqueLink == null || opaqueLink.isEmpty() || engineHandle == 0) {
+            return;
+        }
+        try {
+            String routeId = normalizeOpaqueLinkToRouteId(opaqueLink);
+            if (routeId == null) {
+                Log.i(TAG, "opaque-router-verdict {\"ok\":false,\"code\":\"unknown-route\"}");
+                return;
+            }
+            String jsonArgs = "{\"route\":\"" + quoteJsonString(routeId) + "\"}";
+            String verdict = nativeRouterInvoke(engineHandle, "navigate", jsonArgs);
+            String shown = verdict == null ? "transport-error" : verdict;
+            if (shown.length() > 256) {
+                shown = shown.substring(0, 256);
+            }
+            Log.i(TAG, "opaque-router-verdict " + shown);
+        } catch (Throwable ignored) {
+            // Fail-closed: gate unreachable never crashes the host.
+            Log.i(TAG, "opaque-router-verdict transport-error");
+        }
+    }
+
+    /**
+     * Minimal JSON string quoter for {@link #invokeLiveRouter}: quotes,
+     * backslashes, and controls become escapes; everything else rides
+     * through verbatim (no parsing, no interpretation). Never throws.
+     */
+    private static String quoteJsonString(String raw) {
+        if (raw == null) {
+            return "";
+        }
+        StringBuilder out = new StringBuilder(raw.length() + 2);
+        for (int i = 0; i < raw.length(); i++) {
+            char c = raw.charAt(i);
+            switch (c) {
+                case '"':
+                    out.append("\\\"");
+                    break;
+                case '\\':
+                    out.append("\\\\");
+                    break;
+                case '\n':
+                    out.append("\\n");
+                    break;
+                case '\r':
+                    out.append("\\r");
+                    break;
+                case '\t':
+                    out.append("\\t");
+                    break;
+                default:
+                    if (c < 0x20) {
+                        out.append(String.format("\\u%04x", (int) c));
+                    } else {
+                        out.append(c);
+                    }
+                    break;
+            }
+        }
+        return out.toString();
     }
 
     /** Drain the cold-start stash into the router once ready (unparsed). */
@@ -213,6 +382,66 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         }
         String link = consumePendingOpaqueLink();
         forwardOpaqueToRouter(link);
+    }
+
+    /**
+     * BUG-NAV-005 test-only route-table provision (FR-NAV-011/014,
+     * AC-NAV-038/041/042 tester gate; shipped tap path untouched).
+     *
+     * <p>Zero production callers provision the bridge: without this entry
+     * the handle's route table stays empty on device, so every
+     * {@code nativeRouterInvoke("navigate", …)} denies {@code unknown-route}
+     * and the tap→graph→kill-restore proof (ok=1 + apply + restore-lands-on-tab)
+     * has no on-device path. This drain closes that gap for the tester leg
+     * only: when the launching intent carries the string extra
+     * {@code muse_test_routes_json} (a JSON string array of route ids, e.g.
+     * {@code ["home","lens","field","list"]}), it is forwarded verbatim to
+     * the generic {@code nativeRouterSetRoutes} entry and the
+     * {@code router-test-provision ok=1/0} verdict is logged. Production
+     * launches carry no such extra, so this is a silent no-op on the shipped
+     * path: no tap, stash, sink, or invoke behavior changes. Generic opaque
+     * strings only — no route parsing, no route literals, no demo knowledge
+     * (thin-host AC-NAV-044/045); fail-closed on zero handle, missing JNI,
+     * oversize payload, or any throwable. Never throws.
+     *
+     * <p>NOTE for planner (AC-NAV-045 tension): AC-NAV-045 says probe/test
+     * hooks live in JS/engine, never in Java. This entry is deliberately
+     * minimal and generic (opaque forward + log, same shape as the stash
+     * drain) because only Java holds {@code engineHandle} for the JNI
+     * provision call — JS cannot reach it. If the planner prefers a stricter
+     * reading, the alternative is an instrumentation-only static armer; the
+     * shipped-path semantics are identical either way.
+     */
+    private void maybeTestProvisionRoutes() {
+        // Security MEDIUM-1: intent-exported activity must not provision the
+        // live table in release; DEBUG-only gate, silent no-op otherwise.
+        if (!BuildConfig.DEBUG) {
+            return;
+        }
+        if (engineHandle == 0) {
+            return;
+        }
+        String routesJson = null;
+        try {
+            Intent intent = getIntent();
+            if (intent == null || !intent.hasExtra("muse_test_routes_json")) {
+                return;
+            }
+            routesJson = intent.getStringExtra("muse_test_routes_json");
+        } catch (Throwable ignored) {
+            return;
+        }
+        if (routesJson == null || routesJson.isEmpty() || routesJson.length() > 8192) {
+            Log.i(TAG, "router-test-provision ok=0");
+            return;
+        }
+        try {
+            int applied = nativeRouterSetRoutes(engineHandle, routesJson);
+            Log.i(TAG, "router-test-provision ok=" + applied);
+        } catch (Throwable ignored) {
+            // Fail-closed: provision unreachable never crashes the host.
+            Log.i(TAG, "router-test-provision ok=0");
+        }
     }
 
     @Override
@@ -253,6 +482,10 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         // has an endpoint, then stash opaque and drain unparsed now that
         // the handle exists (warm arrivals drain via onNewIntent below).
         installDefaultOpaqueLinkSink();
+        // BUG-NAV-005 tester gate: provision the route table (when the
+        // test-only launch extra is present; silent no-op otherwise) BEFORE
+        // the stash drain so a drained link hits a populated table.
+        maybeTestProvisionRoutes();
         stashOpaqueIntent(getIntent());
         drainPendingOpaqueLink();
     }
