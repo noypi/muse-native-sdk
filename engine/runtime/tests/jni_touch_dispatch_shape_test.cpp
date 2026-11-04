@@ -27,6 +27,13 @@ extern "C" jint Java_com_muse_host_MainActivity_nativeDispatchTouch(
     JNIEnv* env, jobject thiz, jlong handle, jint action, jfloat x, jfloat y,
     jint pointerId, jlong timestampMs);
 
+// T6 follow-up (AC-INPUT-024/024a): bridge-tap JNI seam. Same hermetic
+// discipline as above — real symbols, null env only.
+extern "C" jint Java_com_muse_host_MainActivity_nativeDispatchBridgeTap(
+    JNIEnv* env, jobject thiz, jlong handle, jint nodeId, jint tapId);
+extern "C" jint Java_com_muse_host_MainActivity_nativeLastBridgeTapId(
+    JNIEnv* env, jobject thiz, jlong handle);
+
 namespace {
 
 // MotionEvent action codes (platform constants, repeated here so the test
@@ -88,6 +95,44 @@ bool check_null_env_up_outside_returns_minus_one() {
 
 }  // namespace
 
+// T6 follow-up (AC-INPUT-024/024a): null env + zero handle fails closed
+// with 0 on the bridge dispatch entry (denial, never a throw through the
+// tap path). No VM exists here, so returning 0 without crashing is the
+// whole assertion.
+bool check_bridge_dispatch_null_env_zero_handle_returns_zero() {
+  const jint got = Java_com_muse_host_MainActivity_nativeDispatchBridgeTap(
+      nullptr, nullptr, 0, 21, 7);
+  if (got != 0) {
+    std::printf("  detail: expected 0, got %d\n", static_cast<int>(got));
+    return false;
+  }
+  return true;
+}
+
+// T6 follow-up: null env + nonzero handle still fails closed with 0 — the
+// env guard precedes any handle use.
+bool check_bridge_dispatch_null_env_nonzero_handle_returns_zero() {
+  const jint got = Java_com_muse_host_MainActivity_nativeDispatchBridgeTap(
+      nullptr, nullptr, 0x1234, 21, 7);
+  if (got != 0) {
+    std::printf("  detail: expected 0, got %d\n", static_cast<int>(got));
+    return false;
+  }
+  return true;
+}
+
+// T6 follow-up: null env on the tapId getter fails closed with 0 (no tap
+// has fired in this process, and no VM exists to mint one).
+bool check_last_bridge_tap_id_null_env_returns_zero() {
+  const jint got = Java_com_muse_host_MainActivity_nativeLastBridgeTapId(
+      nullptr, nullptr, 0x1234);
+  if (got != 0) {
+    std::printf("  detail: expected 0, got %d\n", static_cast<int>(got));
+    return false;
+  }
+  return true;
+}
+
 #define RUN_CASE(name)                           \
   do {                                           \
     if (!(name)()) {                             \
@@ -104,6 +149,9 @@ int main() {
   RUN_CASE(check_null_env_nonzero_handle_returns_minus_one);
   RUN_CASE(check_null_env_inside_tap_returns_minus_one);
   RUN_CASE(check_null_env_up_outside_returns_minus_one);
+  RUN_CASE(check_bridge_dispatch_null_env_zero_handle_returns_zero);
+  RUN_CASE(check_bridge_dispatch_null_env_nonzero_handle_returns_zero);
+  RUN_CASE(check_last_bridge_tap_id_null_env_returns_zero);
   if (failures > 0) {
     std::printf("jni_touch_dispatch_shape_test: %d failing\n", failures);
     return 1;

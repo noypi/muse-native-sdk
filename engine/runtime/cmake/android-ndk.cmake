@@ -89,6 +89,7 @@ else()
         ../input/src/event_model.cpp
         ../input/src/hit_test.cpp
         ../input/src/gesture_arena.cpp
+        ../input/src/tap_dispatch.cpp
       )
     endif()
     foreach(MUSE_ABI IN ITEMS arm64-v8a x86_64)

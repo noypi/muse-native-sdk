@@ -50,6 +50,16 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             long handle, int action, float x, float y, int pointerId, long timestampMs);
 
     /**
+     * T6 follow-up (FR-INPUT-012 AC-INPUT-024/024a): bridge-tap dispatch.
+     * Delivers a bridge-minted tapId integer to the owning handle's
+     * per-button pending entry via dispatchTapToOwner (consume-before-notify,
+     * exactly-once per tapId). Returns 1 on delivery, 0 on fail-closed denial.
+     * Never throws across the VM.
+     */
+    private static native int nativeDispatchBridgeTap(
+            long handle, int nodeId, int tapId);
+
+    /**
      * T6 follow-up (AC-INPUT-024a): tapId-integer identity getter. Returns
      * the tapId minted by the most recent bridge-delivered tap (0 when none
      * has fired yet); the JS handle admits it verbatim via
