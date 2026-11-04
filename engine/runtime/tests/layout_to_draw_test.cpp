@@ -13,12 +13,12 @@
 // CONFLICT-RUNTIME-009 scope: runtime owns the binding; layout solver and
 // graphics blit are consumed, never modified.
 //
-// RED STATE (expected on current tree): retained emission and raster row
-// frames are produced by manual cursor packing with the M3 chrome offset
-// (kHeaderH) applied outside layout, so literal bounds-vs-boxOf equality
-// FAILS (off by the chrome constant). The cases below pin the spec-literal
-// contract; the coder binds emission to LayoutEngine::boxOf and removes
-// the fallback (see handoff), then these cases turn green.
+// CHROME-AWARE (post-merge #293, FR-RUNTIME-002 AC-RUNTIME-047): boxOf is
+// the within-list geometry authority; page chrome (M3 title bar, kHeaderH)
+// is re-applied at emission. Retained bounds equal boxOf rebased below the
+// title bar (y + kHeaderH); raster row frames paint at boxOf + kHeaderH so
+// probes sample below the title bar. Chrome-blind equality (bounds ==
+// boxOf literally) is the RED state this file previously pinned.
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
@@ -37,6 +37,10 @@ namespace {
 constexpr float kPad = 16.0f;
 constexpr float kGap = 8.0f;
 constexpr int kPresentW = 720;
+// Page chrome re-applied at emission (mirrors production kHeaderH): boxOf
+// frames are chrome-free within-list offsets; emitted bands sit kHeaderH
+// below (under the reserved title block).
+constexpr float kHeaderH = 84.0f;
 
 constexpr std::uint32_t rgba(std::uint8_t r, std::uint8_t g, std::uint8_t b,
                              std::uint8_t a) {
@@ -108,17 +112,20 @@ bool box_equals(const runtime::LayoutBox& box, float x, float y, float w,
          same(box.height, h);
 }
 
-bool bounds_equal_box(const runtime::Rect& bounds,
-                      const runtime::LayoutBox& box) {
-  return same(bounds.x, box.x) && same(bounds.y, box.y) &&
+bool bounds_equal_box_chrome(const runtime::Rect& bounds,
+                             const runtime::LayoutBox& box) {
+  // boxOf owns the within-list frame; emission re-applies the title-bar
+  // chrome (+kHeaderH) so bands land below the reserved title block.
+  return same(bounds.x, box.x) && same(bounds.y, box.y + kHeaderH) &&
          same(bounds.w, box.width) && same(bounds.h, box.height);
 }
 
 }  // namespace
 
 // AC-RUNTIME-047 (retained): every retained DrawCmd.bounds equals the solved
-// LayoutEngine::boxOf(node). Full-window emission; the per-row band cmd
-// (RoundedRect, nodeId i+1) must match boxOf(i+1) literally.
+// LayoutEngine::boxOf(node) rebased below the title-bar chrome (+kHeaderH).
+// Full-window emission; the per-row band cmd (RoundedRect, nodeId i+1) must
+// match boxOf(i+1) + chrome. boxOf itself stays chrome-free (16/88/160).
 static bool check_retained_bounds_equal_layout_box() {
   auto rows = make_dark_text_rows(3);
   runtime::RuntimeTree tree;
@@ -147,12 +154,13 @@ static bool check_retained_bounds_equal_layout_box() {
       }
     }
     if (band == nullptr) return false;
-    if (!bounds_equal_box(band->bounds,
-                           engine.boxOf(static_cast<runtime::NodeId>(node)))) {
+    if (!bounds_equal_box_chrome(
+            band->bounds, engine.boxOf(static_cast<runtime::NodeId>(node)))) {
       std::printf("  node %u retained bounds {%.1f,%.1f,%.1f,%.1f} != "
-                  "boxOf {%.1f,%.1f,%.1f,%.1f}\n",
+                  "boxOf+chrome {%.1f,%.1f,%.1f,%.1f}\n",
                   node, band->bounds.x, band->bounds.y, band->bounds.w,
-                  band->bounds.h, engine.boxOf(node).x, engine.boxOf(node).y,
+                  band->bounds.h, engine.boxOf(node).x,
+                  engine.boxOf(node).y + kHeaderH,
                   engine.boxOf(node).width, engine.boxOf(node).height);
       return false;
     }
@@ -160,9 +168,9 @@ static bool check_retained_bounds_equal_layout_box() {
   return true;
 }
 
-// AC-RUNTIME-047 (retained, windowed): the same equality holds for a windowed
-// slice; cursor-prefix accumulation over skipped rows must not move frames
-// off boxOf.
+// AC-RUNTIME-047 (retained, windowed): the same chrome-aware equality holds
+// for a windowed slice; cursor-prefix accumulation over skipped rows must
+// not move frames off boxOf + chrome.
 static bool check_windowed_bounds_equal_layout_box() {
   auto rows = make_dark_text_rows(3);
   runtime::RuntimeTree tree;
@@ -183,21 +191,23 @@ static bool check_windowed_bounds_equal_layout_box() {
     }
   }
   if (band == nullptr) return false;
-  if (!bounds_equal_box(band->bounds, engine.boxOf(2))) {
-    std::printf("  windowed node 2 bounds {%.1f,%.1f,%.1f,%.1f} != boxOf "
-                "{%.1f,%.1f,%.1f,%.1f}\n",
+  if (!bounds_equal_box_chrome(band->bounds, engine.boxOf(2))) {
+    std::printf("  windowed node 2 bounds {%.1f,%.1f,%.1f,%.1f} != "
+                "boxOf+chrome {%.1f,%.1f,%.1f,%.1f}\n",
                 band->bounds.x, band->bounds.y, band->bounds.w,
-                band->bounds.h, engine.boxOf(2).x, engine.boxOf(2).y,
-                engine.boxOf(2).width, engine.boxOf(2).height);
+                band->bounds.h, engine.boxOf(2).x,
+                engine.boxOf(2).y + kHeaderH, engine.boxOf(2).width,
+                engine.boxOf(2).height);
     return false;
   }
   return true;
 }
 
-// AC-RUNTIME-047 (raster): every raster row frame equals boxOf(node). The
-// row band interior is probed by pixel at the layout-derived frame center:
-// with the binding in place the pixel is the dark band fill; under manual
-// cursor packing the layout-derived frame center still shows title/wash.
+// AC-RUNTIME-047 (raster): every raster row frame equals boxOf(node) rebased
+// below the title-bar chrome (+kHeaderH). The row band interior is probed
+// by pixel at the emitted frame center (layout frame + chrome offset):
+// with the binding in place the pixel is the dark band fill; a chrome-blind
+// probe above the title bar still shows title/wash.
 // NOTE (TC-056 D1): the probe samples the band CENTER, not the frame
 // origin — PaintTextRow fills a RoundedRect with r=18, so a +4 origin probe
 // lands in the corner cutout (outside the band) even when the frame is
@@ -226,9 +236,11 @@ static bool check_raster_row_frames_equal_layout_box() {
     const runtime::LayoutBox& box =
         engine.boxOf(static_cast<runtime::NodeId>(i + 1));
     // Band interior (center): clear of the r=18 rounded corners on all
-    // sides (bw=688, bh=64), still strictly derived from the boxOf frame.
+    // sides (bw=688, bh=64); the emitted band sits boxOf + kHeaderH below
+    // the title bar, so the probe is anchored to the chrome-aware frame.
     const int px = static_cast<int>(box.x + box.width * 0.5f);
-    const int py = static_cast<int>(box.y + box.height * 0.5f);
+    const int py =
+        static_cast<int>(box.y + kHeaderH + box.height * 0.5f);
     const std::uint32_t got =
         pixels[static_cast<std::size_t>(py * kW + px)];
     if (got != kDarkBand) {
@@ -266,7 +278,7 @@ static bool check_raster_single_row_no_cursor_fallback() {
   }
   const runtime::LayoutBox& box = engine.boxOf(1);
   const int px = static_cast<int>(box.x + box.width * 0.5f);
-  const int py = static_cast<int>(box.y + box.height * 0.5f);
+  const int py = static_cast<int>(box.y + kHeaderH + box.height * 0.5f);
   const std::uint32_t got = pixels[static_cast<std::size_t>(py * kW + px)];
   if (got != kDarkBand) {
     std::printf("  single-row layout frame (%d,%d) pixel 0x%08X, want band "
