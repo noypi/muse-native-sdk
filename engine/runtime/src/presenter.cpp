@@ -205,9 +205,15 @@ constexpr std::uint32_t PackRgba(std::uint8_t r, std::uint8_t g,
 constexpr std::uint32_t kM3LightPrimary = PackRgba(0x67, 0x50, 0xA4, 0xFF);
 constexpr std::uint32_t kM3DarkPrimary = PackRgba(0xD0, 0xBC, 0xFF, 0xFF);
 constexpr float kM3ElevationDp = 1.0f;
-constexpr float kM3ShapeDp = 12.0f;
+// BUG-LAYOUT-005 Stage 1 — the theme path resolves the medium baseline
+// (md.sys.shape.corner.medium → 12dp M3, engine/layout/tokens/theme.js);
+// per-component roles (Button full / Card medium / TopAppBar none→0) live in
+// the generated matrix table (engine/runtime/include/runtime/shape_roles.h)
+// and resolve at Emit time in gallery_present.cpp (ComponentShapeDp), not
+// here, so no second resolver is kept on this path (zero-JNI throughout).
+constexpr float kM3ShapeMediumDp = 12.0f;
 static_assert(kM3ElevationDp > 0.0f, "M3 elevation must resolve nonzero");
-static_assert(kM3ShapeDp > 0.0f, "M3 shape must resolve nonzero");
+static_assert(kM3ShapeMediumDp > 0.0f, "M3 shape must resolve nonzero");
 // BUG-RUNTIME-015 (FR-RUNTIME-014 / AC-RUNTIME-043, TC-RUNTIME-052): the
 // flat-gray 0x808080 sentinel (opaque wire order 0xFF808080) is an error,
 // never a silent pass — no resolvable theme may ever produce it. The
@@ -230,13 +236,13 @@ bool ResolveThemeParams(ThemeId theme, ResolvedThemeParams* out) {
   if (theme == ThemeId::kLight) {
     out->primary_rgba = kM3LightPrimary;
     out->elevation_dp = kM3ElevationDp;
-    out->shape_dp = kM3ShapeDp;
+    out->shape_dp = kM3ShapeMediumDp;
     return true;
   }
   if (theme == ThemeId::kDark) {
     out->primary_rgba = kM3DarkPrimary;
     out->elevation_dp = kM3ElevationDp;
-    out->shape_dp = kM3ShapeDp;
+    out->shape_dp = kM3ShapeMediumDp;
     return true;
   }
   return false;
@@ -253,7 +259,7 @@ struct SeamSurface {
   // flat gray is never stored — it is an error, never a pass.
   std::uint32_t theme_primary_rgba = kM3LightPrimary;
   float theme_elevation_dp = kM3ElevationDp;
-  float theme_shape_dp = kM3ShapeDp;
+  float theme_shape_dp = kM3ShapeMediumDp;
   std::int32_t ime_bottom_px = 0;
   FrameStats stats;
 };

@@ -34,6 +34,7 @@
 #include "runtime/layout.h"
 #include "runtime/layout_seam.h"
 #include "runtime/renderer.h"
+#include "runtime/shape_roles.h"
 #include "runtime/tree.h"
 
 #ifdef __ANDROID__
@@ -828,15 +829,42 @@ struct SurfaceThemeParams {
   float shape_dp = 0.0f;      // md.sys.shape.corner.medium → 12dp M3
 };
 constexpr float kSurfaceElevationDp = 1.0f;
-constexpr float kSurfaceShapeDp = 12.0f;
+// BUG-LAYOUT-005 Stage 1 — per-component shape roles from the generated
+// matrix table (engine/runtime/include/runtime/shape_roles.h, codegened from
+// engine/layout/m3_matrix.json resolved `shape` sys tokens next to their
+// tokenTable.shape indirection keys via
+// engine/layout/m3_registry.js getComponentTokenTable), zero-JNI: constexpr
+// only, no file reads on the emit path. Button tokenTable.shape
+// md.comp.button.shape → md.sys.shape.corner.full (pill/stadium → half the
+// emitted box height, geometry — never a baked literal); Card
+// md.comp.card.shape → md.sys.shape.corner.medium → 12dp M3 baseline
+// (engine/layout/tokens/theme.js); TopAppBar md.comp.top-app-bar.shape →
+// md.sys.shape.corner.none → 0dp (paints 0). Unknown components fall closed
+// to the medium baseline (never blank, never throws).
+constexpr float kSurfaceShapeNoneDp = 0.0f;
+constexpr float kSurfaceShapeMediumDp = 12.0f;
 static_assert(kSurfaceElevationDp > 0.0f, "M3 elevation must resolve nonzero");
-static_assert(kSurfaceShapeDp > 0.0f, "M3 shape must resolve nonzero");
+static_assert(kSurfaceShapeMediumDp > 0.0f, "M3 shape must resolve nonzero");
+// No static_assert on kSurfaceShapeNoneDp: the none role resolves to 0 by
+// design (TopAppBar paints square).
+
+inline float ComponentShapeDp(const std::string& comp, float boxHeightDp) {
+  switch (ShapeRoleForComponent(comp.c_str())) {
+    case ShapeRole::None:
+      return kSurfaceShapeNoneDp;
+    case ShapeRole::Full:
+      return boxHeightDp * 0.5f;  // Pill/stadium: half the emitted box height.
+    case ShapeRole::Medium:
+    default:
+      return kSurfaceShapeMediumDp;  // Fail-closed fallback: medium baseline.
+  }
+}
 
 inline SurfaceThemeParams ResolveSurfaceTheme(bool dark) {
   SurfaceThemeParams params;
   params.primary = dark ? kDarkPrimary : kLightPrimary;
   params.elevation_dp = kSurfaceElevationDp;
-  params.shape_dp = kSurfaceShapeDp;
+  params.shape_dp = kSurfaceShapeMediumDp;
   return params;
 }
 
@@ -2548,42 +2576,19 @@ void EmitCaptionCmd(int bx, int by, int bw, int bh, std::uint32_t node,
   out.push_back(cmd);
 }
 
-// BUG-LAYOUT-005 / FR-LAYOUT-016 AC-LAYOUT-052/053 + FR-LAYOUT-008
-// AC-LAYOUT-017 — per-component shape resolver. Entry point mirrors
-// getComponentTokenTable in engine/layout/m3_registry.js: each component
-// resolves through its OWN tabled shape role in
-// engine/layout/m3_matrix.json (md.comp.<name>.shape), never a shared
-// generic. Role baselines (committed M3): Button full (pill) -> 28dp,
-// Card medium -> 12dp, TopAppBar none -> 0. Zero JNI, no filesystem at
-// Emit time: the table roles are baked here as the C++ mirror of the
-// registry (parser stays build-time). border-radius (card) and box-shadow
-// (shadow) legs both bind to this one resolver. Transform leg: DrawCmd
-// carries no transform channel today, so transform-to-resolver binding is
-// not unit-observable; when the channel lands it must read this same
-// entry point (ResolveComponentShapeDp), never a new literal.
-constexpr float kShapeButtonFullDp = 28.0f;  // md.comp.button.shape -> full; staged assumption (no committed M3 baseline in-repo; locked by shape_token_test check_button_full_is_28, deliberate-change only)
-constexpr float kShapeCardMediumDp = 12.0f;  // md.comp.card.shape -> medium
-static_assert(kShapeButtonFullDp > 0.0f, "Button shape must resolve nonzero");
-static_assert(kShapeCardMediumDp > 0.0f, "Card shape must resolve nonzero");
-// TopAppBar none -> 0.0f: intentionally no nonzero assert (table is zero).
-inline float ResolveComponentShapeDp(const std::string& comp) {
-  if (comp == "Button") return kShapeButtonFullDp;
-  if (comp == "Card") return kShapeCardMediumDp;
-  if (comp == "TopAppBar") return 0.0f;
-  return kSurfaceShapeDp;  // ASSUMPTION: unpinned components keep the
-                           // generic medium fallback until their table
-                           // roles land in this lane.
-}
-
 void EmitComponentRowCmds(const GalleryRow& row, int bx, int by, int bw,
                           int bh, std::uint32_t node,
                           std::vector<DrawCmd>& out) {
-  const float shape_dp = ResolveComponentShapeDp(row.comp);
   DrawCmd shadow;
   shadow.kind = PrimitiveKind::ElevationShadow;
   shadow.bounds = {static_cast<float>(bx), static_cast<float>(by),
                    static_cast<float>(bw), static_cast<float>(bh)};
-  shadow.radius = shape_dp;  // box-shadow leg: same resolver as radius.
+  // BUG-LAYOUT-005 Stage 1: card + shadow radii resolve per-component from
+  // the generated matrix shape-role table (ComponentShapeDp above, via
+  // shape_roles.h); the shadow binds the SAME resolver as the card
+  // (Stage 2 owns parsed box-shadow bind, not here).
+  shadow.radius =
+      ComponentShapeDp(row.comp, static_cast<float>(bh));
   shadow.nodeId = node;
   shadow.payload.elevationDp = 2.0f;
   shadow.payload.shadowBlur = 4.0f;
@@ -2592,7 +2597,11 @@ void EmitComponentRowCmds(const GalleryRow& row, int bx, int by, int bw,
   DrawCmd card;
   card.kind = PrimitiveKind::RoundedRect;
   card.bounds = shadow.bounds;
-  card.radius = shape_dp;  // border-radius leg: per-component table role.
+  // BUG-LAYOUT-005 Stage 1: per-component matrix shape role (Button
+  // full→pill, Card medium, TopAppBar none→0); fallback paints medium, never
+  // blank. Family Image (16.0f) / band (18.0f) / wash literals elsewhere
+  // stay until Stage 2/3.
+  card.radius = ComponentShapeDp(row.comp, static_cast<float>(bh));
   card.nodeId = node;
   // T3 (BUG-M3-FIDELITY-014): the card fill carries the token-resolved
   // per-family fill (resolvePresentFill choke point over FamilyKind with
