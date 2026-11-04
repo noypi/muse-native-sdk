@@ -1,7 +1,7 @@
 {
   "hermes": { "file": "hermes.tar.gz", "sha256": "8cfde6efdfc4ed5ab1f6acbbd1ba49bf31932f84d0a4c090eb41c7d151e8b180" },
   "quickjs": { "file": "quickjs.tar.gz", "sha256": "79eca99fd1265c8356108a97287295dac1eeea361ede6077b93e6cc15c06469a" },
-  "yoga": { "file": "yoga.tar.gz", "sha256": "ca3142d55e008e17dc28e394d0777daa87a18017b128963c747fc706f0dcad3f" },
+  "yoga": { "file": "yoga-v3.2.1.tar.gz", "version": "3.2.1", "tag": "v3.2.1", "commit": "042f5013152eb81c1552dec945b88f7b95ca350f", "sha256": "86b399ac31fd820d8ffa823c3fae31bb690b6fc45301b2a8a966c09b5a088b55", "bytes": 2172950, "url": "https://github.com/facebook/yoga/archive/refs/tags/v3.2.1.tar.gz", "licence": "MIT", "owner": "layout", "seam": "LayoutEngine" },
   "cassowary": { "file": "cassowary.tar.gz", "sha256": "1f71511371129511321c45be058c60e23cf9ba898d8a3f3309555985b5027490" },
   "harfbuzz": { "file": "harfbuzz-15.0.0.tar.xz", "sha256": "968536e9abd782f07f7954044c0c4020199fcdd39b41d221ec42d2a3be4a44df" },
   "icu4c": { "file": "icu4c-79.1-sources.tgz", "sha256": "06fa63ecb521048f8082f12ad988f6b678d90cbd88aafce24cbc94902b191d99" },

@@ -1,0 +1,25 @@
+{
+  "counts": {
+    "manifest": 28,
+    "allow_listed": 27,
+    "pinned_snapshot_keys": 27,
+    "cache_eligible": 8,
+    "source_built": 4
+  },
+  "reconciliation": "28 manifest entries = 27 allow-listed + 'Skia Graphite' (in manifest, not on allow-list). 27 pinned snapshot keys in third_party_pins.json. 8 cache-eligible have versioned snapshot + NDK-buildable source + pinned sha256. 4 source-built (cronet, webrtc, hermes-prebuilt, media3-prebuilt) are prebuilt-only / Maven / no NDK source build; compute_key MUST refuse them.",
+  "pins_gaps": [
+    "cronet: NO tarball pin in tools/deps/third_party_pins.json (only Maven coordinates org.chromium.net:cronet-bundled/cronet 500.1.0 in _deps_data.py::_CRONET_PINS) -> source-built",
+    "skia: pins key 'skia-m158' matches no allow-list display name nor manifest name 'Skia Graphite' -> name-mismatch gap, row grant-gated"
+  ],
+  "cache_eligible": [
+    "flatbuffers",
+    "fmt",
+    "freetype",
+    "harfbuzz",
+    "icu4c",
+    "oboe",
+    "simdjson",
+    "yoga"
+  ],
+  "source_built": ["cronet", "webrtc", "hermes-prebuilt", "media3-prebuilt"]
+}
