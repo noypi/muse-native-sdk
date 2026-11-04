@@ -2024,8 +2024,10 @@ namespace {
 
 // AC-RUNTIME-047 (FR-RUNTIME-002): row frames are bound to
 // LayoutEngine::boxOf — the layout solver is the single geometry authority
-// for gallery rows; manual `cursor += rh + kGap` packing and the manual
-// `+ kHeaderH` chrome offset are forbidden. Builds the page column over the
+// for within-list row geometry; manual `cursor += rh + kGap` packing is
+// forbidden. The solver returns chrome-free list offsets; each emission
+// site re-applies the M3 title-bar chrome (`+ kHeaderH`) so bands sit
+// below the reserved title block. Builds the page column over the
 // row slice [begin, end): a column root (padding kPad, gap kGap, width pageW,
 // height pageH spanning the chrome-containing page) with one fixed child per
 // row sized by RowHeight, and returns each row's solved box in slice order.
@@ -2148,9 +2150,12 @@ int RasterGalleryPage(const std::vector<GalleryRow>& rows, int page,
 
     for (int i = 0; i < count; ++i) {
       const GalleryRow& row = rows[static_cast<std::size_t>(start + i)];
-      // AC-RUNTIME-047: the solved box is the frame — no manual chrome
-      // offset; boxOf is the authority for both axes and extents.
-      int y = static_cast<int>(rowY[static_cast<std::size_t>(i)]);
+      // AC-RUNTIME-047: the solved box owns the within-list frame (offsets
+      // + extents); the M3 title-bar chrome (kHeaderH) is the page's
+      // reserved block above the list, added here — bands sit below the
+      // title bar, they never paint over it. boxOf stays the authority;
+      // no manual cursor packing, no fallback.
+      int y = static_cast<int>(rowY[static_cast<std::size_t>(i)]) + kHeaderH;
       int rh = RowHeight(row);
       int bx = kPad;
       int bw = width - 2 * kPad;
@@ -2692,9 +2697,11 @@ bool PresentGallery(const void* mui1Data, std::size_t len, Renderer& renderer,
       cmds.push_back(footer);
       int start = starts[static_cast<std::size_t>(p)];
       int end = starts[static_cast<std::size_t>(p + 1)];
-      // AC-RUNTIME-047 (FR-RUNTIME-002): per-row frames bound to
-      // LayoutEngine::boxOf — the page column over this page's slice owns
-      // the geometry; no manual cursor packing, no manual chrome offset.
+      // AC-RUNTIME-047 (FR-RUNTIME-002): per-row within-list frames bound
+      // to LayoutEngine::boxOf — the page column over this page's slice
+      // owns the geometry; no manual cursor packing. The M3 title bar
+      // (kHeaderH) is the page's reserved chrome above the list: each
+      // frame is rebased below it, mirroring the raster oracle.
       // Layout failure fails the present closed (nothing recorded).
       std::vector<LayoutBox> frames;
       if (!SolveGalleryRowFrames(rows, static_cast<std::size_t>(start),
@@ -2712,7 +2719,7 @@ bool PresentGallery(const void* mui1Data, std::size_t len, Renderer& renderer,
         int bx = static_cast<int>(box.x);
         int bw = static_cast<int>(box.width);
         int rh = static_cast<int>(box.height);
-        int by = static_cast<int>(box.y) + static_cast<int>(yOff);
+        int by = static_cast<int>(box.y) + kHeaderH + static_cast<int>(yOff);
         std::uint32_t node = static_cast<std::uint32_t>(i + 1);
         if (row.comp.empty()) {
           EmitTextRowCmds(row, bx, by, bw, rh, node, cmds);
@@ -2863,8 +2870,8 @@ int GalleryPressedNode() noexcept {
 // DOWN y -> pressed row id (i + 1) against the page's row layout. Geometry
 // mirrors the windowed emitter + viewport rebase in PresentDeviceGalleryPage:
 // rows of the page slice [starts[page], starts[page+1]) stack at their
-// LayoutEngine::boxOf frames (no manual chrome offset), rebased to the
-// viewport origin by (boxOf(first) - kPad). Device y is in window px while
+// LayoutEngine::boxOf frames rebased below the M3 title-bar chrome
+// (kHeaderH), rebased to the viewport origin by (boxOf(first) - kPad). Device y is in window px while
 // the layout is in kPresentH canvas px, so the coordinate is scaled by
 // viewportH / kPresentH (the same linear map the window sink paints with).
 // A y landing in no row band, or any bad input, returns -1: the caller
@@ -2888,7 +2895,9 @@ int GalleryResolvePressedRow(float yDevicePx,
     if (!std::isfinite(canvasY) || canvasY < 0.0f) return -1;
     // AC-RUNTIME-047: hit-testing binds to LayoutEngine::boxOf over the
     // full list — the same authority the windowed emitter paints from —
-    // rebased to the viewport origin. Layout failure yields no row (-1).
+    // rebased to the viewport origin, then below the M3 title-bar chrome
+    // (kHeaderH) so touches land on the painted bands. Layout failure
+    // yields no row (-1).
     std::vector<LayoutBox> frames;
     if (!SolveGalleryRowFrames(rows, 0, rows.size(),
                                static_cast<float>(kPresentW),
@@ -2899,7 +2908,7 @@ int GalleryResolvePressedRow(float yDevicePx,
         frames[static_cast<std::size_t>(first)].y - static_cast<float>(kPad);
     for (int i = first; i <= last; ++i) {
       const LayoutBox& box = frames[static_cast<std::size_t>(i)];
-      const float by = box.y - rebaseDy;
+      const float by = box.y + static_cast<float>(kHeaderH) - rebaseDy;
       if (canvasY >= by && canvasY < by + box.height) {
         return i + 1;
       }
@@ -2928,8 +2937,9 @@ void EmitGalleryWindowCmds(const std::vector<GalleryRow>& rows,
     if (last > lastRow) last = lastRow;
     if (last < first) return;  // empty window: nothing to bind
     // AC-RUNTIME-047: windowed rows land at their full-list boxOf frames —
-    // the same canvas offsets as the full-list reference — with no manual
-    // chrome offset. Layout failure emits nothing (fail closed).
+    // the same canvas offsets as the full-list reference — rebased below
+    // the M3 title-bar chrome (kHeaderH), mirroring the raster oracle.
+    // Layout failure emits nothing (fail closed).
     std::vector<LayoutBox> frames;
     if (!SolveGalleryRowFrames(rows, 0, rows.size(),
                                static_cast<float>(kPresentW),
@@ -2944,7 +2954,7 @@ void EmitGalleryWindowCmds(const std::vector<GalleryRow>& rows,
       int bx = static_cast<int>(box.x);
       int bw = static_cast<int>(box.width);
       int rh = static_cast<int>(box.height);
-      int by = static_cast<int>(box.y);
+      int by = static_cast<int>(box.y) + kHeaderH;
       std::uint32_t node = static_cast<std::uint32_t>(i + 1);
       if (row.comp.empty()) {
         EmitTextRowCmds(row, bx, by, bw, rh, node, out);
