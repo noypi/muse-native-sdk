@@ -71,6 +71,27 @@ NavResult NavGraph::apply(NavOp op) {
       if (stack.size() > 1) stack.pop_back();
       return {true, NavError::NONE};
     }
+    case NavOpType::Replace: {
+      if (!isKnownRoute(op.routeId)) return {false, NavError::UNKNOWN_ROUTE};
+      auto& stack = tabStacks_[static_cast<std::size_t>(selectedTab_)];
+      if (stack.empty()) {
+        stack.push_back(op.routeId);
+      } else {
+        stack.back() = op.routeId;
+      }
+      return {true, NavError::NONE};
+    }
+    case NavOpType::GoTo: {
+      // tabIndex carries the signed delta (ASSUMPTION per tester contract:
+      // go.tabIndex = -1 means one step back). Negative deltas pop toward
+      // home and clamp there (never blank); zero/forward deltas fail closed.
+      int delta = op.tabIndex;
+      if (delta >= 0) return {false, NavError::SCHEMA_MISMATCH};
+      auto& stack = tabStacks_[static_cast<std::size_t>(selectedTab_)];
+      std::size_t steps = static_cast<std::size_t>(-static_cast<long>(delta));
+      while (steps-- > 0 && stack.size() > 1) stack.pop_back();
+      return {true, NavError::NONE};
+    }
     case NavOpType::SwitchTab: {
       if (op.tabIndex < 0) return {false, NavError::SCHEMA_MISMATCH};
       if (static_cast<std::size_t>(op.tabIndex) >= tabStacks_.size()) {

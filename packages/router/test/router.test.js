@@ -165,40 +165,106 @@ describe('navigation semantics (AC-NAV-040)', () => {
     assert.equal(transport.calls.length, 0);
   });
 
-  it('back() returns to the previous page (= go(-1))', async () => {
+  it('back() funnels through transport go, returns to the previous page', async () => {
     const transport = fakeTransport();
     const { router } = fixtures(transport);
     await router.push('lens');
+    transport.calls.length = 0;
     const res = await router.back();
     assert.deepEqual(res, { ok: true });
     assert.equal(router.current, 'home');
+    assert.equal(transport.calls.length, 1);
+    assert.equal(transport.calls[0].method, 'go');
+    assert.equal(transport.calls[0].payload.delta, -1);
   });
 
-  it('go(delta>0) is denied no-forward, page unchanged', async () => {
+  it('go(-1) emits transport go with delta', async () => {
     const transport = fakeTransport();
     const { router } = fixtures(transport);
     await router.push('lens');
+    await router.push({ id: 'lens', params: {} });
+    transport.calls.length = 0;
+    const res = await router.go(-1);
+    assert.deepEqual(res, { ok: true });
+    assert.equal(transport.calls.length, 1);
+    assert.equal(transport.calls[0].method, 'go');
+    assert.equal(transport.calls[0].payload.delta, -1);
+  });
+
+  it('go(delta>0) is denied no-forward, page unchanged, no transport call', async () => {
+    const transport = fakeTransport();
+    const { router } = fixtures(transport);
+    await router.push('lens');
+    const callsBefore = transport.calls.length;
     const res = await router.go(1);
     assert.deepEqual(res, { ok: false, code: 'no-forward' });
     assert.equal(router.current, 'lens');
+    assert.equal(transport.calls.length, callsBefore);
   });
 
   it('negative go() clamps at home and never goes blank', async () => {
     const transport = fakeTransport();
     const { router } = fixtures(transport);
     await router.push('lens');
+    transport.calls.length = 0;
     const res = await router.go(-5);
     assert.deepEqual(res, { ok: true });
     assert.equal(router.current, 'home');
     assert.ok(router.current, 'current page is never blank');
+    assert.equal(transport.calls.length, 1);
+    assert.equal(transport.calls[0].method, 'go');
+    assert.equal(transport.calls[0].payload.delta, -5);
   });
 
-  it('back() at home stays at home (never blank)', async () => {
+  it('back() at home stays at home (never blank), still funnels via go', async () => {
     const transport = fakeTransport();
     const { router } = fixtures(transport);
     const res = await router.back();
     assert.deepEqual(res, { ok: true });
     assert.equal(router.current, 'home');
+    assert.equal(transport.calls.length, 1);
+    assert.equal(transport.calls[0].method, 'go');
+  });
+
+  it('fractional go(-1.5) denies bad-params, page unchanged, no transport call', async () => {
+    const transport = fakeTransport();
+    const { router } = fixtures(transport);
+    await router.push('lens');
+    const callsBefore = transport.calls.length;
+    const res = await router.go(-1.5);
+    assert.deepEqual(res, { ok: false, code: 'bad-params' });
+    assert.equal(router.current, 'lens');
+    assert.ok(router.current, 'current page is never blank');
+    assert.equal(transport.calls.length, callsBefore);
+  });
+
+  it('replace emits transport replace (not navigate)', async () => {
+    const transport = fakeTransport();
+    const { router } = fixtures(transport);
+    await router.push('lens');
+    transport.calls.length = 0;
+    const res = await router.replace('home');
+    assert.deepEqual(res, { ok: true });
+    assert.equal(router.current, 'home');
+    assert.equal(transport.calls.length, 1);
+    assert.equal(transport.calls[0].method, 'replace');
+    assert.equal(transport.calls[0].payload.route, 'home');
+  });
+
+  it('transport denial on back/go fails closed, page unchanged', async () => {
+    const transport = fakeTransport();
+    transport.invoke = async (method, payload) => {
+      transport.calls.push({ method, payload });
+      if (method === 'go') {
+        return { ok: false, code: 'guard-denied' };
+      }
+      return { ok: true };
+    };
+    const { router } = fixtures(transport);
+    await router.push('lens');
+    const res = await router.back();
+    assert.deepEqual(res, { ok: false, code: 'guard-denied' });
+    assert.equal(router.current, 'lens');
   });
 
   it('transport guard-denied propagates, stack/current untouched', async () => {

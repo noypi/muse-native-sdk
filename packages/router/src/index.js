@@ -65,10 +65,10 @@ function createRouter({ routes, home, transport }) {
       guards.push(fn);
     },
     push(dest) {
-      return navigate(dest, false);
+      return navigate(dest, 'navigate');
     },
     replace(dest) {
-      return navigate(dest, true);
+      return navigate(dest, 'replace');
     },
     back() {
       return go(-1);
@@ -80,22 +80,29 @@ function createRouter({ routes, home, transport }) {
 
   async function go(delta) {
     const n = Number(delta);
+    if (!Number.isInteger(n) || n === 0 || Number.isNaN(n)) {
+      return { ok: false, code: 'bad-params' };
+    }
     if (n > 0) {
       return { ok: false, code: 'no-forward' };
     }
-    if (n === 0 || Number.isNaN(n)) {
-      return { ok: false, code: 'bad-params' };
+    const result = await transport.invoke('go', { delta: n });
+    if (!result || typeof result !== 'object') {
+      return { ok: false, code: 'transport-error' };
+    }
+    if (result.ok !== true) {
+      return result;
     }
     let idx = stack.length - 1 + n;
     if (idx < 0) {
       idx = 0;
     }
-    const target = stack[idx];
     stack.length = idx + 1;
     return { ok: true };
   }
 
-  async function navigate(dest, isReplace) {
+  async function navigate(dest, method) {
+    const isReplace = method === 'replace';
     const from = stack[stack.length - 1];
     const { id: to, params } = normalizeDest(dest, from);
     const route =
@@ -118,7 +125,7 @@ function createRouter({ routes, home, transport }) {
         return { ok: false, code: 'guard-denied' };
       }
     }
-    const result = await transport.invoke('navigate', { route: to, params });
+    const result = await transport.invoke(method, { route: to, params });
     if (!result || typeof result !== 'object') {
       return { ok: false, code: 'transport-error' };
     }
